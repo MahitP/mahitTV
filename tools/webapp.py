@@ -15,7 +15,8 @@ import translate  # noqa: E402  (the catalogues and the keys the web app uses)
 
 GENERIC = {'tmdbKey': '', 'tmdbRegion': '', 'latitude': '', 'longitude': '', 'city': '', 'language': 'auto',
            'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': False, 'hideAnimation': False, 'hideApps': [],
-           'shelfApps': [], 'profiles': []}
+           'shelfApps': [], 'profiles': [], 'geminiKey': '', 'wellyModel': 'gemini-3.8-flash',
+           'wellyLiteModel': 'gemini-3.5-flash-lite', 'ollamaUrl': '', 'ollamaModel': 'qwen3:8b'}
 
 
 def config_from_args(args):
@@ -62,6 +63,12 @@ def read_config(path):
         'hideApps': [s.strip() for s in values.get('hide_apps', '').split(',') if s.strip()],
         'shelfApps': [s.strip() for s in values.get('shelf_apps', '').split(',') if s.strip()],
         'profiles': profiles(values.get('profiles', '')),
+        # Welly (WELLY-HOME-REMOTE-SPEC.md §3.2). The web build can't reach Kasa (no TCP from a page): no kasa key here.
+        'geminiKey': values.get('gemini_key', ''),
+        'wellyModel': values.get('welly_model', 'gemini-3.8-flash') or 'gemini-3.8-flash',
+        'wellyLiteModel': values.get('welly_lite_model', 'gemini-3.5-flash-lite') or 'gemini-3.5-flash-lite',
+        'ollamaUrl': values.get('ollama_url', ''),
+        'ollamaModel': values.get('ollama_model', 'qwen3:8b') or 'qwen3:8b',
     }
 
 
@@ -124,6 +131,12 @@ def files(config, made_by):
             if name.lower().endswith(('.jpg', '.png')):
                 with open(os.path.join(src, name), 'rb') as f:
                     out[folder + '/' + name] = f.read()
+    # The Home tab's house and Welly's prompt pills, shared with the Android app, as scripts (TVs can't always read
+    # a JSON file from file://).
+    for name, var in (('house', 'HOUSE'), ('welly-preview', 'WELLY_PREVIEW')):
+        with open(os.path.join(ROOT, 'app', 'assets', name + '.json'), encoding='utf-8') as f:
+            data = json.load(f)
+        out[name + '-data.js'] = ('window.%s = %s;\n' % (var, json.dumps(data, ensure_ascii=False, separators=(',', ':')))).encode('utf-8')
     for name in ('InterVariable.ttf', 'OFL.txt'):
         with open(os.path.join(ROOT, 'app', 'assets', 'fonts', name), 'rb') as f:
             out['fonts/' + name] = f.read()

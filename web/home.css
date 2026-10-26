@@ -605,6 +605,231 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #saver .clock .title { margin-top: 18px; font-size: 26px; font-weight: 500; color: rgba(255, 255, 255, 0.65); }
 #saver .clock .hint { margin-top: 8px; font-size: 22px; color: rgba(255, 255, 255, 0.55); }
 
+/* MARK: - Tab bar (top centre): TV · Home · Welly in a smoke-glass capsule, as the pill; focusing a tab selects it */
+
+#tabs {
+  position: absolute;
+  left: 960px;
+  top: 48px;
+  height: 57px;
+  padding: 0 3px;
+  border-radius: 29px;
+  white-space: nowrap;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 51px;
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px rgba(0, 0, 0, 0.16);
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+  -webkit-transition: opacity 0.25s;
+  transition: opacity 0.25s;
+}
+#tabs .tab {
+  display: inline-block;
+  height: 51px;
+  margin-top: 3px;
+  padding: 0 30px;
+  border-radius: 26px;
+  vertical-align: top;
+  color: rgba(255, 255, 255, 0.7);
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
+}
+#tabs .tab.sel { background: rgba(255, 255, 255, 0.18); color: #FFF; }
+#tabs .tab.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
+.full #tabs, .grid-open #tabs, .drawer-open #tabs { opacity: 0; }
+
+/* Home and Welly: the TV tab's content steps aside; the same background stays, frosted and dimmed as under the grid. */
+.tab-home #hero, .tab-home #details, .tab-home #dots, .tab-home #chevron, .tab-home #quotes, .tab-home #platter, .tab-home #tiles, .tab-home #dockname, .tab-home #apps.sheet,
+.tab-welly #hero, .tab-welly #details, .tab-welly #dots, .tab-welly #chevron, .tab-welly #quotes, .tab-welly #platter, .tab-welly #tiles, .tab-welly #dockname, .tab-welly #apps.sheet {
+  opacity: 0;
+  pointer-events: none;
+}
+.has-photo.tab-home #sky canvas.on, .has-photo.tab-welly #sky canvas.on { opacity: 1; }
+#sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; opacity: 0; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
+.tab-home #sky .shade, .tab-welly #sky .shade { opacity: 0.45; }
+.night.tab-home #sky .shade, .night.tab-welly #sky .shade { opacity: 0.55; }
+/* Above the TV tab's layer, under the dimmer that Control Center brings. */
+#house, #welly, #tabs { z-index: 1; }
+#house, #welly { opacity: 0; visibility: hidden; color: #FFF; -webkit-transition: opacity 0.35s, visibility 0s 0.35s; transition: opacity 0.35s, visibility 0s 0.35s; }
+.tab-home #house, .tab-welly #welly { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
+
+/* MARK: - Home: the house on one canvas (rooms.js), a caption for the focused light */
+
+#house canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+#house .caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 984px;
+  height: 34px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 34px;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: pre;
+  opacity: 0;
+  -webkit-transition: opacity 0.2s;
+  transition: opacity 0.2s;
+}
+#house .caption.on { opacity: 1; }
+
+/* MARK: - Welly: a column of 1180, cards as plain fills, glass prompt pills and the "Ask Welly…" capsule */
+
+#welly .col { position: absolute; left: 370px; top: 0; width: 1180px; height: 820px; }
+#welly .who { position: absolute; left: 0; top: 150px; font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.6); white-space: pre; }
+#welly .hello { position: absolute; left: 0; top: 300px; }
+#welly .hello .big { font-size: 57px; font-weight: 600; letter-spacing: -0.01em; }
+#welly .hello .sub { margin-top: 14px; font-size: 31px; color: rgba(255, 255, 255, 0.7); }
+#welly .you { position: absolute; right: 0; top: 232px; max-width: 900px; text-align: right; font-size: 26px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#welly .reply { position: absolute; left: 0; top: 280px; width: 1180px; font-size: 31px; line-height: 1.32; max-height: 123px; overflow: hidden; }
+#welly .reply.thinking span {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin: 18px 10px 0 0;
+  border-radius: 7px;
+  background: #FFF;
+  -webkit-animation: welly-dot 1s infinite;
+  animation: welly-dot 1s infinite;
+}
+#welly .reply.thinking span:nth-child(2) { -webkit-animation-delay: 0.16s; animation-delay: 0.16s; }
+#welly .reply.thinking span:nth-child(3) { -webkit-animation-delay: 0.32s; animation-delay: 0.32s; }
+@-webkit-keyframes welly-dot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@keyframes welly-dot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+#welly .cards { position: absolute; left: 0; top: 470px; height: 240px; white-space: nowrap; }
+#welly .card {
+  position: relative;
+  display: inline-block;
+  height: 240px;
+  margin-right: 36px;
+  border-radius: 24px;
+  vertical-align: top;
+  white-space: normal;
+  overflow: hidden;
+  background: rgba(28, 28, 30, 0.82);
+  background-size: cover;
+  background-position: center;
+  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s;
+  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s;
+}
+#welly .card.focus { -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 22px 40px rgba(0, 0, 0, 0.5); }
+#welly .card.media { width: 427px; }
+#welly .media .scrim { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); }
+#welly .media .t { position: absolute; left: 24px; right: 24px; bottom: 50px; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#welly .media .m { position: absolute; left: 24px; right: 24px; bottom: 20px; font-size: 21px; color: rgba(255, 255, 255, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#welly .card.score { width: 300px; }
+#welly .score .league, #welly .weather .place { position: absolute; left: 26px; top: 22px; font-size: 20px; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.6); }
+#welly .score .team { position: relative; height: 48px; margin: 0 26px; font-size: 26px; font-weight: 600; line-height: 48px; color: rgba(255, 255, 255, 0.62); }
+#welly .score .team:nth-child(2) { margin-top: 64px; }
+#welly .score .team.ahead { color: #FFF; }
+#welly .score .score { position: absolute; right: 0; top: 0; font-size: 32px; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#welly .score .status, #welly .home .state { position: absolute; left: 26px; bottom: 22px; font-size: 21px; color: rgba(255, 255, 255, 0.6); }
+#welly .card.weather { width: 430px; }
+#welly .weather .now { position: absolute; left: 26px; top: 60px; height: 70px; white-space: nowrap; }
+#welly .weather .now .sym { vertical-align: top; margin: 8px 14px 0 0; }
+#welly .weather .temp { font-size: 64px; font-weight: 300; line-height: 70px; }
+#welly .weather .range { position: absolute; right: 26px; top: 84px; font-size: 22px; color: rgba(255, 255, 255, 0.7); }
+#welly .weather .hours { position: absolute; left: 14px; right: 14px; bottom: 18px; height: 88px; white-space: nowrap; }
+#welly .weather .hour { display: inline-block; width: 25%; text-align: center; font-size: 19px; color: rgba(255, 255, 255, 0.7); }
+#welly .weather .hour .sym { display: block; margin: 6px auto; color: #FFF; }
+#welly .weather .hour .d { font-size: 21px; font-weight: 600; color: #FFF; }
+#welly .card.schedule { width: 560px; padding-top: 18px; box-sizing: border-box; }
+#welly .schedule .line { position: relative; height: 41px; margin: 0 26px; font-size: 24px; line-height: 41px; white-space: nowrap; }
+#welly .schedule .at { display: inline-block; width: 128px; color: rgba(255, 255, 255, 0.6); -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#welly .schedule .show { font-weight: 600; }
+#welly .schedule .net { position: absolute; right: 0; top: 0; color: rgba(255, 255, 255, 0.6); }
+#welly .card.home { width: 300px; }
+#welly .home .bulb { position: absolute; left: 26px; top: 26px; width: 46px; height: 46px; border-radius: 23px; background: rgba(255, 255, 255, 0.2); }
+#welly .home.lit .bulb { background: #FFD9A8; box-shadow: 0 0 30px rgba(255, 192, 122, 0.85); }
+#welly .home .room { position: absolute; left: 26px; top: 100px; font-size: 22px; color: rgba(255, 255, 255, 0.6); }
+#welly .home .fix { position: absolute; left: 26px; top: 132px; font-size: 30px; font-weight: 600; }
+#welly .home.lit .state { color: #FFC07A; }
+
+#welly .pills { position: absolute; left: 352px; top: 832px; width: 1216px; height: 84px; overflow: hidden; }
+/* A fade at an edge with more pills past it. */
+#welly .pills.more-r { -webkit-mask-image: -webkit-linear-gradient(left, #000 92%, rgba(0, 0, 0, 0)); }
+#welly .pills.more-l { -webkit-mask-image: -webkit-linear-gradient(left, rgba(0, 0, 0, 0), #000 8%); }
+#welly .pills.more-l.more-r { -webkit-mask-image: -webkit-linear-gradient(left, rgba(0, 0, 0, 0), #000 8%, #000 92%, rgba(0, 0, 0, 0)); }
+#welly .strip { position: absolute; left: 18px; top: 13px; white-space: nowrap; -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); }
+#welly .pill {
+  display: inline-block;
+  height: 57px;
+  margin-right: 18px;
+  padding: 0 28px;
+  border-radius: 29px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 57px;
+  color: #FFF;
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
+}
+#welly .pill.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
+
+#welly .ask { position: absolute; left: 370px; top: 934px; width: 1180px; height: 76px; border-radius: 38px; -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22); transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22); }
+#welly .ask .fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 38px;
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
+  -webkit-transition: background-color 0.17s;
+  transition: background-color 0.17s;
+}
+#welly .ask.focus { -webkit-transform: scale(1.02); transform: scale(1.02); }
+#welly .ask.focus .fill { background: #FFF; }
+#welly .mic { position: absolute; left: 8px; top: 8px; width: 60px; height: 60px; border-radius: 30px; color: #FFF; -webkit-transition: background-color 0.17s, color 0.17s; transition: background-color 0.17s, color 0.17s; }
+#welly .mic .sym { position: absolute; left: 15px; top: 15px; }
+#welly .mic.focus { background: #FFF; color: #1C1C1E; }
+#welly .ask.focus .mic { color: #1C1C1E; }
+#welly .field {
+  position: absolute;
+  left: 84px;
+  right: 30px;
+  top: 0;
+  height: 76px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 30px;
+  color: #FFF;
+}
+#welly .field::-webkit-input-placeholder { color: rgba(255, 255, 255, 0.55); }
+#welly .field::placeholder { color: rgba(255, 255, 255, 0.55); }
+#welly .ask.focus .field { color: #1D1D1F; }
+#welly .ask.focus .field::-webkit-input-placeholder { color: rgba(29, 29, 31, 0.45); }
+#welly .ask.focus .field::placeholder { color: rgba(29, 29, 31, 0.45); }
+/* Listening: the one moment of colour, a band of Apple Intelligence hues moving round the capsule's rim. */
+#welly .ask .edge { position: absolute; left: -4px; top: -4px; right: -4px; bottom: -4px; border-radius: 42px; overflow: hidden; opacity: 0; -webkit-transition: opacity 0.3s; transition: opacity 0.3s; }
+#welly .ask .edge::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 300%;
+  height: 100%;
+  background: -webkit-linear-gradient(left, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF);
+  background: linear-gradient(90deg, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF);
+  -webkit-animation: welly-edge 2.4s linear infinite;
+  animation: welly-edge 2.4s linear infinite;
+}
+@-webkit-keyframes welly-edge { from { -webkit-transform: translateX(0); } to { -webkit-transform: translateX(-50%); } }
+@keyframes welly-edge { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+#welly .ask.listening .edge { opacity: 1; }
+#welly .ask.listening .fill { background: rgba(24, 24, 28, 0.94); }
+#welly .ask.listening .field { color: #FFF; }
+
 /* MARK: - Toast */
 
 #toast {
@@ -643,18 +868,21 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   #drawer { corner-shape: superellipse(1.39); border-radius: 55px; }
   .key, #weather { corner-shape: superellipse(1.39); border-radius: 32px; }
   #watch { corner-shape: superellipse(1.39); }
+  #welly .card { corner-shape: superellipse(1.39); border-radius: 30px; }
 }
 
 /* Reduce Motion: no sway or parallax, quick fades instead of travel. */
 @media (prefers-reduced-motion: reduce) {
   .lean-r .tile.focus, .lean-l .tile.focus, .lean-r .cell.focus .face, .lean-l .cell.focus .face { -webkit-animation: none; animation: none; }
   .tile, .cell .face, .key, #home, #platter, #tiles, #apps, #apps .grid, #drawer, #details > * { -webkit-transition-duration: 0.15s; transition-duration: 0.15s; }
+  #welly .card, #welly .strip, #welly .pill, #tabs .tab { -webkit-transition-duration: 0.15s; transition-duration: 0.15s; }
+  #welly .ask .edge::before { -webkit-animation: none; animation: none; }
   .lean-r .tile.focus img, .lean-l .tile.focus img, .lean-r .cell.focus .face img, .lean-l .cell.focus .face img { -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
 }
 
 /* Reduce Transparency: the glass becomes near-opaque. */
 @media (prefers-reduced-transparency: reduce) {
-  #pill { background: rgba(44, 48, 56, 0.96); }
+  #pill, #tabs, #welly .pill, #welly .ask .fill { background: rgba(44, 48, 56, 0.96); }
   #platter .tint, #drawer .tint, .has-photo #platter .tint, .has-photo #drawer .tint, .night.has-photo #platter .tint, .night.has-photo #drawer .tint { background: rgba(36, 36, 40, 0.96); }
   #platter .bleed, #drawer .bleed { opacity: 0; }
 }

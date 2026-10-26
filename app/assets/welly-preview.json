@@ -1,0 +1,56 @@
+{
+  "about": "Preview builds only (no keys): what Welly answers to each prompt pill, so the Welly tab can be judged without a brain. Shared by the Android app and the web app. Scores, listings and weather here are samples, not real data; the screen labels them Preview.",
+  "greeting": "Hey {name}.",
+  "mood": "Curious",
+  "pills": [
+    {
+      "id": "watching",
+      "prompt": "What am I watching?",
+      "mood": "Smug",
+      "reply": "Nothing yet. Your TV has been staring at a desert for twenty minutes. Want to fix that?",
+      "cards": [{"type": "media", "pick": "long-dunes"}]
+    },
+    {
+      "id": "movie-mode",
+      "prompt": "Dim my room & pick a movie",
+      "mood": "On it",
+      "reply": "Done. Lamp's on low, the big light's off, and here's a 1 h 52 m pick that won't make you think too hard.",
+      "cards": [
+        {"type": "home", "fixture": "mine.lamp", "on": true},
+        {"type": "home", "fixture": "mine.bulb", "on": false},
+        {"type": "media", "pick": "quiet-peak"}
+      ]
+    },
+    {
+      "id": "scores",
+      "prompt": "Live sports scores",
+      "mood": "Curious",
+      "reply": "The Knicks are making it interesting. The Jets are making it a learning experience.",
+      "cards": [
+        {"type": "score", "league": "NBA", "home": "NYK", "away": "BOS", "homeScore": 98, "awayScore": 96, "status": "Q4 · 2:41"},
+        {"type": "score", "league": "NFL", "home": "NYJ", "away": "BUF", "homeScore": 10, "awayScore": 27, "status": "Final"}
+      ]
+    },
+    {
+      "id": "weather",
+      "prompt": "South Brunswick weather",
+      "mood": "Sleepy",
+      "reply": "44° and clear. Hoodie weather, which, judging by your Memoji, you're already dressed for.",
+      "cards": [{"type": "weather", "place": "South Brunswick", "temp": 44, "code": 0, "high": 61, "low": 39, "hours": [["9 PM", 0, 43], ["10 PM", 0, 41], ["11 PM", 1, 40], ["12 AM", 1, 39]]}]
+    },
+    {
+      "id": "tonight",
+      "prompt": "What's on tonight?",
+      "mood": "Curious",
+      "reply": "Slim pickings on cable, but two of these are worth staying up for.",
+      "cards": [{"type": "schedule", "items": [["8:00 PM", "Harbor Lights", "Channel 4"], ["9:00 PM", "The Long Dunes", "Netflix"], ["9:30 PM", "Late Shift", "Channel 7"], ["10:00 PM", "Orbital", "Disney+"]]}]
+    },
+    {
+      "id": "roast",
+      "prompt": "Roast my watchlist",
+      "mood": "Smug",
+      "reply": "Two space dramas, a desert epic and a lighthouse thriller. That's not a watchlist, it's a mood board for being somewhere else.",
+      "cards": [{"type": "media", "pick": "orbital"}, {"type": "media", "pick": "tidebreak"}]
+    }
+  ]
+}

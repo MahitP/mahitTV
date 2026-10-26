@@ -8,6 +8,7 @@ webos-icons.local/
 
 # Build output
 out/
+out-*/
 *.apk
 *.ipk
 !docs/webos/FreeMyTV-webos-*.ipk

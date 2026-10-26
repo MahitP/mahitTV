@@ -1,0 +1,57 @@
+{
+  "about": "The house on the Home tab (WELLY-HOME-REMOTE-SPEC.md §4). Metres; x to the right, y toward the viewer, z up; origin at the back-left corner. Shared by the Android app (HouseView) and the web app (home.js). Front and inner walls are cut low (a dollhouse cutaway) so the rooms read from above.",
+  "camera": {"yaw": 24, "pitch": 50, "box": [210, 170, 1710, 960]},
+  "size": [10, 8],
+  "rooms": [
+    {"id": "parents", "name": "Parents' Room", "rect": [0, 0, 5, 4], "floor": "carpet"},
+    {"id": "mine", "name": "My Room", "rect": [5, 0, 10, 4], "floor": "wood"},
+    {"id": "living", "name": "Living Room", "rect": [0, 4, 10, 8], "floor": "wood"}
+  ],
+  "walls": [
+    {"from": [0, 0], "to": [10, 0], "h": 2.6},
+    {"from": [0, 0], "to": [0, 8], "h": 2.6},
+    {"from": [10, 0], "to": [10, 8], "h": 0.45},
+    {"from": [0, 8], "to": [10, 8], "h": 0.45},
+    {"from": [5, 0], "to": [5, 4], "h": 1.1},
+    {"from": [0, 4], "to": [2.1, 4], "h": 1.1},
+    {"from": [3.1, 4], "to": [6.4, 4], "h": 1.1},
+    {"from": [7.4, 4], "to": [10, 4], "h": 1.1}
+  ],
+  "furniture": [
+    {"room": "parents", "kind": "bed", "box": [1.55, 0.15, 0, 1.9, 2.1, 0.5], "color": "linen"},
+    {"room": "parents", "kind": "headboard", "box": [1.55, 0.15, 0, 1.9, 0.12, 1.1], "color": "wood"},
+    {"room": "parents", "kind": "pillow", "box": [1.75, 0.35, 0.5, 0.65, 0.4, 0.14], "color": "white"},
+    {"room": "parents", "kind": "pillow", "box": [2.6, 0.35, 0.5, 0.65, 0.4, 0.14], "color": "white"},
+    {"room": "parents", "kind": "nightstand", "box": [0.85, 0.2, 0, 0.55, 0.45, 0.55], "color": "wood"},
+    {"room": "parents", "kind": "nightstand", "box": [3.6, 0.2, 0, 0.55, 0.45, 0.55], "color": "wood"},
+    {"room": "parents", "kind": "rug", "box": [1.2, 2.45, 0, 2.6, 1.2, 0.02], "color": "rug"},
+    {"room": "mine", "kind": "bed", "box": [8.55, 0.2, 0, 1.25, 2.05, 0.5], "color": "linen"},
+    {"room": "mine", "kind": "headboard", "box": [8.55, 0.15, 0, 1.25, 0.1, 0.95], "color": "wood"},
+    {"room": "mine", "kind": "pillow", "box": [8.8, 0.35, 0.5, 0.75, 0.38, 0.14], "color": "white"},
+    {"room": "mine", "kind": "desk", "box": [5.35, 0.15, 0, 1.5, 0.65, 0.75], "color": "wood"},
+    {"room": "mine", "kind": "monitor", "box": [5.75, 0.2, 0.75, 0.7, 0.06, 0.42], "color": "screen"},
+    {"room": "mine", "kind": "chair", "box": [5.8, 1.0, 0, 0.55, 0.55, 0.48], "color": "fabric"},
+    {"room": "mine", "kind": "rug", "box": [6.0, 2.3, 0, 2.0, 1.2, 0.02], "color": "rug"},
+    {"room": "living", "kind": "tvstand", "box": [3.6, 4.2, 0, 2.8, 0.45, 0.5], "color": "wood"},
+    {"room": "living", "kind": "tv", "box": [3.8, 4.32, 0.5, 2.4, 0.08, 1.35], "color": "screen", "focusable": false},
+    {"room": "living", "kind": "couch", "box": [3.35, 6.75, 0, 3.3, 0.95, 0.45], "color": "fabric"},
+    {"room": "living", "kind": "couch-back", "box": [3.35, 7.45, 0.45, 3.3, 0.25, 0.4], "color": "fabric"},
+    {"room": "living", "kind": "couch-arm", "box": [3.35, 6.75, 0.45, 0.25, 0.95, 0.2], "color": "fabric"},
+    {"room": "living", "kind": "couch-arm", "box": [6.4, 6.75, 0.45, 0.25, 0.95, 0.2], "color": "fabric"},
+    {"room": "living", "kind": "coffeetable", "box": [4.3, 5.55, 0, 1.4, 0.7, 0.4], "color": "wood"},
+    {"room": "living", "kind": "armchair", "box": [7.6, 5.4, 0, 0.95, 0.95, 0.45], "color": "fabric"},
+    {"room": "living", "kind": "rug", "box": [2.8, 5.2, 0, 4.4, 2.6, 0.02], "color": "rug"},
+    {"room": "living", "kind": "plant", "box": [0.4, 7.2, 0, 0.45, 0.45, 0.95], "color": "plant"}
+  ],
+  "fixtures": [
+    {"id": "parents.bulb", "room": "parents", "kind": "bulb", "name": "Lightbulb", "at": [2.5, 2.0, 2.25]},
+    {"id": "mine.lamp", "room": "mine", "kind": "lamp", "name": "Lamp", "at": [7.95, 0.45, 0]},
+    {"id": "mine.bulb", "room": "mine", "kind": "bulb", "name": "Lightbulb", "at": [7.4, 2.1, 2.25]},
+    {"id": "living.bulb", "room": "living", "kind": "bulb", "name": "Lightbulb", "at": [5.0, 6.0, 2.25]}
+  ],
+  "palette": {
+    "cool": {"floor-wood": "#9AA3B2", "floor-carpet": "#A7AEBC", "wall": "#E4E8EF", "wall-top": "#F4F6FA", "wood": "#8C8F99", "linen": "#D6DAE3", "white": "#EEF1F6", "fabric": "#7E8798", "rug": "#B5BCC9", "screen": "#1E2128", "plant": "#7D9A8C"},
+    "warm": {"floor-wood": "#C79A6B", "floor-carpet": "#D8B999", "wall": "#F6E7D2", "wall-top": "#FFF5E8", "wood": "#9C6B43", "linen": "#F3E3CB", "white": "#FFF4E2", "fabric": "#B97E5A", "rug": "#E4C39C", "screen": "#1E2128", "plant": "#7FA06E"},
+    "glow": "#FFC07A"
+  }
+}

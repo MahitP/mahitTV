@@ -6,6 +6,8 @@
  *  - a glass pill with the time and the weather and icon-only glass buttons at the top right (Live TV, HDMI Inputs,
  *    which opens the drawer with the inputs and the weather, and Settings);
  *  - the glass Dock with the apps; ↓ brings up the other apps as a grid; ↑ or Back goes back;
+ *  - a glass tab bar at the top centre, TV · Home · Welly: Home is the house and its lights (rooms.js), Welly the
+ *    assistant (welly.js); both draw over the background, frosted and dimmed, and TV stays the plain Apple TV screen;
  *  - a night look from sunset to sunrise; a screensaver after a few idle minutes.
  * The remote's arrows, OK and Back move the focus; a pointer (LG's Magic Remote) focuses what it points at.
  */
@@ -79,6 +81,7 @@
     ['nfl', /nfl/, /^nfl/i, ['#013369', '#00163D']],
     ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
     ['jellyfin', /jellyfin/i, /jellyfin/i, ['#AA5CC3', '#00A4DC']],
+    ['applemusic', /apple.?music|com\.apple\.music/i, /apple music/i, ['#FA586A', '#FA233B']],
     ['spotify', /spotify/, /spotify/i, ['#202020', '#050505']],
     ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']],
     ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']]
@@ -364,8 +367,10 @@
 
   // MARK: - Focus
 
-  var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', ABOUT: 'about'};
-  var st = {zone: Z.SHELF, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0};
+  var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', ABOUT: 'about',
+    TABS: 'tabs', HOUSE: 'house', WELLY: 'welly'};
+  var TAB = {TV: 0, HOME: 1, WELLY: 2};
+  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0};
   var cards = [], lean = 0;
 
   function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.ABOUT; }
@@ -399,6 +404,43 @@
     setClass(body, 'grid-open', grid);
     setClass(body, 'lean-l', lean < 0);
     setClass(body, 'lean-r', lean > 0);
+    // The tab bar: the selected tab is a lighter lens, the focused one a white pill.
+    list = $('tabs').children;
+    for (i = 0; i < list.length; i++) {
+      setClass(list[i], 'sel', st.tab === i);
+      setClass(list[i], 'focus', st.zone === Z.TABS && st.tab === i);
+    }
+    setClass(body, 'tab-home', st.tab === TAB.HOME);
+    setClass(body, 'tab-welly', st.tab === TAB.WELLY);
+    if (window.House) { House.show(st.tab === TAB.HOME); House.focus(st.zone === Z.HOUSE); }
+    if (window.Welly) { Welly.show(st.tab === TAB.WELLY); Welly.focus(st.zone === Z.WELLY); }
+  }
+
+  // MARK: - Tabs: TV · Home · Welly
+
+  function renderTabs() {
+    var bar = $('tabs'), names = [tr('TV'), tr('Home'), 'Welly'];
+    bar.innerHTML = '';
+    for (var i = 0; i < names.length; i++) hover(el('span', 'tab', bar, names[i]), Z.TABS, i);
+  }
+
+  /** ↓ or OK on the tab bar: into the selected tab's content. */
+  function enterTab() {
+    if (st.tab === TAB.HOME) st.zone = window.House ? Z.HOUSE : Z.TABS;
+    else if (st.tab === TAB.WELLY) st.zone = window.Welly ? Z.WELLY : Z.TABS;
+    else st.zone = shelf.length ? Z.SHELF : Z.TABS;
+  }
+
+  function onApp(name) {
+    var n = (name || '').toLowerCase();
+    if (!n) return false;
+    for (var i = 0; i < apps.length; i++) {
+      if ((apps[i].title || '').toLowerCase().indexOf(n) >= 0 || n.indexOf((apps[i].title || '~').toLowerCase()) >= 0) {
+        launcher(apps[i].id, apps[i].title)();
+        return true;
+      }
+    }
+    return false;
   }
 
   function focusRows(sheet, index, on) {
@@ -819,7 +861,7 @@
 
   /** Back where the focus was (the button that opened it, or the Dock). */
   function closeDrawer() {
-    st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO ? drawerFrom : Z.SHELF;
+    st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO || drawerFrom === Z.TABS ? drawerFrom : Z.SHELF;
     updateFocus();
   }
 
@@ -1111,6 +1153,16 @@
 
   function activate() {
     switch (st.zone) {
+      case Z.TABS:
+        enterTab();
+        updateFocus();
+        return;
+      case Z.HOUSE:
+        House.toggle();
+        return;
+      case Z.WELLY:
+        Welly.ok();
+        return;
       case Z.TOP:
         openDrawer();
         return;
@@ -1162,18 +1214,31 @@
           openDrawer();
           return;
         } else if (dy < 0) {
-          // ↑ on a pick: full screen; on a wallpaper: the pill.
+          // ↑ on a pick: full screen; on a wallpaper: the tab bar.
           if (appPicks().length) st.zone = Z.HERO;
-          else { st.zone = Z.TOP; st.top = 3; }
+          else st.zone = Z.TABS;
         }
         break;
       case Z.HERO:
         if (dx) page(dx);
-        else if (dy < 0) { st.zone = Z.TOP; st.top = 3; }
+        else if (dy < 0) st.zone = Z.TABS;
         else if (shelf.length) st.zone = Z.SHELF;
         break;
+      case Z.TABS:
+        // ← → walk TV · Home · Welly · the pill; focusing a tab selects it, as on tvOS.
+        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = 3; }
+        else if (dx) st.tab = Math.max(0, Math.min(TAB.WELLY, st.tab + dx));
+        else if (dy > 0) enterTab();
+        break;
+      case Z.HOUSE:
+        if (!House.move(dx, dy)) st.zone = Z.TABS;
+        break;
+      case Z.WELLY:
+        if (!Welly.move(dx, dy)) st.zone = Z.TABS;
+        break;
       case Z.TOP:
-        if (dy > 0) st.zone = Z.SHELF;
+        if (dx < 0) { st.zone = Z.TABS; st.tab = TAB.WELLY; }
+        else if (dy > 0) enterTab();
         break;
       case Z.DRAWER:
         // The profiles' row on top, then the bento's two columns: ← from the left edge closes it, as on tvOS.
@@ -1231,6 +1296,9 @@
     if (st.zone === Z.ABOUT) { closeAbout(); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
+    // Back from a tab's content goes to the tab bar; on the bar, back to TV.
+    if (st.zone === Z.HOUSE || st.zone === Z.WELLY || (st.zone === Z.TOP && st.tab !== TAB.TV)) { st.zone = Z.TABS; updateFocus(); return; }
+    if (st.zone === Z.TABS && st.tab !== TAB.TV) { st.tab = TAB.TV; updateFocus(); return; }
     if (st.zone !== Z.SHELF && shelf.length) { st.zone = Z.SHELF; updateFocus(); return; }
     TV.back();
   }
@@ -1243,7 +1311,8 @@
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER) return;
       st.zone = zone;
-      if (zone === Z.TOP) st.top = index;
+      if (zone === Z.TABS) st.tab = index;
+      else if (zone === Z.TOP) st.top = index;
       else if (zone === Z.SHELF) st.shelf = index;
       else if (zone === Z.DRAWER) st.drawer = index;
       else if (zone === Z.APPS) st.grid = index;
@@ -1352,6 +1421,14 @@
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode;
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
+    // Welly's text field has the keyboard: the field keeps the letters and the ← →, Welly takes OK and ↑ ↓ Back.
+    if (st.zone === Z.WELLY && Welly.typing()) {
+      var r = Welly.typingKey(k, TV.keys);
+      if (r === 'native') return;
+      e.preventDefault();
+      updateFocus();
+      return;
+    }
     if (k === TV.keys.left) move(-1, 0);
     else if (k === TV.keys.right) move(1, 0);
     else if (k === TV.keys.up) move(0, -1);
@@ -1403,6 +1480,7 @@
     hideSaver();
     closeSheets();
     st.zone = Z.SHELF;
+    st.tab = TAB.TV;
     st.shelf = 0;
     follow();
     updateFocus();
@@ -1438,6 +1516,16 @@
   TV.holdScreenSaver(function () { return !sheetOpen() && saverPhotos().length > 0; });
   fit();
   renderTop();
+  renderTabs();
+  if (window.House) House.init($('house'));
+  if (window.Welly) {
+    Welly.init($('welly'), {
+      name: function () { return person().name; },
+      appNames: function () { return apps.map(function (a) { return a.title; }); },
+      launch: onApp,
+      openPick: function (p) { var app = Data.appFor(p.app); if (app) launcher(app.id, app.title)(); }
+    });
+  }
   tickClock();
   loadApps(function () {
     renderAll();
@@ -1445,7 +1533,7 @@
   });
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {
-    if (!saverOn && st.zone === Z.SHELF) page(1);   // the focused app's picks, when it has several
+    if (!saverOn && st.zone === Z.SHELF && st.tab === TAB.TV) page(1);   // the focused app's picks, when it has several
   }, 8000);
   setInterval(function () {
     checkNight();
@@ -1455,5 +1543,6 @@
   }, 30000);
 
   // For the browser preview and tests.
-  window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast};
+  window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
+    tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); }};
 })();

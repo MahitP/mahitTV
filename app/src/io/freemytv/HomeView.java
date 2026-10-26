@@ -109,7 +109,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final long TOAST_MS = 6000, FADE_MS = 800;
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 44, KEY_BLUR = 16;
-    private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7;
+    private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, TABBAR = 8;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -123,6 +123,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
     private static final int Z_TOP = 4, Z_CARDS = 5;
+    // The tab bar (WELLY-HOME-REMOTE-SPEC.md §2): TV · Home · Welly, a glass capsule at the top centre, on the pill's
+    // line. The focus row is the three tabs (topIndex 0 to 2), the round buttons (3…) and the pill (Z_STATUS).
+    private static final int TAB_TV = 0, TAB_HOME = 1, TAB_WELLY = 2;
+    private static final float TAB_TOP = 48, TAB_H = 57, TAB_PAD = 30, TAB_INSET = 4, TAB_MIN = 112;
+    /** The Home and Welly tabs' content has the focus (the house's lights; Welly's conversation). */
+    private static final int Z_HOUSE = 10, Z_WELLY = 11;
 
     private final Activity activity;
     private final Scene scene = new Scene();
@@ -145,8 +151,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         @Override public void hold(int id) { a11yHold(); }
     });
     private final RectF a11yRect = new RectF();
-    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer;
+    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar;
+    private final HouseView house;
+    private final WellyView welly;
     private int zone = Z_SHELF;
+    // The tabs: tabAway = the TV tab's content hidden and the background frosted and dimmed (Home or Welly); the two
+    // contents cross-fade (smooth); lens = where the selected tab's lighter lens is (0 to 2, snappy).
+    private final Spring tabAway = new Spring(0.45f, 0.9f, 0), homeShown = new Spring(0.45f, 0.9f, 0);
+    private final Spring wellyShown = new Spring(0.45f, 0.9f, 0), lens = new Spring(0.30f, 0.80f, 0);
+    private final RectF tabBarRect = new RectF();
+    private Paint tabText;
+    private final float[] tabTextW = new float[3];
+    private int tabLayoutGeneration = -1;
+    private boolean houseFocused, wellyFocused;
 
     // Night look (like Apple's "Automatic" appearance): darker from sunset to sunrise, with a 2 s transition.
     private static final long NIGHT_MS = 2000;
@@ -221,7 +238,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         TILE_STYLE.put("hulu", new int[] {0xFF1CE783, 0xFF0E9F57, 2});
         TILE_STYLE.put("paramount", new int[] {0xFF0064FF, 0xFF00287F, 1});
         TILE_STYLE.put("peacock", new int[] {0xFF1C1C1E, 0xFF000000, 0});
-        TILE_STYLE.put("spotify", new int[] {0xFF1ED760, 0xFF118A3E, 2});
+        TILE_STYLE.put("applemusic", new int[] {0xFFFA586A, 0xFFFA233B, 1});
     }
     private final android.graphics.PorterDuffColorFilter whiteLogo =
             new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN);
@@ -397,7 +414,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             // The layer may be shifted (bottom drawer): the glass reads the background from where it really is. The
             // drawer and the top buttons are always drawn as if resting in place (they are only visible there and are
             // not redrawn while they move).
-            scene.setOffset(0, kind == DRAWER || kind == STATUS ? 0 : getTranslationY());
+            scene.setOffset(0, kind == DRAWER || kind == STATUS || kind == TABBAR ? 0 : getTranslationY());
             shadows.dither = dark() > 0.5f;
             switch (kind) {
                 case SKY: drawSky(c); break;
@@ -407,6 +424,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case TILES: drawTiles(c); break;
                 case DRAWER: drawDrawer(c); break;
                 case SHEET: drawSheet(c); break;
+                case TABBAR: drawTabBar(c); break;
                 default: drawToast(c); break;
             }
             scene.setOffset(0, 0);
@@ -482,19 +500,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerLayer = new Layer(a, DRAWER);
         sheetLayer = new Layer(a, SHEET);
         toastLayer = new Layer(a, TOAST);
+        tabBar = new Layer(a, TABBAR);
+        house = new HouseView(a);
+        welly = new WellyView(a, scene);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
         // frame cost more than drawing straight to the screen (measured: focus on the picks 33 → 12 ms a frame, the
         // drawer 19 → 17 ms).
-        for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(Ui.LEGACY ? LAYER_TYPE_NONE : LAYER_TYPE_HARDWARE, null);
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) {
-            v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);   // TalkBack reads the items (Spoken)
+        for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer, tabBar, house, welly}) {
+            v.setLayerType(Ui.LEGACY ? LAYER_TYPE_NONE : LAYER_TYPE_HARDWARE, null);
+        }
+        // The Home and Welly tabs sit on the background, under the TV tab's layers and the tab bar.
+        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, drawerLayer, sheetLayer, toastLayer}) {
+            // TalkBack reads the items (Spoken); Welly speaks for itself.
+            if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
         }
+        house.setVisibility(INVISIBLE);
+        welly.setVisibility(INVISIBLE);
         setContentDescription("Free My TV");
         drawerLayer.setVisibility(INVISIBLE);
         for (int i = 0; i < topFocus.length; i++) {
-            topFocus[i] = new Spring(0.26f, 0.85f, 0);
+            topFocus[i] = i < 3 ? new Spring(0.30f, 0.80f, 0) : new Spring(0.26f, 0.85f, 0);   // tabs: snappy
             topRects[i] = new RectF();
         }
         for (int i = 0; i < 3; i++) {
@@ -563,11 +590,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         idle = false;
         Choreographer.getInstance().postFrameCallback(this);
         spoken.readAgain();
+        welly.resume();
+        if (tab == TAB_HOME) house.refresh();
     }
 
     void pause() {
         if (!running) return;
         running = false;
+        welly.pause();
         cancelReorder(true);
         handler.removeCallbacks(holdStart);
         okHeld = holdArmed = false;
@@ -606,7 +636,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             full.snap(0);
         }
         updatePicks();
-        if (tab != 0) selectTab(0);
+        selectTab(TAB_TV);
+        if (!animated) {
+            for (Spring sp : new Spring[] {tabAway, homeShown, wellyShown, lens}) sp.snap(sp.target);
+        }
         retarget(!animated);
         motionDirty = true;
     }
@@ -616,9 +649,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lightButtons.clear();
         lightButtons.addAll(list);
         if (zone == Z_TOP && topIndex >= 3 + lightButtons.size()) {
-            topIndex = 2 + lightButtons.size();
-            if (topIndex < 3 && !picksOn()) zone = Z_SHELF;   // without the picks the tabs can't hold focus
-            else if (topIndex < 3) selectTab(topIndex);
+            zone = Z_STATUS;   // the focused button went away: the pill, its neighbour
             retarget(true);
         }
         layoutLight();
@@ -628,7 +659,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The tab names, made again only when the language changes (they are drawn on every frame). */
     private static String[] tabs() {
         if (tabsGeneration != Ui.generation) {
-            tabs = new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows")};
+            tabs = new String[] {Ui.tr("TV"), Ui.tr("Home"), "Welly"};   // Welly is a name
             tabsGeneration = Ui.generation;
         }
         return tabs;
@@ -650,7 +681,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void invalidateAll() {
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer}) v.invalidate();
+        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, tabBar}) v.invalidate();
     }
 
     // MARK: - Size and layers
@@ -668,6 +699,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(drawerLayer, Math.round(640 * kk), height);
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
+        measure(tabBar, width, Math.round(160 * kk));
+        measure(house, width, height);
+        measure(welly, width, height);
         setMeasuredDimension(width, height);
     }
 
@@ -688,6 +722,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer.setPivotX(width / 2f);
         sheetLayer.setPivotY(height / 2f);
         place(toastLayer, (width - toastLayer.getMeasuredWidth()) / 2, 0);
+        place(tabBar, 0, 0);
+        house.layout(0, 0, width, height);
+        welly.layout(0, 0, width, height);
     }
 
     private static void place(View v, int x, int y) {
@@ -788,6 +825,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tvButton = Ui.text(Ui.semibold, 28 * k, INK);
         for (Paint p : new Paint[] {tvLabel, tvTitle, tvMeta, tvOverview}) p.setShadowLayer(22 * k, 0, 2 * k, 0x59000000);
         tvPill = Ui.numbers(Ui.semibold, 28 * k, 0xFFFFFFFF);
+        tabText = Ui.text(Ui.semibold, 28 * k, 0xFFFFFFFF);
+        tabText.setTextAlign(Paint.Align.CENTER);
+        tabLayoutGeneration = -1;
         ccName = Ui.text(Ui.semibold, 21 * k, L_INK);
         ccName.setTextAlign(Paint.Align.CENTER);
         fullScrim = null;
@@ -840,18 +880,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroFading = tickHeroFade(up);
         boolean bgFading = tickBackgroundFade(up);
         boolean nightMoving = tickNight(up);
+        boolean tabMoving = tabAway.step(dt) | homeShown.step(dt) | wellyShown.step(dt);
+        boolean lensMoving = lens.step(dt);
 
-        if (drawerMoving || sheetMoving || scrollMoving || fullMoving || motionDirty) updateMotion();
+        if (drawerMoving || sheetMoving || scrollMoving || fullMoving || tabMoving || motionDirty) updateMotion();
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
         // drop frames (measured: ~50 ms of GPU per frame). The app tiles have no glass; the top buttons fade out as
         // they rise; the drawer is drawn resting in place; the glass shelf is redrawn once the drawer stops, so the
         // glass shows the background where it ended up.
         if (tilesMoving || tilesDirty) tiles.invalidate();
         if (statusMoving || statusDirty || bgFading) status.invalidate();
+        if (topMoving || lensMoving || statusDirty || bgFading) tabBar.invalidate();
         if (heroMoving || heroDirty || heroFading) heroLayer.invalidate();
         if (drawerItemsMoving || drawerDirty || bgFading) drawerLayer.invalidate();
         if (gridMoving || gridDirty) sheetLayer.invalidate();
-        if (drawerMoving || sheetMoving || bgFading) sky.invalidate();
+        if (drawerMoving || sheetMoving || bgFading || tabMoving) sky.invalidate();
         boolean moving = drawerMoving || sheetMoving || scrollMoving;
         if (bgFading || (drawerWasMoving && !moving)) platter.invalidate();
         drawerWasMoving = moving;
@@ -860,11 +903,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             layoutStatus();
             layoutPill();
             status.invalidate();
+            tabBar.invalidate();
         }
 
         // Busy: something is moving, or the sheet or the drawer is open.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
-                || sheetMoving || toastFading || heroFading || bgFading || nightMoving || sheetOpen || sheet.value > 0.001f
+                || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
+                || sheetOpen || sheet.value > 0.001f
                 || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty();
         idle = !busy;
         if (busy) Choreographer.getInstance().postFrameCallback(this);
@@ -896,16 +941,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float drop = full.value * TV_FULL_DROP * k, away = 1 - smoothstep(0, 0.7f, fs);
         // Control Center: nothing moves; the page dims a little behind the panel (the sky darkens too, drawLightSky).
         float dim = 1 - 0.25f * dc;
-        show(heroLayer, top * dim, -rise);
+        // The tabs: the TV tab's content fades out over Home and Welly, which cross-fade.
+        float tv = 1 - Ui.clamp(tabAway.value);
+        show(heroLayer, top * dim * tv, -rise);
         show(status, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k);
-        show(platter, dim * away, -rise + drop);
-        show(tiles, dim * away, -rise + drop);
+        // The tab bar leaves with the title logo when the grid or full screen owns the screen.
+        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)) * (1 - smoothstep(0, 0.6f, fs)), -sheet.value * TV_GRID_LIFT * k);
+        show(platter, dim * away * tv, -rise + drop);
+        show(tiles, dim * away * tv, -rise + drop);
+        show(house, dim * Ui.clamp(homeShown.value), 0);
+        show(welly, dim * Ui.clamp(wellyShown.value), 0);
         float da = (1 - s) * smoothstep(0, 0.6f, dc);
         drawerLayer.setTranslationX((1 - d) * CC_SLIDE * k);
         drawerLayer.setTranslationY(0);
         drawerLayer.setAlpha(da);
         drawerLayer.setVisibility(da > 0.002f ? VISIBLE : INVISIBLE);
-        float ga = dim * away;
+        float ga = dim * away * tv;
         sheetLayer.setVisibility(!others.isEmpty() && ga > 0.002f ? VISIBLE : INVISIBLE);
         sheetLayer.setAlpha(ga);
         sheetLayer.setTranslationY((1 - sheet.value) * TV_GRID_LIFT * k + drop);
@@ -2002,6 +2053,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawer.tune(0.40f, 0.88f);   // disappearing is brisker than appearing
         drawer.target = 0;
         zone = drawerFrom == Z_TOP && !lightButtons.isEmpty() ? Z_TOP : drawerFrom == Z_STATUS ? Z_STATUS : Z_SHELF;
+        if (zone == Z_SHELF && tab != TAB_TV) zone = Z_STATUS;   // the Dock isn't there on Home and Welly
         for (Spring f : drawerFocus) f.snap(0);   // the panel goes away: its focus doesn't need to animate
         for (Spring f : profileFocus) f.snap(0);
     }
@@ -2252,6 +2304,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         statusDirty |= snap || statusChanged;
         heroDirty |= snap || heroChanged;
         drawerDirty |= snap || drawerChanged;
+        boolean houseNow = !sheetOpen && zone == Z_HOUSE, wellyNow = !sheetOpen && zone == Z_WELLY;
+        if (houseNow != houseFocused) house.setFocused(houseFocused = houseNow);
+        if (wellyNow != wellyFocused) welly.setFocused(wellyFocused = wellyNow);
         spoken.focusMoved();
     }
 
@@ -2515,6 +2570,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
+        if (code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) {
+            // The remote's voice button, anywhere on the home screen: Welly listens.
+            if (down && e.getRepeatCount() == 0) voice();
+            return true;
+        }
+        // Welly's content has the focus: it takes the keys it uses; ↑ at its top and Back come back here (the tab bar).
+        if (zone == Z_WELLY && !sheetOpen && !drawerOpen && welly.onKey(e)) return true;
         if (down && code != KeyEvent.KEYCODE_DPAD_CENTER && code != KeyEvent.KEYCODE_ENTER
                 && code != KeyEvent.KEYCODE_NUMPAD_ENTER) {
             holdArmed = false;      // another key while OK is held: no move mode
@@ -2582,6 +2644,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void back() {
         if (sheetOpen) {
             closeSheet();
+        } else if (zone == Z_HOUSE || zone == Z_WELLY) {
+            focusTabBar();      // Back in a tab's content: the tab bar
+            retarget(false);
+        } else if (tab != TAB_TV && (zone == Z_TOP || zone == Z_STATUS)) {
+            selectTab(TAB_TV);  // Back on the bar: the TV tab
+            zone = Z_TOP;
+            topIndex = TAB_TV;
+            retarget(false);
         } else if (zone == Z_DRAWER || zone == WIDGETS) {
             closeDrawer();
             retarget(false);
@@ -2744,6 +2814,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         HomeApps.Item it;
         RectF r;
         if (!sheetOpen && zone == WIDGETS) return;   // a widget is only read
+        if (!sheetOpen && zone == Z_HOUSE) {
+            click.open();
+            house.toggle();
+            return;
+        }
+        if (!sheetOpen && zone == Z_WELLY) return;   // Welly handles its own OK
         if (sheetOpen) {
             if (others.isEmpty()) return;
             it = others.get(gridIndex);
@@ -2772,8 +2848,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = drawerItems.get(drawerIndex);
             r = drawerRects[drawerIndex];
         } else if (zone == Z_TOP) {
-            if (topIndex < 3) {
+            if (topIndex < 3) {   // OK on a tab: into it, as ↓
                 selectTab(topIndex);
+                enterTab();
+                click.move();
+                retarget(false);
                 return;
             }
             it = lightButtons.get(topIndex - 3);
@@ -3053,10 +3132,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             for (int i = 0; i < others.size(); i++) out.add(a11yId(GRID, i));
             return;
         }
-        for (int i = 3; i < 3 + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
+        for (int i = 0; i < 3 + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
         out.add(a11yId(Z_STATUS, 0));
-        for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
-        for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
+        if (tab == TAB_TV) {   // the Dock shows only on the TV tab
+            for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+            for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
+        }
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
         if (drawerOpen && Prefs.quotes() && HomeData.active().length > 0) out.add(a11yId(WIDGETS, 1));
@@ -3105,7 +3186,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_TOP:
                 if (i >= 3 + lightButtons.size()) return false;
                 a11yRect.set(topRects[i]);
-                dy = (i < 3 ? heroLayer : status).getTranslationY();
+                dy = (i < 3 ? tabBar : status).getTranslationY();
                 break;
             case Z_CARDS:
                 if (i >= Math.min(3, cards.size())) return false;
@@ -3195,7 +3276,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 widgetIndex = i;
                 break;
             case Z_TOP:
-                if (i >= 3 + lightButtons.size() || (i < 3 && !picksOn())) return;
+                if (i >= 3 + lightButtons.size()) return;
                 if (drawerOpen) closeDrawer();
                 topIndex = i;
                 if (i < 3) selectTab(i);
@@ -3208,6 +3289,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_SHELF:
                 if (i >= shelf.size()) return;
                 if (drawerOpen) closeDrawer();
+                selectTab(TAB_TV);
                 shelfIndex = i;
                 break;
             case Z_STATUS:
@@ -3313,7 +3395,103 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topRects[3 + i].set(x - b, cy - b / 2, x, cy + b / 2);
             x -= b + L_BUTTON_GAP * k;
         }
+        layoutTabs();
         statusDirty = true;
+    }
+
+    /** The tab bar's capsule and its three segments (topRects 0 to 2), centred at the top: measured here, not drawing. */
+    private void layoutTabs() {
+        if (tabText == null) return;
+        tabLayoutGeneration = Ui.generation;
+        String[] names = tabs();
+        float total = 0;
+        for (int i = 0; i < 3; i++) {
+            tabTextW[i] = Math.max(tabText.measureText(names[i]) + 2 * TAB_PAD * k, TAB_MIN * k);
+            total += tabTextW[i];
+        }
+        float inset = TAB_INSET * k, top = TAB_TOP * k, height = TAB_H * k;
+        float left = (w - total) / 2 - inset;
+        tabBarRect.set(left, top, left + total + 2 * inset, top + height);
+        snap(tabBarRect);
+        float x = tabBarRect.left + inset;
+        for (int i = 0; i < 3; i++) {
+            topRects[i].set(x, top + inset, x + tabTextW[i], top + height - inset);
+            x += tabTextW[i];
+        }
+    }
+
+    /**
+     * The tab bar (§2): smoke glass like the pill; the selected tab is a lighter lens that slides between the
+     * segments; the focused one is a white pill with ink, 1.06×.
+     */
+    private void drawTabBar(Canvas c) {
+        if (tabLayoutGeneration != Ui.generation) layoutTabs();   // the language changed
+        if (tabBarRect.isEmpty()) return;
+        float rr = tabBarRect.height() / 2;
+        tmp.set(tabBarRect);
+        tmp.offset(0, 6 * k);
+        shadow.setColor(0x2E000000);
+        shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
+        scene.liquid(c, tabBarRect, rr, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f, 1);
+        // The lens, between the two segments it's moving between.
+        float l = Math.max(0, Math.min(2, lens.value));
+        int i0 = Math.min(1, (int) l);
+        float t = l - i0;
+        RectF a = topRects[i0], b = topRects[i0 + 1];
+        cell.set(a.left + (b.left - a.left) * t, a.top, a.right + (b.right - a.right) * t, a.bottom);
+        fill.setShader(null);
+        fill.setColor(0x2EFFFFFF);
+        c.drawRoundRect(cell, cell.height() / 2, cell.height() / 2, fill);
+        String[] names = tabs();
+        for (int i = 0; i < 3; i++) {
+            RectF r = topRects[i];
+            float f = Ui.clamp(topFocus[i].value), s = 1 + 0.06f * topFocus[i].value;
+            float selected = Ui.clamp(1 - Math.abs(lens.value - i));
+            c.save();
+            c.scale(s, s, r.centerX(), r.centerY());
+            if (f > 0.01f) {
+                float pr = r.height() / 2;
+                tmp.set(r);
+                tmp.offset(0, 8 * k * f);
+                shadow.setColor(Ui.alpha(0xFF000000, 0.25f * f));
+                shadows.draw(c, tmp, pr, SHADOW_BLUR * k, shadow);
+                fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+                c.drawRoundRect(r, pr, pr, fill);
+            }
+            tabText.setColor(blend(blend(0xB3FFFFFF, 0xFFFFFFFF, selected), INK, f));
+            c.drawText(names[i], r.centerX(), r.centerY() + Ui.halfCap(tabText), tabText);
+            c.restore();
+        }
+    }
+
+    /** The focus to the tab bar, on the selected tab. */
+    private void focusTabBar() {
+        zone = Z_TOP;
+        topIndex = tab;
+    }
+
+    /** ↓ (or OK) from the bar: into the selected tab's content. */
+    private void enterTab() {
+        if (tab == TAB_HOME) {
+            zone = Z_HOUSE;
+        } else if (tab == TAB_WELLY) {
+            zone = Z_WELLY;
+        } else {
+            zone = pillFrom == Z_HERO && hero != null ? Z_HERO : Z_SHELF;
+        }
+    }
+
+    /** The remote's voice button: the Welly tab, listening. */
+    private void voice() {
+        wake();
+        if (reordering) cancelReorder(false);
+        if (sheetOpen) closeSheet();
+        if (drawerOpen) closeDrawer();
+        selectTab(TAB_WELLY);
+        zone = Z_WELLY;
+        topIndex = TAB_WELLY;
+        retarget(false);
+        welly.listen();
     }
 
     /** Your photo's background is ready (or new photos came in): draw it. */
@@ -3321,8 +3499,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (running) updatePicks();
     };
 
+    /** Shows a tab (TV, Home, Welly): the contents cross-fade and the background frosts and dims behind Home and Welly. */
     private void selectTab(int index) {
-        tab = index;   // no tabs on the tvOS home screen any more (kept for TalkBack's older items)
+        if (index == tab) return;
+        tab = index;
+        tabAway.target = index == TAB_TV ? 0 : 1;
+        homeShown.target = index == TAB_HOME ? 1 : 0;
+        wellyShown.target = index == TAB_WELLY ? 1 : 0;
+        lens.target = index;
+        if (index != TAB_TV) pillFrom = Z_SHELF;   // back on TV, ↓ from the bar goes to the Dock
+        if (index == TAB_HOME) house.refresh();     // the lights' states, every time Home opens
+        motionDirty = true;
+        wake();
     }
 
     /**
@@ -3336,7 +3524,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Drawer or app grid open: the background lightens (by day) or darkens (at night), as a filter on the drawing.
         // (Control Center: the page dims a little behind the panel; the app grid: it lightens or darkens a lot.)
         float dd = tone(0.18f, 0.30f) * Ui.clamp(drawer.value), ds = tone(0.62f, 0.6f) * Ui.clamp(sheet.value);
-        android.graphics.ColorFilter v = dd > ds ? veil(dd, 0xFF000000) : veil(ds, blend(0xFFFFFFFF, 0xFF000000, night));
+        // Home and Welly: the background dims behind them (0.45 black by day, 0.55 at night).
+        float dt = tone(0.45f, 0.55f) * Ui.clamp(tabAway.value);
+        android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, 0xFF000000)
+                : dd > ds ? veil(dd, 0xFF000000) : veil(ds, blend(0xFFFFFFFF, 0xFF000000, night));
         if (bgTo == null || (fading && bgFrom == null)) {
             if (lightGradient == null) lightGradient = Ui.gradient(h, 0xFFF5F5F7, 0xFFE2E2E7);
             if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1E, 0xFF0B0B0D);
@@ -3362,9 +3553,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawLightImage(Canvas c, Backdrop b, float alpha) {
-        if (b.image != null) {   // the Top Shelf's photo, sharp; with the app grid open, its frosted copy over it
+        if (b.image != null) {   // the Top Shelf's photo, sharp; with the app grid (or Home, Welly), its frosted copy over it
             drawImage(c, b.image, alpha);
-            drawImage(c, b.soft, alpha * Ui.clamp(sheet.value));
+            drawImage(c, b.soft, alpha * Math.max(Ui.clamp(sheet.value), Ui.clamp(tabAway.value)));
             return;
         }
         if (night < 0.999f || b.nightImage == null) drawImage(c, b.lightImage, alpha);
@@ -3634,12 +3825,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     click.move();
                     return true;
                 }
-                // ↑: full screen on a pick; on a wallpaper, the pill.
+                // ↑: full screen on a pick; on a wallpaper, the tab bar.
                 if (hero != null) {
                     zone = Z_HERO;
                 } else {
                     pillFrom = Z_SHELF;
-                    zone = Z_STATUS;
+                    focusTabBar();
                 }
                 break;
             case Z_HERO:
@@ -3650,17 +3841,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     return true;
                 } else if (dy < 0) {
                     pillFrom = Z_HERO;
-                    zone = Z_STATUS;
+                    focusTabBar();
                 } else {
                     zone = Z_SHELF;
                 }
                 break;
             case Z_STATUS:
-                if (dx < 0 && !lightButtons.isEmpty()) {
+                // The pill ends the bar's row: ← to the round buttons, then the tabs.
+                if (dx < 0) {
                     zone = Z_TOP;
-                    topIndex = 3 + lightButtons.size() - 1;
+                    topIndex = 2 + lightButtons.size();
+                    if (topIndex < 3) selectTab(topIndex);
                 } else if (dy > 0) {
-                    zone = pillFrom == Z_HERO && hero != null ? Z_HERO : Z_SHELF;
+                    enterTab();
                 } else {
                     return true;
                 }
@@ -3670,16 +3863,29 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     int next = topIndex + dx;
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
-                    } else if (next < 3) {
+                    } else if (next < 0) {
                         return true;
                     } else {
                         topIndex = next;
+                        if (next < 3) selectTab(next);   // focusing a tab selects it (tvOS)
                     }
                 } else if (dy > 0) {
-                    zone = pillFrom == Z_HERO && hero != null ? Z_HERO : Z_SHELF;
+                    enterTab();
                 } else {
                     return true;
                 }
+                break;
+            case Z_HOUSE:
+                if (house.move(dx, dy)) {
+                    click.move();
+                    return true;
+                }
+                if (dy >= 0) return true;
+                focusTabBar();   // ↑ from the top light
+                break;
+            case Z_WELLY:
+                if (dy >= 0) return true;   // a key Welly didn't use
+                focusTabBar();
                 break;
             case Z_DRAWER:
                 if (!ccOnProfiles) {

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /*
  * 1920×1080 screenshots of the web home screen (the LG/Samsung build, which follows HomeView) into previews/:
- * light and dark, the Dock focused, the Top Shelf focused, the app grid open, and the clock without picks.
+ * light and dark, the Dock focused, the Top Shelf focused, the app grid open, the clock without picks, and the Home and
+ * Welly tabs (a light on, an answered prompt).
  * Needs Playwright (npm i playwright; its Chromium). Builds the preview first:
  *     python3 webos/build.py --preview && node tools/screenshots.js
  */
@@ -30,6 +31,7 @@ function serve() {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
+const UP2 = ['ArrowUp', 'ArrowUp'];   // from the Dock: full screen on the pick, then the tab bar
 const SHOTS = [
   // name, keys pressed after load, without picks
   ['dock', []],
@@ -38,7 +40,13 @@ const SHOTS = [
   ['full-screen', ['ArrowUp']],
   ['grid', ['ArrowDown', 'ArrowRight']],
   ['grid-scrolled', ['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown']],
-  ['control-center', ['ArrowUp', 'ArrowUp', 'Enter', 'ArrowDown']],
+  ['tv-tabs', UP2],                 // the tab bar focused on TV
+  ['home', [...UP2, 'ArrowRight', 'ArrowDown']],
+  ['home-lit', [...UP2, 'ArrowRight', 'ArrowDown', 'Enter', 'ArrowUp', 'Enter']],
+  ['welly', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown']],
+  ['welly-movie', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowRight', 'Enter']],
+  ['welly-scores', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowRight', 'ArrowRight', 'Enter']],
+  ['control-center', [...UP2, 'ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'Enter', 'ArrowDown']],
   ['clock', [], true],
 ];
 
