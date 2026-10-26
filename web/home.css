@@ -80,15 +80,31 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 100%;
   height: 100%;
   opacity: 0;
-  background: -webkit-linear-gradient(left, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.38) 21%, rgba(0, 0, 0, 0.14) 42%, rgba(0, 0, 0, 0) 70%),
-    -webkit-linear-gradient(bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.42) 16%, rgba(0, 0, 0, 0.18) 33%, rgba(0, 0, 0, 0) 55%),
-    -webkit-linear-gradient(top, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0) 22%);
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.38) 21%, rgba(0, 0, 0, 0.14) 42%, rgba(0, 0, 0, 0) 70%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.42) 16%, rgba(0, 0, 0, 0.18) 33%, rgba(0, 0, 0, 0) 55%),
-    linear-gradient(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0) 22%);
+  /* As in Apple's photo: barely any; only behind the logo (top left), the pill (top) and under the Dock. */
+  background: -webkit-radial-gradient(220px 140px, 520px 520px, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0)),
+    -webkit-linear-gradient(top, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0) 16%),
+    -webkit-linear-gradient(bottom, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0) 30%);
+  background: radial-gradient(520px 520px at 220px 140px, rgba(0, 0, 0, 0.32), rgba(0, 0, 0, 0)),
+    linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0) 16%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0) 30%);
   -webkit-transition: opacity 0.8s;
   transition: opacity 0.8s;
 }
+/* Full screen: a soft shade behind the details at the bottom left. */
+#sky .scrim::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  background: -webkit-linear-gradient(bottom, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0) 45%);
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0) 45%);
+  -webkit-transition: opacity 0.4s;
+  transition: opacity 0.4s;
+}
+.full #sky .scrim::after { opacity: 1; }
 .has-photo #sky .scrim { opacity: 1; }
 #sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.8s; transition: opacity 0.8s; }
 #sky canvas.on { opacity: 1; }
@@ -126,34 +142,67 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .drawer-open #dim { opacity: 0.18; }
 .night.drawer-open #dim { opacity: 0.3; }
 
-/* MARK: - Top Shelf: logo (or title), metadata and badges, synopsis, Play; bottom-anchored above the Dock */
+/* MARK: - Top Shelf (Apple's photo, 1:1): the title's logo top left, nothing else over the art */
 
 #hero {
   position: absolute;
+  left: 64px;
+  top: 44px;
+  width: 700px;
+  color: #FFF;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
+  -webkit-transition: opacity 0.4s;
+  transition: opacity 0.4s;
+}
+#hero.out { opacity: 0; }
+#hero .logo { display: none; max-width: 380px; max-height: 200px; -webkit-filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.35)); filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.35)); }
+#hero.has-logo .logo { display: block; }
+#hero.has-logo h1 { display: none; }
+#hero h1 { margin: 0; font-size: 76px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.02; max-height: 156px; overflow: hidden; }
+.wallpaper #hero, .wallpaper #chevron, .no-picks #hero { opacity: 0; }
+
+/* The chevron: ↑ for full screen. */
+#chevron {
+  position: absolute;
+  left: 945px;
+  top: 712px;
+  width: 30px;
+  height: 12px;
+  opacity: 0.75;
+  -webkit-transition: opacity 0.3s;
+  transition: opacity 0.3s;
+}
+#chevron::before, #chevron::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  width: 17px;
+  height: 3px;
+  border-radius: 2px;
+  background: #FFF;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+#chevron::before { left: 1px; -webkit-transform: rotate(-22deg); transform: rotate(-22deg); }
+#chevron::after { right: 1px; -webkit-transform: rotate(22deg); transform: rotate(22deg); }
+
+/* Full screen (↑ on a pick): the Dock slides away; the details come up at the bottom left. */
+#details {
+  position: absolute;
   left: 80px;
-  bottom: 520px;
+  bottom: 80px;
   width: 1000px;
   color: #FFF;
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
-  -webkit-transition: opacity 0.24s, -webkit-transform 0.36s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: opacity 0.24s, transform 0.36s cubic-bezier(0.2, 0.9, 0.3, 1);
+  opacity: 0;
+  -webkit-transform: translateY(30px);
+  transform: translateY(30px);
+  -webkit-transition: opacity 0.35s, -webkit-transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition: opacity 0.35s, transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
-#hero.out { opacity: 0; -webkit-transform: translateX(-48px); transform: translateX(-48px); }
-#hero.out.back { -webkit-transform: translateX(48px); transform: translateX(48px); }
-#hero .logo { display: none; max-width: 760px; max-height: 240px; margin-bottom: 26px; -webkit-filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45)); filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45)); }
-#hero.has-logo .logo { display: block; }
-#hero.has-logo h1 { display: none; }
-#hero h1 {
-  margin: 0 0 22px;
-  font-size: 76px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.02;
-  max-height: 156px;
-  overflow: hidden;
-}
-#hero .meta { height: 34px; font-size: 29px; font-weight: 500; line-height: 34px; color: rgba(255, 255, 255, 0.8); white-space: nowrap; }
-#hero .meta .badge {
+.full #details { opacity: 1; -webkit-transform: none; transform: none; }
+.full #chevron { opacity: 0; }
+#details .meta { height: 34px; font-size: 29px; font-weight: 500; line-height: 34px; color: rgba(255, 255, 255, 0.8); white-space: nowrap; }
+#details .meta .badge {
   display: inline-block;
   height: 27px;
   padding: 0 8px;
@@ -167,26 +216,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   color: rgba(255, 255, 255, 0.88);
   vertical-align: 3px;
   text-shadow: none;
-  -webkit-font-feature-settings: 'tnum';
-  font-feature-settings: 'tnum';
 }
-#hero .meta .badge:first-child { margin-left: 18px; }
-#hero .overview {
-  margin-top: 18px;
-  max-width: 860px;
-  max-height: 68px;
-  overflow: hidden;
-  font-size: 26px;
-  font-weight: 400;
-  line-height: 34px;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-/* ▶ Play: a Liquid Glass capsule; focused, white with ink text. */
+#details .meta .badge:first-child { margin-left: 18px; }
+#details .overview { margin: 16px 0 26px; max-width: 860px; max-height: 68px; overflow: hidden; font-size: 26px; line-height: 34px; color: rgba(255, 255, 255, 0.75); }
 #watch {
-  position: absolute;
-  left: 80px;
-  top: 596px;
+  position: relative;
   height: 60px;
   padding: 0 36px 0 30px;
   border-radius: 30px;
@@ -198,113 +232,90 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
   background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
   box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.6), inset -1px -1px 0 rgba(255, 255, 255, 0.14), 0 8px 24px rgba(0, 0, 0, 0.2);
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), opacity 0.22s, box-shadow 0.26s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), opacity 0.22s, box-shadow 0.26s;
+  text-shadow: none;
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s;
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s;
 }
 #watch .sym { width: 26px; height: 26px; vertical-align: -5px; margin-right: 12px; }
 #watch.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4); }
-#watch.out { opacity: 0; }
-.no-picks #watch, .no-picks #hero, .no-picks #dots { display: none; }
-
-#dots { position: absolute; right: 80px; top: 622px; height: 8px; font-size: 0; white-space: nowrap; }
-#dots span { display: inline-block; width: 8px; height: 8px; margin-left: 14px; border-radius: 4px; background: rgba(255, 255, 255, 0.38); -webkit-transition: background-color 0.3s; transition: background-color 0.3s; }
+#dots { position: absolute; right: 80px; bottom: 106px; height: 8px; font-size: 0; white-space: nowrap; opacity: 0; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
+.full #dots { opacity: 1; }
+#dots span { display: inline-block; width: 8px; height: 8px; margin-left: 14px; border-radius: 4px; background: rgba(255, 255, 255, 0.38); }
 #dots span.on { background: #FFF; }
 
-/* MARK: - Top right: the time and the weather, quiet, then one glass button (Control Center) */
+/* MARK: - The status pill (top right): the time and your profile's avatar, in smoke glass */
 
-#status {
+#pill {
   position: absolute;
-  top: 60px;
-  height: 60px;
-  font-size: 29px;
-  font-weight: 600;
-  line-height: 60px;
+  right: 45px;
+  top: 48px;
+  height: 57px;
+  padding: 0 4px 0 24px;
+  border-radius: 29px;
   white-space: nowrap;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 57px;
   color: #FFF;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.45);
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px rgba(0, 0, 0, 0.16);
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s, opacity 0.25s;
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s, opacity 0.25s;
 }
-#status .sym { width: 30px; height: 30px; vertical-align: -6px; margin: 0 8px 0 22px; }
-.no-picks #status { color: #1D1D1F; text-shadow: none; }
-.night.no-picks #status { color: #F5F5F7; }
+#pill .time { display: inline-block; margin-right: 20px; vertical-align: top; }
+#pill .avatar { display: inline-block; width: 49px; height: 49px; margin-top: 4px; border-radius: 25px; background-size: cover; background-position: center; vertical-align: top; }
+#pill.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
+.no-picks #pill, .night.no-picks #pill { background: rgba(52, 62, 76, 0.52); }
 
-/* Crypto quotes (show_crypto) or what's playing: left of the time. */
+/* Crypto quotes (show_crypto) or what's playing: left of the pill. */
 #quotes {
   position: absolute;
-  top: 76px;
+  top: 63px;
   height: 28px;
   font-size: 21px;
   line-height: 28px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
 }
 #quotes .q { display: inline-block; margin-left: 24px; }
 #quotes svg { width: 15px; height: 15px; vertical-align: -1px; margin-right: 6px; fill: rgba(255, 255, 255, 0.6); }
-.no-picks #quotes { color: #8E8E93; }
+#clock { display: none; }
 
+/* Extra top buttons (Top Buttons in Home Settings), left of the pill */
 .round {
   position: absolute;
-  top: 60px;
+  top: 46px;
   width: 60px;
   height: 60px;
   border-radius: 30px;
   color: #FFF;
-  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.12));
-  background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.12));
-  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.6), inset -1px -1px 0 rgba(255, 255, 255, 0.14), 0 6px 20px rgba(0, 0, 0, 0.18);
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s, background-color 0.17s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s, background-color 0.17s;
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
 }
 .round .sym { position: absolute; left: 16px; top: 16px; width: 28px; height: 28px; }
-.round.focus { background: #FFF; color: #1D1D1F; -webkit-transform: scale(1.12); transform: scale(1.12); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3); }
-.round .tip {
-  position: absolute;
-  top: 82px;
-  right: -6px;
-  text-align: right;
-  font-size: 23px;
-  font-weight: 600;
-  white-space: nowrap;
-  color: #FFF;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  -webkit-transition: opacity 0.14s;
-  transition: opacity 0.14s;
-}
-.round.focus .tip { opacity: 1; }
-.no-picks .round { color: #1D1D1F; background: rgba(255, 255, 255, 0.7); }
-.night.no-picks .round { color: #FFF; background: rgba(60, 60, 66, 0.6); }
-.night.no-picks .round.focus, .no-picks .round.focus { background: #FFF; color: #1D1D1F; }
-.no-picks .round .tip { color: #1D1D1F; text-shadow: none; }
-.night.no-picks .round .tip { color: #F5F5F7; }
+.round.focus { background: #FFF; color: #1D1D1F; }
+.round .tip { display: none; }
 
-/* Without a TMDB key (or picks yet): the date and the time in the Top Shelf. */
-#clock {
-  position: absolute;
-  left: 80px;
-  top: 270px;
-  font-size: 200px;
-  font-weight: 200;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #1D1D1F;
-  display: none;
-}
-#clock .date { display: block; font-size: 38px; font-weight: 500; letter-spacing: 0; margin-top: 18px; color: #6E6E73; }
-.no-picks #clock { display: block; }
-.night #clock { color: #F5F5F7; }
-.night #clock .date { color: rgba(245, 245, 247, 0.62); }
+/* MARK: - Dock: one Liquid Glass bar of 6 tiles, 251 × 150 (5:3), 49 apart; focused, a tile grows 1.23× in place */
 
-/* MARK: - Dock: one Liquid Glass bar; 5 tiles of 320 × 192 (tvOS's 5:3), 40 apart; focused, a tile rises to 1.15× */
+#platter, #tiles, #apps {
+  -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.4s;
+  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.4s;
+}
+.full #platter, .full #tiles { -webkit-transform: translateY(300px); transform: translateY(300px); opacity: 0; }
+.full #apps.sheet { -webkit-transform: translateY(1022px); transform: translateY(1022px); opacity: 0; }
+.drawer-open #pill, .drawer-open #quotes { opacity: 0; }
 
 #platter {
   position: absolute;
-  top: 688px;
-  height: 256px;
-  border-radius: 60px;
+  top: 782px;
+  height: 228px;
+  border-radius: 64px;
   overflow: hidden;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
 }
@@ -320,10 +331,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: inherit;
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.42));
   background: linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.42));
-  /* The rim: a catchlight along the top-left edge, a faint bounce along the bottom right, a hairline outside. */
   box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.75), inset -1px -1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
-/* The catchlight: a soft glow in the top-left corner, as if a light sat up there. */
 #platter .tint::after, #drawer .tint::after {
   content: '';
   position: absolute;
@@ -332,12 +341,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 46%;
   height: 70%;
   border-radius: inherit;
-  background: -webkit-radial-gradient(0 0, ellipse, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 70%);
-  background: radial-gradient(ellipse at 0 0, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 70%);
+  background: -webkit-radial-gradient(0 0, ellipse, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 70%);
+  background: radial-gradient(ellipse at 0 0, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 70%);
 }
+/* Over a photo the Dock is a smoky glass, as in Apple's photo: the art shows through, darker. */
 .has-photo #platter .tint, .has-photo #drawer .tint {
-  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.18));
-  background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.18));
+  background: -webkit-linear-gradient(top, rgba(70, 70, 64, 0.5), rgba(48, 48, 44, 0.46));
+  background: linear-gradient(rgba(70, 70, 64, 0.5), rgba(48, 48, 44, 0.46));
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .night #platter { box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4); }
 .night #platter .tint, .night #drawer .tint {
@@ -346,49 +357,43 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .night.has-photo #platter .tint, .night.has-photo #drawer .tint {
-  background: -webkit-linear-gradient(top, rgba(28, 28, 32, 0.26), rgba(17, 17, 19, 0.2));
-  background: linear-gradient(rgba(28, 28, 32, 0.26), rgba(17, 17, 19, 0.2));
+  background: -webkit-linear-gradient(top, rgba(40, 40, 40, 0.5), rgba(20, 20, 22, 0.46));
+  background: linear-gradient(rgba(40, 40, 40, 0.5), rgba(20, 20, 22, 0.46));
 }
 
-#tiles {
-  position: absolute;
-  left: 0;
-  top: 0;
-  -webkit-transition: -webkit-transform 0.36s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: transform 0.36s cubic-bezier(0.2, 0.9, 0.3, 1);
-}
+#tiles { position: absolute; left: 0; top: 0; }
 
 /*
- * An app tile as tvOS composes a layered icon: the brand's backdrop (painted by home.js), depth (a lift at the top
- * left and a shade toward the bottom), the emblem with its own soft shadow, a glass rim and a gloss band. Focused, it
- * rises (ambient and key shadows), sways in 3D toward where the focus came from, and the emblem and the gloss shift
- * against each other (parallax).
+ * An app tile as tvOS composes a layered icon: the backdrop (painted by home.js), depth (a lift at the top left and a
+ * shade toward the bottom), the emblem with its own soft shadow, a glass rim and a gloss band. Focused, it grows in
+ * place, sways in 3D toward where the focus came from, and the emblem and the gloss shift against each other.
  */
 .tile, .cell .face {
   position: absolute;
-  top: 720px;
-  width: 320px;
-  height: 192px;
-  border-radius: 28px;
+  top: 822px;
+  width: 251px;
+  height: 150px;
+  border-radius: 24px;
   overflow: hidden;
   color: #FFF;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2), inset 0 -40px 50px -30px rgba(0, 0, 0, 0.28);
-  -webkit-transition: -webkit-transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.34s, opacity 0.3s;
-  transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.34s, opacity 0.3s;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28);
+  -webkit-transition: -webkit-transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.2), box-shadow 0.34s, opacity 0.3s;
+  transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.2), box-shadow 0.34s, opacity 0.3s;
 }
-.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); -webkit-filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.35)); filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.35)); }
-/* a logo lifted off the TV's icon (home.js): as large as the tile allows */
+.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); -webkit-filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.35)); filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.35)); }
 .tile img.logo, .cell .face img.logo { width: 66%; height: 46%; max-width: none; max-height: none; object-fit: contain; }
+/* An app with only a launcher icon: the icon, square, centred on its colour. */
+.tile img.icon, .cell .face img.icon { width: auto; height: 58%; max-width: none; max-height: none; border-radius: 18%; }
 .tile .word, .cell .face .word {
   position: absolute;
   left: 8%;
   right: 8%;
   top: 50%;
-  margin-top: -21px;
-  height: 42px;
-  line-height: 42px;
+  margin-top: -19px;
+  height: 38px;
+  line-height: 38px;
   text-align: center;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.015em;
   white-space: nowrap;
@@ -396,11 +401,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   text-overflow: ellipsis;
   color: #FFF;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-  -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
-.tile .sym.big, .cell .face .sym.big { position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px; color: #FFF; }
-/* Depth and gloss (::before): the lift at the top left and a diagonal gloss band over the upper half. */
+.tile .sym.big, .cell .face .sym.big { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; color: #FFF; }
 .tile::before, .cell .face::before {
   content: '';
   position: absolute;
@@ -416,7 +418,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
   pointer-events: none;
 }
-/* The glass rim (::after): bright at the top left, faint at the bottom right; a hairline all round. */
 .tile::after, .cell .face::after {
   content: '';
   position: absolute;
@@ -424,11 +425,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   top: 0;
   right: 0;
   bottom: 0;
-  border-radius: 28px;
-  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.42), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
   pointer-events: none;
 }
-/* The glint: a diagonal band that sweeps once across the tile when it takes the focus. */
 .glint {
   position: absolute;
   left: -40%;
@@ -448,49 +448,25 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.3, 1);
 }
 .tile.focus, .cell.focus .face {
-  -webkit-transform: translateY(-6px) scale(1.15);
-  transform: translateY(-6px) scale(1.15);
-  box-shadow: 0 22px 44px rgba(0, 0, 0, 0.26), 0 34px 22px -14px rgba(0, 0, 0, 0.3), inset 0 -40px 50px -30px rgba(0, 0, 0, 0.28);
+  -webkit-transform: scale(1.23);
+  transform: scale(1.23);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 30px 20px -14px rgba(0, 0, 0, 0.3), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28);
   z-index: 2;
 }
-/* The sway: the focused tile tilts toward where the focus came from, then settles (tvOS's parallax, near-subliminal). */
 .lean-r .tile.focus, .lean-r .cell.focus .face { -webkit-animation: sway-r 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-r 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
 .lean-l .tile.focus, .lean-l .cell.focus .face { -webkit-animation: sway-l 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-l 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
-@-webkit-keyframes sway-r { 0% { -webkit-transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(-5deg); } 100% { -webkit-transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(0); } }
-@keyframes sway-r { 0% { transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(-5deg); } 100% { transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(0); } }
-@-webkit-keyframes sway-l { 0% { -webkit-transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(5deg); } 100% { -webkit-transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(0); } }
-@keyframes sway-l { 0% { transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(5deg); } 100% { transform: translateY(-6px) scale(1.15) perspective(900px) rotateY(0); } }
-/* Parallax: the emblem leans with the travel, the gloss the other way. */
+@-webkit-keyframes sway-r { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(-5deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
+@keyframes sway-r { 0% { transform: scale(1.23) perspective(900px) rotateY(-5deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
+@-webkit-keyframes sway-l { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(5deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
+@keyframes sway-l { 0% { transform: scale(1.23) perspective(900px) rotateY(5deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
 .lean-r .tile.focus img, .lean-r .cell.focus .face img { -webkit-transform: translate(-48%, -50%); transform: translate(-48%, -50%); }
 .lean-l .tile.focus img, .lean-l .cell.focus .face img { -webkit-transform: translate(-52%, -50%); transform: translate(-52%, -50%); }
-.lean-r .tile.focus::before, .lean-r .cell.focus .face::before { -webkit-transform: translateX(-18px); transform: translateX(-18px); }
-.lean-l .tile.focus::before, .lean-l .cell.focus .face::before { -webkit-transform: translateX(18px); transform: translateX(18px); }
-.night .tile { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32), inset 0 -40px 50px -30px rgba(0, 0, 0, 0.28); }
-.night .tile.focus, .night .cell.focus .face { box-shadow: 0 22px 44px rgba(0, 0, 0, 0.42), 0 34px 22px -14px rgba(0, 0, 0, 0.45), inset 0 -40px 50px -30px rgba(0, 0, 0, 0.28); }
-.more { position: absolute; width: 17px; height: 17px; color: rgba(0, 0, 0, 0.6); }
+.lean-r .tile.focus::before, .lean-r .cell.focus .face::before { -webkit-transform: translateX(-16px); transform: translateX(-16px); }
+.lean-l .tile.focus::before, .lean-l .cell.focus .face::before { -webkit-transform: translateX(16px); transform: translateX(16px); }
+.night .tile { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28); }
+.more { position: absolute; width: 17px; height: 17px; color: rgba(255, 255, 255, 0.8); }
 .more.back { -webkit-transform: scaleX(-1); transform: scaleX(-1); }
-.night .more, .has-photo .more { color: rgba(255, 255, 255, 0.8); }
-
-/* The focused app's name, centred under it; resting apps have none. */
-#dockname {
-  position: absolute;
-  top: 946px;
-  width: 400px;
-  margin-left: -200px;
-  text-align: center;
-  font-size: 26px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #1D1D1F;
-  opacity: 0;
-  -webkit-transition: opacity 0.2s;
-  transition: opacity 0.2s;
-}
-#dockname.on { opacity: 1; }
-.night #dockname, .has-photo #dockname { color: #FFF; }
-.has-photo #dockname { text-shadow: 0 1px 16px rgba(0, 0, 0, 0.5); }
+#dockname { display: none; }
 
 /* MARK: - Control Center: a floating Liquid Glass panel on the right, the art still showing behind it */
 
@@ -516,6 +492,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #drawer .body { position: absolute; left: 28px; top: 28px; right: 28px; bottom: 28px; }
 .no-picks #drawer { color: #1D1D1F; }
 .night #drawer { color: #FFF; }
+#drawer .profiles { position: absolute; left: 0; right: 0; top: 0; height: 130px; }
+#drawer .who { position: absolute; top: 0; width: 104px; text-align: center; }
+#drawer .who .face { display: block; width: 84px; height: 84px; margin: 0 auto; border-radius: 42px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); -webkit-transition: -webkit-transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.2s; transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.2s; }
+#drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.25); }
+#drawer .who .name { display: block; margin-top: 10px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#drawer .who.focus .face { -webkit-transform: scale(1.12); transform: scale(1.12); box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.4); }
 #drawer .time { font-size: 57px; font-weight: 300; line-height: 66px; letter-spacing: -0.01em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 #drawer .date { font-size: 25px; font-weight: 500; line-height: 32px; opacity: 0.72; }
 
@@ -566,15 +548,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet.open { opacity: 1; visibility: visible; pointer-events: auto; -webkit-transform: none; transform: none; -webkit-transition-delay: 0s; transition-delay: 0s; }
 .sheet h2 { position: absolute; left: 0; right: 0; top: 84px; margin: 0; text-align: center; font-size: 40px; font-weight: 600; }
 
-/* The app grid (↓ from the Dock): no scrim or title of its own, it comes up on the Dock's columns under the risen page. */
-#apps { background: none; -webkit-transform: translateY(640px); transform: translateY(640px); }
-#apps.open { -webkit-transform: none; transform: none; }
+/* The app grid: always there under the Dock (its first row peeks at the bottom of the screen); ↓ lifts the page 722. */
+#apps.sheet { background: none; opacity: 1; visibility: visible; pointer-events: none; z-index: 1; -webkit-transform: translateY(722px); transform: translateY(722px); }
+#apps.sheet.open { pointer-events: auto; -webkit-transform: none; transform: none; }
 #apps h2 { display: none; }
 #apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1); }
-.cell { position: absolute; width: 320px; height: 192px; }
+.cell { position: absolute; width: 251px; height: 150px; }
 .cell .face { top: 0; left: 0; }
-.cell .label { position: absolute; left: -40px; right: -40px; top: 226px; text-align: center; font-size: 26px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
-.night .cell .label { color: #FFF; }
+.cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+.night .cell .label, .has-photo .cell .label { color: #FFF; }
 .cell.focus .label { opacity: 1; }
 
 #settings .box, #shelfedit .box, #langpick .box, #about .box {

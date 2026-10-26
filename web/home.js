@@ -86,9 +86,11 @@
   // Apps shown at once, as on Android: 8 (today's smallest tiles, 178 wide); the shelf scrolls for the rest. The
   // built-in list keeps 8 too.
   // The Dock shows 5 at once (tvOS's 5:3 tiles, 300 × 180) and scrolls for the rest.
-  // tvOS's grid (DESIGN-TVOS.md): 5 columns of 320 × 192, 40 apart, between 80 px side margins; rows 292 apart.
-  var SHELF_VISIBLE = 5, FEW_APPS = 8, TILE_W = 320, TILE_H = 192, TILE_GAP = 40, DOCK_PAD = 32, DOCK_TOP = 688;
-  var GRID_LIFT = 640, GRID_ROW = 292, GRID_TOP = 372, GRID_LEFT = 80;
+  // As in Apple's photo (DESIGN-TVOS.md §1): 6 columns of 251 × 150, 49 apart, 85 px margins; the Dock's glass pads them
+  // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
+  var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 251, TILE_H = 150, TILE_GAP = 49, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
+  var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
+  var AERIALS = ['valley', 'coast', 'earth', 'aurora'];
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -261,6 +263,35 @@
     }
   }
 
+  /** The icon's most vivid colour, weighted by saturation (the hue an app's icon is "about"), or null. */
+  function dominant(img) {
+    try {
+      var c = document.createElement('canvas'), g = c.getContext('2d');
+      c.width = c.height = 24;
+      g.drawImage(img, 0, 0, 24, 24);
+      var px = g.getImageData(0, 0, 24, 24).data, bins = {}, best = null, bestW = 0;
+      for (var i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 200) continue;
+        var mx = Math.max(px[i], px[i + 1], px[i + 2]), mn = Math.min(px[i], px[i + 1], px[i + 2]);
+        var sat = mx ? (mx - mn) / mx : 0, key = (px[i] >> 5) + ',' + (px[i + 1] >> 5) + ',' + (px[i + 2] >> 5);
+        var b = bins[key] || (bins[key] = {w: 0, r: 0, g: 0, b: 0});
+        var w = 0.15 + sat * sat * (mx / 255);
+        b.w += w; b.r += px[i] * w; b.g += px[i + 1] * w; b.b += px[i + 2] * w;
+        if (b.w > bestW) { bestW = b.w; best = b; }
+      }
+      return best ? [Math.round(best.r / best.w), Math.round(best.g / best.w), Math.round(best.b / best.w)] : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** A rich tvOS backdrop from one colour: lighter at the top left, darker at the bottom right. */
+  function richPaint(box, rgb) {
+    function tone(f) { return 'rgb(' + rgb.map(function (v) { return Math.max(0, Math.min(255, Math.round(f > 1 ? v + (255 - v) * (f - 1) : v * f))); }).join(',') + ')'; }
+    box.style.background = '-webkit-linear-gradient(-35deg, ' + tone(1.12) + ', ' + tone(1) + ' 45%, ' + tone(0.72) + ')';
+    box.style.background = 'linear-gradient(125deg, ' + tone(1.12) + ', ' + tone(1) + ' 45%, ' + tone(0.72) + ')';
+  }
+
   /** An app's face: its logo on its brand color (or its name, when the icon can't be read). */
   function face(app, box, wordSize) {
     if (!app.icon && /(^|\.)settings$/i.test(app.id)) {   // the TV's settings: graphite with a white gear, as tvOS draws it
@@ -283,7 +314,13 @@
         img.onload = function () {
           img.onload = null;
           if (lifted[url] === undefined) lifted[url] = lift(img);
-          if (lifted[url]) showLogo(img, box, top, bottom, lifted[url], !k);
+          if (lifted[url]) { showLogo(img, box, top, bottom, lifted[url], !k); return; }
+          // A picture, not a logo on a flat colour: the composer puts the icon, rounded, on a backdrop of its colour.
+          if (!k) {
+            var rgb = dominant(img);
+            if (rgb) richPaint(box, rgb);
+            img.className = 'icon';
+          }
         };
       }
       img.src = url;
@@ -335,19 +372,21 @@
 
   function updateFocus() {
     var i, list;
-    list = $('buttons').children;
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.TOP && st.top === 3 + i);
+    setClass($('pill'), 'focus', st.zone === Z.TOP);
     setClass($('watch'), 'focus', st.zone === Z.HERO);
+    setClass(body, 'full', st.zone === Z.HERO);
     list = $('tiles').children;
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.SHELF && st.shelf === i);
     revealShelf();
     placeName();
-    list = document.querySelectorAll('#drawer .key');
+    list = document.querySelectorAll('#drawer .who');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
+    list = document.querySelectorAll('#drawer .key');
+    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === people().length + i);
     list = document.querySelectorAll('#apps .cell');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.APPS && st.grid === i);
     // The grid shows 2 rows under the risen Dock; past them, the page (Dock and all) scrolls on.
-    var rows = Math.max(1, Math.ceil(others.length / 5)), r = Math.floor(st.grid / 5), first = Math.max(0, Math.min(rows - 2, r - 1));
+    var rows = Math.max(1, Math.ceil(others.length / COLS)), r = Math.floor(st.grid / COLS), first = Math.max(0, Math.min(rows - 2, r - 1));
     var grid = st.zone === Z.APPS;
     $('apps').lastChild.style.webkitTransform = $('apps').lastChild.style.transform = 'translateY(' + (-first * GRID_ROW) + 'px)';
     var home = grid ? 'translateY(' + (-(GRID_LIFT + first * GRID_ROW)) + 'px)' : '';
@@ -389,34 +428,31 @@
   // MARK: - Top: the status pill, the buttons, the quotes
 
   function renderTop() {
-    var buttons = $('buttons');
-    buttons.innerHTML = '';
-    // One glass button, as on tvOS: Control Center (Live TV, the inputs and the settings live there).
-    var r = el('button', 'round last', buttons);
-    r.style.left = (1840 - 60) + 'px';
-    sym('tv_settings', r);
-    el('div', 'tip', r, tr('Control Center'));
-    hover(r, Z.TOP, 3);
+    $('buttons').innerHTML = '';
+    hover($('pill'), Z.TOP, 3);
     hover($('watch'), Z.HERO, 0);
     renderPill();
   }
 
-  /** The time and the weather at the top right, left of the button: plain text, no box. */
+  /** The profiles: profiles= in config.properties (avatars in app/assets/avatars), else one with your memoji.png. */
+  function people() {
+    var list = CONFIG.profiles && CONFIG.profiles.length ? CONFIG.profiles : [{name: tr('Me'), avatar: CONFIG.defaultAvatar || 'default-1.png'}];
+    return list;
+  }
+
+  function person() {
+    var list = people();
+    return list[Math.max(0, Math.min(list.length - 1, Prefs.profile()))];
+  }
+
+  function avatarUrl(p) { return 'url(avatars/' + p.avatar + ')'; }
+
+  /** The status pill: the time, then the current profile's avatar; the quotes (or what's playing) left of it. */
   function renderPill() {
-    var status = $('status'), w = Data.weather, right = 1920 - (1840 - 60) + 24;
-    status.innerHTML = '';
-    status.style.right = right + 'px';
-    status.appendChild(document.createTextNode(formatDate('format|h:mm', Date.now())));
-    if (Prefs.weather() && w && !isNaN(w.temp)) {
-      sym(Data.symbol(w.code, w.isDay), status);
-      status.appendChild(document.createTextNode(Data.degrees(w.temp)));
-    }
-    $('quotes').style.right = (right + status.offsetWidth + 28) + 'px';
-    var cc = $('drawer').querySelector('.time');
-    if (cc) {
-      cc.textContent = formatDate('format|h:mm', Date.now());
-      cc.nextSibling.textContent = formatDate('format|EEEE, MMMM d', Date.now());
-    }
+    var pill = $('pill');
+    pill.firstChild.textContent = formatDate('format|h:mm a', Date.now());
+    pill.lastChild.style.backgroundImage = avatarUrl(person());
+    $('quotes').style.right = (45 + pill.offsetWidth + 24) + 'px';
   }
 
   function renderQuotes() {
@@ -438,39 +474,61 @@
     setClass(body, 'no-picks', !list.length);
     var same = list.length === cards.length;
     for (var i = 0; same && i < list.length; i++) same = list[i].id === cards[i].id && list[i].backdrop === cards[i].backdrop && list[i].meta === cards[i].meta;
-    if (same && $('hero').children[1].textContent) return;
+    if (same && photoUrl !== null) return;
     cards = list;
     st.page = Math.min(st.page, Math.max(0, list.length - 1));
     if (!list.length && st.zone === Z.HERO) st.zone = Z.SHELF;
-    showPage(st.page, 0);
+    follow();
     updateFocus();
   }
 
-  /** Pick `index` on the Top Shelf: its photo cross-fades in and its text slides in from `dir` (0: at once). */
+  /** The focused Dock app's picks (tvOS shows the focused app's Top Shelf). */
+  function appPicks() {
+    var app = shelf[st.shelf], out = [];
+    for (var i = 0; app && i < cards.length; i++) if (Data.appFor(cards[i].app) === app) out.push(i);
+    return out;
+  }
+
+  /** The background for the focused app: its pick, or a wallpaper when it has none. */
+  function follow(dir) {
+    var own = appPicks();
+    if (own.length) {
+      showPage(own.indexOf(st.page) >= 0 ? st.page : own[0], dir || 0);
+    } else {
+      showWallpaper();
+    }
+  }
+
+  /** A bundled aerial-style wallpaper (a new one each hour), with nothing over it. */
+  function showWallpaper() {
+    setClass(body, 'wallpaper', true);
+    var url = 'aerials/' + AERIALS[Math.floor(Date.now() / 3600000) % AERIALS.length] + '.jpg';
+    photo(url);
+    backdrop(url);
+  }
+
+  /** Pick `index` on the Top Shelf: its photo cross-fades in, its logo top left, its details for full screen. */
   function showPage(index, dir) {
     st.page = index;
+    setClass(body, 'wallpaper', false);
     var p = cards[index];
     photo(p ? Data.image(p.backdrop, 'original') : '');
     backdrop(p ? Data.image(p.backdrop, 'w300') : '');
-    var dots = $('dots');
+    var dots = $('dots'), own = appPicks();
     dots.innerHTML = '';
-    for (var d = 0; cards.length > 1 && d < cards.length; d++) setClass(el('span', '', dots), 'on', d === index);
-    var hero = $('hero'), watch = $('watch');
+    for (var d = 0; own.length > 1 && d < own.length; d++) setClass(el('span', '', dots), 'on', own[d] === index);
+    var hero = $('hero');
     clearTimeout(heroTimer);
     if (!dir) { fillHero(p); return; }
-    setClass(hero, 'back', dir < 0);
     setClass(hero, 'out', true);
-    setClass(watch, 'out', true);
     heroTimer = setTimeout(function () {
       fillHero(cards[st.page]);
-      setClass(hero, 'back', dir > 0);
       setClass(hero, 'out', false);
-      setClass(watch, 'out', false);
-    }, 200);
+    }, 220);
   }
 
   function fillHero(p) {
-    var hero = $('hero'), watch = $('watch');
+    var hero = $('hero'), watch = $('watch'), details = $('details');
     if (!p) { hero.children[1].textContent = ''; return; }
     // The title's own logo (TMDB's title treatment) when it has one; the title in type otherwise.
     var logo = hero.children[0], url = p.logo ? Data.image(p.logo, 'w500') : '';
@@ -479,7 +537,7 @@
     if (url) logo.setAttribute('src', url); else logo.removeAttribute('src');
     if (url && logo.complete && logo.naturalWidth) setClass(hero, 'has-logo', true);
     hero.children[1].textContent = p.title;
-    var meta = hero.children[2];
+    var meta = details.children[0];
     meta.innerHTML = '';
     meta.appendChild(document.createTextNode(p.year ? (p.meta ? p.meta.replace(/ · /, ' · ' + p.year + ' · ') : p.year) : p.meta || ''));
     var badges = [];
@@ -488,7 +546,7 @@
     var extra = typeof p.badges === 'string' ? p.badges.split(',') : p.badges || [];
     for (var i = 0; i < extra.length; i++) if (extra[i]) badges.push(extra[i]);
     for (var b = 0; b < badges.length; b++) el('span', 'badge', meta, badges[b]);
-    hero.children[3].textContent = p.overview || '';
+    details.children[1].textContent = p.overview || '';
     var app = Data.appFor(p.app);
     watch.innerHTML = '';
     watch.style.display = app ? '' : 'none';
@@ -531,18 +589,12 @@
     img.src = url;
   }
 
-  /** ← → on the Top Shelf (or by itself): the next pick. */
+  /** ← → in full screen (or by itself): the focused app's next pick. */
   function page(dir) {
-    if (cards.length < 2) return false;
-    showPage((st.page + dir + cards.length) % cards.length, dir);
+    var own = appPicks(), at = own.indexOf(st.page);
+    if (own.length < 2) return false;
+    showPage(own[(at + dir + own.length) % own.length], dir);
     return true;
-  }
-
-  /** The focused Dock app's own pick, when the Top Shelf has one (tvOS shows the focused app's shelf). */
-  function shelfPick() {
-    var app = st.zone === Z.SHELF && shelf[st.shelf];
-    for (var i = 0; app && i < cards.length; i++) if (Data.appFor(cards[i].app) === app) return i;
-    return -1;
   }
 
   var bgUrl = null, bgFront = 'bgA';
@@ -606,14 +658,14 @@
   var shelfFirst = 0, tileStep = 0, tileLeft = 0;
 
   function renderShelf() {
-    var n = Math.min(shelf.length, SHELF_VISIBLE), gap = TILE_GAP, pad = DOCK_PAD, tw = TILE_W, th = TILE_H;
+    var n = Math.min(shelf.length, SHELF_VISIBLE), gap = TILE_GAP, pad = DOCK_PAD_X, tw = TILE_W, th = TILE_H;
     var width = n * tw + Math.max(0, n - 1) * gap, left = (1920 - width) / 2;
     var platter = $('platter');
     platter.style.display = n ? '' : 'none';
     platter.style.left = (left - pad) + 'px';
     platter.style.width = (width + 2 * pad) + 'px';
     platter.style.top = DOCK_TOP + 'px';
-    platter.style.height = (th + 2 * pad) + 'px';
+    platter.style.height = (th + 2 * DOCK_PAD_Y) + 'px';
     // The glass's copy of the photo sits where the photo is on screen.
     var bleed = platter.firstChild;
     bleed.style.left = -(left - pad) + 'px';
@@ -625,7 +677,7 @@
     shelfFirst = Math.max(0, Math.min(shelfFirst, shelf.length - n));
     for (var i = 0; i < shelf.length; i++) {
       var t = el('div', 'tile', tiles);
-      t.style.top = (DOCK_TOP + pad) + 'px';
+      t.style.top = (DOCK_TOP + DOCK_PAD_Y) + 'px';
       t.style.width = tw + 'px';
       t.style.height = th + 'px';
       face(shelf[i], t, wordFit(shelf[i].title, tw, 32));
@@ -640,10 +692,11 @@
       var arrow = sym('chevron_right', platter);
       arrow.className += a ? ' more' : ' more back';
       arrow.style.left = (a ? width + 2 * pad - 13 : 13) - 8.5 + 'px';
-      arrow.style.top = (pad + th / 2 - 8.5) + 'px';
+      arrow.style.top = (DOCK_PAD_Y + th / 2 - 8.5) + 'px';
     }
     st.shelf = Math.min(st.shelf, Math.max(0, shelf.length - 1));
     placeTiles();
+    if (st.zone !== Z.APPS) renderApps();   // the grid is always there: its first row peeks under the Dock
   }
 
   /** The focused app's name, under its tile. */
@@ -696,17 +749,24 @@
     drawerItems.push({label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }});
     drawerItems.push({label: tr('Home Settings'), symbol: 'settings', run: openSettings});
     if (TV.canOpenSettings) drawerItems.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
-    el('div', 'time', d, formatDate('format|h:mm', Date.now()));
-    el('div', 'date', d, formatDate('format|EEEE, MMMM d', Date.now()));
+    // Profiles first, as on tvOS: the avatars, the current one ringed; OK switches.
+    var row = el('div', 'profiles', d), list = people(), P = list.length;
+    for (var w = 0; w < P; w++) {
+      var who = el('div', 'who' + (list[w] === person() ? ' on' : ''), row);
+      who.style.left = (w * 116) + 'px';
+      el('span', 'face', who).style.backgroundImage = avatarUrl(list[w]);
+      el('span', 'name', who, list[w].name);
+      hover(who, Z.DRAWER, w);
+    }
     var rows = Math.min(4, Math.ceil(drawerItems.length / 2));
     drawerItems = drawerItems.slice(0, rows * 2);
     for (var k = 0; k < drawerItems.length; k++) {
       var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : ''), d);
       key.style.left = (k % 2) * 240 + 'px';
-      key.style.top = (128 + Math.floor(k / 2) * 136) + 'px';
+      key.style.top = (148 + Math.floor(k / 2) * 136) + 'px';
       sym(item.symbol, key);
       el('div', 'label', key, item.label);
-      hover(key, Z.DRAWER, k);
+      hover(key, Z.DRAWER, P + k);
     }
     var w = el('div', '', d);
     w.id = 'weather';
@@ -753,7 +813,7 @@
     if (!drawerItems.length) return;
     drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
-    st.drawer = 0;
+    st.drawer = Math.max(0, Math.min(people().length - 1, Prefs.profile()));
     renderPill();
     updateFocus();
   }
@@ -772,7 +832,7 @@
     var grid = sheet.lastChild;
     grid.innerHTML = '';
     for (var i = 0; i < others.length; i++) {
-      var r = Math.floor(i / 5), c = i % 5, cell = el('div', 'cell', grid);
+      var r = Math.floor(i / COLS), c = i % COLS, cell = el('div', 'cell', grid);
       cell.style.left = (GRID_LEFT + c * (TILE_W + TILE_GAP)) + 'px';
       cell.style.top = (GRID_TOP + r * GRID_ROW) + 'px';
       var f = el('div', 'face', cell);
@@ -1064,7 +1124,13 @@
         if (shelf[st.shelf]) launcher(shelf[st.shelf].id, shelf[st.shelf].title)();
         return;
       case Z.DRAWER:
-        if (drawerItems[st.drawer]) drawerItems[st.drawer].run();
+        if (st.drawer < people().length) {   // a profile: switch to it
+          Prefs.set('profile', st.drawer);
+          renderPill();
+          renderDrawer();
+          return;
+        }
+        if (drawerItems[st.drawer - people().length]) drawerItems[st.drawer - people().length].run();
         return;
       case Z.APPS:
         if (others[st.grid]) launcher(others[st.grid].id, others[st.grid].title)();
@@ -1089,16 +1155,17 @@
     switch (st.zone) {
       case Z.SHELF:
         if (dx) {
+          var was = st.shelf;
           st.shelf = Math.max(0, Math.min(shelf.length - 1, st.shelf + dx));
-          var own = shelfPick();
-          if (own >= 0 && own !== st.page) showPage(own, own > st.page ? 1 : -1);
+          if (st.shelf !== was) follow(dx);
         } else if (dy > 0) {
           // ↓: the app grid comes up, on the app under this one.
-          if (others.length) { openApps(Math.max(0, Math.min(4, st.shelf - shelfFirst))); return; }
+          if (others.length) { openApps(Math.max(0, Math.min(COLS - 1, st.shelf - shelfFirst))); return; }
           openDrawer();
           return;
         } else if (dy < 0) {
-          if (cards.length) st.zone = Z.HERO;
+          // ↑ on a pick: full screen; on a wallpaper: the pill.
+          if (appPicks().length) st.zone = Z.HERO;
           else { st.zone = Z.TOP; st.top = 3; }
         }
         break;
@@ -1108,25 +1175,33 @@
         else if (shelf.length) st.zone = Z.SHELF;
         break;
       case Z.TOP:
-        if (dx) st.top = 3;
-        else if (dy > 0) st.zone = cards.length ? Z.HERO : Z.SHELF;
+        if (dy > 0) st.zone = Z.SHELF;
         break;
       case Z.DRAWER:
-        // Two columns: ← from the left one closes it, as swiping does on tvOS.
-        if (dx < 0 && st.drawer % 2 === 0) { closeDrawer(); return; }
-        if (dx && st.drawer + dx >= 0 && st.drawer + dx < drawerItems.length && Math.floor((st.drawer + dx) / 2) === Math.floor(st.drawer / 2)) st.drawer += dx;
-        else if (dy && st.drawer + 2 * dy >= 0 && st.drawer + 2 * dy < drawerItems.length) st.drawer += 2 * dy;
+        // The profiles' row on top, then the bento's two columns: ← from the left edge closes it, as on tvOS.
+        var P = people().length;
+        if (st.drawer < P) {
+          if (dx < 0 && st.drawer === 0) { closeDrawer(); return; }
+          if (dx) st.drawer = Math.max(0, Math.min(P - 1, st.drawer + dx));
+          else if (dy > 0 && drawerItems.length) st.drawer = P;
+          break;
+        }
+        var k = st.drawer - P;
+        if (dx < 0 && k % 2 === 0) { closeDrawer(); return; }
+        if (dx && k + dx >= 0 && k + dx < drawerItems.length && Math.floor((k + dx) / 2) === Math.floor(k / 2)) st.drawer += dx;
+        else if (dy < 0 && k < 2) st.drawer = Math.min(P - 1, k % 2 ? P - 1 : 0);
+        else if (dy && k + 2 * dy >= 0 && k + 2 * dy < drawerItems.length) st.drawer += 2 * dy;
         break;
       case Z.APPS:
-        if (dy < 0 && st.grid < 5) {
+        if (dy < 0 && st.grid < COLS) {
           // ↑ from the first row: back to the Dock, on the app above.
-          var col = st.grid % 5;
+          var col = st.grid % COLS;
           closeSheets();
           if (shelf.length) st.shelf = Math.min(shelf.length - 1, shelfFirst + col);
           break;
         }
-        var g = st.grid + dx + dy * 5;
-        if (g >= 0 && g < others.length && (dx === 0 || Math.floor(g / 5) === Math.floor(st.grid / 5))) st.grid = g;
+        var g = st.grid + dx + dy * COLS;
+        if (g >= 0 && g < others.length && (dx === 0 || Math.floor(g / COLS) === Math.floor(st.grid / COLS))) st.grid = g;
         break;
       case Z.SETTINGS:
         if (dy) st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row + dy));
@@ -1331,6 +1406,7 @@
     closeSheets();
     st.zone = Z.SHELF;
     st.shelf = 0;
+    follow();
     updateFocus();
   }
 
@@ -1371,7 +1447,7 @@
   });
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {
-    if (!saverOn && st.zone !== Z.HERO && !sheetOpen() && st.zone !== Z.DRAWER && shelfPick() < 0) page(1);
+    if (!saverOn && st.zone === Z.SHELF) page(1);   // the focused app's picks, when it has several
   }, 8000);
   setInterval(function () {
     checkNight();

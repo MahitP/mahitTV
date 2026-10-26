@@ -84,7 +84,7 @@ def rays(img, cx, cy, strength=0.5, threshold=170):
     return img + blurred(acc / steps, 6) * strength * 2.2
 
 
-def save(img, name, blur=0.6, warm=(1.04, 1.0, 0.94), cool=(0.92, 1.0, 1.08)):
+def save(img, name, blur=0.6, warm=(1.04, 1.0, 0.94), cool=(0.92, 1.0, 1.08), out_dir=None, quality=88):
     """The finish of a graded film still: bloom, split-tone grade, lens vignette, a touch of chromatic aberration, grain."""
     if blur:
         img = blurred(img, blur)
@@ -109,7 +109,7 @@ def save(img, name, blur=0.6, warm=(1.04, 1.0, 0.94), cool=(0.92, 1.0, 1.08)):
     out = Image.merge('RGB', (r, g, b2))
     grain = (rng.standard_normal((H, W, 1)) * 4.2).astype(np.float32)
     out = Image.fromarray(np.clip(np.asarray(out, np.float32) + grain, 0, 255).astype(np.uint8))
-    out.save(os.path.join(OUT, name), quality=88, optimize=True, progressive=True)
+    out.save(os.path.join(out_dir or OUT, name), quality=quality, optimize=True, progressive=True)
     print('wrote', name)
 
 

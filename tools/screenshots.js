@@ -33,8 +33,9 @@ function serve() {
 const SHOTS = [
   // name, keys pressed after load, without picks
   ['dock', []],
+  ['wallpaper', ['ArrowRight']],   // an app without a pick: a bundled aerial wallpaper
   ['dock-next', ['ArrowRight', 'ArrowRight']],
-  ['hero', ['ArrowUp']],
+  ['full-screen', ['ArrowUp']],
   ['grid', ['ArrowDown', 'ArrowRight']],
   ['grid-scrolled', ['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown']],
   ['control-center', ['ArrowUp', 'ArrowUp', 'Enter', 'ArrowDown']],

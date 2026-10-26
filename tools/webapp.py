@@ -15,7 +15,7 @@ import translate  # noqa: E402  (the catalogues and the keys the web app uses)
 
 GENERIC = {'tmdbKey': '', 'tmdbRegion': '', 'latitude': '', 'longitude': '', 'city': '', 'language': 'auto',
            'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': False, 'hideAnimation': False, 'hideApps': [],
-           'shelfApps': []}
+           'shelfApps': [], 'profiles': []}
 
 
 def config_from_args(args):
@@ -61,7 +61,19 @@ def read_config(path):
         'hideAnimation': values.get('hide_animation', 'false').lower() == 'true',
         'hideApps': [s.strip() for s in values.get('hide_apps', '').split(',') if s.strip()],
         'shelfApps': [s.strip() for s in values.get('shelf_apps', '').split(',') if s.strip()],
+        'profiles': profiles(values.get('profiles', '')),
     }
+
+
+def profiles(text):
+    """profiles=Name:avatar.png,… (avatars in app/assets/avatars) → [{name, avatar}]; empty: the app picks one."""
+    out = []
+    for item in text.split(','):
+        if ':' in item:
+            name, avatar = item.split(':', 1)
+            if name.strip():
+                out.append({'name': name.strip(), 'avatar': avatar.strip()})
+    return out
 
 
 def coins():
@@ -82,6 +94,9 @@ def catalogues():
 def files(config, made_by):
     """The web app's files, {path inside the app: bytes}: web/, the settings, the catalogues, the app's symbols and font."""
     out = {}
+    # Your Memoji, when you dropped app/assets/avatars/memoji.png in: the default profile's avatar.
+    memoji = os.path.exists(os.path.join(ROOT, 'app', 'assets', 'avatars', 'memoji.png'))
+    config = dict(config, defaultAvatar='memoji.png' if memoji else 'default-1.png')
     web = os.path.join(ROOT, 'web')
     for name in sorted(os.listdir(web)):
         if os.path.isdir(os.path.join(web, name)):
@@ -102,6 +117,13 @@ def files(config, made_by):
         if name.endswith('.png') or name.startswith('LICENSE'):
             with open(os.path.join(symbols, name), 'rb') as f:
                 out['symbols/' + name] = f.read()
+    # The wallpapers (aerials) and the profile avatars (yours too: avatars/memoji.png), shared with the Android app.
+    for folder in ('aerials', 'avatars'):
+        src = os.path.join(ROOT, 'app', 'assets', folder)
+        for name in sorted(os.listdir(src)) if os.path.isdir(src) else []:
+            if name.lower().endswith(('.jpg', '.png')):
+                with open(os.path.join(src, name), 'rb') as f:
+                    out[folder + '/' + name] = f.read()
     for name in ('InterVariable.ttf', 'OFL.txt'):
         with open(os.path.join(ROOT, 'app', 'assets', 'fonts', name), 'rb') as f:
             out['fonts/' + name] = f.read()

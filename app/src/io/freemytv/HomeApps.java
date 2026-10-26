@@ -75,6 +75,8 @@ final class HomeApps {
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
         float logoInk;      // fraction of the logo with ink (thin logos are drawn larger, with the same "weight")
         float logoScale = 1; // size tweak by eye (compact logos need more)
+        int[] style;        // the composed backdrop (top, bottom colour, logo mode) when the app has no brand style
+        float emblemHeight; // > 0: the emblem's height as a share of the tile's (an icon); 0: sized by its ink (a logo)
         boolean connected = true;
 
         void setTile(Bitmap b) {
@@ -182,7 +184,7 @@ final class HomeApps {
                 // An app picked in Settings > Shelf that isn't in SHELF: its own name and TV art.
                 it.key = pkg;
                 it.label = ri != null ? String.valueOf(ri.loadLabel(pm)) : pkg;
-                it.setTile(appTile(c, null, pkg, 0));
+                compose(c, it, extract);
             } else {
                 it.key = d[0];
                 it.label = d[1];
@@ -237,13 +239,13 @@ final class HomeApps {
     // MARK: - Top buttons (the round ones at the top right)
 
     static final String TOP_CONTROL = "control", TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings";
-    /** As tvOS: one button at the top right, Control Center (everything else lives in it). */
-    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Collections.singletonList(TOP_CONTROL));
-    /** What Settings > Top Buttons can show. */
-    static final List<String> TOP_ALL = Collections.unmodifiableList(java.util.Arrays.asList(TOP_CONTROL, TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
+    /** As tvOS: none; the status pill at the top right opens Control Center (everything else lives in it). */
+    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(new ArrayList<String>());
+    /** What Settings > Top Buttons can add, left of the pill. */
+    static final List<String> TOP_ALL = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
     static final int MAX_TOP = TOP_ALL.size();
 
-    /** The keys of the top buttons, in order (Settings > Top Buttons; by default Control Center alone). */
+    /** The keys of the top buttons, in order (Settings > Top Buttons; none by default). */
     static List<String> topButtonKeys() {
         List<String> saved = Prefs.topButtons();
         if (saved == null) return TOP_DEFAULT;
@@ -513,17 +515,21 @@ final class HomeApps {
         skip.add(c.getPackageName());
         skip.addAll(HIDDEN);
         List<Item> items = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        Set<String> seen = new HashSet<>(), installed = new HashSet<>();
         for (String[] app : launchable(c)) {
             String pkg = app[0];
+            installed.add(pkg);
             if (skip.contains(pkg) || !seen.add(pkg)) continue;
             Item it = new Item();
             it.kind = APP;
             it.pkg = pkg;
             it.key = pkg;
             it.label = app[1];
-            it.setTile(appTile(c, null, pkg, 0));
+            compose(c, it, true);
             items.add(it);
+        }
+        synchronized (COMPOSED) {
+            COMPOSED.keySet().removeIf(k -> !installed.contains(k));   // uninstalled apps' icons go
         }
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
         synchronized (HomeApps.class) {
@@ -533,9 +539,16 @@ final class HomeApps {
         return items;
     }
 
+    /** Free My TV's own entry: a white symbol on graphite, like tvOS's Settings icon. */
     private static Item special(Context c, int kind, String key, String label, String symbol) {
         Item it = shortcut(kind, key, label, symbol);
         it.setTile(symbolTile(c, key, symbol));
+        Composed out = new Composed();
+        out.style = GRAPHITE;
+        out.logo = symbolLogo(c, symbol);
+        out.emblemHeight = 0.5f;
+        out.ink = 0.4f;
+        if (out.logo != null) out.applyTo(it);
         return it;
     }
 
@@ -753,11 +766,16 @@ final class HomeApps {
     }
 
     private static void saveLogo(Bitmap logo, File file, File none) {
+        saveLogo(logo, file, none, 0);
+    }
+
+    /** `color`: the background a composed logo was lifted from, kept beside it (0: none). */
+    private static void saveLogo(Bitmap logo, File file, File none, int color) {
         File dir = file.getParentFile();
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         String key = file.getName().substring(0, file.getName().lastIndexOf('-', file.getName().lastIndexOf("-v") - 1));
-        File[] old = dir.listFiles((d, name) -> name.matches(java.util.regex.Pattern.quote(key) + "-\\d+-v\\d+\\.png(\\.none)?"));
+        File[] old = dir.listFiles((d, name) -> name.matches(java.util.regex.Pattern.quote(key) + "-\\d+-v\\d+\\.png(\\.none|\\.color)?"));
         if (old != null) {
             for (File f : old) {
                 //noinspection ResultOfMethodCallIgnored
@@ -768,6 +786,12 @@ final class HomeApps {
             if (logo != null) logo.compress(Bitmap.CompressFormat.PNG, 100, out);
         } catch (IOException e) {
             AppLog.w("logo not saved: " + e.getMessage());
+        }
+        if (logo == null || color == 0) return;
+        try (FileOutputStream out = new FileOutputStream(file.getPath() + ".color")) {
+            out.write(Integer.toHexString(color).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            AppLog.w("logo colour not saved: " + e.getMessage());
         }
     }
 
@@ -793,8 +817,14 @@ final class HomeApps {
     private static Bitmap bannerLogo(Context c, String pkg, boolean tint, boolean holes, boolean white) {
         Drawable d = bannerDrawable(c, pkg);
         if (d == null) return null;
-        final int w = 768, h = 432;
-        // The art at its own resolution, then filtered down: the lifting below works at 768×432.
+        return liftLogo(bannerPixels(d), BANNER_W, BANNER_H, tint, holes, white, false);
+    }
+
+    private static final int BANNER_W = 768, BANNER_H = 432;
+
+    /** The banner drawn at its own resolution, then filtered down to 768 × 432 (where the lifting works), as pixels. */
+    private static int[] bannerPixels(Drawable d) {
+        final int w = BANNER_W, h = BANNER_H;
         float k = detail(d, w, h);
         Bitmap big = Bitmap.createBitmap(Math.round(w * k), Math.round(h * k), Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(big);
@@ -805,6 +835,14 @@ final class HomeApps {
         int[] px = new int[w * h];
         src.getPixels(px, 0, w, 0, 0, w, h);
         src.recycle();
+        return px;
+    }
+
+    /**
+     * The logo lifted off the banner's pixels (w × h) as described above. `keepDark`: the logo will sit on the banner's
+     * own (light) colour again, so its dark ink stays dark.
+     */
+    private static Bitmap liftLogo(int[] px, int w, int h, boolean tint, boolean holes, boolean white, boolean keepDark) {
         // Edge profiles (a 3% band), smoothed: the background at any point is the "patch" spanning the four sides.
         int band = Math.round(h * 0.03f);
         float[][] left = new float[h][3], right = new float[h][3], top = new float[w][3], bottom = new float[w][3];
@@ -864,7 +902,7 @@ final class HomeApps {
                     background(bg, x, y, w, h, top, bottom, left, right);
                     for (int i = 0; i < 3; i++) col[i] = clamp((col[i] - (1 - a) * bg[i]) / a);   // no background halo
                     float l = lum(col), s = sat(col);
-                    if (bgLum > 0.6f && l < 0.42f && s < 0.3f) {
+                    if (!keepDark && bgLum > 0.6f && l < 0.42f && s < 0.3f) {
                         col[0] = col[1] = col[2] = 1f;                  // black text on a light background → white
                     } else if (tint && bgLum <= 0.6f && bgLum > 0.1f && bgSat > 0.35f && l > 0.7f && s < 0.25f) {
                         vivid(bg, col);                                 // white logo on brand color → that color, vivid
@@ -1044,6 +1082,285 @@ final class HomeApps {
 
     private static float clamp(float v) {
         return Math.max(0, Math.min(1, v));
+    }
+
+    // MARK: - The automatic tvOS icon composer (DESIGN-TVOS.md §7)
+
+    /** What the composer made for an app: a backdrop (a picture `tile`, or a gradient `style`) and an emblem. */
+    private static final class Composed {
+        Bitmap tile, logo;
+        int[] style;
+        float ink = 0.4f, emblemHeight;
+
+        void applyTo(Item it) {
+            if (tile != null) it.setTile(tile);
+            it.logo = logo;
+            it.logoInk = ink;
+            it.style = style;
+            it.emblemHeight = emblemHeight;
+        }
+    }
+
+    private static final Map<String, Composed> COMPOSED = new HashMap<>();   // package → its icon
+    /** tvOS's Settings grey, top to bottom, with a white emblem. */
+    private static final int[] GRAPHITE = {0xFF8E8E93, 0xFF48484A, 1};
+    /** Neutral icons (white, grey, black): a darker graphite, their own colours on it. */
+    private static final int[] NEUTRAL = {0xFF5A5A5F, 0xFF2C2C2E, 0};
+    /** Bump when the composer changes the logos it saves (they are lifted again). */
+    private static final int COMPOSE_VERSION = 1;
+
+    /**
+     * Gives an app that has no brand style a tvOS-like icon: (1) a TV banner on a flat colour → that colour as a rich
+     * gradient and the logo lifted off it; (2) a banner that is a picture → the picture (HomeView crops it to 5:3); (3)
+     * only a launcher icon → an adaptive icon's background layer as the backdrop (a gradient of its colour when flat)
+     * and its foreground as the emblem, or a legacy icon centred on a gradient of its dominant vivid colour. HomeView
+     * adds the depth, the gloss and the rim. `extract`: may do the slow part (lifting a banner's logo, then saved on
+     * disk); without it, an app not lifted yet shows its banner until the next load.
+     */
+    static void compose(Context c, Item it, boolean extract) {
+        String pkg = it.pkg;
+        Composed done;
+        synchronized (COMPOSED) {
+            done = COMPOSED.get(pkg);
+        }
+        if (done != null) {
+            done.applyTo(it);
+            return;
+        }
+        Composed out;
+        Drawable banner = bannerDrawable(c, pkg);
+        if (banner != null) {
+            out = flatBanner(c, pkg, banner, extract);
+            if (out == null || out == PICTURE) {
+                Composed picture = new Composed();
+                picture.tile = appTile(c, null, pkg, 0);
+                picture.applyTo(it);
+                if (out == null) return;   // not lifted yet: tried again on the next load (in the background)
+                out = picture;
+            }
+        } else {
+            out = iconComposed(c, pkg);
+        }
+        synchronized (COMPOSED) {
+            COMPOSED.put(pkg, out);
+        }
+        out.applyTo(it);
+    }
+
+    private static final Composed PICTURE = new Composed();
+
+    /**
+     * A banner on a flat colour: the logo lifted off it and that colour (both kept on disk); PICTURE when the banner is
+     * a picture (or the logo wouldn't come off); null when it isn't known yet and `extract` is false.
+     */
+    private static Composed flatBanner(Context c, String pkg, Drawable d, boolean extract) {
+        String key = "auto" + COMPOSE_VERSION + "-" + pkg;
+        File file = logoFile(c, key, pkg), none = new File(file.getPath() + ".none"), color = new File(file.getPath() + ".color");
+        if (none.exists()) return PICTURE;
+        if (file.exists() && color.exists()) {
+            Bitmap logo = BitmapFactory.decodeFile(file.getPath());
+            int bg = readColor(color);
+            if (logo != null && bg != 0) return liftedComposed(logo, bg);
+        }
+        if (!extract) return null;
+        int[] px = bannerPixels(d);
+        int bg = flatColor(px, BANNER_W, BANNER_H);
+        Bitmap logo = null;
+        if (bg != 0) {
+            float[] c3 = {((bg >> 16) & 255) / 255f, ((bg >> 8) & 255) / 255f, (bg & 255) / 255f};
+            logo = liftLogo(px, BANNER_W, BANNER_H, false, false, false, lum(c3) > 0.6f);
+            if (logo != null) logo = fit(logo, 360, 160);
+        }
+        saveLogo(logo, file, none, bg);
+        return logo == null ? PICTURE : liftedComposed(logo, bg);
+    }
+
+    private static Composed liftedComposed(Bitmap logo, int bg) {
+        Composed out = new Composed();
+        out.logo = logo;
+        out.ink = ink(logo);
+        out.style = richGradient(bg, 0);
+        return out;
+    }
+
+    private static int readColor(File f) {
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            byte[] b = new byte[16];
+            int n = in.read(b);
+            return n <= 0 ? 0 : (int) Long.parseLong(new String(b, 0, n, java.nio.charset.StandardCharsets.UTF_8).trim(), 16);
+        } catch (IOException | NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * The banner's background colour when it is flat (≥ 85% of a 3% band all round within a small distance of the
+     * band's mean), else 0.
+     */
+    private static int flatColor(int[] px, int w, int h) {
+        int band = Math.max(1, Math.round(h * 0.03f));
+        float[] mean = new float[3];
+        int n = 0;
+        for (int pass = 0; pass < 2; pass++) {
+            int close = 0;
+            for (int y = 0; y < h; y += 2) {
+                for (int x = 0; x < w; x += 2) {
+                    if (y >= band && y < h - band && x >= band && x < w - band) continue;
+                    int p = px[y * w + x];
+                    if (pass == 0) {
+                        add(mean, p, 1);
+                        n++;
+                    } else if (distance(p, mean) < 0.07f) {
+                        close++;
+                    }
+                }
+            }
+            if (pass == 0) {
+                if (n == 0) return 0;
+                for (int i = 0; i < 3; i++) mean[i] /= n;
+            } else if (close < n * 0.85f) {
+                return 0;
+            }
+        }
+        return 0xFF000000 | (Math.round(mean[0] * 255) << 16) | (Math.round(mean[1] * 255) << 8) | Math.round(mean[2] * 255);
+    }
+
+    /** A rich two-stop gradient from a colour: 12% lighter at the top, 28% darker at the bottom (HomeView adds the lift). */
+    private static int[] richGradient(int color, int mode) {
+        int r = (color >> 16) & 255, g = (color >> 8) & 255, b = color & 255;
+        int top = 0xFF000000 | (Math.round(r + (255 - r) * 0.12f) << 16) | (Math.round(g + (255 - g) * 0.12f) << 8) | Math.round(b + (255 - b) * 0.12f);
+        int bottom = 0xFF000000 | (Math.round(r * 0.72f) << 16) | (Math.round(g * 0.72f) << 8) | Math.round(b * 0.72f);
+        return new int[] {top, bottom, mode};
+    }
+
+    /** An app with only a launcher icon. */
+    private static Composed iconComposed(Context c, String pkg) {
+        Composed out = new Composed();
+        Drawable icon = appIcon(c, pkg);
+        if (icon == null) {
+            out.style = NEUTRAL;
+            out.tile = darkTile(TILE_W, TILE_H);
+            return out;
+        }
+        if (icon instanceof AdaptiveIconDrawable) {
+            AdaptiveIconDrawable a = (AdaptiveIconDrawable) icon;
+            // The background layer fills the tile (its colour as a gradient when it's flat); the foreground is the emblem.
+            Bitmap back = a.getBackground() == null ? null : drawCovering(a.getBackground(), 400, 240);
+            int flat = back == null ? 0 : flatColor(pixels(back), back.getWidth(), back.getHeight());
+            if (back == null || flat != 0) {
+                out.style = richGradient(back == null ? 0xFF3A3A3C : flat, 0);
+                if (back != null) back.recycle();
+            } else {
+                out.tile = back;
+            }
+            if (a.getForeground() != null) {
+                Bitmap fore = Bitmap.createBitmap(432, 432, Bitmap.Config.ARGB_8888);
+                a.getForeground().setBounds(0, 0, 432, 432);
+                a.getForeground().draw(new Canvas(fore));
+                Bitmap trimmed = trim(fore);
+                out.logo = trimmed.getWidth() < 4 ? null : fit(trimmed, 360, 200);
+            }
+            out.emblemHeight = 0.5f;
+        } else {
+            // A legacy icon (a free-form picture): on a gradient of its own dominant vivid colour, centred at 58%.
+            Bitmap pic = Bitmap.createBitmap(288, 288, Bitmap.Config.ARGB_8888);
+            icon.setBounds(0, 0, 288, 288);
+            icon.draw(new Canvas(pic));
+            Bitmap trimmed = trim(pic);
+            int dominant = dominantColor(trimmed);
+            out.style = dominant == 0 ? NEUTRAL : richGradient(dominant, 0);
+            out.logo = fit(trimmed, 240, 240);
+            out.emblemHeight = 0.58f;
+        }
+        if (out.logo != null) out.ink = ink(out.logo);
+        if (out.logo == null && out.tile == null) out.tile = darkTile(TILE_W, TILE_H);
+        return out;
+    }
+
+    private static Drawable appIcon(Context c, String pkg) {
+        try {
+            PackageManager pm = c.getPackageManager();
+            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            if (ai.icon != 0) {
+                try {
+                    Drawable d = pm.getResourcesForApplication(ai).getDrawableForDensity(ai.icon, DisplayMetrics.DENSITY_XXXHIGH, null);
+                    if (d != null) return d;
+                } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+                }
+            }
+            return pm.getApplicationIcon(ai);
+        } catch (PackageManager.NameNotFoundException e) {
+            return null;
+        }
+    }
+
+    /** `d` drawn to cover w × h (centred, its aspect kept). */
+    private static Bitmap drawCovering(Drawable d, int w, int h) {
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        int side = Math.max(w, h);
+        d.setBounds((w - side) / 2, (h - side) / 2, (w + side) / 2, (h + side) / 2);
+        d.draw(new Canvas(b));
+        return b;
+    }
+
+    private static int[] pixels(Bitmap b) {
+        int[] px = new int[b.getWidth() * b.getHeight()];
+        b.getPixels(px, 0, b.getWidth(), 0, 0, b.getWidth(), b.getHeight());
+        return px;
+    }
+
+    /**
+     * The icon's dominant vivid colour: a hue histogram (24 bins) weighted by saturation × value, the heaviest bin's
+     * mean, made rich (saturation ≥ 0.55, value 0.45 to 0.8); 0 when the icon is neutral (white, grey or black).
+     */
+    private static int dominantColor(Bitmap b) {
+        int w = b.getWidth(), h = b.getHeight();
+        float[] weight = new float[24], r = new float[24], g = new float[24], bl = new float[24];
+        float[] hsv = new float[3];
+        float total = 0;
+        int count = 0;
+        int step = Math.max(1, Math.min(w, h) / 64);
+        for (int y = 0; y < h; y += step) {
+            for (int x = 0; x < w; x += step) {
+                int p = b.getPixel(x, y);
+                if ((p >>> 24) < 128) continue;
+                count++;
+                android.graphics.Color.colorToHSV(p, hsv);
+                float wt = hsv[1] * hsv[2];
+                if (wt < 0.08f) continue;
+                int bin = Math.min(23, (int) (hsv[0] / 15));
+                weight[bin] += wt;
+                r[bin] += wt * ((p >> 16) & 255);
+                g[bin] += wt * ((p >> 8) & 255);
+                bl[bin] += wt * (p & 255);
+                total += wt;
+            }
+        }
+        if (count == 0 || total < count * 0.12f) return 0;
+        int best = 0;
+        for (int i = 1; i < 24; i++) if (weight[i] > weight[best]) best = i;
+        int color = 0xFF000000 | (Math.round(r[best] / weight[best]) << 16) | (Math.round(g[best] / weight[best]) << 8)
+                | Math.round(bl[best] / weight[best]);
+        android.graphics.Color.colorToHSV(color, hsv);
+        hsv[1] = Math.max(hsv[1], 0.55f);
+        hsv[2] = Math.max(0.45f, Math.min(0.8f, hsv[2]));
+        return android.graphics.Color.HSVToColor(hsv);
+    }
+
+    /** Filtered down to fit w × h (never up). */
+    private static Bitmap fit(Bitmap b, int w, int h) {
+        float s = Math.min(1f, Math.min((float) w / b.getWidth(), (float) h / b.getHeight()));
+        if (s >= 1f) return b;
+        return Ui.downscale(b, Math.max(1, Math.round(b.getWidth() * s)), Math.max(1, Math.round(b.getHeight() * s)));
+    }
+
+    /** A symbol in white on a transparent bitmap (the emblem of Free My TV's own entry). */
+    private static Bitmap symbolLogo(Context c, String symbol) {
+        int size = 160;
+        Symbols.warm(c, symbol, size * 0.8f);
+        Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Symbols.draw(c, new Canvas(b), symbol, size / 2f, size / 2f, size * 0.8f, 0xFFFFFFFF);
+        return trim(b);
     }
 
     // MARK: - Cards

@@ -1,4 +1,4 @@
-# Free My TV, tvOS edition: design spec (v2, tvOS 26/27)
+# Free My TV, tvOS edition: design spec (v3, tvOS 26/27, matched to Apple's photo)
 
 The home screen after Apple TV's (tvOS 26 introduced Liquid Glass on Apple TV; tvOS 27, released 14 Sep 2026, kept
 it and focused on speed). Everything is in the 1920×1080 design space (`k = width / 1920` on Android; the `#stage` on
@@ -18,40 +18,39 @@ the web). Each line names where it lives: Android first, the LG/Samsung web copy
 | 27-generation glass: less default transparency, more contrast, revamped icons | reported for iOS/iPadOS/macOS 27; **not confirmed for tvOS 27** | medium |
 | Focus ≈ 1.15× (400×240 art shown on a 320×192 tile at rest) | derived from the two rows above | medium |
 | Squircle corners: superellipse, exponent 4 | Apple's continuous corners are close to n ≈ 4–5; chosen | medium |
+| **Home layout measured off Apple's tvOS 26 press photo** (Apple TV 4K with "Prehistoric Planet 2" on the Top Shelf; screen cropped and scaled to 1920×1080): Dock of **6** tiles **251×150** (5:3), **49** apart, **85** px margins; glass x 35–1885, y 782–1010 (≈ 40–50 px padding); focus **1.23×** centred (308×185), no lift; chevron at y ≈ 718; next row's tops peeking at y = 1052; title logo ≈ 313×183 at (65, 45); status pill x 1585–1875, y 48–105, time + glyphs + a ≈ 50 px avatar | measured here (`tools`-free: PIL on the photo) | high (±3 px) |
+| tvOS 26 profiles: an avatar in the top-right pill; switching in Control Center | the photo; Apple newsroom tvOS 26 (profiles on wake, enhanced switching) | high |
 
-## 1. Layout
+## 1. Layout (v3: Apple's photo, 1:1)
 
 ```
  y=0   ┌───────────────────────────────────────────────────────────────────┐
-  60   │                                            9:41  ☾ 44°   (◉)       │  status: plain text + one glass button
-       │                                                                   │
-       │  [ TITLE LOGO / Display title ]                                   │  Top Shelf: the pick's art edge to edge
-       │  Sci-Fi · 2026 · 2h 4m   [PG-13] [4K] [Dolby Vision] [CC]          │
-       │  A courier crosses a drowned city to deliver one last message…    │
-       │  ( ▶ Play )                                       ● ○ ○ ○ ○        │
- 688   │ ╭───────────────────────── Liquid Glass Dock ─────────────────────╮│
- 720   │ │ [320×192] [320×192] [320×192] [320×192] [320×192]               ││  5 apps
- 912   │ ╰─────────────────────────────────────────────────────────────────╯│
- 980   │        Netflix  ← the focused app's name, centred under it          │
+  44   │ ┌──────────┐                               ╭──────────────────╮     │
+       │ │  TITLE   │  logo ≤ 380×200 at (64, 44)   │ 9:41 AM     (◕‿◕) │     │  pill x 1585–1875, y 48–105
+       │ │  LOGO    │                               ╰──────────────────╯     │
+       │ └──────────┘                                                       │
+       │                     (the art, clean: no text over it)              │
+ 718   │                                   ⌃                                │  chevron (only with a pick)
+ 782   │╭──────────────────────────── Liquid Glass Dock ──────────────────╮ │
+ 822   ││ [251×150] [251×150] [251×150] [251×150] [251×150] [251×150]      │ │  6 apps, 49 apart, x 85–1835
+ 972   ││                                                                   │ │
+1010   │╰───────────────────────────────────────────────────────────────────╯ │
+1052   │  ▔▔▔▔▔▔▔   ▔▔▔▔▔▔▔   ▔▔▔▔▔▔▔   ▔▔▔▔▔▔▔   ▔▔▔▔▔▔▔   ▔▔▔▔▔▔▔         │  the grid's first row peeks (28 px)
 1080   └───────────────────────────────────────────────────────────────────┘
-          ↓ from the Dock: the whole page glides up 640 px (Dock to y=80), the art blurs and dims, the grid follows
+   ↑ from the Dock (on a pick): full screen — the Dock slides away; details appear at the bottom left.
+   ↓ from the Dock: the page glides up 722 (Dock to y = 60), the art frosts and dims, 6-column grid below.
 ```
 
 | Element | Spec | Android | Web |
 |---|---|---|---|
-| Safe area | `TV_MARGIN` 80, top 60 | `HomeView` | `#stage` |
-| Tile | **320×192**, radius **28** (squircle-looking via the glass rim; the tile itself `drawRoundRect`) | `TV_TILE_W/H/RADIUS` | `.tile` |
-| Dock | 5 tiles + 4×40 = 1760 wide, padding **32** (so a 1.15× end tile stays inside), glass radius **60** (28 + 32), platter x 48–1872, y 688–944, tiles' top at **720**; > 5 apps scroll | `layoutShelf` | `#platter`, `#tiles` |
-| Focus | **1.15×**, `Spring(0.32, 0.70)` (≈ 6% overshoot), lifted 6 px | `FOCUS_GROW` | `scale(1.15)`, `cubic-bezier(.2,.9,.25,1.22)` .34 s |
-| Grid | the other apps on the Dock's 5 columns, rows **292** apart (192 + 100); ↓ lifts the page **640** so the Dock rests at y = 80 and row 1 at y = 372 | `GRID_*`, `TV_GRID_LIFT` | `#apps`, `GRID_*` |
-| Top Shelf title | the title's **logo** (TMDB `logos`, transparent PNG) max 760×240 bottom-left; without one, the title in **Title1 76** semibold, −1% tracking, ≤ 2 lines | `drawShelfText` | `#hero .logo`, `h1` |
-| Metadata | Callout 31 → **29 Medium**, white 80%: genre · year · runtime/seasons · app | | `.meta` |
-| Badges | after the metadata, 6 apart: rounded-rect **outline** badges, height 30, radius 7, Caption2 **21 semibold**, white 85%, 1.5 px white 55% border: `PG-13`/`TV-MA` (TMDB certification), `★ 8.1`; preview samples also `4K`, `Dolby Vision`, `Dolby Atmos`, `CC` | `drawBadges` | `.badge` |
-| Synopsis | Body 29 → **26 regular**, white 72%, 2 lines, 860 wide | | `.overview` |
-| Play | capsule 60 tall, padding 34, Headline **28 semibold**: glass at rest, **white with ink text** focused (1.08×); "▶ Play" | `heroButton` | `#watch` |
-| Page dots | 8 px, 14 apart, right-aligned to x = 1840 on the button's centre line | | `#dots` |
-| Status (top right) | the time **Body 29 semibold** white (ink on the plain light gradient) with a soft shadow, the weather glyph + temperature, then **one** 60 px glass circle: Control Center. Nothing else (Live TV, inputs, settings live in Control Center); the Top Buttons setting can still add Live TV / Settings | `drawStatusText`, `drawLightButtons` | `#status`, `.round` |
-| Art scrims | left 0.55 → 0 over 62% of the width, bottom 0.65 → 0 over the lower 55%, top 0.22 → 0 over 18% | `Backdrop` | `.scrim` |
+| Tile | **251×150** (5:3), radius **24** | `TV_TILE_W/H/RADIUS` | `.tile` |
+| Dock | 6 tiles, 49 apart, x 85–1835, top 822; glass x 37–1883, y 782–1010 (padding 48 × 40), radius **64**; > 6 apps scroll | `layoutShelf` | `#platter` |
+| Focus | **1.23×** centred, no lift, `Spring(0.32, 0.72)`; no name under Dock tiles (as in the photo); names under focused grid tiles only | `FOCUS_GROW` | `scale(1.23)` |
+| Chevron | a thin ⌃ 30×12, white 75%, centred, y 718; only when the focused app's pick is showing | `drawChevron` | `#chevron` |
+| Grid | 6 columns on the Dock's columns; rows **250** apart; at rest the first row's tops peek at y = **1052**; ↓ lifts **722**: Dock at y 60, row 1 at y 330 | `GRID_*`, `TV_GRID_LIFT` | `#apps` (always shown) |
+| Title logo | top left, fitted in **380×200** at (64, 44); text fallback Title1 76 semibold, ≤ 2 lines, 700 wide | `drawShelfText` | `#hero .logo` |
+| Full screen (↑) | the Dock and the grid peek slide down 300 and fade; at the bottom left (bottom at y 1000): metadata + badges, synopsis (2 lines, 860), ▶ Play; dots bottom right; ↓ or Back returns | `Z_HERO` | `body.full` |
+| Status pill | x right 1875, y 48, 57 tall, radius 28.5, **smoke glass** (tint 0.42) with the rim; time **28 semibold** white, 24 from the left; avatar **49** round, inset 4 at the right end; focusable (↑ from the Dock or the Top Shelf): white, ink, 1.06×; OK opens Control Center | `drawPill` | `#pill` |
 
 ## 2. Liquid Glass (27-generation)
 
@@ -85,7 +84,7 @@ Each tile is drawn as tvOS composes a layered icon (no baked shadows; light adde
 4. **Glass edge:** a 1.5 px inner rim, white 45% top-left → 8% bottom-right, plus a 1 px outer hairline white 10%.
 5. **Gloss:** a diagonal specular band (white 14% → 0) over the top 45%.
 
-**Focus:** 1.15× with overshoot; shadows: ambient (blur 44, y 18, black 26%/42% night) + key (blur 16, y 34·f,
+**Focus:** 1.23× (measured) with overshoot; shadows: ambient (blur 44, y 18, black 26%/42% night) + key (blur 16, y 34·f,
 black 30%/45%); **tilt**: a 3D sway toward the direction of travel (rotateY ±5°, decaying spring 0.5 s) with the emblem
 shifting 7 px and the gloss band 18 px the other way (parallax); the one-time **glint** sweep (600 ms); the name
 fades in centred 22 px under the tile (Caption1 25 → **26 semibold**, white with a shadow, ink on light).
@@ -96,24 +95,49 @@ Hulu `#1CE783→#0E9F57` dark; Paramount+ `#0064FF→#00287F` white; Peacock `#1
 dark; Plex `#282A2D→#121315` as is; Crunchyroll `#FF8A1F→#E8590C` white; Settings: graphite `#8E8E93→#48484A` with a
 white gear.
 
-## 4. Control Center (replaces the bottom drawer)
+## 4. Control Center (opened from the pill)
 
-- Opened by the Control Center button (top right) or HDMI Inputs; Back, or ← from its left column, closes it.
-- A **floating vertical Liquid Glass panel** on the right: x from 1920 − 60 − **520** to 1860, y 60 → 1020, radius
-  **44**; slides in 80 px from the right with a fade (spring 0.38 / 0.88); the page behind dims 18% (night 30%) and
-  nothing else moves.
-- Inside (padding 28): header — the time **Title2 57 light** and the date **Caption1**; then a **bento** grid, 2 columns
-  of 224 wide × 120 tall, 16 apart, radius **26**: Sleep Timer, Live TV, each HDMI input, All Apps, Home Settings,
-  TV Settings (and the projector shortcuts where they exist); at the bottom a full-width **Weather** card (456 × 210):
-  the place, now (temperature 64 light + glyph), condition, H/L, and the next 4 hours.
-- Cards: glass (tint white 0.16 / smoke 0.32), symbol 34 + label Caption2 21 semibold; focused → **white**, ink, 1.06×,
-  key shadow. Arrow keys move in the 2-column grid.
+- A floating Liquid Glass panel on the right: x 1340–1860, y 60–1020, radius 44, slides in 80 px with a fade; the
+  page dims 18% (night 30%).
+- Inside (padding 28): **Profiles** — the avatars (84 round) with names (Caption2) in a row, the current one ringed
+  (3 px white); OK switches. Then the **bento**, 2 columns of 224×120, 16 apart, radius 26 (Sleep Timer, Live TV, the
+  inputs, All Apps, Home Settings, TV Settings…), then the weather card (464×210) at the bottom.
+- Cards: glass; focused white with ink, 1.06×. Arrows move in the grid (the profiles are its top row); Back or ← from
+  the left column closes it.
 
-## 5. Without picks
+## 5. Backgrounds (as tvOS does it)
 
-The Top Shelf becomes the clock (date Caption1, time 200 light, weather line) over your photo or the gradient.
+- **The focused Dock app's Top Shelf:** when that app has a pick, its art fills the screen, sharp behind the glass,
+  with its logo top left. More than one pick for it: they page every 8 s.
+- **Otherwise, a wallpaper:** your own photo (Photos) when you sent one, else one of the bundled **aerial-style**
+  wallpapers (`app/assets/aerials/*.jpg`, generated: a valley at golden hour, a coastline from above, the Earth at
+  dawn, an aurora of glass), a new one each hour, cross-faded. No text over it. This replaces the old big clock.
+- **The grid open:** the background frosts (its 192×108 copy stretched) and dims (day: white 0.55; night: black 0.6).
 
-## 6. Preview builds
+## 6. Profiles
+
+- `profiles=` in config.properties: `Name:avatar.png` pairs, comma separated (`profiles=Mahit:memoji.png,Guest:default-3.png`).
+  Avatars are files in **`app/assets/avatars/`** (both builds take them from there). Drop **`memoji.png`** there to
+  use your own Memoji. Empty: one profile, avatar `memoji.png` when present, else `default-1.png`.
+- The current profile is remembered on the TV (Prefs); its avatar shows in the pill. Profiles hold the name and the
+  avatar for now (per-profile Docks would come later).
+
+## 7. Icons: the automatic Liquid Glass composer
+
+Every app's tile is composed like a tvOS icon (§3 layers), whatever the app ships:
+
+1. **Known brands** (`TILE_STYLE`): the brand backdrop + the logo lifted off the app's banner.
+2. **A TV banner with a flat background** (most): the background colour is read off the banner's border; the logo is
+   lifted off it; the tile is that colour as a rich gradient (top-left lighter 12%, bottom-right darker 28%, a
+   radial lift) with the logo centred and its soft shadow.
+3. **A TV banner that is a picture:** cropped (never stretched) to 5:3, with the depth, gloss and rim on top.
+4. **Only a launcher icon:** an adaptive icon's background layer becomes the backdrop and its foreground the emblem;
+   a legacy icon is centred at 58% of the tile's height on a gradient of its dominant vivid colour (a hue histogram
+   weighted by saturation), with a soft shadow.
+
+Then the depth, the gloss band and the 1 px specular rim on all of them.
+
+## 8. Preview builds
 
 `preview=true` (Android) / `--preview` (web): five generated 1920×1080 photos and sample titles with logos and badges
 (`preview/`), and on the web the sample apps get their bundled logos (`web/icons`) so the Dock looks as it will on a TV.

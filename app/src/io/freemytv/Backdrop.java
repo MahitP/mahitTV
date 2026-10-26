@@ -116,21 +116,19 @@ final class Backdrop {
         // The glass reads the photo as it is (its colors bleed through the dock), not the scrims below.
         int[] frost = reduce(out, FW, FH, 3, 3);
         int[] glass = reduce(out, GW, GH, 2, 2);
-        // tvOS Top Shelf: the photo edge to edge, darkened only where text sits (the title at the bottom left, the
-        // dock's labels at the bottom, the status pill at the top), stronger when the photo is bright there.
-        float boost = Math.max(0, Math.min(0.25f, (luminance(out, 0, 0.3f, 0.55f, 0.7f) - 0.25f) * 1.1f));
+        // tvOS Top Shelf (Apple's photo, DESIGN-TVOS.md §5): the art almost untouched; only a soft radial behind the
+        // title logo at the top left, a faint band under the status pill, and a light one under the Dock.
+        float s = W / 1920f;
         Paint scrim = new Paint(Paint.DITHER_FLAG);
-        scrim.setShader(new LinearGradient(0, 0, W * 0.7f, 0,
-                new int[] {black(0.55f + boost), black(0.38f + boost * 0.7f), black(0.14f + boost * 0.3f), black(0.03f), 0},
-                new float[] {0, 0.3f, 0.6f, 0.85f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, W, H, scrim);
-        scrim.setShader(new LinearGradient(0, H, 0, H * 0.45f,
-                new int[] {black(0.6f), black(0.42f), black(0.18f), black(0.04f), 0},
-                new float[] {0, 0.3f, 0.6f, 0.85f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, H * 0.45f, W, H, scrim);
-        scrim.setShader(new LinearGradient(0, 0, 0, H * 0.22f, new int[] {black(0.25f), black(0.08f), 0},
+        scrim.setShader(new android.graphics.RadialGradient(220 * s, 140 * s, 520 * s,
+                new int[] {black(0.32f), black(0.16f), 0}, new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, 740 * s, 660 * s, scrim);
+        scrim.setShader(new LinearGradient(0, 0, 0, H * 0.16f, new int[] {black(0.18f), black(0.06f), 0},
                 new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, W, H * 0.22f, scrim);
+        c.drawRect(0, 0, W, H * 0.16f, scrim);
+        scrim.setShader(new LinearGradient(0, H, 0, H * 0.7f, new int[] {black(0.22f), black(0.08f), 0},
+                new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, H * 0.7f, W, H, scrim);
 
         return new Backdrop(gpu(out), frost, glass, null, null, null, null, null, null);
     }
