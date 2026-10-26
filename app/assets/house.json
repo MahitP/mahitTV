@@ -1,101 +1,1863 @@
 {
-  "about": "The Home tab's house (WELLY-HOME-REMOTE-SPEC.md §4), modelled on photos of the real home: the living room in front, the hallway and the two bedrooms behind it. Metres; x to the right, y toward the viewer, z up; origin at the back-left corner. Shared by the Android app (HouseView) and the web app (rooms.js). The tall walls are the ones the camera sees from inside (back, left, and the wall with My Room's tube light); the others are cut low, a dollhouse cutaway. Fixture kinds: bulb (hanging), lamp (floor lamp; height = shade bottom), tube (wall tube light; along x or y, length); glow = where its light pools on the floor.",
-  "camera": {"yaw": 24, "pitch": 50, "box": [210, 170, 1710, 960]},
-  "size": [7.6, 9.4],
-  "rooms": [
-    {"id": "parents", "name": "Parents' Room", "rect": [0, 0, 3.4, 4.8], "floor": "wood"},
-    {"id": "hall", "name": "Hallway", "rect": [3.4, 0, 4.5, 4.8], "floor": "wood"},
-    {"id": "mine", "name": "My Room", "rect": [4.5, 0, 7.6, 4.8], "floor": "wood"},
-    {"id": "living", "name": "Living Room", "rect": [0, 4.8, 7.6, 9.4], "floor": "wood"}
-  ],
-  "walls": [
-    {"from": [0, 0], "to": [7.6, 0], "h": 2.6},
-    {"from": [0, 0], "to": [0, 9.4], "h": 2.6},
-    {"from": [7.6, 0], "to": [7.6, 9.4], "h": 0.45},
-    {"from": [0, 9.4], "to": [7.6, 9.4], "h": 0.45},
-    {"from": [3.4, 0], "to": [3.4, 3.6], "h": 1.1},
-    {"from": [3.4, 4.5], "to": [3.4, 4.8], "h": 1.1},
-    {"from": [4.5, 0], "to": [4.5, 3.6], "h": 2.6},
-    {"from": [4.5, 4.4], "to": [4.5, 4.8], "h": 1.1},
-    {"from": [0, 4.8], "to": [3.4, 4.8], "h": 1.1},
-    {"from": [4.5, 4.8], "to": [7.6, 4.8], "h": 1.1}
-  ],
-  "furniture": [
-    {"room": "parents", "kind": "window", "box": [0.3, 0.06, 0.95, 1.3, 0.02, 1.15], "color": "window"},
-    {"room": "parents", "kind": "desk", "box": [0.15, 0.12, 0, 1.45, 0.62, 0.74], "color": "charcoal"},
-    {"room": "parents", "kind": "monitor", "box": [0.8, 0.2, 0.74, 0.55, 0.05, 0.34], "color": "screen"},
-    {"room": "parents", "kind": "chair", "box": [0.6, 0.95, 0, 0.5, 0.5, 0.48], "color": "charcoal"},
-    {"room": "parents", "kind": "chair-back", "box": [0.6, 1.37, 0.48, 0.5, 0.08, 0.55], "color": "charcoal"},
-    {"room": "parents", "kind": "bed", "box": [1.75, 0.15, 0, 1.55, 2.05, 0.42], "color": "navy"},
-    {"room": "parents", "kind": "headboard", "box": [1.75, 0.07, 0, 1.55, 0.12, 1.15], "color": "navy"},
-    {"room": "parents", "kind": "duvet", "box": [1.8, 0.3, 0.42, 1.45, 1.85, 0.14], "color": "duvet"},
-    {"room": "parents", "kind": "pillow", "box": [1.88, 0.24, 0.56, 0.62, 0.32, 0.12], "color": "pillow"},
-    {"room": "parents", "kind": "pillow", "box": [2.6, 0.24, 0.56, 0.62, 0.32, 0.12], "color": "pillow"},
-    {"room": "parents", "kind": "tv", "box": [0.07, 1.45, 1.15, 0.06, 1.1, 0.65], "color": "screen", "focusable": false},
-    {"room": "parents", "kind": "cart", "box": [0.1, 2.6, 0, 0.5, 1.0, 0.95], "color": "charcoal"},
-    {"room": "parents", "kind": "fan", "box": [1.3, 2.35, 0, 0.3, 0.3, 0.05], "color": "charcoal"},
-    {"room": "parents", "kind": "fan-pole", "box": [1.42, 2.47, 0.05, 0.06, 0.06, 0.9], "color": "charcoal"},
-    {"room": "parents", "kind": "fan-head", "box": [1.26, 2.44, 0.95, 0.38, 0.12, 0.38], "color": "charcoal"},
-    {"room": "parents", "kind": "armoire", "box": [2.82, 2.4, 0, 0.5, 1.15, 1.45], "color": "silver"},
-    {"room": "parents", "kind": "drawers", "box": [2.3, 4.2, 0, 0.45, 0.5, 0.7], "color": "white"},
-
-    {"room": "hall", "kind": "closet", "box": [3.5, 0.08, 0, 0.92, 0.55, 1.1], "color": "white"},
-    {"room": "hall", "kind": "basket", "box": [3.55, 1.1, 0, 0.38, 0.38, 0.62], "color": "white"},
-    {"room": "hall", "kind": "rack", "box": [3.55, 1.6, 0, 0.5, 0.25, 0.95], "color": "silver"},
-    {"room": "hall", "kind": "stool", "box": [4.05, 2.7, 0, 0.32, 0.32, 0.45], "color": "charcoal"},
-
-    {"room": "mine", "kind": "window", "box": [5.95, 0.06, 0.95, 1.35, 0.02, 1.1], "color": "window"},
-    {"room": "mine", "kind": "bed", "box": [4.65, 0.15, 0, 1.45, 2.1, 0.38], "color": "upholstery"},
-    {"room": "mine", "kind": "headboard", "box": [4.65, 0.07, 0, 1.45, 0.12, 1.1], "color": "upholstery"},
-    {"room": "mine", "kind": "duvet", "box": [4.7, 0.3, 0.38, 1.35, 1.9, 0.16], "color": "bedding"},
-    {"room": "mine", "kind": "pillow", "box": [4.82, 0.24, 0.54, 1.1, 0.34, 0.12], "color": "pillow"},
-    {"room": "mine", "kind": "blanket", "box": [4.85, 1.3, 0.54, 1.05, 0.75, 0.04], "color": "green"},
-    {"room": "mine", "kind": "cube-shelf", "box": [4.58, 2.45, 0, 0.42, 1.1, 1.05], "color": "charcoal"},
-    {"room": "mine", "kind": "fan", "box": [5.25, 2.85, 0, 0.3, 0.3, 0.05], "color": "charcoal"},
-    {"room": "mine", "kind": "fan-pole", "box": [5.37, 2.97, 0.05, 0.06, 0.06, 0.85], "color": "charcoal"},
-    {"room": "mine", "kind": "fan-head", "box": [5.21, 2.94, 0.9, 0.38, 0.12, 0.38], "color": "charcoal"},
-    {"room": "mine", "kind": "desk", "box": [6.15, 0.12, 0, 1.35, 0.6, 0.74], "color": "charcoal"},
-    {"room": "mine", "kind": "monitor", "box": [6.55, 0.18, 0.74, 0.5, 0.05, 0.32], "color": "screen"},
-    {"room": "mine", "kind": "chair", "box": [6.55, 0.85, 0, 0.55, 0.55, 0.5], "color": "charcoal"},
-    {"room": "mine", "kind": "chair-back", "box": [6.55, 1.32, 0.5, 0.55, 0.1, 0.78], "color": "charcoal"},
-    {"room": "mine", "kind": "bookshelf", "box": [7.18, 2.6, 0, 0.36, 0.95, 1.85], "color": "white"},
-    {"room": "mine", "kind": "table", "box": [7.08, 3.62, 0, 0.46, 0.6, 0.7], "color": "charcoal"},
-    {"room": "mine", "kind": "closet", "box": [5.3, 4.2, 0, 1.75, 0.54, 1.1], "color": "white"},
-
-    {"room": "living", "kind": "rug", "box": [2.6, 5.75, 0, 3.75, 2.45, 0.02], "color": "rug"},
-    {"room": "living", "kind": "rug", "box": [2.95, 6.1, 0.02, 3.05, 1.75, 0.004], "color": "rug-pattern"},
-    {"room": "living", "kind": "tvstand", "box": [4.6, 4.92, 0, 2.0, 0.42, 0.45], "color": "charcoal"},
-    {"room": "living", "kind": "tv", "box": [4.68, 4.88, 0.75, 1.85, 0.05, 1.05], "color": "screen", "focusable": false},
-    {"room": "living", "kind": "plant", "box": [5.95, 5.0, 0.45, 0.18, 0.18, 0.38], "color": "plant"},
-    {"room": "living", "kind": "plant", "box": [4.85, 5.02, 0.45, 0.15, 0.15, 0.26], "color": "plant"},
-    {"room": "living", "kind": "piano", "box": [1.85, 4.95, 0, 1.3, 0.38, 0.8], "color": "silver"},
-    {"room": "living", "kind": "sofa", "box": [6.55, 5.3, 0, 0.95, 4.0, 0.42], "color": "sofa"},
-    {"room": "living", "kind": "sofa-back", "box": [7.2, 5.3, 0.42, 0.3, 4.0, 0.4], "color": "sofa"},
-    {"room": "living", "kind": "sofa", "box": [4.25, 8.35, 0, 2.3, 0.95, 0.42], "color": "sofa"},
-    {"room": "living", "kind": "sofa-back", "box": [4.25, 9.0, 0.42, 2.95, 0.3, 0.4], "color": "sofa"},
-    {"room": "living", "kind": "sofa-arm", "box": [4.25, 8.35, 0.42, 0.25, 0.65, 0.2], "color": "sofa"},
-    {"room": "living", "kind": "chaise", "box": [5.5, 5.3, 0, 1.05, 0.95, 0.42], "color": "sofa"},
-    {"room": "living", "kind": "pillow", "box": [7.02, 6.2, 0.42, 0.16, 0.5, 0.42], "color": "pillow"},
-    {"room": "living", "kind": "pillow", "box": [7.02, 7.4, 0.42, 0.16, 0.5, 0.42], "color": "pillow"},
-    {"room": "living", "kind": "pillow", "box": [5.2, 8.84, 0.42, 0.5, 0.16, 0.42], "color": "pillow"},
-    {"room": "living", "kind": "cabinet", "box": [0.1, 8.6, 0, 0.95, 0.6, 0.8], "color": "white"},
-    {"room": "living", "kind": "side-table", "box": [0.3, 5.1, 0, 1.0, 0.5, 0.7], "color": "charcoal"}
-  ],
-  "fixtures": [
-    {"id": "parents.bulb", "room": "parents", "kind": "tube", "name": "Tube Light", "at": [0.1, 3.15, 2.05], "along": "y", "length": 1.2, "glow": [1.4, 2.9]},
-    {"id": "mine.lamp", "room": "mine", "kind": "lamp", "name": "Lamp", "at": [7.2, 2.2, 0], "height": 1.3, "glow": [6.6, 2.2]},
-    {"id": "mine.bulb", "room": "mine", "kind": "tube", "name": "Tube Light", "at": [4.6, 3.0, 2.0], "along": "y", "length": 1.2, "glow": [5.7, 2.6]},
-    {"id": "living.bulb", "room": "living", "kind": "lamp", "name": "Lightbulb", "at": [7.22, 9.08, 0], "height": 1.2, "glow": [6.2, 8.1]}
-  ],
-  "palette": {
-    "cool": {"floor-wood": "#5C616D", "floor-carpet": "#A7AEBC", "wall": "#D5D9DF", "wall-top": "#EEF0F4", "wood": "#4A4D55", "linen": "#E2E4E8",
-      "window": "#AFC4D8", "charcoal": "#34373E", "white": "#E6E9EE", "silver": "#B7BCC5", "navy": "#39445C", "duvet": "#A9A7AE",
-      "upholstery": "#8D9199", "bedding": "#9DA1A9", "green": "#3F7F66", "pillow": "#E3E5EA", "sofa": "#CDCDD0", "rug": "#3F475A",
-      "rug-pattern": "#6D7488", "screen": "#1A1C21", "plant": "#6E8F7E"},
-    "warm": {"floor-wood": "#7D5B45", "floor-carpet": "#D8B999", "wall": "#EEDFCB", "wall-top": "#FFF4E6", "wood": "#5A4A3E", "linen": "#F6E9D6",
-      "window": "#D6E2EA", "charcoal": "#3E3632", "white": "#FBF1E3", "silver": "#D3C8BA", "navy": "#45405A", "duvet": "#C7AE96",
-      "upholstery": "#A59585", "bedding": "#BCA994", "green": "#4F8C5E", "pillow": "#FFF0DC", "sofa": "#EAD8BF", "rug": "#51465A",
-      "rug-pattern": "#8C7570", "screen": "#1A1C21", "plant": "#77985F"},
-    "glow": "#FFC07A"
+ "about": "The Home tab's house (WELLY-HOME-REMOTE-SPEC.md §4): the apartment's blueprint and photos, written by tools/make_house.py (edit that, not this). Metres; x to the right, y toward the viewer, z up; origin at the back-left corner, as on the blueprint (balcony at the back, the parents' room in the front-right corner). Shared by the Android app (HouseView) and the web app (rooms.js). Fixture kinds: bulb (hanging), lamp (floor lamp; height = shade bottom), tube (wall tube light; along x or y, length); glow = where its light pools on the floor.",
+ "camera": {
+  "yaw": 14,
+  "pitch": 60,
+  "box": [
+   160,
+   135,
+   1760,
+   978
+  ]
+ },
+ "size": [
+  9.3,
+  14.8
+ ],
+ "rooms": [
+  {
+   "id": "dining",
+   "name": "Dining Room",
+   "rect": [
+    4.75,
+    3.35,
+    1.6,
+    0
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "balcony",
+   "name": "Balcony",
+   "rect": [
+    9.3,
+    2.0,
+    4.75,
+    0
+   ],
+   "floor": "deck"
+  },
+  {
+   "id": "kitchen",
+   "name": "Kitchen",
+   "rect": [
+    4.2,
+    5.85,
+    1.6,
+    3.35
+   ],
+   "floor": "tile"
+  },
+  {
+   "id": "living",
+   "name": "Living Room",
+   "rect": [
+    9.3,
+    7.1,
+    4.2,
+    2.0
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "laundry",
+   "name": "Laundry",
+   "rect": [
+    4.2,
+    7.1,
+    1.6,
+    5.85
+   ],
+   "floor": "tile"
+  },
+  {
+   "id": "hall",
+   "name": "Hallway",
+   "rect": [
+    5.35,
+    10.0,
+    1.6,
+    7.1
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "powder",
+   "name": "Half Bath",
+   "rect": [
+    6.85,
+    9.5,
+    5.35,
+    7.1
+   ],
+   "floor": "bathtile"
+  },
+  {
+   "id": "bath",
+   "name": "Bathroom",
+   "rect": [
+    9.3,
+    9.5,
+    6.85,
+    7.1
+   ],
+   "floor": "bathtile"
+  },
+  {
+   "id": "corridor",
+   "name": "Hallway",
+   "rect": [
+    9.3,
+    10.0,
+    5.35,
+    9.5
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "entry",
+   "name": "Entry",
+   "rect": [
+    2.9,
+    14.8,
+    0,
+    8.5
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "mine",
+   "name": "My Room",
+   "rect": [
+    5.85,
+    14.8,
+    2.9,
+    10.0
+   ],
+   "floor": "wood"
+  },
+  {
+   "id": "parents",
+   "name": "Parents' Room",
+   "rect": [
+    9.3,
+    14.8,
+    5.85,
+    10.0
+   ],
+   "floor": "wood"
   }
+ ],
+ "walls": [
+  {
+   "from": [
+    1.6,
+    0
+   ],
+   "to": [
+    4.75,
+    0
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    4.75,
+    2.0
+   ],
+   "to": [
+    5.8,
+    2.0
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    7.9,
+    2.0
+   ],
+   "to": [
+    9.3,
+    2.0
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    9.3,
+    2.0
+   ],
+   "to": [
+    9.3,
+    14.8
+   ],
+   "h": 0.45
+  },
+  {
+   "from": [
+    9.3,
+    0
+   ],
+   "to": [
+    9.3,
+    2.0
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    0,
+    14.8
+   ],
+   "to": [
+    1.95,
+    14.8
+   ],
+   "h": 0.45
+  },
+  {
+   "from": [
+    2.8,
+    14.8
+   ],
+   "to": [
+    9.3,
+    14.8
+   ],
+   "h": 0.45
+  },
+  {
+   "from": [
+    0,
+    8.5
+   ],
+   "to": [
+    0,
+    14.8
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    0,
+    8.5
+   ],
+   "to": [
+    1.6,
+    8.5
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    1.6,
+    0
+   ],
+   "to": [
+    1.6,
+    8.5
+   ],
+   "h": 2.6
+  },
+  {
+   "from": [
+    4.75,
+    0
+   ],
+   "to": [
+    4.75,
+    2.0
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    4.2,
+    3.35
+   ],
+   "to": [
+    4.2,
+    7.1
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    1.6,
+    5.85
+   ],
+   "to": [
+    4.2,
+    5.85
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    1.6,
+    7.1
+   ],
+   "to": [
+    4.2,
+    7.1
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    5.35,
+    7.1
+   ],
+   "to": [
+    9.3,
+    7.1
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    5.35,
+    7.1
+   ],
+   "to": [
+    5.35,
+    9.5
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    6.85,
+    7.1
+   ],
+   "to": [
+    6.85,
+    9.5
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    5.35,
+    9.5
+   ],
+   "to": [
+    5.95,
+    9.5
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    6.65,
+    9.5
+   ],
+   "to": [
+    7.05,
+    9.5
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    7.75,
+    9.5
+   ],
+   "to": [
+    9.3,
+    9.5
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    2.9,
+    10.0
+   ],
+   "to": [
+    2.9,
+    14.8
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    2.9,
+    10.0
+   ],
+   "to": [
+    5.0,
+    10.0
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    5.8,
+    10.0
+   ],
+   "to": [
+    5.95,
+    10.0
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    5.85,
+    10.0
+   ],
+   "to": [
+    5.85,
+    14.8
+   ],
+   "h": 1.1
+  },
+  {
+   "from": [
+    6.95,
+    10.0
+   ],
+   "to": [
+    9.3,
+    10.0
+   ],
+   "h": 1.1
+  }
+ ],
+ "furniture": [
+  {
+   "room": "living",
+   "kind": "rug",
+   "box": [
+    5.15,
+    3.05,
+    0,
+    3.15,
+    3.1,
+    0.02
+   ],
+   "color": "rug"
+  },
+  {
+   "room": "living",
+   "kind": "rug",
+   "box": [
+    5.45,
+    3.35,
+    0.02,
+    2.55,
+    2.5,
+    0.004
+   ],
+   "color": "rug-pattern"
+  },
+  {
+   "room": "living",
+   "kind": "sofa",
+   "box": [
+    8.3,
+    2.25,
+    0,
+    0.95,
+    4.05,
+    0.42
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "sofa-back",
+   "box": [
+    8.95,
+    2.25,
+    0.42,
+    0.3,
+    4.05,
+    0.4
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "sofa",
+   "box": [
+    6.2,
+    2.1,
+    0,
+    2.1,
+    0.95,
+    0.42
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "sofa-back",
+   "box": [
+    6.2,
+    2.1,
+    0.42,
+    3.05,
+    0.3,
+    0.4
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "sofa-arm",
+   "box": [
+    6.2,
+    2.4,
+    0.42,
+    0.25,
+    0.65,
+    0.2
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "chaise",
+   "box": [
+    7.25,
+    5.35,
+    0,
+    1.05,
+    0.95,
+    0.42
+   ],
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "pillow",
+   "box": [
+    8.82,
+    3.0,
+    0.42,
+    0.16,
+    0.5,
+    0.42
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "living",
+   "kind": "pillow",
+   "box": [
+    8.82,
+    4.3,
+    0.42,
+    0.16,
+    0.5,
+    0.42
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "living",
+   "kind": "pillow",
+   "box": [
+    6.9,
+    2.4,
+    0.42,
+    0.5,
+    0.16,
+    0.42
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "living",
+   "kind": "tvstand",
+   "box": [
+    5.95,
+    6.6,
+    0,
+    2.0,
+    0.42,
+    0.45
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "living",
+   "kind": "tv",
+   "box": [
+    6.03,
+    6.98,
+    0.55,
+    1.85,
+    0.05,
+    1.05
+   ],
+   "color": "screen",
+   "focusable": false
+  },
+  {
+   "room": "living",
+   "kind": "plant",
+   "box": [
+    7.55,
+    6.68,
+    0.45,
+    0.18,
+    0.18,
+    0.38
+   ],
+   "color": "plant"
+  },
+  {
+   "room": "living",
+   "kind": "plant",
+   "box": [
+    6.15,
+    6.7,
+    0.45,
+    0.15,
+    0.15,
+    0.26
+   ],
+   "color": "plant"
+  },
+  {
+   "room": "living",
+   "kind": "piano",
+   "box": [
+    4.3,
+    5.9,
+    0,
+    0.4,
+    1.1,
+    0.8
+   ],
+   "color": "silver"
+  },
+  {
+   "room": "living",
+   "kind": "cabinet",
+   "box": [
+    4.85,
+    2.1,
+    0,
+    0.85,
+    0.5,
+    0.8
+   ],
+   "color": "white"
+  },
+  {
+   "room": "living",
+   "kind": "door",
+   "box": [
+    5.8,
+    1.97,
+    0,
+    2.1,
+    0.06,
+    2.1
+   ],
+   "color": "window"
+  },
+  {
+   "room": "living",
+   "kind": "curtain",
+   "box": [
+    5.62,
+    2.06,
+    0,
+    0.3,
+    0.12,
+    2.2
+   ],
+   "color": "curtain"
+  },
+  {
+   "room": "living",
+   "kind": "curtain",
+   "box": [
+    7.78,
+    2.06,
+    0,
+    0.3,
+    0.12,
+    2.2
+   ],
+   "color": "curtain"
+  },
+  {
+   "room": "balcony",
+   "kind": "rail",
+   "box": [
+    4.85,
+    0.04,
+    0.88,
+    4.35,
+    0.05,
+    0.05
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    4.9,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    5.28,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    5.66,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    6.04,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    6.42,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    6.8,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    7.18,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    7.56,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    7.94,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    8.32,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    8.7,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "balcony",
+   "kind": "post",
+   "box": [
+    9.08,
+    0.04,
+    0,
+    0.04,
+    0.04,
+    0.88
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "dining",
+   "kind": "window",
+   "box": [
+    2.55,
+    0.06,
+    0.95,
+    1.1,
+    0.02,
+    1.15
+   ],
+   "color": "window"
+  },
+  {
+   "room": "dining",
+   "kind": "table",
+   "box": [
+    2.45,
+    1.0,
+    0,
+    1.4,
+    0.85,
+    0.75
+   ],
+   "color": "oak"
+  },
+  {
+   "room": "dining",
+   "kind": "chair",
+   "box": [
+    2.6,
+    0.55,
+    0,
+    0.42,
+    0.42,
+    0.46
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "dining",
+   "kind": "chair",
+   "box": [
+    3.25,
+    0.55,
+    0,
+    0.42,
+    0.42,
+    0.46
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "dining",
+   "kind": "chair",
+   "box": [
+    2.6,
+    1.9,
+    0,
+    0.42,
+    0.42,
+    0.46
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "dining",
+   "kind": "chair",
+   "box": [
+    3.25,
+    1.9,
+    0,
+    0.42,
+    0.42,
+    0.46
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "kitchen",
+   "kind": "cabinet",
+   "box": [
+    1.65,
+    3.45,
+    0,
+    0.62,
+    1.65,
+    0.86
+   ],
+   "color": "oak"
+  },
+  {
+   "room": "kitchen",
+   "kind": "counter",
+   "box": [
+    1.65,
+    3.45,
+    0.86,
+    0.62,
+    1.65,
+    0.04
+   ],
+   "color": "granite"
+  },
+  {
+   "room": "kitchen",
+   "kind": "stove",
+   "box": [
+    1.65,
+    4.15,
+    0,
+    0.64,
+    0.76,
+    0.92
+   ],
+   "color": "white"
+  },
+  {
+   "room": "kitchen",
+   "kind": "fridge",
+   "box": [
+    1.65,
+    5.12,
+    0,
+    0.72,
+    0.7,
+    1.75
+   ],
+   "color": "white"
+  },
+  {
+   "room": "kitchen",
+   "kind": "cabinet",
+   "box": [
+    3.52,
+    3.75,
+    0,
+    0.62,
+    2.0,
+    0.86
+   ],
+   "color": "oak"
+  },
+  {
+   "room": "kitchen",
+   "kind": "counter",
+   "box": [
+    3.52,
+    3.75,
+    0.86,
+    0.62,
+    2.0,
+    0.04
+   ],
+   "color": "granite"
+  },
+  {
+   "room": "laundry",
+   "kind": "washer",
+   "box": [
+    1.75,
+    5.95,
+    0,
+    0.7,
+    0.68,
+    0.95
+   ],
+   "color": "white"
+  },
+  {
+   "room": "laundry",
+   "kind": "dryer",
+   "box": [
+    2.5,
+    5.95,
+    0,
+    0.7,
+    0.68,
+    0.95
+   ],
+   "color": "white"
+  },
+  {
+   "room": "laundry",
+   "kind": "heater",
+   "box": [
+    3.35,
+    6.0,
+    0,
+    0.5,
+    0.5,
+    1.35
+   ],
+   "color": "silver"
+  },
+  {
+   "room": "hall",
+   "kind": "rack",
+   "box": [
+    2.0,
+    7.25,
+    0,
+    0.55,
+    0.28,
+    0.95
+   ],
+   "color": "silver"
+  },
+  {
+   "room": "hall",
+   "kind": "basket",
+   "box": [
+    2.7,
+    7.3,
+    0,
+    0.38,
+    0.38,
+    0.62
+   ],
+   "color": "white"
+  },
+  {
+   "room": "hall",
+   "kind": "closet",
+   "box": [
+    3.05,
+    8.6,
+    0,
+    1.0,
+    0.85,
+    1.1
+   ],
+   "color": "white"
+  },
+  {
+   "room": "hall",
+   "kind": "stool",
+   "box": [
+    4.7,
+    8.6,
+    0,
+    0.32,
+    0.32,
+    0.45
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "powder",
+   "kind": "toilet",
+   "box": [
+    5.55,
+    7.25,
+    0,
+    0.42,
+    0.68,
+    0.42
+   ],
+   "color": "white"
+  },
+  {
+   "room": "powder",
+   "kind": "sink",
+   "box": [
+    6.2,
+    7.2,
+    0,
+    0.55,
+    0.45,
+    0.85
+   ],
+   "color": "white"
+  },
+  {
+   "room": "bath",
+   "kind": "vanity",
+   "box": [
+    7.0,
+    7.2,
+    0,
+    0.75,
+    0.5,
+    0.85
+   ],
+   "color": "white"
+  },
+  {
+   "room": "bath",
+   "kind": "toilet",
+   "box": [
+    7.95,
+    7.2,
+    0,
+    0.42,
+    0.68,
+    0.42
+   ],
+   "color": "white"
+  },
+  {
+   "room": "bath",
+   "kind": "tub",
+   "box": [
+    7.55,
+    8.7,
+    0,
+    1.7,
+    0.75,
+    0.55
+   ],
+   "color": "white"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    10.6,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step-edge"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    10.88,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    11.16,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step-edge"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    11.44,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    11.72,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step-edge"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    12.0,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    12.28,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step-edge"
+  },
+  {
+   "room": "entry",
+   "kind": "rug",
+   "box": [
+    0.3,
+    12.56,
+    0,
+    1.5,
+    0.28,
+    0.003
+   ],
+   "color": "step"
+  },
+  {
+   "room": "entry",
+   "kind": "rail",
+   "box": [
+    1.8,
+    10.6,
+    0,
+    0.05,
+    2.25,
+    0.9
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "entry",
+   "kind": "closet",
+   "box": [
+    0.12,
+    9.1,
+    0,
+    1.45,
+    0.6,
+    1.1
+   ],
+   "color": "white"
+  },
+  {
+   "room": "entry",
+   "kind": "closet",
+   "box": [
+    2.25,
+    13.0,
+    0,
+    0.58,
+    1.45,
+    1.1
+   ],
+   "color": "white"
+  },
+  {
+   "room": "mine",
+   "kind": "closet",
+   "box": [
+    2.98,
+    10.06,
+    0,
+    1.85,
+    0.6,
+    1.1
+   ],
+   "color": "white"
+  },
+  {
+   "room": "mine",
+   "kind": "cube-shelf",
+   "box": [
+    2.98,
+    10.8,
+    0,
+    0.42,
+    1.15,
+    0.82
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "fan",
+   "box": [
+    3.6,
+    11.9,
+    0,
+    0.3,
+    0.3,
+    0.05
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "fan-pole",
+   "box": [
+    3.72,
+    12.02,
+    0.05,
+    0.06,
+    0.06,
+    0.85
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "fan-head",
+   "box": [
+    3.56,
+    11.94,
+    0.9,
+    0.38,
+    0.12,
+    0.38
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "bed",
+   "box": [
+    2.98,
+    12.55,
+    0,
+    1.45,
+    2.1,
+    0.38
+   ],
+   "color": "upholstery"
+  },
+  {
+   "room": "mine",
+   "kind": "headboard",
+   "box": [
+    2.98,
+    14.62,
+    0,
+    1.45,
+    0.12,
+    0.95
+   ],
+   "color": "upholstery"
+  },
+  {
+   "room": "mine",
+   "kind": "duvet",
+   "box": [
+    3.03,
+    12.65,
+    0.38,
+    1.35,
+    1.9,
+    0.16
+   ],
+   "color": "bedding"
+  },
+  {
+   "room": "mine",
+   "kind": "pillow",
+   "box": [
+    3.15,
+    14.2,
+    0.54,
+    1.1,
+    0.34,
+    0.12
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "mine",
+   "kind": "blanket",
+   "box": [
+    3.18,
+    12.85,
+    0.54,
+    1.05,
+    0.75,
+    0.04
+   ],
+   "color": "green"
+  },
+  {
+   "room": "mine",
+   "kind": "desk",
+   "box": [
+    4.62,
+    14.12,
+    0,
+    1.18,
+    0.6,
+    0.74
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "monitor",
+   "box": [
+    4.95,
+    14.55,
+    0.74,
+    0.5,
+    0.05,
+    0.32
+   ],
+   "color": "screen"
+  },
+  {
+   "room": "mine",
+   "kind": "chair",
+   "box": [
+    4.92,
+    13.42,
+    0,
+    0.55,
+    0.55,
+    0.5
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "chair-back",
+   "box": [
+    4.92,
+    13.32,
+    0.5,
+    0.55,
+    0.1,
+    0.78
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "mine",
+   "kind": "bookshelf",
+   "box": [
+    5.42,
+    10.95,
+    0,
+    0.36,
+    0.95,
+    1.85
+   ],
+   "color": "white"
+  },
+  {
+   "room": "mine",
+   "kind": "table",
+   "box": [
+    5.32,
+    12.72,
+    0,
+    0.46,
+    0.6,
+    0.7
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "closet",
+   "box": [
+    7.2,
+    10.06,
+    0,
+    2.02,
+    0.6,
+    1.1
+   ],
+   "color": "white"
+  },
+  {
+   "room": "parents",
+   "kind": "cart",
+   "box": [
+    5.93,
+    10.55,
+    0,
+    0.5,
+    1.0,
+    0.8
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "tv",
+   "box": [
+    5.92,
+    12.0,
+    0.42,
+    0.06,
+    1.1,
+    0.6
+   ],
+   "color": "screen",
+   "focusable": false
+  },
+  {
+   "room": "parents",
+   "kind": "bed",
+   "box": [
+    7.6,
+    12.6,
+    0,
+    1.55,
+    2.05,
+    0.42
+   ],
+   "color": "navy"
+  },
+  {
+   "room": "parents",
+   "kind": "headboard",
+   "box": [
+    7.6,
+    14.62,
+    0,
+    1.55,
+    0.12,
+    1.0
+   ],
+   "color": "navy"
+  },
+  {
+   "room": "parents",
+   "kind": "duvet",
+   "box": [
+    7.65,
+    12.75,
+    0.42,
+    1.45,
+    1.85,
+    0.14
+   ],
+   "color": "duvet"
+  },
+  {
+   "room": "parents",
+   "kind": "pillow",
+   "box": [
+    7.72,
+    14.2,
+    0.56,
+    0.62,
+    0.32,
+    0.12
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "parents",
+   "kind": "pillow",
+   "box": [
+    8.44,
+    14.2,
+    0.56,
+    0.62,
+    0.32,
+    0.12
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "parents",
+   "kind": "desk",
+   "box": [
+    5.95,
+    14.1,
+    0,
+    1.45,
+    0.62,
+    0.74
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "monitor",
+   "box": [
+    6.4,
+    14.52,
+    0.74,
+    0.55,
+    0.05,
+    0.34
+   ],
+   "color": "screen"
+  },
+  {
+   "room": "parents",
+   "kind": "chair",
+   "box": [
+    6.42,
+    13.4,
+    0,
+    0.5,
+    0.5,
+    0.48
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "chair-back",
+   "box": [
+    6.42,
+    13.32,
+    0.48,
+    0.5,
+    0.08,
+    0.55
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "fan",
+   "box": [
+    6.95,
+    12.35,
+    0,
+    0.3,
+    0.3,
+    0.05
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "fan-pole",
+   "box": [
+    7.07,
+    12.47,
+    0.05,
+    0.06,
+    0.06,
+    0.9
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "fan-head",
+   "box": [
+    6.91,
+    12.44,
+    0.95,
+    0.38,
+    0.12,
+    0.38
+   ],
+   "color": "charcoal"
+  },
+  {
+   "room": "parents",
+   "kind": "armoire",
+   "box": [
+    8.75,
+    11.0,
+    0,
+    0.5,
+    1.2,
+    1.45
+   ],
+   "color": "silver"
+  }
+ ],
+ "fixtures": [
+  {
+   "id": "parents.bulb",
+   "room": "parents",
+   "kind": "tube",
+   "name": "Tube Light",
+   "at": [
+    5.93,
+    11.05,
+    1.0
+   ],
+   "along": "y",
+   "length": 1.2,
+   "glow": [
+    7.0,
+    11.6
+   ]
+  },
+  {
+   "id": "mine.lamp",
+   "room": "mine",
+   "kind": "lamp",
+   "name": "Lamp",
+   "at": [
+    5.6,
+    12.3,
+    0
+   ],
+   "height": 1.3,
+   "glow": [
+    4.7,
+    12.3
+   ]
+  },
+  {
+   "id": "mine.bulb",
+   "room": "mine",
+   "kind": "tube",
+   "name": "Tube Light",
+   "at": [
+    2.97,
+    11.35,
+    1.0
+   ],
+   "along": "y",
+   "length": 1.2,
+   "glow": [
+    3.9,
+    11.6
+   ]
+  },
+  {
+   "id": "living.bulb",
+   "room": "living",
+   "kind": "lamp",
+   "name": "Lightbulb",
+   "at": [
+    9.05,
+    2.3,
+    0
+   ],
+   "height": 1.2,
+   "glow": [
+    8.0,
+    3.3
+   ]
+  }
+ ],
+ "palette": {
+  "cool": {
+   "floor-wood": "#5C616D",
+   "floor-tile": "#9EA2A9",
+   "floor-bathtile": "#B8AFB4",
+   "floor-deck": "#868B94",
+   "wall": "#D5D9DF",
+   "wall-top": "#EEF0F4",
+   "wood": "#4A4D55",
+   "linen": "#E2E4E8",
+   "window": "#AFC4D8",
+   "charcoal": "#34373E",
+   "white": "#E6E9EE",
+   "silver": "#B7BCC5",
+   "navy": "#39445C",
+   "duvet": "#A9A7AE",
+   "upholstery": "#8D9199",
+   "bedding": "#9DA1A9",
+   "green": "#3F7F66",
+   "pillow": "#E3E5EA",
+   "sofa": "#CDCDD0",
+   "rug": "#3F475A",
+   "rug-pattern": "#6D7488",
+   "screen": "#1A1C21",
+   "plant": "#6E8F7E",
+   "oak": "#8B8178",
+   "granite": "#4A4E55",
+   "curtain": "#8E6A6A",
+   "step": "#4E525C",
+   "step-edge": "#3E424B"
+  },
+  "warm": {
+   "floor-wood": "#7D5B45",
+   "floor-tile": "#CDBFAE",
+   "floor-bathtile": "#E6CFC8",
+   "floor-deck": "#A8988A",
+   "wall": "#EEDFCB",
+   "wall-top": "#FFF4E6",
+   "wood": "#5A4A3E",
+   "linen": "#F6E9D6",
+   "window": "#D6E2EA",
+   "charcoal": "#3E3632",
+   "white": "#FBF1E3",
+   "silver": "#D3C8BA",
+   "navy": "#45405A",
+   "duvet": "#C7AE96",
+   "upholstery": "#A59585",
+   "bedding": "#BCA994",
+   "green": "#4F8C5E",
+   "pillow": "#FFF0DC",
+   "sofa": "#EAD8BF",
+   "rug": "#51465A",
+   "rug-pattern": "#8C7570",
+   "screen": "#1A1C21",
+   "plant": "#77985F",
+   "oak": "#B9895A",
+   "granite": "#54504D",
+   "curtain": "#B5703F",
+   "step": "#6A5040",
+   "step-edge": "#57412F"
+  },
+  "glow": "#FFC07A"
+ }
 }

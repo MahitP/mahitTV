@@ -222,17 +222,20 @@ the user's words above that, right-aligned, dimmer.
 - A **single-floor house, roof off**, seen from above at an angle (isometric, 30°), centred; walls 2.6 m, the front
   walls cut low (a dollhouse cutaway) so the rooms read. Geometry is data: **`app/assets/house.json`**, shared by
   Android and the web.
-- Modelled on photos of the real home (7.6 × 9.4 m; the camera looks from the front right, so the back wall, the left
-  wall and the wall with My Room's tube light stand full height):
-  - **Parents' room** (back left): bed against the back wall with the desk and window beside it, wall TV, cart,
-    armoire, fan; a **tube light** on the left wall, across from the bed, the first thing you see walking in.
-  - **Hallway** (between the bedrooms): closet at the end, laundry basket, drying rack, stool. No light.
-  - **My room** (back right, long): bed along the hallway wall, black cube shelf with the **tube light** above it,
-    desk and gaming chair under the window, white bookshelf across from the tube light with the **floor lamp** just
-    behind it, closet by the door.
-  - **Living room** (front, full width): L-shaped sectional with a chaise, big patterned rug, low TV stand with
-    plants under the wall-mounted **Smart TV**, keyboard by the hallway opening, and the corner **floor lamp** (its
-    bulb is the living room's light).
+- Modelled on the apartment's **blueprint** and photos, written by `tools/make_house.py` (edit that, not house.json),
+  in the blueprint's orientation (balcony at the back, bedrooms in front), seen from above at 60°; the back (north)
+  and left (west) walls stand full height, the rest are cut low:
+  - **Living room** (centre right): L sectional along the east wall with its return in front of the curtained
+    sliding door to the **balcony** (railing), a chaise, the big patterned rug, the **Smart TV** on the bathroom wall
+    over a low stand with plants (visual only), the keyboard by the hallway, the corner **floor lamp** (its bulb is the
+    living room's light).
+  - **Dining room** (top left, window), **galley kitchen**, **laundry closet**, the **hallway** (rack, basket, linen
+    closet), the **half bath** and the **bathroom** (tub), the **entry** with its stairs down to the front door.
+  - **My room** (front, beside the entry): closet by the door, black cube shelf under the **tube light** on the west
+    wall, the bed along that wall, desk and gaming chair under the window, the white bookshelf across from the tube
+    light with the **lamp** just behind it.
+  - **Parents' room** (front-right corner): closet, black cart and the **tube light** on the west wall by the door,
+    the wall TV, the bed against the window wall, desk and chair under the window, the silver armoire.
 - Light kinds in house.json: `bulb` (hanging), `lamp` (floor lamp, `height` = shade bottom), `tube` (wall bar,
   `along` x|y, `length`); `glow` is where each light pools on the floor. Ids stay `parents.bulb`, `mine.lamp`,
   `mine.bulb`, `living.bulb`, so `kasa=` keys don't change.

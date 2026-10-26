@@ -18,7 +18,7 @@
   var canvas, ctx, caption;
   var shown = false, focused = false, focus = 0, frame = 0, last = 0;
   var proj = {s: 1, ox: 0, oy: 0, cos: 1, sin: 0, sp: 1, cp: 0};
-  var fixtures = [], rooms = {}, solids = [];
+  var fixtures = [], rooms = {}, solids = [], slabs = [];
 
   /** A spring (response in seconds, damping fraction), stepped by the frame's time. */
   function Spring(response, damping, value) {
@@ -78,7 +78,27 @@
       var o = solids[i].box;
       solids[i].depth = depth(o[0] + o[3] / 2, o[1] + o[4] / 2, 0);
     }
+    // Something resting on another box (a duvet on a bed, a blanket on the duvet, the monitor on the desk) is drawn
+    // after it, as in HouseView.
+    var byHeight = solids.slice().sort(function (a, b2) { return a.box[2] - b2.box[2]; });
+    for (i = 0; i < byHeight.length; i++) {
+      var it = byHeight[i].box;
+      if (it[2] <= 0) continue;
+      for (k = 0; k < byHeight.length; k++) {
+        var un = byHeight[k].box;
+        if (k === i || Math.abs(un[2] + un[5] - it[2]) > 0.03) continue;
+        if (it[0] < un[0] + un[3] && un[0] < it[0] + it[3] && it[1] < un[1] + un[4] && un[1] < it[1] + it[4]) {
+          byHeight[i].depth = Math.max(byHeight[i].depth, byHeight[k].depth + 0.001);
+        }
+      }
+    }
     solids.sort(function (a, b2) { return a.depth - b2.depth; });
+    slabs = [];
+    for (i = 0; i < H.rooms.length; i++) {
+      var rr = H.rooms[i].rect;
+      slabs.push([rr[0] - 0.1, rr[1] - 0.1, -0.25, rr[2] - rr[0] + 0.2, rr[3] - rr[1] + 0.2, 0.25]);
+    }
+    slabs.sort(function (a, b2) { return depth(a[0] + a[3] / 2, a[1] + a[4] / 2, 0) - depth(b2[0] + b2[3] / 2, b2[1] + b2[4] / 2, 0); });
     fixtures = [];
     for (i = 0; i < H.fixtures.length; i++) {
       var d = H.fixtures[i], at = d.at, z2 = d.kind === 'lamp' ? (d.height || 1.3) + 0.22 : at[2];
@@ -285,8 +305,8 @@
     ctx.fillStyle = shadow;
     ctx.fillRect(-1, -1, 2, 2);
     ctx.restore();
-    // The base slab, then the floors.
-    drawBox([-0.12, -0.12, -0.25, H.size[0] + 0.24, H.size[1] + 0.24, 0.25], 'wall', 0, 'wall-top');
+    // The base under each room (the plan needn't be a rectangle), back to front, then the floors.
+    for (i = 0; i < slabs.length; i++) drawBox(slabs[i], 'wall', 0, 'wall-top');
     for (k in rooms) {
       if (!rooms.hasOwnProperty(k)) continue;
       r = rooms[k].def.rect;
