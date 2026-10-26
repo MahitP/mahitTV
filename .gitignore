@@ -21,3 +21,6 @@ out-config.backup
 
 # Screenshots from tools/screenshots.js and tools/apk_screenshots.sh (large; kept local)
 previews/
+
+# Your own Memoji (personal; the build packs it, git leaves it out)
+app/assets/avatars/memoji.png

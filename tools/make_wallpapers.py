@@ -124,15 +124,43 @@ def aurora():
     art.save(img, 'aurora.jpg', 0, warm=(1.0, 1.0, 1.0), cool=(1.0, 1.0, 1.0), out_dir=AERIALS, quality=84)
 
 
+# Apple's avatar backgrounds (Contacts and Memoji): 18 top-to-bottom gradients, in Apple's order, measured off an
+# iOS screenshot of the picker (its Display P3 converted to sRGB; two methods agree within 3/255). Avatars use only these.
+APPLE_AVATAR_GRADIENTS = [
+    ('#ABAEB6', '#878C96'),   # 1
+    ('#CBC0F6', '#B5A4F2'),   # 2
+    ('#9FC8EB', '#74B2E2'),   # 3
+    ('#F5A4BF', '#EF7DA3'),   # 4
+    ('#F2CE9B', '#EDB96E'),   # 5
+    ('#BDEDAB', '#9FE787'),   # 6
+    ('#D9B7B3', '#C89793'),   # 7
+    ('#ECB393', '#E39163'),   # 8
+    ('#CAC0D5', '#B4A4C3'),   # 9
+    ('#B9CDE0', '#9BB7D3'),   # 10
+    ('#C4E2E4', '#ABD5D8'),   # 11
+    ('#ECA4E7', '#E27CDD'),   # 12
+    ('#99ECEE', '#66E4E7'),   # 13
+    ('#A0F1B3', '#72EB92'),   # 14
+    ('#CEC8C1', '#BAB1A7'),   # 15
+    ('#DFCAAD', '#D1B48A'),   # 16
+    ('#C7D3C4', '#B0C2AA'),   # 17
+    ('#707070', '#333333'),   # 18
+]
+
+
+def hexrgb(h):
+    return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+
+
 def avatar(name, bg, skin, hair, hair_style, shirt):
     """A friendly cartoon head on a gradient disc (Memoji-like in spirit, drawn here), 256 px."""
     S = 1024
     im = Image.new('RGBA', (S, S), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    for i in range(S // 2, 0, -2):   # the disc: a vertical gradient
-        t = 1 - i / (S / 2)
-        col = tuple(int(bg[0][j] * (1 - t) + bg[1][j] * t) for j in range(3))
-        d.ellipse((S / 2 - i, S / 2 - i, S / 2 + i, S / 2 + i), fill=col + (255,))
+    top, bottom = hexrgb(bg[0]), hexrgb(bg[1])
+    for y in range(S):   # Apple's background: a plain gradient, top to bottom
+        t = y / (S - 1)
+        d.line((0, y, S, y), fill=tuple(round(top[j] * (1 - t) + bottom[j] * t) for j in range(3)) + (255,))
     mask = Image.new('L', (S, S), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, S, S), fill=255)
     face = Image.new('RGBA', (S, S), (0, 0, 0, 0))
@@ -178,7 +206,7 @@ if __name__ == '__main__':
     coast()
     earth()
     aurora()
-    avatar('default-1.png', ((255, 196, 120), (255, 132, 90)), (246, 205, 170), (238, 170, 70), 'long', (90, 130, 230))
-    avatar('default-2.png', ((120, 200, 255), (70, 120, 240)), (200, 150, 110), (40, 30, 26), 'short', (240, 90, 90))
-    avatar('default-3.png', ((170, 240, 170), (60, 180, 120)), (120, 82, 60), (24, 20, 18), 'curly', (250, 200, 60))
-    avatar('default-4.png', ((230, 170, 255), (150, 90, 240)), (252, 220, 196), (150, 70, 40), 'bun', (40, 170, 160))
+    avatar('default-1.png', APPLE_AVATAR_GRADIENTS[4], (246, 205, 170), (238, 170, 70), 'long', (90, 130, 230))
+    avatar('default-2.png', APPLE_AVATAR_GRADIENTS[2], (200, 150, 110), (40, 30, 26), 'short', (240, 90, 90))
+    avatar('default-3.png', APPLE_AVATAR_GRADIENTS[5], (120, 82, 60), (24, 20, 18), 'curly', (250, 200, 60))
+    avatar('default-4.png', APPLE_AVATAR_GRADIENTS[1], (252, 220, 196), (150, 70, 40), 'bun', (40, 170, 160))

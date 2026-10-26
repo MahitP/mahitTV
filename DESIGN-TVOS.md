@@ -119,6 +119,10 @@ white gear.
 - `profiles=` in config.properties: `Name:avatar.png` pairs, comma separated (`profiles=Mahit:memoji.png,Guest:default-3.png`).
   Avatars are files in **`app/assets/avatars/`** (both builds take them from there). Drop **`memoji.png`** there to
   use your own Memoji. Empty: one profile, avatar `memoji.png` when present, else `default-1.png`.
+- Avatar backgrounds use **only Apple's 18 Contacts/Memoji gradients** (top → bottom, in Apple's order), measured
+  off an iOS screenshot of the picker (Display P3 → sRGB) and kept in `tools/make_wallpapers.py`
+  (`APPLE_AVATAR_GRADIENTS`); they match the values published by jack.bio's iOS monogram creator to a few steps,
+  except the grey, whose top is lighter on the device. No glow, rim or ring: the Memoji on the plain gradient, as Apple draws it.
 - The current profile is remembered on the TV (Prefs); its avatar shows in the pill. Profiles hold the name and the
   avatar for now (per-profile Docks would come later).
 
