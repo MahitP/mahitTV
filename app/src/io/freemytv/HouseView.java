@@ -38,6 +38,10 @@ final class HouseView extends View {
     private static final float WALL = 0.12f, PIECE = 1f;
     private static final float CORD_TOP = 2.6f, BULB_R = 0.12f, GLOW_R = 3f, BULB_HALO = 0.6f, FOCUS_HALO = 0.55f;
     private static final float SHADE_BOTTOM = 1.3f, SHADE_H = 0.45f, SHADE_RB = 0.22f, SHADE_RT = 0.13f, BASE_R = 0.16f;
+    /** A wall tube light: its bar's width, the lit part's (inside the dark end caps) and its core's, in metres. */
+    private static final float TUBE_W = 0.11f, TUBE_LIT = 0.08f, TUBE_CORE = 0.035f, TUBE_CAP = 0.09f;
+    private static final int BULB = 0, LAMP = 1, TUBE = 2;
+    private static final int TUBE_CASE = 0xFF30333A, TUBE_OFF = 0xFFCED3DC, TUBE_ON = 0xFFFFE9C6, TUBE_CORE_ON = 0xFFFFFAF0;
     private static final float CAPTION_Y = 1000;
     // Face shading (top lighter; the faces toward +y and +x darker, as lit from the front left).
     private static final float TOP = 0.08f, FACE_Y = -0.06f, FACE_X = -0.16f;
@@ -59,8 +63,11 @@ final class HouseView extends View {
         boolean[] rug;
         String[] fixtureId, fixtureName;
         int[] fixtureRoom;
-        boolean[] lamp;
-        float[][] at;
+        int[] kind;               // BULB, LAMP or TUBE
+        float[] shadeBottom;      // a lamp's shade height
+        float[][] at, glowAt;     // where it is; where its light pools on the floor
+        boolean[] alongX;         // a tube's direction
+        float[] length;           // a tube's length
     }
 
     /** One thing to draw in depth order: a box (a wall piece, a piece of furniture) or a light. */
@@ -91,6 +98,8 @@ final class HouseView extends View {
     private Path[] roomFloor;
     private float[] roomGlow = new float[0];
     private float[] fixX, fixY, cordX, cordY, poleX, poleY, glowX, glowY;
+    private float[][] tube;   // a tube light's bar ends, then its lit part's ends (x, y each)
+    private float tubeW, tubeLit, tubeCore;
     private Path[] shade;
     private RectF[] shadeTop, lampBase;
     private Shader[] floorGlow, bulbHalo;
@@ -239,6 +248,7 @@ final class HouseView extends View {
             case "Living Room": return Ui.tr("Living Room");
             case "Lightbulb": return Ui.tr("Lightbulb");
             case "Lamp": return Ui.tr("Lamp");
+            case "Tube Light": return Ui.tr("Tube Light");
             default: return Ui.tr(english);
         }
     }
@@ -330,16 +340,25 @@ final class HouseView extends View {
         m.fixtureId = new String[n];
         m.fixtureName = new String[n];
         m.fixtureRoom = new int[n];
-        m.lamp = new boolean[n];
+        m.kind = new int[n];
+        m.shadeBottom = new float[n];
         m.at = new float[n][];
+        m.glowAt = new float[n][];
+        m.alongX = new boolean[n];
+        m.length = new float[n];
         for (int i = 0; i < n; i++) {
             JSONObject f = fixtures.getJSONObject(i);
             m.fixtureId[i] = f.getString("id");
             m.fixtureName[i] = f.optString("name", "Lightbulb");
             Integer room = roomIndex.get(f.optString("room"));
             m.fixtureRoom[i] = room == null ? 0 : room;
-            m.lamp[i] = "lamp".equals(f.optString("kind"));
+            String kind = f.optString("kind", "bulb");
+            m.kind[i] = "lamp".equals(kind) ? LAMP : "tube".equals(kind) ? TUBE : BULB;
+            m.shadeBottom[i] = (float) f.optDouble("height", SHADE_BOTTOM);
             m.at[i] = floats(f.getJSONArray("at"));
+            m.glowAt[i] = f.has("glow") ? floats(f.getJSONArray("glow")) : m.at[i];
+            m.alongX[i] = "x".equals(f.optString("along", "x"));
+            m.length[i] = (float) f.optDouble("length", 1.2);
         }
         return m;
     }
@@ -605,6 +624,10 @@ final class HouseView extends View {
         poleY = new float[n];
         glowX = new float[n];
         glowY = new float[n];
+        tube = new float[n][];
+        tubeW = Math.max(3 * k, TUBE_W * scale);
+        tubeLit = Math.max(2 * k, TUBE_LIT * scale);
+        tubeCore = Math.max(1 * k, TUBE_CORE * scale);
         shade = new Path[n];
         shadeTop = new RectF[n];
         lampBase = new RectF[n];
@@ -617,23 +640,38 @@ final class HouseView extends View {
         int g = m.glow & 0xFFFFFF;
         for (int i = 0; i < n; i++) {
             float[] a = m.at[i];
-            project(a[0], a[1], 0);
+            project(m.glowAt[i][0], m.glowAt[i][1], 0);
             glowX[i] = pt[0];
             glowY[i] = pt[1];
             floorGlow[i] = new RadialGradient(0, 0, glowR, new int[] {0xFF000000 | g, 0x66000000 | g, g},
                     new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP);
             bulbHalo[i] = new RadialGradient(0, 0, haloR, new int[] {0xCC000000 | g, 0x33000000 | g, g},
                     new float[] {0, 0.4f, 1}, Shader.TileMode.CLAMP);
-            if (m.lamp[i]) {
-                float rb = SHADE_RB * scale, rt = SHADE_RT * scale;
+            if (m.kind[i] == TUBE) {
+                float half = m.length[i] / 2, ex = m.alongX[i] ? half : 0, ey = m.alongX[i] ? 0 : half;
+                float[] t = tube[i] = new float[8];
+                project(a[0] - ex, a[1] - ey, a[2]);
+                t[0] = pt[0];
+                t[1] = pt[1];
+                project(a[0] + ex, a[1] + ey, a[2]);
+                t[2] = pt[0];
+                t[3] = pt[1];
+                t[4] = t[0] + (t[2] - t[0]) * TUBE_CAP;
+                t[5] = t[1] + (t[3] - t[1]) * TUBE_CAP;
+                t[6] = t[0] + (t[2] - t[0]) * (1 - TUBE_CAP);
+                t[7] = t[1] + (t[3] - t[1]) * (1 - TUBE_CAP);
+                fixX[i] = (t[0] + t[2]) / 2;
+                fixY[i] = (t[1] + t[3]) / 2;
+            } else if (m.kind[i] == LAMP) {
+                float rb = SHADE_RB * scale, rt = SHADE_RT * scale, sb = m.shadeBottom[i];
                 project(a[0], a[1], 0);
                 float br = BASE_R * scale;
                 lampBase[i] = new RectF(pt[0] - br, pt[1] - br * sinP, pt[0] + br, pt[1] + br * sinP);
                 cordX[i] = pt[0];
                 cordY[i] = pt[1];
-                project(a[0], a[1], SHADE_BOTTOM);
+                project(a[0], a[1], sb);
                 float bx = pt[0], by = pt[1];
-                project(a[0], a[1], SHADE_BOTTOM + SHADE_H);
+                project(a[0], a[1], sb + SHADE_H);
                 float tx = pt[0], ty = pt[1];
                 poleX[i] = bx;
                 poleY[i] = by;
@@ -749,7 +787,20 @@ final class HouseView extends View {
             fill.setShader(null);
             fill.setAlpha(255);
         }
-        if (m.lamp[i]) {
+        if (m.kind[i] == TUBE) {
+            float[] t = tube[i];
+            line.setColor(TUBE_CASE);
+            line.setStrokeWidth(tubeW);
+            c.drawLine(t[0], t[1], t[2], t[3], line);
+            line.setColor(blend(TUBE_OFF, TUBE_ON, g));
+            line.setStrokeWidth(tubeLit);
+            c.drawLine(t[4], t[5], t[6], t[7], line);
+            if (g > 0.01f) {
+                line.setColor(Ui.alpha(TUBE_CORE_ON, g));
+                line.setStrokeWidth(tubeCore);
+                c.drawLine(t[4], t[5], t[6], t[7], line);
+            }
+        } else if (m.kind[i] == LAMP) {
             float room = roomGlow[m.fixtureRoom[i]];
             int wood = blend(blend(m.cool[m.wood], m.warm[m.wood], room), 0xFF000000, 0.12f);
             fill.setColor(wood);

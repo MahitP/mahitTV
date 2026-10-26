@@ -1,5 +1,5 @@
 /*
- * The Home tab: the house drawn in 3D on one canvas (an open-roof dollhouse, app/assets/house.json, the same
+ * The Home tab: the house drawn in 3D on one canvas (an open-roof dollhouse of the real home, app/assets/house.json, the same
  * projection as the Android app's HouseView), its lights cool when off and warm when on. The arrows move between
  * the four lights (the TV is only scenery), OK switches the focused one. The web app can't reach Kasa plugs (TVs
  * block raw sockets), so here the switches only show; the Android app switches the real lights.
@@ -12,7 +12,7 @@
 
   // house.json's names, as literal tr() calls so tools/translate.py packs them (the Android app's HouseView uses the same).
   var NAMES = {"Parents' Room": tr('Parents\' Room'), 'My Room': tr('My Room'), 'Living Room': tr('Living Room'),
-    'Lamp': tr('Lamp'), 'Lightbulb': tr('Lightbulb')};
+    'Lamp': tr('Lamp'), 'Lightbulb': tr('Lightbulb'), 'Tube Light': tr('Tube Light')};
   function name(text) { return NAMES[text] || text; }
 
   var canvas, ctx, caption;
@@ -81,7 +81,7 @@
     solids.sort(function (a, b2) { return a.depth - b2.depth; });
     fixtures = [];
     for (i = 0; i < H.fixtures.length; i++) {
-      var d = H.fixtures[i], at = d.at, z2 = d.kind === 'lamp' ? 1.55 : at[2];
+      var d = H.fixtures[i], at = d.at, z2 = d.kind === 'lamp' ? (d.height || 1.3) + 0.22 : at[2];
       var sp = pt(at[0], at[1], z2);
       fixtures.push({def: d, x: sp[0], y: sp[1], on: false, known: false, grow: new Spring(0.3, 0.8, 0), lit: new Spring(0.45, 0.9, 0),
         depth: depth(at[0], at[1], at[2])});
@@ -158,7 +158,7 @@
   function floorGlow(f) {
     var g = f.lit.x;
     if (g < 0.01) return;
-    var r = rooms[f.def.room].def.rect, at = f.def.at, c = pt(at[0], at[1], 0);
+    var r = rooms[f.def.room].def.rect, at = f.def.glow || f.def.at, c = pt(at[0], at[1], 0);
     ctx.save();
     ctx.beginPath();
     var q = [pt(r[0], r[1], 0), pt(r[2], r[1], 0), pt(r[2], r[3], 0), pt(r[0], r[3], 0)];
@@ -201,9 +201,11 @@
       ctx.lineWidth = Math.max(1, 0.02 * s);
       ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(f.x, f.y - 0.12 * s); ctx.stroke();
       bulb(f.x, f.y, 0.16 * s, g);
+    } else if (f.def.kind === 'tube') {
+      tube(f, g);
     } else {
       // The lamp: a base, a pole and a shade that glows.
-      var base = pt(at[0], at[1], 0), shadeTop = pt(at[0], at[1], 1.75), shadeBottom = pt(at[0], at[1], 1.32);
+      var h = f.def.height || 1.3, base = pt(at[0], at[1], 0), shadeTop = pt(at[0], at[1], h + 0.45), shadeBottom = pt(at[0], at[1], h);
       ctx.fillStyle = color('wood', g, 0.7);
       ctx.save(); ctx.translate(base[0], base[1]); ctx.scale(1, proj.sp); ctx.beginPath(); ctx.arc(0, 0, 0.2 * s, 0, 2 * Math.PI); ctx.fill(); ctx.restore();
       ctx.strokeStyle = color('wood', g, 0.6);
@@ -217,10 +219,33 @@
       ctx.lineTo(shadeBottom[0] + rb, shadeBottom[1]);
       ctx.lineTo(shadeBottom[0] - rb, shadeBottom[1]);
       ctx.closePath();
-      ctx.fillStyle = mix([126, 135, 152], [255, 222, 172], g);
+      ctx.fillStyle = mix([168, 174, 188], [255, 222, 172], g);
       ctx.fill();
     }
     ctx.restore();
+  }
+
+  /** A wall tube light: a bar with dark end caps along the wall; lit, a warm core and a bloom. */
+  function tube(f, g) {
+    var d = f.def, at = d.at, half = (d.length || 1.2) / 2, s = proj.s;
+    var ax = d.along === 'x' ? at[0] - half : at[0], ay = d.along === 'x' ? at[1] : at[1] - half;
+    var bx = d.along === 'x' ? at[0] + half : at[0], by = d.along === 'x' ? at[1] : at[1] + half;
+    var a = pt(ax, ay, at[2]), b = pt(bx, by, at[2]);
+    if (g > 0.01) bloom(f.x, f.y, 1.1 * s, g);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgb(48,51,58)';
+    ctx.lineWidth = Math.max(3, 0.11 * s);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    var a2 = [a[0] + (b[0] - a[0]) * 0.09, a[1] + (b[1] - a[1]) * 0.09], b2 = [a[0] + (b[0] - a[0]) * 0.91, a[1] + (b[1] - a[1]) * 0.91];
+    ctx.strokeStyle = mix([206, 211, 220], [255, 233, 198], g);
+    ctx.lineWidth = Math.max(2, 0.08 * s);
+    ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+    if (g > 0.01) {
+      ctx.strokeStyle = 'rgba(255,250,240,' + g + ')';
+      ctx.lineWidth = Math.max(1, 0.035 * s);
+      ctx.beginPath(); ctx.moveTo(a2[0], a2[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
   }
 
   function mix(a, b, t) {
@@ -278,7 +303,7 @@
       if (!solids[i].flat) drawBox(solids[i].box, solids[i].color, glowOf(solids[i].rooms), solids[i].top);
     }
     while (f < lamps.length) drawFixture(lamps[f++]);
-    // The ceiling lights hang above everything under them: drawn last.
+    // The ceiling and wall lights hang above everything under them: drawn last.
     for (i = 0; i < bulbs.length; i++) drawFixture(bulbs[i]);
   }
 
@@ -370,6 +395,13 @@
     /** For Welly's cards and the preview: a light by id, on or off. */
     set: function (id, on) {
       for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id) fixtures[i].on = on;
+      showCaption();
+      kick();
+    },
+    /** Moves the focus to a light by id (the screenshots, Welly's home cards). */
+    select: function (id) {
+      for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id) focus = i;
+      showCaption();
       kick();
     },
     state: function (id) {

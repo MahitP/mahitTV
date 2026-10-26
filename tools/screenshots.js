@@ -41,16 +41,23 @@ const SHOTS = [
   ['grid', ['ArrowDown', 'ArrowRight']],
   ['grid-scrolled', ['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown']],
   ['tv-tabs', UP2],                 // the tab bar focused on TV
-  ['home', [...UP2, 'ArrowRight', 'ArrowDown']],
-  ['home-lit', [...UP2, 'ArrowRight', 'ArrowDown', 'Enter', 'ArrowUp', 'Enter']],
   ['welly', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown']],
   ['welly-movie', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowRight', 'Enter']],
   ['welly-scores', [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown', 'ArrowRight', 'ArrowRight', 'Enter']],
   ['control-center', [...UP2, 'ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'Enter', 'ArrowDown']],
   ['clock', [], true],
 ];
+// The Home tab, one theme (it's dimmed the same in both): web-home-<lights>.png, these lights switched on.
+const HOME = [UP2, 'ArrowRight', 'ArrowDown'].flat();
+const HOME_SHOTS = [
+  ['home-all-off', []],
+  ['home-my-room', ['mine.lamp', 'mine.bulb']],
+  ['home-parents', ['parents.bulb']],
+  ['home-living', ['living.bulb']],
+  ['home-all-on', ['parents.bulb', 'mine.lamp', 'mine.bulb', 'living.bulb']],
+];
 
-async function shoot(browser, theme, [name, keys, noPicks]) {
+async function shoot(browser, theme, [name, keys, noPicks, lights]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await context.addInitScript(({ theme, noPicks }) => {
     try {
@@ -68,8 +75,14 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
     await page.keyboard.press(key);
     await page.waitForTimeout(450);
   }
-  await page.waitForTimeout(900);    // springs and the glint settle
-  const file = path.join(OUT, `web-${theme}-${name}.png`);
+  if (lights) {
+    await page.evaluate((ids) => {
+      ids.forEach((id) => window.House.set(id, true));
+      if (ids.length) window.House.select(ids[ids.length - 1]);
+    }, lights);
+  }
+  await page.waitForTimeout(lights ? 1400 : 900);    // springs, the glint and the lights' glow settle
+  const file = path.join(OUT, lights ? `web-${name}.png` : `web-${theme}-${name}.png`);
   await page.screenshot({ path: file });
   await context.close();
   return file;
@@ -83,6 +96,7 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
   for (const theme of ['light', 'dark']) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
+  for (const [name, lights] of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, 'dark', [name, HOME, false, lights])));
   await browser.close();
   server.close();
 })().catch((e) => { console.error(e); process.exit(1); });
