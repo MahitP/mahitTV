@@ -54,7 +54,6 @@ final class Scene {
     private final android.graphics.Path squircle = new android.graphics.Path();
     private float squircleW = -1, squircleH = -1, squircleR = -1;
     /** The corners' superellipse exponent: 4, as in Shaders.LIQUID (DESIGN-TVOS.md §2). */
-    static final double SQUIRCLE_N = 4;
     private final Matrix softMatrix = new Matrix();
     private final RectF sheenRect = new RectF();
     private int[] softPxA, softPxB, softPxFrost;         // reused pixel buffers
@@ -435,26 +434,13 @@ final class Scene {
         }
     }
 
-    /** The squircle outline for a `w` × `h` glass with corner `radius`, at the origin (kept while the size stays). */
+    /** Apple's continuous-corner outline for a `w` × `h` glass with corner `radius`, at the origin (kept while the size stays). */
     private void squircle(float w, float h, float radius) {
         if (w == squircleW && h == squircleH && radius == squircleR) return;
         squircleW = w;
         squircleH = h;
         squircleR = radius;
-        squircle.rewind();
-        // Each corner a superellipse quadrant, |x|^4 + |y|^4 = r^4 (Shaders.LIQUID's corner), 12 steps apiece,
-        // clockwise from the top edge; the straight edges join them.
-        float[][] centers = {{w - radius, radius}, {w - radius, h - radius}, {radius, h - radius}, {radius, radius}};
-        for (int q = 0; q < 4; q++) {
-            for (int i = 0; i <= 12; i++) {
-                double t = Math.PI / 2 * (q - 1 + i / 12.0), ct = Math.cos(t), st = Math.sin(t);
-                float x = centers[q][0] + (float) (Math.signum(ct) * Math.pow(Math.abs(ct), 2 / SQUIRCLE_N)) * radius;
-                float y = centers[q][1] + (float) (Math.signum(st) * Math.pow(Math.abs(st), 2 / SQUIRCLE_N)) * radius;
-                if (q == 0 && i == 0) squircle.moveTo(x, y);
-                else squircle.lineTo(x, y);
-            }
-        }
-        squircle.close();
+        Corners.continuous(squircle, w, h, radius);
     }
 
     /**

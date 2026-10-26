@@ -21,6 +21,25 @@ the web). Each line names where it lives: Android first, the LG/Samsung web copy
 | **Home layout measured off Apple's tvOS 26 press photo** (Apple TV 4K with "Prehistoric Planet 2" on the Top Shelf; screen cropped and scaled to 1920×1080): Dock of **6** tiles **251×150** (5:3), **49** apart, **85** px margins; glass x 35–1885, y 782–1010 (≈ 40–50 px padding); focus **1.23×** centred (308×185), no lift; chevron at y ≈ 718; next row's tops peeking at y = 1052; title logo ≈ 313×183 at (65, 45); status pill x 1585–1875, y 48–105, time + glyphs + a ≈ 50 px avatar | measured here (`tools`-free: PIL on the photo) | high (±3 px) |
 | tvOS 26 profiles: an avatar in the top-right pill; switching in Control Center | the photo; Apple newsroom tvOS 26 (profiles on wake, enhanced switching) | high |
 
+## 0b. Audit against the apple-design skills (v4)
+
+Rules from `~/apple-design-skills` (apple-design, -foundations, -materials, -motion, -os, -interaction), each
+violation found in the v3 build and its fix. Tags as the skills use them.
+
+| # | Rule (skill) | v3 violation | v4 fix |
+|---|---|---|---|
+| 1 | Squircle = Apple's **continuous rounded rect**, not a Lamé superellipse; n = 4 "does not match" (materials, [observed]) | glass used n = 4: off Apple's curve by **15.7 % of r** (worse than a plain circle, 1.4 %) | Shaders: superellipse **exponent 2.62 over 1.245 r** (fitted to Apple's Bézier constants 1.528665/1.088493/0.868407/0.631494/0.372824/0.169060/0.074911; max error 0.3 % of r); Android paths (fallback glass, tiles, cards): Apple's exact Bézier corner; web: `corner-shape: superellipse(1.39)` with `border-radius` × 1.245 where supported |
+| 2 | **Do not bake** drop shadows, border glow, reflections into icon art; the system adds light (materials) | tiles carried a static gloss band, radial lift, bottom vignette, rim and an emblem drop shadow at rest | resting tiles: the brand backdrop + emblem only, flat, as in Apple's photo |
+| 3 | **Effect-stacking** reads synthetic; pick the one effect the moment needs (apple-design) | focus = scale + 2 shadows + sway + parallax + glint sweep + rim + gloss | focus = scale + one soft lift shadow + one specular highlight that moves with the sway; **glint sweep removed** |
+| 4 | Parallax "almost unnoticeable" (HIG via spec §0) | 5° sway, 7 px emblem shift | 3° sway, 4 px emblem shift |
+| 5 | **Never glass on glass** (materials, [documented] WWDC25-219) | Control Center cards were glass on the glass panel | cards are plain fills (white 12 % / black 22 %), no rims |
+| 6 | **One accent** (apple-design) | a yellow ★ in the rating badge | the star in the badge's own white |
+| 7 | Springs ≤ 300 ms on utility surfaces; preset table (motion) | focus `Spring(0.32, 0.70)` (≈ 8 % overshoot), grid lift 0.5 s cubic, CC 0.42 s | focus **snappy `(0.30, 0.80)`**; grid lift and full screen **smooth `(0.45, 0.90)`**; Control Center present **`(0.45, 0.85)`**, dismiss **`(0.40, 0.88)`** (appear slower than disappear); web uses `linear()` spring curves with cubic-bezier fallbacks |
+| 8 | Honour **reduce motion** / **reduce transparency** (motion, materials) | not handled | web: `prefers-reduced-motion` (no sway, short fades) and `prefers-reduced-transparency` (opaque pill, Dock, Control Center); Android: animator scale 0 snaps the springs |
+| 9 | Exit order = reverse hierarchy; the in-coming view leads (motion §4.10, [inferred from Apple TV]) | full-screen details all moved at once | details: metadata, then synopsis, then Play, 40 ms apart on entry; one fade on exit |
+| 10 | 8-pt grid (foundations) | tiles 251×150, gap 49, margin 85 are off-grid | **kept**: measured off Apple's own screen (§0), which outranks the generic grid |
+| 11 | Semantic colours, SF (foundations) | hex tones; Inter | kept: Android TV and old TV browsers have no system semantic palette or SF licence (Inter is the documented stand-in) |
+
 ## 1. Layout (v3: Apple's photo, 1:1)
 
 ```
@@ -56,7 +75,8 @@ the web). Each line names where it lives: Android first, the LG/Samsung web copy
 
 Shader math (`Shaders.LIQUID`, mirrored in `Scene.bitmapGlass` and CSS where possible):
 
-- **Shape:** superellipse corners, `corner = (|qx|^4 + |qy|^4)^(1/4)`, `sd = corner + min(max(qx,qy),0) − r` (`SQUIRCLE_N = 4`).
+- **Shape (v4):** Apple's continuous corner: a superellipse of exponent **2.62** spanning **1.245 r**
+  (`corner = (|qx|^2.62 + |qy|^2.62)^(1/2.62)`, with `q` measured from 1.245 r inside each corner) — see §0b #1.
 - **Lensing:** a rim band `band = 34 px`; `bend = (1 − e)^2.2` with `e = clamp(inner / band)`; sample offset
   `−n · bend · 26 px`; chromatic dispersion `±0.28 · offset` on R and B.
 - **Vibrancy:** `bg = mix(luma, bg, 1.35) · 1.02`; then tint `mix(bg, tint, a)` with a day 0.24 / night 0.18 (27's

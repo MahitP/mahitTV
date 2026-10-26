@@ -132,8 +132,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #saver { z-index: 5; }
 
 #home {
-  -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
-  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
+  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
+  transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
+  transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), opacity 0.28s;
 }
 #top { -webkit-transition: opacity 0.24s; transition: opacity 0.24s; }
 .grid-open #top { opacity: 0; }
@@ -200,6 +201,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: opacity 0.35s, transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 .full #details { opacity: 1; -webkit-transform: none; transform: none; }
+/* Entry by hierarchy (metadata, synopsis, then Play, 40 ms apart); on exit they go together. */
+#details > * { opacity: 0; -webkit-transform: translateY(16px); transform: translateY(16px); -webkit-transition: opacity 0.2s, -webkit-transform 0.2s; transition: opacity 0.2s, transform 0.2s; }
+.full #details > * { opacity: 1; -webkit-transform: none; transform: none; -webkit-transition: opacity 0.35s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: opacity 0.35s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); }
+.full #details .overview { -webkit-transition-delay: 0.04s; transition-delay: 0.04s; }
+.full #details #watch { -webkit-transition-delay: 0.08s; transition-delay: 0.08s; }
 .full #chevron { opacity: 0; }
 #details .meta { height: 34px; font-size: 29px; font-weight: 500; line-height: 34px; color: rgba(255, 255, 255, 0.8); white-space: nowrap; }
 #details .meta .badge {
@@ -304,8 +310,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* MARK: - Dock: one Liquid Glass bar of 6 tiles, 251 × 150 (5:3), 49 apart; focused, a tile grows 1.23× in place */
 
 #platter, #tiles, #apps {
-  -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.4s;
-  transition: transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.4s;
+  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.35s;
+  transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.35s;
+  transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), opacity 0.35s;
 }
 .full #platter, .full #tiles { -webkit-transform: translateY(300px); transform: translateY(300px); opacity: 0; }
 .full #apps.sheet { -webkit-transform: translateY(1022px); transform: translateY(1022px); opacity: 0; }
@@ -364,9 +371,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #tiles { position: absolute; left: 0; top: 0; }
 
 /*
- * An app tile as tvOS composes a layered icon: the backdrop (painted by home.js), depth (a lift at the top left and a
- * shade toward the bottom), the emblem with its own soft shadow, a glass rim and a gloss band. Focused, it grows in
- * place, sways in 3D toward where the focus came from, and the emblem and the gloss shift against each other.
+ * An app tile, flat at rest as in Apple's photo: the backdrop (painted by home.js) and the emblem, nothing baked in
+ * (apple-design-materials: the system adds light and shadow). Focused, it grows in place on a snappy spring, lifts on
+ * one soft shadow, and one specular sheen moves with a near-subliminal sway (DESIGN-TVOS.md §0b).
  */
 .tile, .cell .face {
   position: absolute;
@@ -376,11 +383,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: 24px;
   overflow: hidden;
   color: #FFF;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28);
-  -webkit-transition: -webkit-transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.2), box-shadow 0.34s, opacity 0.3s;
-  transition: transform 0.34s cubic-bezier(0.2, 0.9, 0.25, 1.2), box-shadow 0.34s, opacity 0.3s;
+  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, opacity 0.3s;
+  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, opacity 0.3s;
+  transition: transform 0.3s linear(0, 0.012, 0.049, 0.107, 0.185, 0.278, 0.383, 0.493, 0.601, 0.702, 0.791, 0.865, 0.924, 0.967, 0.995, 1.013, 1.019, 1.016, 1.009, 1.003, 1), box-shadow 0.3s, opacity 0.3s;
 }
-.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1); -webkit-filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.35)); filter: drop-shadow(0 3px 9px rgba(0, 0, 0, 0.35)); }
+.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); }
 .tile img.logo, .cell .face img.logo { width: 66%; height: 46%; max-width: none; max-height: none; object-fit: contain; }
 /* An app with only a launcher icon: the icon, square, centred on its colour. */
 .tile img.icon, .cell .face img.icon { width: auto; height: 58%; max-width: none; max-height: none; border-radius: 18%; }
@@ -400,70 +407,43 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #FFF;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 .tile .sym.big, .cell .face .sym.big { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; color: #FFF; }
+/* The one specular sheen, only on focus; it slides with the sway. */
 .tile::before, .cell .face::before {
   content: '';
   position: absolute;
-  left: -10%;
-  top: 0;
-  width: 120%;
-  height: 100%;
-  background: -webkit-radial-gradient(28% 22%, ellipse, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 60%),
-    -webkit-linear-gradient(-70deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0) 46%);
-  background: radial-gradient(ellipse at 28% 22%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 60%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.03) 42%, rgba(255, 255, 255, 0) 46%);
-  -webkit-transition: -webkit-transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
-  pointer-events: none;
-}
-.tile::after, .cell .face::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 24px;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.42), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-  pointer-events: none;
-}
-.glint {
-  position: absolute;
-  left: -40%;
-  top: -10%;
-  width: 30%;
+  left: -20%;
+  top: -40%;
+  width: 90%;
   height: 120%;
-  background: -webkit-linear-gradient(left, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0));
-  -webkit-transform: translateX(0) rotate(20deg);
-  transform: translateX(0) rotate(20deg);
+  background: -webkit-radial-gradient(50% 50%, ellipse, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 65%);
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 65%);
+  opacity: 0;
+  -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
   pointer-events: none;
 }
-.tile.focus .glint, .cell.focus .glint {
-  -webkit-transform: translateX(560%) rotate(20deg);
-  transform: translateX(560%) rotate(20deg);
-  -webkit-transition: -webkit-transform 0.6s cubic-bezier(0.4, 0, 0.3, 1);
-  transition: transform 0.6s cubic-bezier(0.4, 0, 0.3, 1);
-}
+.tile.focus::before, .cell.focus .face::before { opacity: 1; }
 .tile.focus, .cell.focus .face {
   -webkit-transform: scale(1.23);
   transform: scale(1.23);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 30px 20px -14px rgba(0, 0, 0, 0.3), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.34);
   z-index: 2;
 }
-.lean-r .tile.focus, .lean-r .cell.focus .face { -webkit-animation: sway-r 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-r 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
-.lean-l .tile.focus, .lean-l .cell.focus .face { -webkit-animation: sway-l 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-l 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
-@-webkit-keyframes sway-r { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(-5deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
-@keyframes sway-r { 0% { transform: scale(1.23) perspective(900px) rotateY(-5deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
-@-webkit-keyframes sway-l { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(5deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
-@keyframes sway-l { 0% { transform: scale(1.23) perspective(900px) rotateY(5deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
-.lean-r .tile.focus img, .lean-r .cell.focus .face img { -webkit-transform: translate(-48%, -50%); transform: translate(-48%, -50%); }
-.lean-l .tile.focus img, .lean-l .cell.focus .face img { -webkit-transform: translate(-52%, -50%); transform: translate(-52%, -50%); }
-.lean-r .tile.focus::before, .lean-r .cell.focus .face::before { -webkit-transform: translateX(-16px); transform: translateX(-16px); }
-.lean-l .tile.focus::before, .lean-l .cell.focus .face::before { -webkit-transform: translateX(16px); transform: translateX(16px); }
-.night .tile { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32), inset 0 -34px 44px -26px rgba(0, 0, 0, 0.28); }
+.lean-r .tile.focus, .lean-r .cell.focus .face { -webkit-animation: sway-r 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-r 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.lean-l .tile.focus, .lean-l .cell.focus .face { -webkit-animation: sway-l 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-l 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); }
+@-webkit-keyframes sway-r { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(-3deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
+@keyframes sway-r { 0% { transform: scale(1.23) perspective(900px) rotateY(-3deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
+@-webkit-keyframes sway-l { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(3deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
+@keyframes sway-l { 0% { transform: scale(1.23) perspective(900px) rotateY(3deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
+/* Parallax, near-subliminal: the emblem 4 px with the travel, the sheen the other way. */
+.lean-r .tile.focus img, .lean-r .cell.focus .face img { -webkit-transform: translate(-47.6%, -50%); transform: translate(-47.6%, -50%); }
+.lean-l .tile.focus img, .lean-l .cell.focus .face img { -webkit-transform: translate(-52.4%, -50%); transform: translate(-52.4%, -50%); }
+.lean-r .tile.focus::before, .lean-r .cell.focus .face::before { -webkit-transform: translateX(-12px); transform: translateX(-12px); }
+.lean-l .tile.focus::before, .lean-l .cell.focus .face::before { -webkit-transform: translateX(12px); transform: translateX(12px); }
+.night .tile.focus, .night .cell.focus .face { box-shadow: 0 22px 40px rgba(0, 0, 0, 0.5); }
+.glint { display: none; }
 .more { position: absolute; width: 17px; height: 17px; color: rgba(255, 255, 255, 0.8); }
 .more.back { -webkit-transform: scaleX(-1); transform: scaleX(-1); }
 #dockname { display: none; }
@@ -484,10 +464,21 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   -webkit-transform: translateX(80px);
   transform: translateX(80px);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
-  -webkit-transition: opacity 0.3s, -webkit-transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0s 0.42s;
-  transition: opacity 0.3s, transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0s 0.42s;
+  /* dismiss: 400 ms, brisk */
+  -webkit-transition: opacity 0.25s, -webkit-transform 0.4s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s 0.4s;
+  transition: opacity 0.25s, transform 0.4s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s 0.4s;
+  transition: opacity 0.25s, transform 0.4s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), visibility 0s 0.4s;
 }
-.drawer-open #drawer { opacity: 1; visibility: visible; -webkit-transform: none; transform: none; -webkit-transition-delay: 0s; transition-delay: 0s; }
+/* present: 450 ms, deliberate */
+.drawer-open #drawer {
+  opacity: 1;
+  visibility: visible;
+  -webkit-transform: none;
+  transform: none;
+  -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s;
+  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s;
+  transition: opacity 0.3s, transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), visibility 0s;
+}
 #drawer .bleed { left: -1340px; top: -60px; }
 #drawer .body { position: absolute; left: 28px; top: 28px; right: 28px; bottom: 28px; }
 .no-picks #drawer { color: #1D1D1F; }
@@ -507,19 +498,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   height: 120px;
   border-radius: 26px;
   color: inherit;
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.36), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
-  -webkit-transition: -webkit-transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.24s, background-color 0.14s;
-  transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.24s, background-color 0.14s;
+  background: rgba(255, 255, 255, 0.12);
+  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, background-color 0.14s;
+  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, background-color 0.14s;
+  transition: transform 0.3s linear(0, 0.012, 0.049, 0.107, 0.185, 0.278, 0.383, 0.493, 0.601, 0.702, 0.791, 0.865, 0.924, 0.967, 0.995, 1.013, 1.019, 1.016, 1.009, 1.003, 1), box-shadow 0.3s, background-color 0.14s;
 }
-.night .key { background: rgba(0, 0, 0, 0.32); box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.2), inset -1px -1px 0 rgba(255, 255, 255, 0.05); }
+/* Plain fills, not glass: never glass on the panel's glass. */
+.night .key { background: rgba(0, 0, 0, 0.22); }
 .key .sym { position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; }
 .key .label { position: absolute; left: 20px; right: 14px; bottom: 18px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .key.off { opacity: 0.5; }
 .key.focus { background: #FFF; color: #1C1C1E; opacity: 1; -webkit-transform: scale(1.06); transform: scale(1.06); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); z-index: 2; }
 
-#weather { position: absolute; left: 0; right: 0; bottom: 0; height: 210px; border-radius: 26px; background: rgba(255, 255, 255, 0.14); box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.32), inset -1px -1px 0 rgba(255, 255, 255, 0.08); }
-.night #weather { background: rgba(0, 0, 0, 0.3); }
+#weather { position: absolute; left: 0; right: 0; bottom: 0; height: 210px; border-radius: 26px; background: rgba(255, 255, 255, 0.12); }
+.night #weather { background: rgba(0, 0, 0, 0.22); }
 #weather .head { position: absolute; left: 22px; top: 18px; font-size: 21px; font-weight: 600; opacity: 0.72; white-space: nowrap; }
 #weather .now { position: absolute; left: 22px; top: 52px; height: 70px; white-space: nowrap; }
 #weather .now .sym { width: 44px; height: 44px; vertical-align: 8px; margin-right: 12px; }
@@ -552,7 +544,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #apps.sheet { background: none; opacity: 1; visibility: visible; pointer-events: none; z-index: 1; -webkit-transform: translateY(722px); transform: translateY(722px); }
 #apps.sheet.open { pointer-events: auto; -webkit-transform: none; transform: none; }
 #apps h2 { display: none; }
-#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.5s cubic-bezier(0.32, 0.72, 0.2, 1); }
+#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1); }
 .cell { position: absolute; width: 251px; height: 150px; }
 .cell .face { top: 0; left: 0; }
 .cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
@@ -642,3 +634,27 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* Tizen 2 (see tv.js): no shadows or animations, which its GPU can't keep up with while the focus moves. */
 .lite * { box-shadow: none !important; -webkit-transition: none !important; transition: none !important; }
+
+/* Apple's continuous corners (DESIGN-TVOS.md §0b #1): superellipse(1.39) is the exponent 2.62 fitted to Apple's
+   Bézier corner, over 1.245× the radius. Browsers without corner-shape (all TVs today) keep the plain radius. */
+@supports (corner-shape: superellipse(1.39)) {
+  .tile, .cell .face { corner-shape: superellipse(1.39); border-radius: 30px; }
+  #platter { corner-shape: superellipse(1.39); border-radius: 80px; }
+  #drawer { corner-shape: superellipse(1.39); border-radius: 55px; }
+  .key, #weather { corner-shape: superellipse(1.39); border-radius: 32px; }
+  #watch { corner-shape: superellipse(1.39); }
+}
+
+/* Reduce Motion: no sway or parallax, quick fades instead of travel. */
+@media (prefers-reduced-motion: reduce) {
+  .lean-r .tile.focus, .lean-l .tile.focus, .lean-r .cell.focus .face, .lean-l .cell.focus .face { -webkit-animation: none; animation: none; }
+  .tile, .cell .face, .key, #home, #platter, #tiles, #apps, #apps .grid, #drawer, #details > * { -webkit-transition-duration: 0.15s; transition-duration: 0.15s; }
+  .lean-r .tile.focus img, .lean-l .tile.focus img, .lean-r .cell.focus .face img, .lean-l .cell.focus .face img { -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+}
+
+/* Reduce Transparency: the glass becomes near-opaque. */
+@media (prefers-reduced-transparency: reduce) {
+  #pill { background: rgba(44, 48, 56, 0.96); }
+  #platter .tint, #drawer .tint, .has-photo #platter .tint, .has-photo #drawer .tint, .night.has-photo #platter .tint, .night.has-photo #drawer .tint { background: rgba(36, 36, 40, 0.96); }
+  #platter .bleed, #drawer .bleed { opacity: 0; }
+}

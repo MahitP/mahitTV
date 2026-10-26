@@ -105,8 +105,11 @@ final class Shaders {
         "}\n" +
         "half4 main(float2 xy) {\n" +
         "  float2 d = xy - center;\n" +
-        "  float2 q = abs(d) - (halfSize - radius);\n" +
-        "  float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;\n" +
+        "  float ext = min(radius * 1.245, min(halfSize.x, halfSize.y));\n" +
+        "  float ne = radius * 1.245 >= min(halfSize.x, halfSize.y) - 0.5 ? 2.0 : 2.62;\n" +
+        "  float2 q = abs(d) - (halfSize - ext);\n" +
+        "  float2 m = max(q, 0.0);\n" +
+        "  float sd = ((m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, ne) + pow(m.y, ne), 1.0 / ne) : max(m.x, m.y)) + min(max(q.x, q.y), 0.0) - ext;\n" +
         "  float aa = clamp(0.5 - sd, 0.0, 1.0);\n" +
         "  if (aa <= 0.0) { return half4(0.0); }\n" +
         "  float2 dir = d * invHalf;\n" +
@@ -164,11 +167,14 @@ final class Shaders {
         "}\n" +
         "half4 main(float2 xy) {\n" +
         "  float2 d = xy - center;\n" +
-        "  float2 q = abs(d) - (halfSize - radius);\n" +
-        // Continuous-curvature corners (tvOS's "squircle"): a superellipse norm, exponent 4, instead of the circle's.
+        // Apple's continuous corner (Corners.java): its closest superellipse, exponent 2.62 spanning 1.245 r (within
+        // 0.3 % of r); a capsule keeps its true semicircle ends.
+        "  float ext = min(radius * 1.245, min(halfSize.x, halfSize.y));\n" +
+        "  float ne = radius * 1.245 >= min(halfSize.x, halfSize.y) - 0.5 ? 2.0 : 2.62;\n" +
+        "  float2 q = abs(d) - (halfSize - ext);\n" +
         "  float2 m = max(q, 0.0);\n" +
-        "  float corner = (m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, 4.0) + pow(m.y, 4.0), 0.25) : max(m.x, m.y);\n" +
-        "  float sd = corner + min(max(q.x, q.y), 0.0) - radius;\n" +
+        "  float corner = (m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, ne) + pow(m.y, ne), 1.0 / ne) : max(m.x, m.y);\n" +
+        "  float sd = corner + min(max(q.x, q.y), 0.0) - ext;\n" +
         "  float aa = clamp(0.5 - sd, 0.0, 1.0);\n" +
         "  if (aa <= 0.0) { return half4(0.0); }\n" +
         "  float2 sg = float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);\n" +

@@ -681,7 +681,6 @@
       t.style.width = tw + 'px';
       t.style.height = th + 'px';
       face(shelf[i], t, wordFit(shelf[i].title, tw, 32));
-      el('div', 'glint', t);
       hover(t, Z.SHELF, i);
     }
     // More apps than fit: a small arrow inside the glass's edge on each side that has more, where no tile reaches
@@ -837,7 +836,6 @@
       cell.style.top = (GRID_TOP + r * GRID_ROW) + 'px';
       var f = el('div', 'face', cell);
       face(others[i], f, wordFit(others[i].title, TILE_W, 34));
-      el('div', 'glint', f);
       el('div', 'label', cell, others[i].title);
       hover(cell, Z.APPS, i);
     }

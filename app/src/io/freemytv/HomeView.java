@@ -50,7 +50,7 @@ import java.util.function.Consumer;
  *    (the Dock slides away; details, synopsis and ▶ Play at the bottom left);
  *  - at the top right, a smoke-glass pill with the time and the current profile's avatar: OK opens Control Center;
  *  - the Dock: one Liquid Glass bar with 6 apps (5:3, each composed like a tvOS icon by HomeApps; the focused one
- *    grows 1.23×, sways and glints), a chevron above it when a pick shows, and the app grid's first row peeking below;
+ *    grows 1.23× and sways, with one soft highlight), a chevron above it when a pick shows, and the app grid's first row peeking below;
  *  - ↓ on the Dock: the page glides up, the background frosts and dims, and the grid (6 columns) comes up;
  *  - Control Center: a floating glass panel on the right with the profiles, the inputs and shortcuts, and the weather;
  *  - from sunset to sunrise, a night look: smoked glass and white text.
@@ -95,7 +95,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float CC_LEFT = 1340, CC_RIGHT = 1860, CC_TOP = 60, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
     private static final float CC_CARD_W = 224, CC_CARD_H = 120, CC_GAP = 16, CC_CARD_RADIUS = 26, CC_WEATHER_H = 210;
     private static final float CC_SLIDE = 80;
-    private static final long GLINT_MS = 600, ROTATE_MS = 8000;
+    private static final long ROTATE_MS = 8000;
     // Corner capsule.
     // Corner capsule: the height and top offset of the tvOS tab bar (68 and 46).
     private static final float CAPSULE_TOP = 46, CAPSULE_H = 68, BUTTON = 56;
@@ -175,12 +175,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF pillRect = new RectF(), badgeRect = new RectF();
     private String pillTemp = "", pillSymbol;
     private float pillClockW, pillTempW, pillSymbolW;
-    // The glint that sweeps once across a tile when it takes the focus: one shader, moved with the canvas.
-    private LinearGradient glint;
-    private float glintW;
-    private final Paint glintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private int glintTile = -1, glintCell = -1;
-    private long glintAt;
+    // The tile (or grid cell) that last took the focus: it sways once toward where the focus came from.
+    private int swayTile = -1, swayCell = -1;
+    /** Full screen's details enter one after another (metadata, synopsis, Play), from this time. */
+    private long fullAt;
     /** The last ← → (−1, 0, 1): the focused tile's logo leans that way (a touch of tvOS's parallax). */
     private float lean;
     private Shader lightGradient;
@@ -191,16 +189,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private RectF[] tileRects = new RectF[0];
     /** Each app's logo already sized for the tile at rest and focused, with its soft drop shadow (the emblem layer). */
     private static final class Emblem {
-        Bitmap src, rest, focus, restShadow, focusShadow;
-        final int[] restOffset = new int[2], focusOffset = new int[2];
+        Bitmap src, rest, focus;
     }
     private final Map<String, Emblem> emblems = new HashMap<>(), darkEmblems = new HashMap<>();
     private final Map<String, LinearGradient> brandShaders = new HashMap<>();   // the backdrops, for TILE_STYLE's brands
     // The tile's light layers in its own coordinates (centred), made once per tile size: the radial lift, the bottom
     // vignette, the gloss band, the rim's gradient.
-    private Shader tileLift, tileVignette, tileGloss, tileRim;
+    /** The focused tile's one specular highlight (DESIGN-TVOS.md §0b #3). */
+    private Shader tileSheen;
+    /** Apple's continuous-corner shapes (Corners), made once per size: the tiles, the bento cards, the weather card. */
+    private final Shape tileShape = new Shape(), cardShape = new Shape(), weatherShape = new Shape();
     private float tileFxW;
-    private final Paint emblemShadow = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final android.graphics.Matrix imageMatrix = new android.graphics.Matrix();
     // The focused tile sways toward where the focus came from, then settles (tvOS's tilt): angles from these springs.
     private final Spring swayX = new Spring(0.5f, 0.45f, 0), swayY = new Spring(0.5f, 0.45f, 0);
     private final android.graphics.Camera tiltCamera = new android.graphics.Camera();
@@ -255,7 +255,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Hero and background: all of this hour's picks, and those of the focused Dock app (the Top Shelf shows these)
     private List<Recs.Pick> picks = new ArrayList<>(), appPicks = new ArrayList<>();
     /** Full screen (↑ on a pick): 0 = the Dock, 1 = the details at the bottom and the Dock away. */
-    private final Spring full = new Spring(0.42f, 0.9f, 0);
+    private final Spring full = new Spring(0.45f, 0.9f, 0);   // smooth (apple-design-motion: push-like transitions)
     // The wallpaper when the focused app has no pick: a bundled aerial (one per hour), built like a pick's backdrop.
     private Backdrop wallpaper;
     private int wallpaperIndex = -1;
@@ -293,7 +293,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String[] drawerLabels = new String[0];
     private int drawerFrom = Z_SHELF;            // where the focus goes back when Control Center closes
     private Paint ccTime, ccDate, ccLabel, ccTemp;
-    private final Spring drawer = new Spring(0.38f, 0.88f, 0);
+    private final Spring drawer = new Spring(0.45f, 0.85f, 0);   // Control Center: presents (0.45, 0.85), dismisses (0.40, 0.88)
     private boolean drawerOpen;
     private int drawerIndex;
 
@@ -301,7 +301,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<HomeApps.Item> others = new ArrayList<>();
     private Spring[] gridFocus = new Spring[0];
     private String[] gridLabels;
-    private final Spring sheet = new Spring(0.38f, 0.9f, 0);
+    private final Spring sheet = new Spring(0.45f, 0.9f, 0);   // the grid's lift: smooth
     private final Spring scroll = new Spring(0.34f, 1f, 0);
     private final RectF focusedCell = new RectF(), gridFocusCell = new RectF();
     private boolean sheetOpen, shelfEdited;
@@ -518,6 +518,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        // Animations off in the TV's settings (animator duration scale 0): every spring jumps, nothing sways.
+        Spring.instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         checkNight(false);
         boolean h24 = Prefs.clock24();
         if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
@@ -795,7 +798,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccLabel = Ui.text(Ui.semibold, 21 * k, L_INK);
         ccTemp = Ui.numbers(Ui.light, 64 * k, L_INK);
         tvName.setTextAlign(Paint.Align.CENTER);
-        glint = null;
         shadow.setMaskFilter(new BlurMaskFilter(SHADOW_BLUR * k, BlurMaskFilter.Blur.NORMAL));
         shadowSoft.setMaskFilter(new BlurMaskFilter(KEY_BLUR * k, BlurMaskFilter.Blur.NORMAL));
         nameCap = Ui.cap(tvName);
@@ -820,9 +822,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lastNanos = frameTimeNanos;
         long up = SystemClock.uptimeMillis();
 
-        boolean glinting = up - glintAt < GLINT_MS;
         boolean swaying = swayX.step(dt) | swayY.step(dt);
-        boolean tilesMoving = step(tileFocus, dt) | (glinting && glintTile >= 0) | (swaying && !sheetOpen);
+        boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt);
         boolean fullMoving = full.step(dt);
@@ -832,7 +833,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroMoving |= topMoving | cardsMoving;
         boolean drawerItemsMoving = step(drawerFocus, dt) | step(profileFocus, dt);
         boolean scrollMoving = scroll.step(dt);
-        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (glinting && glintCell >= 0) | (swaying && sheetOpen);
+        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen);
         boolean drawerMoving = drawer.step(dt);
         boolean sheetMoving = sheet.step(dt);
         boolean toastFading = tickToast(up);
@@ -1433,7 +1434,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tileSlide = new Spring[list.size()];
             tileRects = new RectF[list.size()];
             for (int i = 0; i < tileFocus.length; i++) {
-                tileFocus[i] = new Spring(0.32f, 0.70f, 0);
+                tileFocus[i] = new Spring(0.30f, 0.80f, 0);   // snappy: a focus is a quick state change
                 tileSlide[i] = new Spring(0.32f, 0.86f, 0);
                 tileRects[i] = new RectF();
             }
@@ -1706,40 +1707,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawShelfTile(Canvas c, int i) {
         // Lifted to be moved: a little bigger than focused, with a deeper shadow.
         float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
-        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, l, i == glintTile);
+        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, l);
     }
 
     /**
-     * An app tile composed like a tvOS layered icon (DESIGN-TVOS.md §3), all in the tile's own coordinates: the back
-     * layer (the brand's backdrop, or the app's TV banner), a soft radial lift and a bottom vignette (depth), the
-     * emblem (the logo, with its own soft shadow), a gloss band and the glass rim. Focused (`f`): 1.15× and a few
-     * pixels up, an ambient and a key shadow, the sway tilt with the emblem and the gloss shifting apart (parallax),
-     * and once the glint. `l`: lifted to be moved. Nothing is allocated here.
+     * An app tile as tvOS shows one (DESIGN-TVOS.md §0b #2–#4), in Apple's continuous-corner shape and in the tile's
+     * own coordinates: at rest only the back layer (the brand's backdrop, or the app's TV banner) and its emblem, flat;
+     * the system adds the light. Focused (`f`): 1.23×, one soft lift shadow, a 3° sway toward where the focus came
+     * from with the emblem leaning 4 px (parallax), and one specular highlight that moves with the sway. `l`: lifted
+     * to be moved. Nothing is allocated here.
      */
-    private void drawAppTile(Canvas c, HomeApps.Item it, RectF base, float f, float l, boolean glinting) {
+    private void drawAppTile(Canvas c, HomeApps.Item it, RectF base, float f, float l) {
         float fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f + LIFT_GROW * l;
         float bw = base.width(), bh = base.height(), r0 = TV_TILE_RADIUS * k;
         float cx = base.centerX(), cy = base.centerY() - TV_FOCUS_LIFT * k * f;
         tileFx(bw, bh);
+        android.graphics.Path shape = tileShape.of(bw, bh, r0);
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
-        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-        // Shadows at the resting size, enlarged by the transform (so the blur stays cached): an ambient one, and
-        // when focused a short, darker key one under it.
-        tmp.offset(0, (8 + 10 * f + 6 * l) * k);
-        shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.26f) + tone(0.12f, 0.16f) * fc + 0.12f * Ui.clamp(l)));
-        shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
-        if (fc > 0.01f) {
+        float lift = Math.max(fc, Ui.clamp(l));
+        if (lift > 0.01f) {
+            // The one lift shadow, at the resting size and enlarged by the transform (the blur stays cached).
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-            tmp.offset(0, 34 * k * fc);
-            tmp.inset(10 * k, 6 * k);
-            shadowSoft.setColor(Ui.alpha(0xFF000000, tone(0.30f, 0.45f) * fc));
-            shadows.draw(c, tmp, r0, KEY_BLUR * k, shadowSoft);
+            tmp.offset(0, (10 + 18 * lift) * k);
+            tmp.inset(6 * k, 4 * k);
+            shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.30f, 0.45f) * lift));
+            shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         }
-        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
         // The sway: a small 3D turn toward where the focus came from, settling back (only while focused).
-        float ax = swayX.value * 5 * fc, ay = swayY.value * 5 * fc;
+        float ax = swayX.value * 3 * fc, ay = swayY.value * 3 * fc;
         if (Math.abs(ax) > 0.02f || Math.abs(ay) > 0.02f) {
             tiltCamera.save();
             tiltCamera.rotateY(-ax);
@@ -1748,6 +1745,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tiltCamera.restore();
             c.concat(tiltMatrix);
         }
+        c.translate(-bw / 2, -bh / 2);   // the shape's own origin (its top left)
         // Back layer: the brand's backdrop, or the one HomeApps composed (a gradient, or a picture), or dark.
         int[] style = TILE_STYLE.get(it.key);
         if (style == null) style = it.style;
@@ -1756,82 +1754,71 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             // Keyed by the app alone (a brand's colours never change): no string built while drawing.
             LinearGradient g = brandShaders.get(it.key);
             if (g == null) {   // once per app and tile size (the map is cleared with the size)
-                g = new LinearGradient(-bw * 0.2f, -bh / 2, bw * 0.2f, bh / 2, style[0], style[1], Shader.TileMode.CLAMP);
+                g = new LinearGradient(bw * 0.3f, 0, bw * 0.7f, bh, style[0], style[1], Shader.TileMode.CLAMP);
                 brandShaders.put(it.key, g);
             }
             tileFill.setShader(g);
             tileFill.setAlpha(255);
-            c.drawRoundRect(tmp, r0, r0, tileFill);
+            c.drawPath(shape, tileFill);
             tileFill.setShader(null);
-        } else if (it.tile != null) {
-            roundImage(c, it.tile, it.tileShader, tmp, r0);
+        } else if (it.tile != null && it.tileShader != null) {
+            // The banner, filled and centred (never stretched), through the shape.
+            float iw = it.tile.getWidth(), ih = it.tile.getHeight(), sc = Math.max(bw / iw, bh / ih);
+            imageMatrix.setTranslate(-(iw - bw / sc) / 2, -(ih - bh / sc) / 2);
+            imageMatrix.postScale(sc, sc);
+            it.tileShader.setLocalMatrix(imageMatrix);
+            imageFill.setShader(it.tileShader);
+            c.drawPath(shape, imageFill);
+            imageFill.setShader(null);
+            it.tileShader.setLocalMatrix(null);
         } else {
             tileFill.setShader(null);
             tileFill.setColor(0xFF161618);
-            c.drawRoundRect(tmp, r0, r0, tileFill);
+            c.drawPath(shape, tileFill);
         }
-        // Depth: the light lifts the upper left, the bottom edge falls into shade.
-        tileFill.setShader(tileLift);
-        c.drawRoundRect(tmp, r0, r0, tileFill);
-        tileFill.setShader(tileVignette);
-        c.drawRoundRect(tmp, r0, r0, tileFill);
-        tileFill.setShader(null);
-        // Parallax: the emblem moves with the sway, the gloss the other way.
-        float px = (0.4f * lean + 0.6f * swayX.value) * 7 * k * fc, py = swayY.value * 5 * k * fc;
+        c.translate(bw / 2, bh / 2);
+        // Parallax: the emblem leans with the sway.
+        float px = (0.4f * lean + 0.6f * swayX.value) * 4 * k * fc, py = swayY.value * 3 * k * fc;
         if (emblem) drawEmblem(c, it, style == null ? 0 : style[2], s, px, py);
-        float gx = -px * 18 / 7;
-        c.translate(gx, 0);
-        tmp.offset(-gx, 0);
-        tileFill.setShader(tileGloss);
-        tileFill.setAlpha(Math.round(255 * (0.7f + 0.3f * fc)));
-        c.drawRoundRect(tmp, r0, r0, tileFill);
-        tileFill.setShader(null);
-        tileFill.setAlpha(255);
-        c.translate(-gx, 0);
-        tmp.offset(gx, 0);
-        // The glass edge: an inner rim, bright at the top left, and a faint outer hairline.
-        rim.setShader(tileRim);
-        rim.setAlpha(Math.round(255 * (0.75f + 0.25f * fc)));
-        rim.setStrokeWidth(1.5f * k / s);
-        tmp.inset(0.75f * k / s, 0.75f * k / s);
-        c.drawRoundRect(tmp, r0, r0, rim);
-        rim.setShader(null);
-        rim.setAlpha(255);
-        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-        border.setColor(0x1AFFFFFF);
-        border.setStrokeWidth(1 * k / s);
-        c.drawRoundRect(tmp, r0, r0, border);
-        border.setStrokeWidth(2 * k);
-        float t = (SystemClock.uptimeMillis() - glintAt) / (float) GLINT_MS;
-        if (glinting && fc > 0.01f && t < 1) {
-            if (glint == null || glintW != bw) {
-                // A diagonal band, 30% of the tile wide: clear, then white, then clear.
-                float half = bw * 0.15f;
-                glint = new LinearGradient(-half, -half * 0.6f, half, half * 0.6f, new int[] {0, 0x38FFFFFF, 0},
-                        new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP);
-                glintW = bw;
-            }
-            // The band moves with the canvas and the tile's shape moves back: the shader keeps one matrix (a new
-            // local matrix every frame rebuilds the native gradient on Android 8 to 12).
-            float e = t * t * (3 - 2 * t), sweep = -bw * 0.8f + bw * 1.6f * e;
-            c.translate(sweep, 0);
-            tmp.offset(-sweep, 0);
-            glintPaint.setShader(glint);
-            c.drawRoundRect(tmp, r0, r0, glintPaint);
-            glintPaint.setShader(null);
+        if (fc > 0.01f) {
+            // The one specular highlight: soft, ≤ 14 %, sitting up and to the left and following the sway. The canvas
+            // moves and the shape moves back: the shader keeps its matrix (a new local matrix every frame rebuilds the
+            // native gradient on Android 8 to 12).
+            float hx = -bw * (0.22f + 0.12f * swayX.value), hy = -bh * (0.3f + 0.1f * swayY.value);
+            c.translate(hx - bw / 2, hy - bh / 2);
+            shape.offset(-hx, -hy);
+            tileFill.setShader(tileSheen);
+            tileFill.setAlpha(Math.round(255 * fc));
+            c.drawPath(shape, tileFill);
+            tileFill.setShader(null);
+            tileFill.setAlpha(255);
+            shape.offset(hx, hy);
         }
         c.restore();
     }
 
-    /** The tile's light layers for this size (in the tile's own, centred coordinates). */
+    /** The focused tile's highlight for this size (centred on the canvas origin; drawn moved to where it sits). */
     private void tileFx(float bw, float bh) {
-        if (tileFxW == bw && tileLift != null) return;
+        if (tileFxW == bw && tileSheen != null) return;
         tileFxW = bw;
-        tileLift = new android.graphics.RadialGradient(-bw * 0.2f, -bh * 0.25f, bw * 0.75f, 0x1AFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
-        tileVignette = new LinearGradient(0, bh * 0.1f, 0, bh / 2, 0x00000000, 0x2E000000, Shader.TileMode.CLAMP);
-        tileGloss = new LinearGradient(-bw * 0.1f, -bh / 2, bw * 0.12f, -bh / 2 + bh * 0.45f,
-                new int[] {0x24FFFFFF, 0x0DFFFFFF, 0x00FFFFFF}, new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP);
-        tileRim = new LinearGradient(-bw / 2, -bh / 2, bw / 2, bh / 2, 0x73FFFFFF, 0x14FFFFFF, Shader.TileMode.CLAMP);
+        tileSheen = new android.graphics.RadialGradient(bw / 2, bh / 2, bw * 0.62f, new int[] {0x24FFFFFF, 0x0CFFFFFF, 0x00FFFFFF},
+                new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP);
+    }
+
+    /** Apple's continuous-corner path for one size, at the origin, rebuilt only when the size changes. */
+    private static final class Shape {
+        final android.graphics.Path path = new android.graphics.Path();
+        private float w = -1, h = -1, r = -1;
+
+        android.graphics.Path of(float w, float h, float r) {
+            if (w != this.w || h != this.h || r != this.r) {
+                this.w = w;
+                this.h = h;
+                this.r = r;
+                Corners.continuous(path, w, h, r);
+            }
+            return path;
+        }
     }
 
     /**
@@ -1844,16 +1831,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Emblem e = emblem(it, mode == 2 && it.logoDark != null);
         if (e == null) return;
         boolean rest = s < 1 + FOCUS_GROW / 2;
-        Bitmap logo = rest ? e.rest : e.focus, shade = rest ? e.restShadow : e.focusShadow;
-        int[] off = rest ? e.restOffset : e.focusOffset;
+        Bitmap logo = rest ? e.rest : e.focus;
         float scale = rest ? 1 : 1 / (1 + FOCUS_GROW);   // the focused copy is 1.15× bigger: the canvas scales it back
         float dw = logo.getWidth() * scale, dh = logo.getHeight() * scale, left = px - dw / 2, top = py - dh / 2;
-        if (shade != null) {
-            emblemShadow.setColor(0x59000000);
-            tmp2.set(left + off[0] * scale, top + off[1] * scale + 3 * k, left + (off[0] + shade.getWidth()) * scale,
-                    top + (off[1] + shade.getHeight()) * scale + 3 * k);
-            c.drawBitmap(shade, null, tmp2, emblemShadow);
-        }
         tmp2.set(left, top, left + dw, top + dh);
         bitmapPaint.setColorFilter(mode == 1 ? whiteLogo : null);
         c.drawBitmap(logo, null, tmp2, bitmapPaint);
@@ -1880,22 +1860,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         e.focus = Ui.downscale(src, Math.round(lw * scale), Math.round(lh * scale));
         e.rest = Ui.downscale(src, Math.round(lw * scale / (1 + FOCUS_GROW)), Math.round(lh * scale / (1 + FOCUS_GROW)));
-        e.focusShadow = blurredAlpha(e.focus, 10 * k * (1 + FOCUS_GROW), e.focusOffset);
-        e.restShadow = blurredAlpha(e.rest, 10 * k, e.restOffset);
         set.put(it.key, e);
         return e;
     }
 
-    /** The logo's shape, blurred: its drop shadow (offsets of the larger blurred bitmap in `offset`). */
-    private static Bitmap blurredAlpha(Bitmap logo, float radius, int[] offset) {
-        try {
-            Paint p = new Paint();
-            p.setMaskFilter(new BlurMaskFilter(Math.max(1, radius), BlurMaskFilter.Blur.NORMAL));
-            return logo.extractAlpha(p, offset);
-        } catch (RuntimeException | OutOfMemoryError e) {
-            return null;   // no shadow rather than no logo
-        }
-    }
 
     /** True when the Top Shelf shows a photo (the text over it is white); false over the plain gradient. */
     private boolean onPhoto() {
@@ -2017,6 +1985,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (drawerItems.isEmpty()) return;
         drawerFrom = zone == Z_TOP ? Z_TOP : zone == Z_STATUS ? Z_STATUS : Z_SHELF;
         drawerOpen = true;
+        drawer.tune(0.45f, 0.85f);   // appearing is a little slower than disappearing
         drawer.target = 1;
         zone = Z_DRAWER;
         drawerIndex = 0;
@@ -2030,6 +1999,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void closeDrawer() {
         drawerOpen = false;
+        drawer.tune(0.40f, 0.88f);   // disappearing is brisker than appearing
         drawer.target = 0;
         zone = drawerFrom == Z_TOP && !lightButtons.isEmpty() ? Z_TOP : drawerFrom == Z_STATUS ? Z_STATUS : Z_SHELF;
         for (Spring f : drawerFocus) f.snap(0);   // the panel goes away: its focus doesn't need to animate
@@ -2041,17 +2011,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return Ui.alpha(tone(L_INK, 0xFFFFFFFF), alpha);
     }
 
-    /** Glass for a Control Center card: white by day, smoked at night (both during the transition). */
-    private void drawerGlass(Canvas c, RectF r, float radius, float lightTint, int shadowColor, float drop) {
-        float dk = dark();
-        if (dk < 0.999f) {
-            tmp.set(r);
-            tmp.offset(0, drop);
-            shadow.setColor(Ui.alpha(shadowColor, 1 - dk));
-            shadows.draw(c, tmp, radius, SHADOW_BLUR * k, shadow);
-            scene.glass(c, r, radius, 0xFFFFFFFF, lightTint, 0, 0, 0.02f, 1, 1 - dk);
-        }
-        if (dk > 0.001f) scene.glass(c, r, radius, SMOKE, 0.32f, 0, 0, 0.02f, 1, dk);
+    /**
+     * A Control Center card's surface: a plain fill (white 12 % by day, black 22 % at night) in Apple's continuous
+     * shape. Not glass: the panel under it already is (no glass on glass, DESIGN-TVOS.md §0b #5).
+     */
+    private void drawerCard(Canvas c, RectF r, Shape shape, float alpha) {
+        if (alpha <= 0.004f) return;
+        fill.setShader(null);
+        int base = blend(0x1FFFFFFF, 0x38000000, dark());
+        fill.setColor((base & 0xFFFFFF) | (Math.round((base >>> 24) * alpha) << 24));
+        c.save();
+        c.translate(r.left, r.top);
+        c.drawPath(shape.of(r.width(), r.height(), CC_CARD_RADIUS * k), fill);
+        c.restore();
     }
 
     private void drawDrawer(Canvas c) {
@@ -2129,11 +2101,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             shadowSoft.setColor(Ui.alpha(0xFF000000, 0.4f * f));
             shadows.draw(c, tmp, r, KEY_BLUR * k, shadowSoft);
         }
-        if (f < 0.99f) drawerGlass(c, base, r, 0.16f, 0x10000000, 4 * k);
+        if (f < 0.99f) drawerCard(c, base, cardShape, 1 - f);
         if (f > 0.01f) {
             fill.setShader(null);
             fill.setColor(Ui.alpha(0xFFFFFFFF, f));
-            c.drawRoundRect(base, r, r, fill);
+            c.save();
+            c.translate(base.left, base.top);
+            c.drawPath(cardShape.of(base.width(), base.height(), r), fill);
+            c.restore();
         }
         boolean off = it.kind == HomeApps.INPUT && !it.connected;
         int ink = blend(tone(off ? 0xFF8E8E93 : L_INK, off ? 0x6BFFFFFF : 0xF2FFFFFF), INK, f);
@@ -2146,7 +2121,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The weather: the place, now (large), the condition and the day's high and low, and the next 4 hours or days. */
     private void drawWeatherCard(Canvas c, RectF r) {
-        drawerGlass(c, r, CC_CARD_RADIUS * k, 0.16f, 0x10000000, 4 * k);
+        drawerCard(c, r, weatherShape, 1);
         if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), cc -> drawWeather(cc, r));
         else drawWeather(c, r);
     }
@@ -2247,18 +2222,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         revealShelf(snap);
         // Only the group whose focus changed is redrawn (moving along the shelf doesn't redraw the hero or capsule).
         boolean tilesChanged = aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
-        int glintNow = !snap && !sheetOpen && zone == Z_SHELF ? shelfIndex : -1;
-        if (glintNow >= 0 && glintNow != glintTile) {
-            glintTile = glintNow;
-            glintCell = -1;
-            glintAt = SystemClock.uptimeMillis();
+        int swayNow = !snap && !sheetOpen && zone == Z_SHELF ? shelfIndex : -1;
+        if (swayNow >= 0 && swayNow != swayTile) {
+            swayTile = swayNow;
+            swayCell = -1;
             sway();
-        } else if (glintNow < 0) {
-            glintTile = -1;
+        } else if (swayNow < 0) {
+            swayTile = -1;
         }
         // The focused Dock app's own Top Shelf (or the wallpaper).
         if (zone == Z_SHELF && !sheetOpen) followShelf(!snap);
+        float fullWas = full.target;
         full.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
+        if (full.target > fullWas) fullAt = SystemClock.uptimeMillis();   // the details' stagger starts now
         if (snap) full.snap(full.target);
         boolean pillChanged = pillFocus.target != (!sheetOpen && zone == Z_STATUS ? 1 : 0);
         pillFocus.target = !sheetOpen && zone == Z_STATUS ? 1 : 0;
@@ -2281,6 +2257,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The newly focused tile turns toward where the focus came from, then sways back (tvOS's tilt). */
     private void sway() {
+        if (Spring.instant) return;   // animations off: no sway
         swayX.value = lastDx;
         swayX.velocity = 0;
         swayX.target = 0;
@@ -2307,7 +2284,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void setOthers(List<HomeApps.Item> list) {
         others = list;
         gridFocus = new Spring[list.size()];
-        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(0.32f, 0.70f, 0);
+        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(0.30f, 0.80f, 0);
         gridLabels = null;
         gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
         retargetGrid(true);
@@ -2352,10 +2329,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void retargetGrid(boolean snap) {
-        if (!snap && sheetOpen && glintCell != gridIndex) {
-            glintCell = gridIndex;
-            glintTile = -1;
-            glintAt = SystemClock.uptimeMillis();
+        if (!snap && sheetOpen && swayCell != gridIndex) {
+            swayCell = gridIndex;
+            swayTile = -1;
             sway();
         }
         for (int i = 0; i < gridFocus.length; i++) {
@@ -2399,7 +2375,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float x = left + col * (GRID_W + GRID_GAP) * k;
         gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
         float f = gridFocus[i].value, fc = Ui.clamp(f);
-        drawAppTile(c, others.get(i), gridCell, f, 0, i == glintCell);
+        drawAppTile(c, others.get(i), gridCell, f, 0);
         if (sheetOpen && i == gridIndex) {
             float s = 1 + FOCUS_GROW, cx = gridCell.centerX(), cy = gridCell.centerY() - TV_FOCUS_LIFT * k;
             gridFocusCell.set(cx - gridCell.width() * s / 2, cy - gridCell.height() * s / 2, cx + gridCell.width() * s / 2, cy + gridCell.height() * s / 2);
@@ -3456,24 +3432,29 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         float fa = alpha * Ui.clamp(full.value);
         if (fa <= 0.004f) return;
+        // Entering, the details come in after each other (metadata, synopsis, Play: 40 ms apart); leaving, together.
+        long since = SystemClock.uptimeMillis() - fullAt;
+        boolean entering = full.target >= 0.5f;
+        float a0 = fa * (entering ? stage(since, 0) : 1), a1 = fa * (entering ? stage(since, 40) : 1);
+        float a2 = fa * (entering ? stage(since, 80) : 1);
         float x = TV_MARGIN * k + dx, bh = 30 * k;
         float buttonTop = (TV_FULL_BOTTOM - TV_BUTTON_H) * k;
         float overviewH = h.overviewLayout == null ? 0 : h.overviewLayout.getHeight();
         float overviewTop = buttonTop - 30 * k - overviewH;
         float metaMid = overviewTop - (overviewH > 0 ? 22 : 0) * k - bh / 2;
-        tvMeta.setAlpha(Math.round(0xCC * fa));
+        tvMeta.setAlpha(Math.round(0xCC * a0));
         c.drawText(h.meta, x, metaMid + Ui.halfCap(tvMeta), tvMeta);
         // Outline badges after the details: rounded rectangles, the ★ score with a star.
         float bx = x + h.metaW + (h.meta.isEmpty() ? 0 : 18 * k);
         border.setStrokeWidth(1.5f * k);
-        border.setColor(Ui.alpha(0x8CFFFFFF, fa));
-        tvBadge.setAlpha(Math.round(0xD9 * fa));
+        border.setColor(Ui.alpha(0x8CFFFFFF, a0));
+        tvBadge.setAlpha(Math.round(0xD9 * a0));
         for (int i = 0; i < h.badges.length; i++) {
             badgeRect.set(bx, metaMid - bh / 2, bx + h.badgeW[i], metaMid + bh / 2);
             c.drawRoundRect(badgeRect, 7 * k, 7 * k, border);
             float tx = bx + 10 * k;
             if (i == h.ratingBadge) {
-                drawStar(c, tx + 8 * k, metaMid, 18 * k, Ui.alpha(0xFFFFD60A, fa));
+                drawStar(c, tx + 8 * k, metaMid, 18 * k, Ui.alpha(0xFFFFFFFF, a0 * 0.85f));
                 tx += 16 * k + 5 * k;
             }
             c.drawText(h.badges[i], tx, metaMid + Ui.halfCap(tvBadge), tvBadge);
@@ -3481,7 +3462,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         border.setStrokeWidth(2 * k);
         if (h.overviewLayout != null) {
-            tvOverview.setAlpha(Math.round(0xB8 * fa));
+            tvOverview.setAlpha(Math.round(0xB8 * a1));
             c.save();
             c.translate(x, overviewTop);
             h.overviewLayout.draw(c);
@@ -3498,16 +3479,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (f > 0.01f) {
             tmp.set(cell);
             tmp.offset(0, 12 * k * f);
-            shadow.setColor(Ui.alpha(0xFF000000, 0.4f * f * fa));
+            shadow.setColor(Ui.alpha(0xFF000000, 0.4f * f * a2));
             shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
         }
-        scene.liquid(c, cell, rr, SMOKE, 0.22f, 0.05f, 16 * k, 10 * k, 0.85f, fa * (1 - f));
+        scene.liquid(c, cell, rr, SMOKE, 0.22f, 0.05f, 16 * k, 10 * k, 0.85f, a2 * (1 - f));
         if (f > 0.01f) {
             fill.setShader(null);
-            fill.setColor(Ui.alpha(0xFFFFFFFF, f * fa));
+            fill.setColor(Ui.alpha(0xFFFFFFFF, f * a2));
             c.drawRoundRect(cell, rr, rr, fill);
         }
-        int ink = Ui.alpha(blend(0xFFFFFFFF, INK, f), fa);
+        int ink = Ui.alpha(blend(0xFFFFFFFF, INK, f), a2);
         c.save();
         c.scale(s, s, heroButton.centerX(), heroButton.centerY());
         Symbols.draw(getContext(), c, "play", heroButton.left + pad + icon / 2, heroButton.centerY(), icon, ink);
@@ -3579,6 +3560,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float tw = lQuote.measureText(sleepText), size = lQuote.getTextSize();
         c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
         Symbols.draw(getContext(), c, "bedtime", right - tw - size * 0.9f, cy, size, lQuote.getColor());
+    }
+
+    /** How far one of full screen's details has come in, `delay` ms after the others started (eased, 200 ms). */
+    private static float stage(long since, long delay) {
+        float t = Ui.clamp((since - delay) / 200f);
+        return t * t * (3 - 2 * t);
     }
 
     /** A five-pointed star `size` wide, centred on (cx, cy): the path is made once, at unit size. */

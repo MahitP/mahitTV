@@ -3,12 +3,20 @@ package io.freemytv;
 /** Damped spring, like macOS animations: response (s) and damping (1 = no bounce). */
 final class Spring {
     float value, velocity, target;
-    private final float response, damping;
+    private float response, damping;
+    /** The system's animations are off (Settings: animator duration scale 0): every spring jumps to its target. */
+    static boolean instant;
 
     Spring(float response, float damping, float initial) {
         this.response = response;
         this.damping = damping;
         value = target = initial;
+    }
+
+    /** New response and damping (a sheet presents slower than it dismisses); allocates nothing. */
+    void tune(float response, float damping) {
+        this.response = response;
+        this.damping = damping;
     }
 
     void snap(float v) {
@@ -18,7 +26,7 @@ final class Spring {
 
     /** Advances `dt` seconds; returns true while still moving. */
     boolean step(float dt) {
-        if (settled()) {
+        if (instant || settled()) {
             value = target;
             velocity = 0;
             return false;
