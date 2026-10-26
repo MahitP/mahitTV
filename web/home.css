@@ -655,26 +655,31 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #house, #welly { opacity: 0; visibility: hidden; color: #FFF; -webkit-transition: opacity 0.35s, visibility 0s 0.35s; transition: opacity 0.35s, visibility 0s 0.35s; }
 .tab-home #house, .tab-welly #welly { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
 
-/* MARK: - Home: the house on one canvas (rooms.js), a caption for the focused light */
+/* MARK: - Home: the house on one canvas (rooms.js); the focused light's name and state in a pill above its dot */
 
 #house canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
-#house .caption {
+/* A smoke capsule like the status pill's, not glass over the model; rooms.js places it and keeps it in the safe area. */
+#house .pill {
   position: absolute;
   left: 0;
-  right: 0;
-  top: 984px;
-  height: 34px;
-  text-align: center;
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 34px;
-  color: rgba(255, 255, 255, 0.85);
+  top: 0;
+  height: 52px;
+  padding: 0 24px;
+  border-radius: 26px;
   white-space: pre;
+  font-size: 26px;
+  line-height: 52px;
+  color: #FFF;
+  background: rgba(28, 28, 30, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 26px rgba(0, 0, 0, 0.32);
   opacity: 0;
   -webkit-transition: opacity 0.2s;
   transition: opacity 0.2s;
 }
-#house .caption.on { opacity: 1; }
+#house .pill.on { opacity: 1; }
+#house .pill .n { font-weight: 600; }
+#house .pill .s { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
+#house .pill.lit .s { color: #FFC07A; }
 
 /* MARK: - Welly: a column of 1180, cards as plain fills, glass prompt pills and the "Ask Welly…" capsule */
 

@@ -219,35 +219,27 @@ the user's words above that, right-aligned, dimmer.
 
 ### 4.1 The model
 
-- A **single-floor house, roof off**, seen from above at an angle (isometric, 30°), centred; walls 2.6 m, the front
-  walls cut low (a dollhouse cutaway) so the rooms read. Geometry is data: **`app/assets/house.json`**, shared by
-  Android and the web.
-- Modelled on the apartment's **blueprint** and photos, written by `tools/make_house.py` (edit that, not house.json),
-  in the blueprint's orientation (balcony at the back, bedrooms in front), seen from above at 60°; the back (north)
-  and left (west) walls stand full height, the rest are cut low:
-  - **Living room** (centre right): L sectional along the east wall with its return in front of the curtained
-    sliding door to the **balcony** (railing), a chaise, the big patterned rug, the **Smart TV** on the bathroom wall
-    over a low stand with plants (visual only), the keyboard by the hallway, the corner **floor lamp** (its bulb is the
-    living room's light).
-  - **Dining room** (top left, window), **galley kitchen**, **laundry closet**, the **hallway** (rack, basket, linen
-    closet), the **half bath** and the **bathroom** (tub), the **entry** with its stairs down to the front door.
-  - **My room** (front, beside the entry): closet by the door, black cube shelf under the **tube light** on the west
-    wall, the bed along that wall, desk and gaming chair under the window, the white bookshelf across from the tube
-    light with the **lamp** just behind it.
-  - **Parents' room** (front-right corner): closet, black cart and the **tube light** on the west wall by the door,
-    the wall TV, the bed against the window wall, desk and chair under the window, the silver armoire.
-- Light kinds in house.json: `bulb` (hanging), `lamp` (floor lamp, `height` = shade bottom), `tube` (wall bar,
-  `along` x|y, `length`); `glow` is where each light pools on the floor. Ids stay `parents.bulb`, `mine.lamp`,
-  `mine.bulb`, `living.bulb`, so `kasa=` keys don't change.
-- Colours: walls and floors in a **cool** architectural grey-blue (off); a lit fixture spreads a **warm** amber glow
-  over its room's floor and furniture (additive, eased by a smooth spring). No glass cards over the model.
-- **Focus:** the D-pad moves between the four fixtures (by their position on screen);
-  the focused fixture grows 1.25× on the snappy spring with a soft white halo; **OK toggles it** (optimistic: the glow
-  changes at once, reverts with a note if the device doesn't answer). The **TV is not focusable**.
-- One caption line at the bottom (type, not a card): *My Room · Lamp · On*, or *Not connected — add its IP in
-  config.properties* when the fixture has no device.
-- **Photos hook:** `app/assets/rooms/<room>.jpg` (optional) shows dimmed behind the model when that room's fixture is
-  focused — off by default, no card.
+- The apartment from its **blueprint** and photos, written by `tools/make_house.py` (edit that, not house.json; its
+  docstring describes the schema), drawn the same way by `HouseView` (Android) and `web/rooms.js`.
+- **A clay diorama:** matte pastel materials, colour from the rugs and bedding, warm oak floors, off-white walls;
+  furniture built from several pieces (legs, cushions, pillows, a folded duvet, a floating console under a black glass
+  TV); closets are wall-coloured masses with white doors. Soft contact shadows, darker bands where walls meet floors,
+  a light top edge on every piece.
+- **Rooms:** living room (L sectional with chaise, rug, oak-and-glass coffee table, the TV and console with a metre
+  of floor in front, keyboard, floor plant, the corner floor lamp), balcony, dining room, galley kitchen, laundry
+  closet, hallway, half bath, bathroom, the **foyer** (front door, coat closet and hooks, shoe bench, plant), my room
+  and the parents' room (as in the photos).
+- **Lights:** off, the house is cool; a lit light warms what's near it (falling off with distance), pools on its
+  room's floor, a lamp casts a cone, a tube washes its wall; switching on gives a short bloom.
+- **Camera:** the overview keeps the blueprint's orientation. Focusing a light swings the camera to that room on the
+  large-move spring (0.7 s, 0.9): bedrooms get a closer angle, the living room turns ~150° so the TV faces you. Outside
+  walls lower themselves when they face the camera; the other rooms fade back. A slow idle drift (±1.5°) after 8 s
+  without keys, never with animations off or on Android 8–11. The model fades out under the tab bar.
+- **Focus:** the D-pad moves between the four lights by their place in the **overview** (stable while the camera
+  moves). Each light has a dot on a hairline stem (muted off, amber on); the focused one grows (0.30, 0.80), gets a
+  white ring, and a pill above it reads *My Room · Lamp · On* (a second line when it isn't connected); OK sends a
+  ripple. Dots and pill are drawn last, above everything, and the pill stays inside the safe area. The TVs are
+  scenery.
 
 ### 4.2 SmartHomeBridge
 

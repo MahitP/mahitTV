@@ -1,13 +1,13 @@
 {
- "about": "The Home tab's house (WELLY-HOME-REMOTE-SPEC.md §4): the apartment's blueprint and photos, written by tools/make_house.py (edit that, not this). Metres; x to the right, y toward the viewer, z up; origin at the back-left corner, as on the blueprint (balcony at the back, the parents' room in the front-right corner). Shared by the Android app (HouseView) and the web app (rooms.js). Fixture kinds: bulb (hanging), lamp (floor lamp; height = shade bottom), tube (wall tube light; along x or y, length); glow = where its light pools on the floor.",
+ "about": "The Home tab's house (WELLY-HOME-REMOTE-SPEC.md §4): the apartment's blueprint and photos, written by tools/make_house.py (edit that, not this; its docstring describes the schema). Metres; x to the right, y toward the viewer, z up; origin at the back-left corner, as on the blueprint.",
  "camera": {
   "yaw": 14,
   "pitch": 60,
   "box": [
    160,
-   135,
+   150,
    1760,
-   978
+   985
   ]
  },
  "size": [
@@ -19,10 +19,10 @@
    "id": "dining",
    "name": "Dining Room",
    "rect": [
-    4.75,
-    3.35,
     1.6,
-    0
+    0,
+    4.75,
+    3.35
    ],
    "floor": "wood"
   },
@@ -30,10 +30,10 @@
    "id": "balcony",
    "name": "Balcony",
    "rect": [
-    9.3,
-    2.0,
     4.75,
-    0
+    0,
+    9.3,
+    2.0
    ],
    "floor": "deck"
   },
@@ -41,10 +41,10 @@
    "id": "kitchen",
    "name": "Kitchen",
    "rect": [
-    4.2,
-    5.85,
     1.6,
-    3.35
+    3.35,
+    4.2,
+    5.85
    ],
    "floor": "tile"
   },
@@ -52,21 +52,30 @@
    "id": "living",
    "name": "Living Room",
    "rect": [
-    9.3,
-    7.1,
     4.2,
-    2.0
+    2.0,
+    9.3,
+    7.1
    ],
-   "floor": "wood"
+   "floor": "wood",
+   "camera": {
+    "yaw": -140,
+    "pitch": 50,
+    "zoom": 1.3,
+    "center": [
+     6.75,
+     4.7
+    ]
+   }
   },
   {
    "id": "laundry",
    "name": "Laundry",
    "rect": [
-    4.2,
-    7.1,
     1.6,
-    5.85
+    5.85,
+    4.2,
+    7.1
    ],
    "floor": "tile"
   },
@@ -74,10 +83,10 @@
    "id": "hall",
    "name": "Hallway",
    "rect": [
-    5.35,
-    10.0,
     1.6,
-    7.1
+    7.1,
+    5.35,
+    10.0
    ],
    "floor": "wood"
   },
@@ -85,10 +94,10 @@
    "id": "powder",
    "name": "Half Bath",
    "rect": [
-    6.85,
-    9.5,
     5.35,
-    7.1
+    7.1,
+    6.85,
+    9.5
    ],
    "floor": "bathtile"
   },
@@ -96,10 +105,10 @@
    "id": "bath",
    "name": "Bathroom",
    "rect": [
-    9.3,
-    9.5,
     6.85,
-    7.1
+    7.1,
+    9.3,
+    9.5
    ],
    "floor": "bathtile"
   },
@@ -107,10 +116,10 @@
    "id": "corridor",
    "name": "Hallway",
    "rect": [
-    9.3,
-    10.0,
     5.35,
-    9.5
+    9.5,
+    9.3,
+    10.0
    ],
    "floor": "wood"
   },
@@ -118,10 +127,10 @@
    "id": "entry",
    "name": "Entry",
    "rect": [
-    2.9,
-    14.8,
     0,
-    8.5
+    8.5,
+    2.9,
+    14.8
    ],
    "floor": "wood"
   },
@@ -129,23 +138,41 @@
    "id": "mine",
    "name": "My Room",
    "rect": [
-    5.85,
-    14.8,
     2.9,
-    10.0
+    10.0,
+    5.85,
+    14.8
    ],
-   "floor": "wood"
+   "floor": "wood",
+   "camera": {
+    "yaw": 8,
+    "pitch": 54,
+    "zoom": 1.5,
+    "center": [
+     4.4,
+     12.2
+    ]
+   }
   },
   {
    "id": "parents",
    "name": "Parents' Room",
    "rect": [
-    9.3,
-    14.8,
     5.85,
-    10.0
+    10.0,
+    9.3,
+    14.8
    ],
-   "floor": "wood"
+   "floor": "wood",
+   "camera": {
+    "yaw": 22,
+    "pitch": 54,
+    "zoom": 1.5,
+    "center": [
+     7.55,
+     12.2
+    ]
+   }
   }
  ],
  "walls": [
@@ -158,7 +185,13 @@
     4.75,
     0
    ],
-   "h": 2.6
+   "h": 2.6,
+   "out": [
+    0,
+    -1
+   ],
+   "low": 0.45,
+   "id": "dining-n"
   },
   {
    "from": [
@@ -169,7 +202,13 @@
     5.8,
     2.0
    ],
-   "h": 2.6
+   "h": 2.6,
+   "out": [
+    0,
+    -1
+   ],
+   "low": 0.45,
+   "id": "living-n1"
   },
   {
    "from": [
@@ -180,7 +219,13 @@
     9.3,
     2.0
    ],
-   "h": 2.6
+   "h": 2.6,
+   "out": [
+    0,
+    -1
+   ],
+   "low": 0.45,
+   "id": "living-n2"
   },
   {
    "from": [
@@ -191,7 +236,98 @@
     9.3,
     14.8
    ],
-   "h": 0.45
+   "h": 2.6,
+   "out": [
+    1,
+    0
+   ],
+   "low": 0.45,
+   "id": "east"
+  },
+  {
+   "from": [
+    0,
+    14.8
+   ],
+   "to": [
+    1.95,
+    14.8
+   ],
+   "h": 2.6,
+   "out": [
+    0,
+    1
+   ],
+   "low": 0.45,
+   "id": "south-1"
+  },
+  {
+   "from": [
+    2.8,
+    14.8
+   ],
+   "to": [
+    9.3,
+    14.8
+   ],
+   "h": 2.6,
+   "out": [
+    0,
+    1
+   ],
+   "low": 0.45,
+   "id": "south-2"
+  },
+  {
+   "from": [
+    0,
+    8.5
+   ],
+   "to": [
+    0,
+    14.8
+   ],
+   "h": 2.6,
+   "out": [
+    -1,
+    0
+   ],
+   "low": 0.45,
+   "id": "west-entry"
+  },
+  {
+   "from": [
+    0,
+    8.5
+   ],
+   "to": [
+    1.6,
+    8.5
+   ],
+   "h": 2.6,
+   "out": [
+    0,
+    -1
+   ],
+   "low": 0.45,
+   "id": "entry-n"
+  },
+  {
+   "from": [
+    1.6,
+    0
+   ],
+   "to": [
+    1.6,
+    8.5
+   ],
+   "h": 2.6,
+   "out": [
+    -1,
+    0
+   ],
+   "low": 0.45,
+   "id": "west"
   },
   {
    "from": [
@@ -203,61 +339,6 @@
     2.0
    ],
    "h": 1.1
-  },
-  {
-   "from": [
-    0,
-    14.8
-   ],
-   "to": [
-    1.95,
-    14.8
-   ],
-   "h": 0.45
-  },
-  {
-   "from": [
-    2.8,
-    14.8
-   ],
-   "to": [
-    9.3,
-    14.8
-   ],
-   "h": 0.45
-  },
-  {
-   "from": [
-    0,
-    8.5
-   ],
-   "to": [
-    0,
-    14.8
-   ],
-   "h": 2.6
-  },
-  {
-   "from": [
-    0,
-    8.5
-   ],
-   "to": [
-    1.6,
-    8.5
-   ],
-   "h": 2.6
-  },
-  {
-   "from": [
-    1.6,
-    0
-   ],
-   "to": [
-    1.6,
-    8.5
-   ],
-   "h": 2.6
   },
   {
    "from": [
@@ -430,11 +511,11 @@
    "room": "living",
    "kind": "rug",
    "box": [
-    5.15,
-    3.05,
-    0,
+    5.35,
     3.15,
-    3.1,
+    0,
+    2.85,
+    2.65,
     0.02
    ],
    "color": "rug"
@@ -443,25 +524,38 @@
    "room": "living",
    "kind": "rug",
    "box": [
-    5.45,
-    3.35,
+    5.6,
+    3.4,
     0.02,
-    2.55,
-    2.5,
+    2.35,
+    2.15,
     0.004
    ],
    "color": "rug-pattern"
   },
   {
    "room": "living",
+   "kind": "rug",
+   "box": [
+    6.05,
+    3.85,
+    0.024,
+    1.45,
+    1.25,
+    0.003
+   ],
+   "color": "rug"
+  },
+  {
+   "room": "living",
    "kind": "sofa",
    "box": [
     8.3,
-    2.25,
-    0,
+    2.95,
+    0.06,
     0.95,
-    4.05,
-    0.42
+    2.65,
+    0.26
    ],
    "color": "sofa"
   },
@@ -469,12 +563,12 @@
    "room": "living",
    "kind": "sofa-back",
    "box": [
-    8.95,
-    2.25,
-    0.42,
-    0.3,
-    4.05,
-    0.4
+    9.0,
+    2.2,
+    0.32,
+    0.25,
+    3.4,
+    0.5
    ],
    "color": "sofa"
   },
@@ -483,11 +577,11 @@
    "kind": "sofa",
    "box": [
     6.2,
-    2.1,
-    0,
-    2.1,
-    0.95,
-    0.42
+    2.2,
+    0.06,
+    3.05,
+    0.78,
+    0.26
    ],
    "color": "sofa"
   },
@@ -496,11 +590,11 @@
    "kind": "sofa-back",
    "box": [
     6.2,
-    2.1,
-    0.42,
-    3.05,
-    0.3,
-    0.4
+    2.15,
+    0.32,
+    2.8,
+    0.25,
+    0.5
    ],
    "color": "sofa"
   },
@@ -510,10 +604,10 @@
    "box": [
     6.2,
     2.4,
-    0.42,
-    0.25,
-    0.65,
-    0.2
+    0.06,
+    0.22,
+    0.78,
+    0.56
    ],
    "color": "sofa"
   },
@@ -521,171 +615,508 @@
    "room": "living",
    "kind": "chaise",
    "box": [
-    7.25,
-    5.35,
-    0,
-    1.05,
+    7.35,
+    4.65,
+    0.06,
     0.95,
-    0.42
+    0.95,
+    0.26
    ],
    "color": "sofa"
   },
   {
    "room": "living",
-   "kind": "pillow",
+   "kind": "sofa",
    "box": [
-    8.82,
-    3.0,
-    0.42,
-    0.16,
-    0.5,
-    0.42
+    8.3,
+    4.65,
+    0.06,
+    0.95,
+    0.95,
+    0.26
    ],
-   "color": "pillow"
+   "color": "sofa"
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    8.33,
+    2.45,
+    0.32,
+    0.66,
+    0.85,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    8.33,
+    3.33,
+    0.32,
+    0.66,
+    0.66,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    8.33,
+    4.02,
+    0.32,
+    0.66,
+    0.6,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    8.33,
+    4.68,
+    0.32,
+    0.66,
+    0.9,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    7.38,
+    4.68,
+    0.32,
+    0.9,
+    0.9,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    6.45,
+    2.45,
+    0.32,
+    0.9,
+    0.52,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "cushion",
+   "box": [
+    7.38,
+    2.45,
+    0.32,
+    0.9,
+    0.52,
+    0.12
+   ],
+   "color": "cushion",
+   "shadow": false
   },
   {
    "room": "living",
    "kind": "pillow",
    "box": [
-    8.82,
-    4.3,
-    0.42,
-    0.16,
-    0.5,
-    0.42
+    8.78,
+    2.95,
+    0.44,
+    0.18,
+    0.46,
+    0.4
    ],
-   "color": "pillow"
+   "color": "pillow-terracotta",
+   "shadow": false
   },
   {
    "room": "living",
    "kind": "pillow",
    "box": [
-    6.9,
-    2.4,
-    0.42,
-    0.5,
-    0.16,
-    0.42
+    8.78,
+    3.55,
+    0.44,
+    0.18,
+    0.46,
+    0.4
    ],
-   "color": "pillow"
+   "color": "pillow-slate",
+   "shadow": false
   },
   {
    "room": "living",
-   "kind": "tvstand",
+   "kind": "pillow",
    "box": [
-    5.95,
-    6.6,
+    6.75,
+    2.42,
+    0.44,
+    0.46,
+    0.18,
+    0.4
+   ],
+   "color": "pillow-slate",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "pillow",
+   "box": [
+    7.6,
+    2.42,
+    0.44,
+    0.46,
+    0.18,
+    0.4
+   ],
+   "color": "pillow",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.82,
+    5.17,
     0,
-    2.0,
-    0.42,
-    0.45
+    0.05,
+    0.05,
+    0.38
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.82,
+    6.23,
+    0,
+    0.05,
+    0.05,
+    0.38
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    5.35,
+    5.17,
+    0,
+    0.05,
+    0.05,
+    0.38
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    5.35,
+    6.23,
+    0,
+    0.05,
+    0.05,
+    0.38
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "shelf",
+   "box": [
+    4.82,
+    5.17,
+    0.12,
+    0.58,
+    1.11,
+    0.03
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "glass",
+   "box": [
+    4.77,
+    5.12,
+    0.38,
+    0.68,
+    1.21,
+    0.03
+   ],
+   "color": "glass",
+   "alpha": 0.62
+  },
+  {
+   "room": "living",
+   "kind": "book",
+   "box": [
+    4.9,
+    5.4,
+    0.41,
+    0.24,
+    0.3,
+    0.04
+   ],
+   "color": "pillow-terracotta",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "console",
+   "box": [
+    6.1,
+    6.68,
+    0.22,
+    1.8,
+    0.34,
+    0.3
+   ],
+   "color": "oak"
   },
   {
    "room": "living",
    "kind": "tv",
    "box": [
-    6.03,
-    6.98,
-    0.55,
-    1.85,
-    0.05,
-    1.05
+    6.15,
+    6.99,
+    0.82,
+    1.7,
+    0.04,
+    0.98
+   ],
+   "color": "bezel",
+   "focusable": false,
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "screen",
+   "box": [
+    6.18,
+    6.975,
+    0.85,
+    1.64,
+    0.015,
+    0.92
    ],
    "color": "screen",
-   "focusable": false
+   "focusable": false,
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "remote",
+   "box": [
+    7.3,
+    6.78,
+    0.52,
+    0.16,
+    0.05,
+    0.02
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "pot",
+   "box": [
+    8.7,
+    6.45,
+    0,
+    0.38,
+    0.38,
+    0.32
+   ],
+   "color": "pot",
+   "shape": "round"
   },
   {
    "room": "living",
    "kind": "plant",
    "box": [
-    7.55,
-    6.68,
-    0.45,
-    0.18,
-    0.18,
-    0.38
+    8.62,
+    6.37,
+    0.32,
+    0.54,
+    0.54,
+    0.83
    ],
-   "color": "plant"
-  },
-  {
-   "room": "living",
-   "kind": "plant",
-   "box": [
-    6.15,
-    6.7,
-    0.45,
-    0.15,
-    0.15,
-    0.26
-   ],
-   "color": "plant"
+   "color": "plant",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "living",
    "kind": "piano",
    "box": [
     4.3,
-    5.9,
-    0,
-    0.4,
-    1.1,
-    0.8
+    5.15,
+    0.62,
+    0.36,
+    1.2,
+    0.12
    ],
    "color": "silver"
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.32,
+    5.17,
+    0,
+    0.04,
+    0.04,
+    0.62
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.32,
+    6.29,
+    0,
+    0.04,
+    0.04,
+    0.62
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.6,
+    5.17,
+    0,
+    0.04,
+    0.04,
+    0.62
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "leg",
+   "box": [
+    4.6,
+    6.29,
+    0,
+    0.04,
+    0.04,
+    0.62
+   ],
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "living",
    "kind": "cabinet",
    "box": [
     4.85,
-    2.1,
+    2.12,
     0,
     0.85,
-    0.5,
-    0.8
+    0.48,
+    0.78
    ],
    "color": "white"
   },
   {
    "room": "living",
-   "kind": "door",
+   "kind": "door-glass",
    "box": [
     5.8,
-    1.97,
+    1.98,
     0,
     2.1,
+    0.04,
+    2.1
+   ],
+   "color": "glass",
+   "alpha": 0.5,
+   "wall": "living-n1",
+   "shadow": false
+  },
+  {
+   "room": "living",
+   "kind": "door-frame",
+   "box": [
+    6.83,
+    1.97,
+    0,
+    0.04,
     0.06,
     2.1
    ],
-   "color": "window"
+   "color": "frame",
+   "wall": "living-n1",
+   "shadow": false
   },
   {
    "room": "living",
-   "kind": "curtain",
+   "kind": "frame",
    "box": [
-    5.62,
+    8.05,
     2.06,
-    0,
-    0.3,
-    0.12,
-    2.2
+    1.3,
+    0.75,
+    0.03,
+    0.55
    ],
-   "color": "curtain"
+   "color": "frame",
+   "shadow": false,
+   "wall": "living-n2"
   },
   {
    "room": "living",
-   "kind": "curtain",
+   "kind": "print",
    "box": [
-    7.78,
-    2.06,
-    0,
-    0.3,
-    0.12,
-    2.2
+    8.09,
+    2.09,
+    1.34,
+    0.67,
+    0.01,
+    0.47
    ],
-   "color": "curtain"
+   "color": "print-sky",
+   "shadow": false,
+   "wall": "living-n2"
   },
   {
    "room": "balcony",
@@ -698,7 +1129,8 @@
     0.05,
     0.05
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -711,7 +1143,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -724,7 +1157,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -737,7 +1171,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -750,7 +1185,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -763,7 +1199,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -776,7 +1213,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -789,7 +1227,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -802,7 +1241,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -815,7 +1255,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -828,7 +1269,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -841,7 +1283,8 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "balcony",
@@ -854,7 +1297,37 @@
     0.04,
     0.88
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "balcony",
+   "kind": "pot",
+   "box": [
+    8.6,
+    0.35,
+    0,
+    0.34,
+    0.34,
+    0.32
+   ],
+   "color": "pot-white",
+   "shape": "round"
+  },
+  {
+   "room": "balcony",
+   "kind": "plant",
+   "box": [
+    8.52,
+    0.27,
+    0.32,
+    0.5,
+    0.5,
+    0.43
+   ],
+   "color": "plant",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "dining",
@@ -867,7 +1340,65 @@
     0.02,
     1.15
    ],
-   "color": "window"
+   "color": "window",
+   "wall": "dining-n",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.49,
+    1.04,
+    0,
+    0.06,
+    0.06,
+    0.72
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.49,
+    1.75,
+    0,
+    0.06,
+    0.06,
+    0.72
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.75,
+    1.04,
+    0,
+    0.06,
+    0.06,
+    0.72
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.75,
+    1.75,
+    0,
+    0.06,
+    0.06,
+    0.72
+   ],
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "dining",
@@ -875,64 +1406,407 @@
    "box": [
     2.45,
     1.0,
-    0,
+    0.72,
     1.4,
     0.85,
-    0.75
+    0.04
    ],
    "color": "oak"
   },
   {
    "room": "dining",
-   "kind": "chair",
+   "kind": "leg",
    "box": [
-    2.6,
-    0.55,
+    2.57,
+    0.44,
     0,
-    0.42,
-    0.42,
-    0.46
+    0.04,
+    0.04,
+    0.42
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "dining",
-   "kind": "chair",
+   "kind": "leg",
    "box": [
-    3.25,
-    0.55,
+    2.57,
+    0.78,
     0,
-    0.42,
-    0.42,
-    0.46
+    0.04,
+    0.04,
+    0.42
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "dining",
-   "kind": "chair",
+   "kind": "leg",
    "box": [
-    2.6,
-    1.9,
+    2.91,
+    0.44,
     0,
-    0.42,
-    0.42,
-    0.46
+    0.04,
+    0.04,
+    0.42
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "dining",
-   "kind": "chair",
+   "kind": "leg",
    "box": [
-    3.25,
-    1.9,
+    2.91,
+    0.78,
     0,
-    0.42,
-    0.42,
-    0.46
+    0.04,
+    0.04,
+    0.42
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "seat",
+   "box": [
+    2.55,
+    0.42,
+    0.42,
+    0.42,
+    0.42,
+    0.05
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "chair-back",
+   "box": [
+    2.55,
+    0.42,
+    0.47,
+    0.42,
+    0.06,
+    0.4
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.32,
+    0.44,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.32,
+    0.78,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.66,
+    0.44,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.66,
+    0.78,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "seat",
+   "box": [
+    3.3,
+    0.42,
+    0.42,
+    0.42,
+    0.42,
+    0.05
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "chair-back",
+   "box": [
+    3.3,
+    0.42,
+    0.47,
+    0.42,
+    0.06,
+    0.4
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.57,
+    2.0,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.57,
+    2.34,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.91,
+    2.0,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    2.91,
+    2.34,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "seat",
+   "box": [
+    2.55,
+    1.98,
+    0.42,
+    0.42,
+    0.42,
+    0.05
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "chair-back",
+   "box": [
+    2.55,
+    2.34,
+    0.47,
+    0.42,
+    0.06,
+    0.4
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.32,
+    2.0,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.32,
+    2.34,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.66,
+    2.0,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "leg",
+   "box": [
+    3.66,
+    2.34,
+    0,
+    0.04,
+    0.04,
+    0.42
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "seat",
+   "box": [
+    3.3,
+    1.98,
+    0.42,
+    0.42,
+    0.42,
+    0.05
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "chair-back",
+   "box": [
+    3.3,
+    2.34,
+    0.47,
+    0.42,
+    0.06,
+    0.4
+   ],
+   "color": "chair",
+   "shadow": false
+  },
+  {
+   "room": "dining",
+   "kind": "frame",
+   "box": [
+    1.66,
+    1.2,
+    1.25,
+    0.03,
+    0.85,
+    0.6
+   ],
+   "color": "frame",
+   "shadow": false,
+   "wall": "west"
+  },
+  {
+   "room": "dining",
+   "kind": "print",
+   "box": [
+    1.69,
+    1.24,
+    1.29,
+    0.01,
+    0.77,
+    0.52
+   ],
+   "color": "print-sage",
+   "shadow": false,
+   "wall": "west"
+  },
+  {
+   "room": "dining",
+   "kind": "pot",
+   "box": [
+    4.25,
+    0.3,
+    0,
+    0.36,
+    0.36,
+    0.32
+   ],
+   "color": "pot",
+   "shape": "round"
+  },
+  {
+   "room": "dining",
+   "kind": "plant",
+   "box": [
+    4.17,
+    0.22,
+    0.32,
+    0.52,
+    0.52,
+    0.68
+   ],
+   "color": "plant",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "kitchen",
@@ -942,7 +1816,7 @@
     3.45,
     0,
     0.62,
-    1.65,
+    0.7,
     0.86
    ],
    "color": "oak"
@@ -955,10 +1829,11 @@
     3.45,
     0.86,
     0.62,
-    1.65,
+    0.7,
     0.04
    ],
-   "color": "granite"
+   "color": "granite",
+   "shadow": false
   },
   {
    "room": "kitchen",
@@ -969,9 +1844,124 @@
     0,
     0.64,
     0.76,
-    0.92
+    0.9
    ],
    "color": "white"
+  },
+  {
+   "room": "kitchen",
+   "kind": "cooktop",
+   "box": [
+    1.7,
+    4.2,
+    0.9,
+    0.54,
+    0.66,
+    0.015
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "burner",
+   "box": [
+    1.76,
+    4.26,
+    0.915,
+    0.16,
+    0.16,
+    0.008
+   ],
+   "color": "burner",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "burner",
+   "box": [
+    2.035,
+    4.275,
+    0.915,
+    0.13,
+    0.13,
+    0.008
+   ],
+   "color": "burner",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "burner",
+   "box": [
+    1.775,
+    4.655,
+    0.915,
+    0.13,
+    0.13,
+    0.008
+   ],
+   "color": "burner",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "burner",
+   "box": [
+    2.02,
+    4.64,
+    0.915,
+    0.16,
+    0.16,
+    0.008
+   ],
+   "color": "burner",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "oven-window",
+   "box": [
+    2.29,
+    4.28,
+    0.22,
+    0.006,
+    0.5,
+    0.36
+   ],
+   "color": "glass-dark",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "oven-handle",
+   "box": [
+    2.296,
+    4.25,
+    0.66,
+    0.025,
+    0.56,
+    0.03
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "cabinet",
+   "box": [
+    1.65,
+    4.91,
+    0,
+    0.62,
+    0.2,
+    0.86
+   ],
+   "color": "oak"
   },
   {
    "room": "kitchen",
@@ -988,6 +1978,63 @@
   },
   {
    "room": "kitchen",
+   "kind": "fridge-gap",
+   "box": [
+    2.37,
+    5.12,
+    1.12,
+    0.006,
+    0.7,
+    0.015
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "handle",
+   "box": [
+    2.376,
+    5.2,
+    1.22,
+    0.025,
+    0.03,
+    0.42
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "handle",
+   "box": [
+    2.376,
+    5.2,
+    0.62,
+    0.025,
+    0.03,
+    0.4
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "upper",
+   "box": [
+    1.66,
+    3.45,
+    1.45,
+    0.34,
+    1.45,
+    0.7
+   ],
+   "color": "oak",
+   "wall": "west",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
    "kind": "cabinet",
    "box": [
     3.52,
@@ -1010,7 +2057,95 @@
     2.0,
     0.04
    ],
-   "color": "granite"
+   "color": "granite",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "sink",
+   "box": [
+    3.6,
+    4.35,
+    0.9,
+    0.46,
+    0.6,
+    0.01
+   ],
+   "color": "basin",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "faucet",
+   "box": [
+    4.02,
+    4.62,
+    0.9,
+    0.04,
+    0.04,
+    0.26
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "spout",
+   "box": [
+    3.86,
+    4.625,
+    1.14,
+    0.18,
+    0.03,
+    0.025
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "canister",
+   "box": [
+    3.65,
+    3.85,
+    0.9,
+    0.1,
+    0.1,
+    0.16
+   ],
+   "color": "pot-white",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "canister",
+   "box": [
+    3.85,
+    3.85,
+    0.9,
+    0.1,
+    0.1,
+    0.16
+   ],
+   "color": "pot-white",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "kitchen",
+   "kind": "canister",
+   "box": [
+    4.05,
+    3.85,
+    0.9,
+    0.1,
+    0.1,
+    0.16
+   ],
+   "color": "pot-white",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "laundry",
@@ -1021,9 +2156,85 @@
     0,
     0.7,
     0.68,
-    0.95
+    0.94
    ],
    "color": "white"
+  },
+  {
+   "room": "laundry",
+   "kind": "controls",
+   "box": [
+    1.79,
+    6.63,
+    0.79,
+    0.62,
+    0.006,
+    0.12
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "drawer",
+   "box": [
+    1.82,
+    6.636,
+    0.81,
+    0.18,
+    0.01,
+    0.08
+   ],
+   "color": "white",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "dial",
+   "box": [
+    2.275,
+    6.638,
+    0.815,
+    0.07,
+    0.004,
+    0.07
+   ],
+   "color": "charcoal",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "door-ring",
+   "box": [
+    1.89,
+    6.634,
+    0.21,
+    0.42,
+    0.004,
+    0.42
+   ],
+   "color": "silver",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "door-glass",
+   "box": [
+    1.95,
+    6.639,
+    0.27,
+    0.3,
+    0.004,
+    0.3
+   ],
+   "color": "glass-dark",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
   },
   {
    "room": "laundry",
@@ -1034,61 +2245,330 @@
     0,
     0.7,
     0.68,
-    0.95
+    0.94
    ],
    "color": "white"
   },
   {
    "room": "laundry",
-   "kind": "heater",
+   "kind": "controls",
    "box": [
-    3.35,
+    2.54,
+    6.63,
+    0.79,
+    0.62,
+    0.006,
+    0.12
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "drawer",
+   "box": [
+    2.57,
+    6.636,
+    0.81,
+    0.18,
+    0.01,
+    0.08
+   ],
+   "color": "white",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "dial",
+   "box": [
+    3.025,
+    6.638,
+    0.815,
+    0.07,
+    0.004,
+    0.07
+   ],
+   "color": "charcoal",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "door-ring",
+   "box": [
+    2.64,
+    6.634,
+    0.21,
+    0.42,
+    0.004,
+    0.42
+   ],
+   "color": "silver",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "door-glass",
+   "box": [
+    2.7,
+    6.639,
+    0.27,
+    0.3,
+    0.004,
+    0.3
+   ],
+   "color": "glass-dark",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "tank",
+   "box": [
+    3.38,
     6.0,
     0,
     0.5,
     0.5,
-    1.35
+    1.3
    ],
-   "color": "silver"
+   "color": "heater",
+   "shape": "round"
+  },
+  {
+   "room": "laundry",
+   "kind": "cap",
+   "box": [
+    3.43,
+    6.05,
+    1.3,
+    0.4,
+    0.4,
+    0.06
+   ],
+   "color": "silver",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "pipe",
+   "box": [
+    3.53,
+    6.225,
+    1.36,
+    0.05,
+    0.05,
+    0.3
+   ],
+   "color": "copper",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "pipe",
+   "box": [
+    3.69,
+    6.225,
+    1.36,
+    0.05,
+    0.05,
+    0.3
+   ],
+   "color": "copper",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "control",
+   "box": [
+    3.54,
+    6.48,
+    0.22,
+    0.18,
+    0.05,
+    0.13
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "dial",
+   "box": [
+    3.565,
+    6.532,
+    0.25,
+    0.07,
+    0.004,
+    0.07
+   ],
+   "color": "silver",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "status",
+   "box": [
+    3.668,
+    6.532,
+    0.298,
+    0.024,
+    0.004,
+    0.024
+   ],
+   "color": "indicator",
+   "shape": "disc",
+   "face": "+y",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "closet-door",
+   "box": [
+    1.7,
+    7.16,
+    0.02,
+    0.6,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "closet-door",
+   "box": [
+    2.32,
+    7.16,
+    0.02,
+    0.6,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "closet-door",
+   "box": [
+    2.94,
+    7.16,
+    0.02,
+    0.6,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "laundry",
+   "kind": "closet-door",
+   "box": [
+    3.56,
+    7.16,
+    0.02,
+    0.6,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
   },
   {
    "room": "hall",
    "kind": "rack",
    "box": [
     2.0,
-    7.25,
-    0,
+    7.3,
+    0.85,
     0.55,
     0.28,
-    0.95
+    0.03
    ],
-   "color": "silver"
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "hall",
+   "kind": "leg",
+   "box": [
+    2.0,
+    7.3,
+    0,
+    0.03,
+    0.03,
+    0.85
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "hall",
+   "kind": "leg",
+   "box": [
+    2.0,
+    7.55,
+    0,
+    0.03,
+    0.03,
+    0.85
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "hall",
+   "kind": "leg",
+   "box": [
+    2.52,
+    7.3,
+    0,
+    0.03,
+    0.03,
+    0.85
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "hall",
+   "kind": "leg",
+   "box": [
+    2.52,
+    7.55,
+    0,
+    0.03,
+    0.03,
+    0.85
+   ],
+   "color": "silver",
+   "shadow": false
   },
   {
    "room": "hall",
    "kind": "basket",
    "box": [
-    2.7,
-    7.3,
+    2.75,
+    7.35,
     0,
     0.38,
     0.38,
-    0.62
+    0.6
    ],
-   "color": "white"
-  },
-  {
-   "room": "hall",
-   "kind": "closet",
-   "box": [
-    3.05,
-    8.6,
-    0,
-    1.0,
-    0.85,
-    1.1
-   ],
-   "color": "white"
+   "color": "white",
+   "shape": "round"
   },
   {
    "room": "hall",
@@ -1101,44 +2581,144 @@
     0.32,
     0.45
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shape": "round"
+  },
+  {
+   "room": "powder",
+   "kind": "toilet-tank",
+   "box": [
+    5.55,
+    7.18,
+    0,
+    0.42,
+    0.2,
+    0.75
+   ],
+   "color": "white"
   },
   {
    "room": "powder",
    "kind": "toilet",
    "box": [
-    5.55,
-    7.25,
+    5.58,
+    7.38,
     0,
-    0.42,
-    0.68,
+    0.36,
+    0.44,
     0.42
+   ],
+   "color": "white",
+   "shape": "round"
+  },
+  {
+   "room": "powder",
+   "kind": "vanity",
+   "box": [
+    6.15,
+    7.18,
+    0,
+    0.6,
+    0.46,
+    0.84
    ],
    "color": "white"
   },
   {
    "room": "powder",
-   "kind": "sink",
+   "kind": "basin",
    "box": [
-    6.2,
-    7.2,
-    0,
-    0.55,
-    0.45,
-    0.85
+    6.27,
+    7.25,
+    0.84,
+    0.36,
+    0.32,
+    0.01
    ],
-   "color": "white"
+   "color": "basin",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "powder",
+   "kind": "faucet",
+   "box": [
+    6.43,
+    7.2,
+    0.84,
+    0.04,
+    0.05,
+    0.14
+   ],
+   "color": "silver",
+   "shadow": false
   },
   {
    "room": "bath",
    "kind": "vanity",
    "box": [
     7.0,
-    7.2,
+    7.18,
     0,
     0.75,
-    0.5,
-    0.85
+    0.48,
+    0.84
+   ],
+   "color": "white"
+  },
+  {
+   "room": "bath",
+   "kind": "basin",
+   "box": [
+    7.16,
+    7.25,
+    0.84,
+    0.4,
+    0.34,
+    0.01
+   ],
+   "color": "basin",
+   "shape": "round",
+   "shadow": false
+  },
+  {
+   "room": "bath",
+   "kind": "faucet",
+   "box": [
+    7.34,
+    7.2,
+    0.84,
+    0.04,
+    0.05,
+    0.14
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "bath",
+   "kind": "tap",
+   "box": [
+    9.1,
+    8.98,
+    0.55,
+    0.06,
+    0.04,
+    0.1
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "bath",
+   "kind": "toilet-tank",
+   "box": [
+    7.95,
+    7.18,
+    0,
+    0.42,
+    0.2,
+    0.75
    ],
    "color": "white"
   },
@@ -1146,235 +2726,558 @@
    "room": "bath",
    "kind": "toilet",
    "box": [
-    7.95,
-    7.2,
+    7.98,
+    7.38,
     0,
-    0.42,
-    0.68,
+    0.36,
+    0.44,
     0.42
    ],
-   "color": "white"
+   "color": "white",
+   "shape": "round"
   },
   {
    "room": "bath",
    "kind": "tub",
    "box": [
-    7.55,
-    8.7,
+    7.5,
+    8.65,
     0,
-    1.7,
-    0.75,
+    1.75,
+    0.8,
     0.55
    ],
    "color": "white"
   },
   {
-   "room": "entry",
-   "kind": "rug",
+   "room": "bath",
+   "kind": "tub-water",
    "box": [
-    0.3,
-    10.6,
-    0,
-    1.5,
-    0.28,
-    0.003
+    7.6,
+    8.75,
+    0.55,
+    1.55,
+    0.6,
+    0.005
    ],
-   "color": "step-edge"
+   "color": "basin",
+   "shadow": false
+  },
+  {
+   "room": "bath",
+   "kind": "mat",
+   "box": [
+    7.75,
+    8.15,
+    0,
+    0.7,
+    0.42,
+    0.01
+   ],
+   "color": "rug-sage"
   },
   {
    "room": "entry",
-   "kind": "rug",
+   "kind": "threshold",
    "box": [
-    0.3,
-    10.88,
+    1.95,
+    14.7,
     0,
-    1.5,
-    0.28,
-    0.003
+    0.85,
+    0.1,
+    0.012
    ],
-   "color": "step"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "entry",
-   "kind": "rug",
+   "kind": "door-frame",
    "box": [
-    0.3,
-    11.16,
+    1.86,
+    14.72,
     0,
-    1.5,
-    0.28,
-    0.003
+    0.09,
+    0.1,
+    2.12
    ],
-   "color": "step-edge"
+   "color": "frame",
+   "shadow": false
   },
   {
    "room": "entry",
-   "kind": "rug",
+   "kind": "door-frame",
    "box": [
-    0.3,
-    11.44,
+    2.8,
+    14.72,
     0,
-    1.5,
-    0.28,
-    0.003
+    0.09,
+    0.1,
+    2.12
    ],
-   "color": "step"
+   "color": "frame",
+   "shadow": false
   },
   {
    "room": "entry",
-   "kind": "rug",
+   "kind": "door-header",
    "box": [
-    0.3,
-    11.72,
-    0,
-    1.5,
-    0.28,
-    0.003
+    1.86,
+    14.72,
+    2.04,
+    1.03,
+    0.1,
+    0.08
    ],
-   "color": "step-edge"
+   "color": "frame",
+   "shadow": false
   },
   {
    "room": "entry",
-   "kind": "rug",
+   "kind": "door",
    "box": [
-    0.3,
-    12.0,
-    0,
-    1.5,
-    0.28,
-    0.003
-   ],
-   "color": "step"
-  },
-  {
-   "room": "entry",
-   "kind": "rug",
-   "box": [
-    0.3,
-    12.28,
-    0,
-    1.5,
-    0.28,
-    0.003
-   ],
-   "color": "step-edge"
-  },
-  {
-   "room": "entry",
-   "kind": "rug",
-   "box": [
-    0.3,
-    12.56,
-    0,
-    1.5,
-    0.28,
-    0.003
-   ],
-   "color": "step"
-  },
-  {
-   "room": "entry",
-   "kind": "rail",
-   "box": [
-    1.8,
-    10.6,
+    2.74,
+    13.9,
     0,
     0.05,
-    2.25,
-    0.9
+    0.8,
+    2.02
    ],
-   "color": "charcoal"
+   "color": "door"
+  },
+  {
+   "room": "entry",
+   "kind": "knob",
+   "box": [
+    2.71,
+    14.0,
+    0.95,
+    0.03,
+    0.04,
+    0.04
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "mat",
+   "box": [
+    2.0,
+    14.0,
+    0,
+    0.72,
+    0.5,
+    0.012
+   ],
+   "color": "rug-sand"
   },
   {
    "room": "entry",
    "kind": "closet",
+   "box": [
+    0.08,
+    9.55,
+    0,
+    0.62,
+    1.7,
+    1.1
+   ],
+   "color": "wall",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "closet-door",
+   "box": [
+    0.7,
+    9.61,
+    0.02,
+    0.03,
+    0.78,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "closet-door",
+   "box": [
+    0.7,
+    10.41,
+    0.02,
+    0.03,
+    0.78,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "hooks",
+   "box": [
+    0.06,
+    11.55,
+    1.55,
+    0.04,
+    0.95,
+    0.04
+   ],
+   "color": "charcoal",
+   "wall": "west-entry",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "coat",
+   "box": [
+    0.08,
+    11.65,
+    0.8,
+    0.14,
+    0.3,
+    0.75
+   ],
+   "color": "coat-1",
+   "wall": "west-entry",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "coat",
+   "box": [
+    0.08,
+    12.05,
+    0.85,
+    0.14,
+    0.3,
+    0.7
+   ],
+   "color": "coat-2",
+   "wall": "west-entry",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "leg",
    "box": [
     0.12,
-    9.1,
+    12.77,
     0,
-    1.45,
-    0.6,
-    1.1
+    0.05,
+    0.05,
+    0.36
    ],
-   "color": "white"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "entry",
-   "kind": "closet",
+   "kind": "leg",
    "box": [
-    2.25,
-    13.0,
+    0.12,
+    13.88,
     0,
-    0.58,
-    1.45,
-    1.1
+    0.05,
+    0.05,
+    0.36
    ],
-   "color": "white"
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "leg",
+   "box": [
+    0.45,
+    12.77,
+    0,
+    0.05,
+    0.05,
+    0.36
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "leg",
+   "box": [
+    0.45,
+    13.88,
+    0,
+    0.05,
+    0.05,
+    0.36
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "bench",
+   "box": [
+    0.1,
+    12.75,
+    0.36,
+    0.42,
+    1.2,
+    0.06
+   ],
+   "color": "oak"
+  },
+  {
+   "room": "entry",
+   "kind": "cushion",
+   "box": [
+    0.12,
+    12.8,
+    0.42,
+    0.38,
+    1.1,
+    0.06
+   ],
+   "color": "pillow-slate",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "shoes",
+   "box": [
+    0.16,
+    12.95,
+    0.06,
+    0.28,
+    0.16,
+    0.08
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "shoes",
+   "box": [
+    0.16,
+    13.35,
+    0.06,
+    0.28,
+    0.16,
+    0.08
+   ],
+   "color": "pillow-terracotta",
+   "shadow": false
+  },
+  {
+   "room": "entry",
+   "kind": "pot",
+   "box": [
+    0.25,
+    14.2,
+    0,
+    0.38,
+    0.38,
+    0.32
+   ],
+   "color": "pot",
+   "shape": "round"
+  },
+  {
+   "room": "entry",
+   "kind": "plant",
+   "box": [
+    0.17,
+    14.12,
+    0.32,
+    0.54,
+    0.54,
+    0.88
+   ],
+   "color": "plant",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "mine",
    "kind": "closet",
    "box": [
     2.98,
-    10.06,
+    10.04,
     0,
-    1.85,
-    0.6,
+    1.87,
+    0.56,
     1.1
    ],
-   "color": "white"
+   "color": "wall",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "closet-door",
+   "box": [
+    3.04,
+    10.6,
+    0.02,
+    0.865,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "closet-door",
+   "box": [
+    3.925,
+    10.6,
+    0.02,
+    0.865,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
   },
   {
    "room": "mine",
    "kind": "cube-shelf",
    "box": [
     2.98,
-    10.8,
+    10.85,
     0,
-    0.42,
-    1.15,
+    0.4,
+    1.1,
     0.82
    ],
    "color": "charcoal"
   },
   {
    "room": "mine",
-   "kind": "fan",
+   "kind": "bin",
    "box": [
-    3.6,
-    11.9,
+    3.38,
+    10.9,
+    0.06,
+    0.01,
+    0.48,
+    0.32
+   ],
+   "color": "bin-1",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "bin",
+   "box": [
+    3.38,
+    11.42,
+    0.06,
+    0.01,
+    0.48,
+    0.32
+   ],
+   "color": "bin-2",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "bin",
+   "box": [
+    3.38,
+    10.9,
+    0.44,
+    0.01,
+    0.48,
+    0.32
+   ],
+   "color": "bin-2",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "bin",
+   "box": [
+    3.38,
+    11.42,
+    0.44,
+    0.01,
+    0.48,
+    0.32
+   ],
+   "color": "bin-1",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "rug",
+   "box": [
+    2.53,
+    12.2,
     0,
-    0.3,
-    0.3,
-    0.05
+    2.35,
+    1.333,
+    0.015
    ],
-   "color": "charcoal"
+   "color": "rug-sand"
   },
   {
    "room": "mine",
-   "kind": "fan-pole",
+   "kind": "leg",
    "box": [
-    3.72,
-    12.02,
+    3.03,
+    12.6,
+    0,
     0.05,
-    0.06,
-    0.06,
-    0.85
+    0.05,
+    0.1
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "mine",
-   "kind": "fan-head",
+   "kind": "leg",
    "box": [
-    3.56,
-    11.94,
-    0.9,
-    0.38,
-    0.12,
-    0.38
+    3.03,
+    14.52,
+    0,
+    0.05,
+    0.05,
+    0.1
    ],
-   "color": "charcoal"
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "leg",
+   "box": [
+    4.33,
+    12.6,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "leg",
+   "box": [
+    4.33,
+    14.52,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "mine",
@@ -1382,10 +3285,10 @@
    "box": [
     2.98,
     12.55,
-    0,
+    0.1,
     1.45,
-    2.1,
-    0.38
+    2.07,
+    0.24
    ],
    "color": "upholstery"
   },
@@ -1393,111 +3296,322 @@
    "room": "mine",
    "kind": "headboard",
    "box": [
-    2.98,
-    14.62,
+    2.95,
+    14.6,
     0,
-    1.45,
-    0.12,
-    0.95
+    1.51,
+    0.1,
+    0.98
    ],
    "color": "upholstery"
   },
   {
    "room": "mine",
+   "kind": "mattress",
+   "box": [
+    3.02,
+    12.59,
+    0.34,
+    1.37,
+    1.97,
+    0.16
+   ],
+   "color": "mattress"
+  },
+  {
+   "room": "mine",
    "kind": "duvet",
    "box": [
-    3.03,
-    12.65,
-    0.38,
-    1.35,
-    1.9,
-    0.16
+    2.98,
+    12.57,
+    0.5,
+    1.45,
+    1.29,
+    0.06
    ],
    "color": "bedding"
   },
   {
    "room": "mine",
-   "kind": "pillow",
+   "kind": "duvet-fold",
    "box": [
-    3.15,
-    14.2,
-    0.54,
-    1.1,
-    0.34,
-    0.12
-   ],
-   "color": "pillow"
-  },
-  {
-   "room": "mine",
-   "kind": "blanket",
-   "box": [
-    3.18,
-    12.85,
-    0.54,
-    1.05,
-    0.75,
-    0.04
+    2.98,
+    13.68,
+    0.56,
+    1.45,
+    0.2,
+    0.05
    ],
    "color": "green"
   },
   {
    "room": "mine",
+   "kind": "pillow",
+   "box": [
+    3.06,
+    14.2,
+    0.5,
+    0.605,
+    0.34,
+    0.13
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "mine",
+   "kind": "pillow",
+   "box": [
+    3.745,
+    14.2,
+    0.5,
+    0.605,
+    0.34,
+    0.13
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "mine",
+   "kind": "frame",
+   "box": [
+    2.96,
+    12.8,
+    0.62,
+    0.03,
+    0.42,
+    0.34
+   ],
+   "color": "frame",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "print",
+   "box": [
+    2.99,
+    12.84,
+    0.66,
+    0.01,
+    0.34,
+    0.26
+   ],
+   "color": "print-sky",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "frame",
+   "box": [
+    2.96,
+    13.35,
+    0.62,
+    0.03,
+    0.42,
+    0.34
+   ],
+   "color": "frame",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "print",
+   "box": [
+    2.99,
+    13.39,
+    0.66,
+    0.01,
+    0.34,
+    0.26
+   ],
+   "color": "print-terracotta",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "desk-leg",
+   "box": [
+    5.19,
+    13.34,
+    0,
+    0.05,
+    1.27,
+    0.72
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "desk-leg",
+   "box": [
+    5.72,
+    13.34,
+    0,
+    0.05,
+    1.27,
+    0.72
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
    "kind": "desk",
    "box": [
-    4.62,
-    14.12,
-    0,
-    1.18,
-    0.6,
-    0.74
+    5.17,
+    13.3,
+    0.72,
+    0.62,
+    1.35,
+    0.04
    ],
-   "color": "charcoal"
+   "color": "oak"
   },
   {
    "room": "mine",
-   "kind": "monitor",
+   "kind": "stand-foot",
    "box": [
-    4.95,
-    14.55,
-    0.74,
-    0.5,
-    0.05,
-    0.32
+    5.59,
+    13.875,
+    0.76,
+    0.18,
+    0.16,
+    0.012
    ],
-   "color": "screen"
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "mine",
-   "kind": "chair",
+   "kind": "stand-neck",
    "box": [
-    4.92,
-    13.42,
-    0,
-    0.55,
-    0.55,
-    0.5
+    5.66,
+    13.935,
+    0.772,
+    0.04,
+    0.04,
+    0.12
    ],
-   "color": "charcoal"
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "bezel",
+   "box": [
+    5.66,
+    13.68,
+    0.88,
+    0.04,
+    0.55,
+    0.34
+   ],
+   "color": "bezel",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "screen",
+   "box": [
+    5.654,
+    13.7,
+    0.9,
+    0.006,
+    0.51,
+    0.3
+   ],
+   "color": "screen",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "keyboard",
+   "box": [
+    5.41,
+    13.76,
+    0.76,
+    0.14,
+    0.39,
+    0.018
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "mouse",
+   "box": [
+    5.45,
+    14.25,
+    0.76,
+    0.06,
+    0.09,
+    0.025
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "chair-base",
+   "box": [
+    4.63,
+    13.78,
+    0,
+    0.4,
+    0.4,
+    0.06
+   ],
+   "color": "charcoal",
+   "shape": "round"
+  },
+  {
+   "room": "mine",
+   "kind": "chair-post",
+   "box": [
+    4.8,
+    13.95,
+    0.06,
+    0.06,
+    0.06,
+    0.36
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "seat",
+   "box": [
+    4.55,
+    13.7,
+    0.42,
+    0.56,
+    0.56,
+    0.08
+   ],
+   "color": "chair-dark",
+   "shadow": false
   },
   {
    "room": "mine",
    "kind": "chair-back",
    "box": [
-    4.92,
-    13.32,
+    4.53,
+    13.7,
     0.5,
-    0.55,
-    0.1,
-    0.78
+    0.08,
+    0.56,
+    0.7
    ],
-   "color": "charcoal"
+   "color": "chair-dark",
+   "shadow": false
   },
   {
    "room": "mine",
    "kind": "bookshelf",
    "box": [
-    5.42,
+    5.44,
     10.95,
     0,
     0.36,
@@ -1508,29 +3622,157 @@
   },
   {
    "room": "mine",
-   "kind": "table",
+   "kind": "books",
    "box": [
-    5.32,
-    12.72,
-    0,
-    0.46,
-    0.6,
-    0.7
+    5.42,
+    11.0,
+    0.25,
+    0.02,
+    0.4,
+    0.26
    ],
-   "color": "charcoal"
+   "color": "bin-1",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "books",
+   "box": [
+    5.42,
+    11.45,
+    0.25,
+    0.02,
+    0.4,
+    0.26
+   ],
+   "color": "pillow-terracotta",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "books",
+   "box": [
+    5.42,
+    11.0,
+    0.85,
+    0.02,
+    0.4,
+    0.26
+   ],
+   "color": "bin-2",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "books",
+   "box": [
+    5.42,
+    11.45,
+    0.85,
+    0.02,
+    0.4,
+    0.26
+   ],
+   "color": "pillow-slate",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "side-table",
+   "box": [
+    5.38,
+    12.75,
+    0,
+    0.42,
+    0.5,
+    0.55
+   ],
+   "color": "oak"
+  },
+  {
+   "room": "mine",
+   "kind": "fan-base",
+   "box": [
+    3.62,
+    12.0,
+    0,
+    0.3,
+    0.3,
+    0.03
+   ],
+   "color": "charcoal",
+   "shape": "round"
+  },
+  {
+   "room": "mine",
+   "kind": "fan-pole",
+   "box": [
+    3.75,
+    12.13,
+    0.03,
+    0.04,
+    0.04,
+    0.9
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "mine",
+   "kind": "fan-head",
+   "box": [
+    3.6,
+    12.08,
+    0.93,
+    0.34,
+    0.14,
+    0.34
+   ],
+   "color": "charcoal",
+   "shape": "round",
+   "shadow": false
   },
   {
    "room": "parents",
    "kind": "closet",
    "box": [
     7.2,
-    10.06,
+    10.04,
     0,
-    2.02,
-    0.6,
+    2.05,
+    0.56,
     1.1
    ],
-   "color": "white"
+   "color": "wall",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "closet-door",
+   "box": [
+    7.26,
+    10.6,
+    0.02,
+    0.955,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "closet-door",
+   "box": [
+    8.235,
+    10.6,
+    0.02,
+    0.955,
+    0.03,
+    1.04
+   ],
+   "color": "door",
+   "shadow": false
   },
   {
    "room": "parents",
@@ -1539,7 +3781,7 @@
     5.93,
     10.55,
     0,
-    0.5,
+    0.48,
     1.0,
     0.8
    ],
@@ -1551,24 +3793,109 @@
    "box": [
     5.92,
     12.0,
-    0.42,
-    0.06,
+    0.4,
+    0.04,
     1.1,
-    0.6
+    0.62
+   ],
+   "color": "bezel",
+   "focusable": false,
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "screen",
+   "box": [
+    5.96,
+    12.03,
+    0.43,
+    0.012,
+    1.04,
+    0.56
    ],
    "color": "screen",
-   "focusable": false
+   "focusable": false,
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "rug",
+   "box": [
+    7.15,
+    12.2,
+    0,
+    2.45,
+    1.333,
+    0.015
+   ],
+   "color": "rug-sage"
+  },
+  {
+   "room": "parents",
+   "kind": "leg",
+   "box": [
+    7.65,
+    12.6,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "leg",
+   "box": [
+    7.65,
+    14.52,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "leg",
+   "box": [
+    9.05,
+    12.6,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "leg",
+   "box": [
+    9.05,
+    14.52,
+    0,
+    0.05,
+    0.05,
+    0.1
+   ],
+   "color": "oak",
+   "shadow": false
   },
   {
    "room": "parents",
    "kind": "bed",
    "box": [
     7.6,
-    12.6,
-    0,
+    12.55,
+    0.1,
     1.55,
-    2.05,
-    0.42
+    2.07,
+    0.24
    ],
    "color": "navy"
   },
@@ -1576,38 +3903,51 @@
    "room": "parents",
    "kind": "headboard",
    "box": [
-    7.6,
-    14.62,
+    7.57,
+    14.6,
     0,
-    1.55,
-    0.12,
-    1.0
+    1.61,
+    0.1,
+    0.98
    ],
    "color": "navy"
   },
   {
    "room": "parents",
+   "kind": "mattress",
+   "box": [
+    7.64,
+    12.59,
+    0.34,
+    1.47,
+    1.97,
+    0.16
+   ],
+   "color": "mattress"
+  },
+  {
+   "room": "parents",
    "kind": "duvet",
    "box": [
-    7.65,
-    12.75,
-    0.42,
-    1.45,
-    1.85,
-    0.14
+    7.6,
+    12.57,
+    0.5,
+    1.55,
+    1.29,
+    0.06
    ],
    "color": "duvet"
   },
   {
    "room": "parents",
-   "kind": "pillow",
+   "kind": "duvet-fold",
    "box": [
-    7.72,
-    14.2,
+    7.6,
+    13.68,
     0.56,
-    0.62,
-    0.32,
-    0.12
+    1.55,
+    0.2,
+    0.05
    ],
    "color": "pillow"
   },
@@ -1615,118 +3955,278 @@
    "room": "parents",
    "kind": "pillow",
    "box": [
-    8.44,
+    7.68,
     14.2,
-    0.56,
-    0.62,
-    0.32,
-    0.12
+    0.5,
+    0.655,
+    0.34,
+    0.13
    ],
    "color": "pillow"
+  },
+  {
+   "room": "parents",
+   "kind": "pillow",
+   "box": [
+    8.415,
+    14.2,
+    0.5,
+    0.655,
+    0.34,
+    0.13
+   ],
+   "color": "pillow"
+  },
+  {
+   "room": "parents",
+   "kind": "desk-leg",
+   "box": [
+    5.95,
+    13.34,
+    0,
+    0.05,
+    1.27,
+    0.72
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "desk-leg",
+   "box": [
+    6.48,
+    13.34,
+    0,
+    0.05,
+    1.27,
+    0.72
+   ],
+   "color": "charcoal",
+   "shadow": false
   },
   {
    "room": "parents",
    "kind": "desk",
    "box": [
-    5.95,
-    14.1,
-    0,
-    1.45,
+    5.93,
+    13.3,
+    0.72,
     0.62,
-    0.74
+    1.35,
+    0.04
    ],
-   "color": "charcoal"
+   "color": "oak"
   },
   {
    "room": "parents",
-   "kind": "monitor",
+   "kind": "stand-foot",
    "box": [
-    6.4,
-    14.52,
-    0.74,
+    5.91,
+    13.875,
+    0.76,
+    0.18,
+    0.16,
+    0.012
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "stand-neck",
+   "box": [
+    5.98,
+    13.935,
+    0.772,
+    0.04,
+    0.04,
+    0.12
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "bezel",
+   "box": [
+    5.98,
+    13.68,
+    0.88,
+    0.04,
     0.55,
-    0.05,
     0.34
    ],
-   "color": "screen"
+   "color": "bezel",
+   "shadow": false
   },
   {
    "room": "parents",
-   "kind": "chair",
+   "kind": "screen",
    "box": [
-    6.42,
-    13.4,
-    0,
-    0.5,
-    0.5,
-    0.48
+    6.02,
+    13.7,
+    0.9,
+    0.006,
+    0.51,
+    0.3
    ],
-   "color": "charcoal"
+   "color": "screen",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "keyboard",
+   "box": [
+    6.13,
+    13.76,
+    0.76,
+    0.14,
+    0.39,
+    0.018
+   ],
+   "color": "silver",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "mouse",
+   "box": [
+    6.17,
+    14.25,
+    0.76,
+    0.06,
+    0.09,
+    0.025
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "chair-base",
+   "box": [
+    6.67,
+    13.77,
+    0,
+    0.4,
+    0.4,
+    0.06
+   ],
+   "color": "charcoal",
+   "shape": "round"
+  },
+  {
+   "room": "parents",
+   "kind": "chair-post",
+   "box": [
+    6.84,
+    13.94,
+    0.06,
+    0.06,
+    0.06,
+    0.32
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "seat",
+   "box": [
+    6.62,
+    13.72,
+    0.38,
+    0.5,
+    0.5,
+    0.08
+   ],
+   "color": "chair",
+   "shadow": false
   },
   {
    "room": "parents",
    "kind": "chair-back",
    "box": [
-    6.42,
-    13.32,
-    0.48,
-    0.5,
+    7.06,
+    13.72,
+    0.46,
     0.08,
-    0.55
+    0.5,
+    0.5
    ],
-   "color": "charcoal"
-  },
-  {
-   "room": "parents",
-   "kind": "fan",
-   "box": [
-    6.95,
-    12.35,
-    0,
-    0.3,
-    0.3,
-    0.05
-   ],
-   "color": "charcoal"
-  },
-  {
-   "room": "parents",
-   "kind": "fan-pole",
-   "box": [
-    7.07,
-    12.47,
-    0.05,
-    0.06,
-    0.06,
-    0.9
-   ],
-   "color": "charcoal"
-  },
-  {
-   "room": "parents",
-   "kind": "fan-head",
-   "box": [
-    6.91,
-    12.44,
-    0.95,
-    0.38,
-    0.12,
-    0.38
-   ],
-   "color": "charcoal"
+   "color": "chair",
+   "shadow": false
   },
   {
    "room": "parents",
    "kind": "armoire",
    "box": [
-    8.75,
+    8.78,
     11.0,
     0,
-    0.5,
+    0.47,
     1.2,
     1.45
    ],
    "color": "silver"
+  },
+  {
+   "room": "parents",
+   "kind": "mirror",
+   "box": [
+    8.765,
+    11.62,
+    0.25,
+    0.015,
+    0.5,
+    1.0
+   ],
+   "color": "glass",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "fan-base",
+   "box": [
+    7.05,
+    11.3,
+    0,
+    0.3,
+    0.3,
+    0.03
+   ],
+   "color": "charcoal",
+   "shape": "round"
+  },
+  {
+   "room": "parents",
+   "kind": "fan-pole",
+   "box": [
+    7.18,
+    11.43,
+    0.03,
+    0.04,
+    0.04,
+    0.9
+   ],
+   "color": "charcoal",
+   "shadow": false
+  },
+  {
+   "room": "parents",
+   "kind": "fan-head",
+   "box": [
+    7.03,
+    11.38,
+    0.93,
+    0.34,
+    0.14,
+    0.34
+   ],
+   "color": "charcoal",
+   "shape": "round",
+   "shadow": false
   }
  ],
  "fixtures": [
@@ -1736,7 +4236,7 @@
    "kind": "tube",
    "name": "Tube Light",
    "at": [
-    5.93,
+    5.95,
     11.05,
     1.0
    ],
@@ -1770,7 +4270,7 @@
    "name": "Tube Light",
    "at": [
     2.97,
-    11.35,
+    11.4,
     1.0
    ],
    "along": "y",
@@ -1799,64 +4299,114 @@
  ],
  "palette": {
   "cool": {
-   "floor-wood": "#5C616D",
-   "floor-tile": "#9EA2A9",
-   "floor-bathtile": "#B8AFB4",
-   "floor-deck": "#868B94",
-   "wall": "#D5D9DF",
-   "wall-top": "#EEF0F4",
-   "wood": "#4A4D55",
-   "linen": "#E2E4E8",
-   "window": "#AFC4D8",
-   "charcoal": "#34373E",
-   "white": "#E6E9EE",
-   "silver": "#B7BCC5",
-   "navy": "#39445C",
-   "duvet": "#A9A7AE",
-   "upholstery": "#8D9199",
-   "bedding": "#9DA1A9",
-   "green": "#3F7F66",
-   "pillow": "#E3E5EA",
-   "sofa": "#CDCDD0",
-   "rug": "#3F475A",
-   "rug-pattern": "#6D7488",
-   "screen": "#1A1C21",
-   "plant": "#6E8F7E",
-   "oak": "#8B8178",
-   "granite": "#4A4E55",
-   "curtain": "#8E6A6A",
-   "step": "#4E525C",
-   "step-edge": "#3E424B"
+   "floor-wood": "#A68D76",
+   "floor-tile": "#B4B3B1",
+   "floor-bathtile": "#BEB0B1",
+   "floor-deck": "#A1A09E",
+   "wall": "#C2C2C3",
+   "wall-top": "#CCCED2",
+   "wood": "#645A55",
+   "linen": "#C4C1BC",
+   "window": "#9FB1C1",
+   "glass": "#AABAC6",
+   "frame": "#4C515B",
+   "door": "#C9CACD",
+   "charcoal": "#4F545F",
+   "chair": "#9A9FA7",
+   "chair-dark": "#494E57",
+   "white": "#C5C6C7",
+   "silver": "#A7ACB5",
+   "mattress": "#C6C7C8",
+   "navy": "#556280",
+   "duvet": "#B48B79",
+   "upholstery": "#8D929C",
+   "bedding": "#93A797",
+   "green": "#669582",
+   "pillow": "#C9CACC",
+   "pillow-terracotta": "#AF8476",
+   "pillow-slate": "#7C889B",
+   "sofa": "#BBB7AF",
+   "cushion": "#C0BEB8",
+   "rug": "#5B6783",
+   "rug-pattern": "#79859C",
+   "rug-sand": "#B9B1A7",
+   "rug-sage": "#A4AFA5",
+   "screen": "#15171C",
+   "bezel": "#2B2E34",
+   "plant": "#729379",
+   "pot": "#A67D6A",
+   "pot-white": "#C0C1C1",
+   "oak": "#A6886B",
+   "granite": "#646A74",
+   "basin": "#B8C2CB",
+   "bin-1": "#A69B8D",
+   "bin-2": "#8896A7",
+   "coat-1": "#707C92",
+   "coat-2": "#A57F6D",
+   "print-sky": "#879DB3",
+   "print-sage": "#98A996",
+   "print-terracotta": "#B69182",
+   "glass-dark": "#2E3642",
+   "heater": "#858D99",
+   "copper": "#A67F64",
+   "burner": "#373B43",
+   "indicator": "#6FCF97",
+   "baseboard": "#B7B5B3"
   },
   "warm": {
-   "floor-wood": "#7D5B45",
-   "floor-tile": "#CDBFAE",
-   "floor-bathtile": "#E6CFC8",
-   "floor-deck": "#A8988A",
-   "wall": "#EEDFCB",
-   "wall-top": "#FFF4E6",
-   "wood": "#5A4A3E",
-   "linen": "#F6E9D6",
-   "window": "#D6E2EA",
-   "charcoal": "#3E3632",
-   "white": "#FBF1E3",
-   "silver": "#D3C8BA",
-   "navy": "#45405A",
-   "duvet": "#C7AE96",
-   "upholstery": "#A59585",
-   "bedding": "#BCA994",
-   "green": "#4F8C5E",
-   "pillow": "#FFF0DC",
-   "sofa": "#EAD8BF",
-   "rug": "#51465A",
-   "rug-pattern": "#8C7570",
-   "screen": "#1A1C21",
-   "plant": "#77985F",
-   "oak": "#B9895A",
-   "granite": "#54504D",
-   "curtain": "#B5703F",
-   "step": "#6A5040",
-   "step-edge": "#57412F"
+   "floor-wood": "#DAAC7F",
+   "floor-tile": "#EBDBC9",
+   "floor-bathtile": "#F8D8C8",
+   "floor-deck": "#D5C4B0",
+   "wall": "#FDEFDF",
+   "wall-top": "#FFFDF2",
+   "wood": "#886D55",
+   "linen": "#FFEDD6",
+   "window": "#D1DADC",
+   "glass": "#DFE5E3",
+   "frame": "#6B625D",
+   "door": "#FFF9EB",
+   "charcoal": "#6F6662",
+   "chair": "#CCC3BC",
+   "chair-dark": "#675E59",
+   "white": "#FFF3E4",
+   "silver": "#DCD3CD",
+   "mattress": "#FFF5E6",
+   "navy": "#76778C",
+   "duvet": "#ECAA83",
+   "upholstery": "#BBB3AE",
+   "bedding": "#C2CDA7",
+   "green": "#8BB78D",
+   "pillow": "#FFF9EA",
+   "pillow-terracotta": "#E6A27E",
+   "pillow-slate": "#A6A6AD",
+   "sofa": "#F4E1C6",
+   "cushion": "#FBE9D1",
+   "rug": "#7D7E8F",
+   "rug-pattern": "#A3A3AE",
+   "rug-sand": "#F2DABC",
+   "rug-sage": "#D7D7BA",
+   "screen": "#15171C",
+   "bezel": "#2B2E34",
+   "plant": "#99B483",
+   "pot": "#DA9870",
+   "pot-white": "#FBEDDC",
+   "oak": "#DAA671",
+   "granite": "#89807C",
+   "basin": "#F1EFE8",
+   "bin-1": "#DABE9B",
+   "bin-2": "#B5B8BC",
+   "coat-1": "#9797A1",
+   "coat-2": "#D99C73",
+   "print-sky": "#B4C0CB",
+   "print-sage": "#C9D0A7",
+   "print-terracotta": "#EEB18D",
+   "glass-dark": "#2E3642",
+   "heater": "#B1ADAB",
+   "copper": "#DA9B69",
+   "burner": "#504640",
+   "indicator": "#6FCF97",
+   "baseboard": "#F0DFCB"
   },
   "glow": "#FFC07A"
  }

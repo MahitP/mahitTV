@@ -47,17 +47,57 @@ const SHOTS = [
   ['control-center', [...UP2, 'ArrowLeft', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'Enter', 'ArrowDown']],
   ['clock', [], true],
 ];
-// The Home tab, one theme (it's dimmed the same in both): web-home-<lights>.png, these lights switched on.
-const HOME = [UP2, 'ArrowRight', 'ArrowDown'].flat();
+// The Home tab, one theme (it's dimmed the same in both): web-home-<name>.png. `lights` are switched on; `focus` moves
+// the remote's focus to a light (the camera swings to its room) or, null, leaves it on the tab bar (the overview);
+// `from` starts the focus elsewhere and `after` shoots that many ms into the swing; `back` presses Back once at the end
+// (the focus goes to the tab bar on Home and the camera back to the overview).
+const BAR = [UP2, 'ArrowRight'].flat();
 const HOME_SHOTS = [
-  ['home-all-off', []],
-  ['home-my-room', ['mine.lamp', 'mine.bulb']],
-  ['home-parents', ['parents.bulb']],
-  ['home-living', ['living.bulb']],
-  ['home-all-on', ['parents.bulb', 'mine.lamp', 'mine.bulb', 'living.bulb']],
+  { name: 'home-all-off', lights: [], focus: null },
+  { name: 'home-all-on', lights: ['parents.bulb', 'mine.lamp', 'mine.bulb', 'living.bulb'], focus: null },
+  { name: 'home-my-room', lights: ['mine.lamp', 'mine.bulb'], focus: 'mine.lamp' },
+  { name: 'home-parents', lights: ['parents.bulb'], focus: 'parents.bulb' },
+  { name: 'home-living', lights: ['living.bulb'], focus: 'living.bulb' },
+  { name: 'home-swing', lights: ['living.bulb'], focus: 'living.bulb', from: 'mine.bulb', after: 300 },
+  { name: 'home-back', lights: ['living.bulb'], focus: 'living.bulb', back: true },
 ];
 
-async function shoot(browser, theme, [name, keys, noPicks, lights]) {
+async function shootHome(browser, shot) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(() => {
+    try {
+      localStorage.clear();
+      localStorage.setItem('fmtv.prefs', JSON.stringify({ theme: 'dark' }));
+      localStorage.setItem('fmtv.night', 'true');
+    } catch (e) {}
+  });
+  const page = await context.newPage();
+  await page.goto(PAGE);
+  await page.waitForTimeout(2200);
+  for (const key of shot.focus ? [...BAR, 'ArrowDown'] : BAR) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(450);
+  }
+  await page.evaluate((s) => {
+    s.lights.forEach((id) => window.House.set(id, true));
+    if (s.from || s.focus) window.House.select(s.from || s.focus);
+  }, shot);
+  await page.waitForTimeout(1600);   // the camera, the lights' glow and the pill settle
+  if (shot.from) {
+    await page.evaluate((id) => window.House.select(id), shot.focus);
+    await page.waitForTimeout(shot.after);
+  }
+  if (shot.back) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1600);
+  }
+  const file = path.join(OUT, `web-${shot.name}.png`);
+  await page.screenshot({ path: file });
+  await context.close();
+  return file;
+}
+
+async function shoot(browser, theme, [name, keys, noPicks]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await context.addInitScript(({ theme, noPicks }) => {
     try {
@@ -75,14 +115,8 @@ async function shoot(browser, theme, [name, keys, noPicks, lights]) {
     await page.keyboard.press(key);
     await page.waitForTimeout(450);
   }
-  if (lights) {
-    await page.evaluate((ids) => {
-      ids.forEach((id) => window.House.set(id, true));
-      if (ids.length) window.House.select(ids[ids.length - 1]);
-    }, lights);
-  }
-  await page.waitForTimeout(lights ? 1400 : 900);    // springs, the glint and the lights' glow settle
-  const file = path.join(OUT, lights ? `web-${name}.png` : `web-${theme}-${name}.png`);
+  await page.waitForTimeout(900);    // springs and the glint settle
+  const file = path.join(OUT, `web-${theme}-${name}.png`);
   await page.screenshot({ path: file });
   await context.close();
   return file;
@@ -96,7 +130,7 @@ async function shoot(browser, theme, [name, keys, noPicks, lights]) {
   for (const theme of ['light', 'dark']) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
-  for (const [name, lights] of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, 'dark', [name, HOME, false, lights])));
+  for (const shot of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shootHome(browser, shot)));
   await browser.close();
   server.close();
 })().catch((e) => { console.error(e); process.exit(1); });
