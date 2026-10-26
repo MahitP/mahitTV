@@ -48,6 +48,9 @@ final class Recs {
         String title, backdrop, meta = "", app, pkg;
         String year = "", overview = "";   // the Top Shelf's details: release year and synopsis
         double rating;                     // TMDB's vote average (0 = none)
+        String cert = "";                  // the age rating in the region ("PG-13", "TV-MA"), or ""
+        String logo;                       // TMDB's title logo (transparent PNG path), or null: the title as text
+        String badges = "";                // extra badges ("4K,Dolby Vision"): only the preview's samples have them
         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
@@ -62,7 +65,7 @@ final class Recs {
     private static final int ANIMATION = 16;
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 5;
+    private static final int CACHE_VERSION = 6;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
@@ -135,6 +138,10 @@ final class Recs {
     private final List<Listener> listeners = new ArrayList<>();
     private final Map<String, Backdrop> images = new LinkedHashMap<>();   // this hour's, built and ready to draw
     private final java.util.Set<String> pending = new java.util.HashSet<>();
+    // The Top Shelf's title logos, decoded at their drawing size (a few: one per page), and those that failed.
+    private final Map<String, Bitmap> logos = new LinkedHashMap<>();
+    private final java.util.Set<String> pendingLogos = new java.util.HashSet<>(), failedLogos = new java.util.HashSet<>();
+    private static final String LOGOS = "https://image.tmdb.org/t/p/w500";
     private volatile List<Pick> picks = new ArrayList<>();
     private volatile int period = -1;
     private volatile long listAt;
@@ -507,11 +514,15 @@ final class Recs {
 
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */
     private void fetchDetails(Pick p) throws Exception {
+        String ratings = p.kind.equals("movie") ? "release_dates" : "content_ratings";
         JSONObject o = get("/" + p.kind + "/" + p.id
-                + "?language=" + lang() + "&append_to_response=watch/providers,images&include_image_language=null," + Ui.language.replaceAll("-.*", "") + ",en");
+                + "?language=" + lang() + "&append_to_response=watch/providers,images," + ratings + "&include_image_language=null,"
+                + Ui.language.replaceAll("-.*", "") + ",en");
         p.title = title(p, o);
         String best = bestBackdrop(o.optJSONObject("images"));
         if (best != null) p.backdrop = best;
+        p.logo = bestLogo(o.optJSONObject("images"));
+        p.cert = certification(o, p.kind);
         List<String> parts = new ArrayList<>();
         JSONArray genres = o.optJSONArray("genres");
         if (p.kind.equals("tv")) parts.add(Ui.tr("Series"));
@@ -598,6 +609,49 @@ final class Recs {
             }
         }
         return best;
+    }
+
+    /** The title's logo (the Top Shelf shows it instead of the title): a PNG in the TV's language, else English. */
+    private static String bestLogo(JSONObject images) {
+        JSONArray list = images == null ? null : images.optJSONArray("logos");
+        String best = null, base = Ui.language.replaceAll("-.*", "");
+        double bestScore = -1;
+        for (int i = 0; list != null && i < list.length(); i++) {
+            JSONObject l = list.optJSONObject(i);
+            String path = l == null ? "" : l.optString("file_path", "");
+            if (!path.endsWith(".png")) continue;
+            String lang = l.isNull("iso_639_1") ? "" : l.optString("iso_639_1");
+            double score = (lang.equals(base) ? 2e6 : lang.equals("en") ? 1e6 : -1) + l.optDouble("vote_average", 0);
+            if (score > bestScore && score >= 0) {
+                bestScore = score;
+                best = path;
+            }
+        }
+        return best;
+    }
+
+    /** The age rating in the region (else the US): a movie's release certification, a show's content rating. */
+    private static String certification(JSONObject o, String kind) {
+        boolean movie = kind.equals("movie");
+        JSONObject wrap = o.optJSONObject(movie ? "release_dates" : "content_ratings");
+        JSONArray results = wrap == null ? null : wrap.optJSONArray("results");
+        for (String region : new String[] {REGION, "US"}) {
+            for (int i = 0; results != null && i < results.length(); i++) {
+                JSONObject r = results.optJSONObject(i);
+                if (r == null || !region.equals(r.optString("iso_3166_1"))) continue;
+                if (!movie) {
+                    String rating = r.optString("rating").trim();
+                    if (!rating.isEmpty()) return rating;
+                    continue;
+                }
+                JSONArray dates = r.optJSONArray("release_dates");
+                for (int j = 0; dates != null && j < dates.length(); j++) {
+                    String cert = dates.optJSONObject(j) == null ? "" : dates.optJSONObject(j).optString("certification").trim();
+                    if (!cert.isEmpty()) return cert;
+                }
+            }
+        }
+        return "";
     }
 
     /** The SERVICES row for a TMDB name: the installed one first, when a service has more than one package. */
@@ -735,12 +789,16 @@ final class Recs {
     // MARK: - Images (TMDB originals on disk, up to 24 so the whole list fits; this hour's kept ready in memory)
 
     private void download(Pick p) throws IOException {
-        File f = imageFile(p);
+        fetch(IMAGES + p.backdrop, imageFile(p));
+    }
+
+    /** Saves `url` to `f` (through a .part file), unless it's already there. */
+    private static void fetch(String url, File f) throws IOException {
         if (f.exists()) return;
         //noinspection ResultOfMethodCallIgnored
         f.getParentFile().mkdirs();
         File part = new File(f.getPath() + ".part");
-        HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -786,6 +844,51 @@ final class Recs {
             //noinspection ResultOfMethodCallIgnored
             f.delete();
             AppLog.w("recommendation image: " + e.getMessage());
+        }
+    }
+
+    /** The pick's title logo, ready to draw (or null: it loads in the background, and listeners hear when it's ready). */
+    Bitmap logo(Pick p) {
+        if (p == null || p.logo == null || p.logo.isEmpty()) return null;
+        final String key = p.logo;
+        synchronized (logos) {
+            Bitmap b = logos.get(key);
+            if (b != null || failedLogos.contains(key) || !pendingLogos.add(key)) return b;
+        }
+        io.execute(() -> {
+            try {
+                loadLogo(key);
+            } finally {
+                synchronized (logos) { pendingLogos.remove(key); }
+            }
+        });
+        return null;
+    }
+
+    /** Downloads (TMDB w500) or reads (preview) a logo and scales it to fit 760 × 240 at the UI's size. */
+    private void loadLogo(String key) {
+        try {
+            Bitmap src;
+            if (Preview.isAsset(key)) {
+                src = Preview.image(context, key);
+            } else {
+                File f = new File(new File(context.getCacheDir(), "recs-logos"), key.replace("/", ""));
+                fetch(LOGOS + key, f);
+                prune(f.getParentFile());
+                src = BitmapFactory.decodeFile(f.getPath());
+            }
+            if (src == null) throw new IOException("unreadable logo");
+            float ui = Backdrop.W / 1920f, s = Math.min(1, Math.min(760 * ui / src.getWidth(), 240 * ui / src.getHeight()));
+            Bitmap out = s < 1 ? Ui.downscale(src, Math.round(src.getWidth() * s), Math.round(src.getHeight() * s)) : src;
+            if (out != src) src.recycle();
+            synchronized (logos) {
+                logos.put(key, out);
+                while (logos.size() > SHELF_PAGES + 2) logos.remove(logos.keySet().iterator().next());
+            }
+            notifyListeners();
+        } catch (IOException | RuntimeException | OutOfMemoryError e) {
+            synchronized (logos) { failedLogos.add(key); }
+            AppLog.w("title logo: " + e.getMessage());
         }
     }
 
@@ -845,6 +948,7 @@ final class Recs {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
                         .put("year", p.year).put("overview", p.overview).put("rating", p.rating)
+                        .put("cert", p.cert).put("logo", p.logo == null ? "" : p.logo).put("badges", p.badges)
                         .put("detailed", p.detailed));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
@@ -874,6 +978,9 @@ final class Recs {
             p.year = o.optString("year");
             p.overview = o.optString("overview");
             p.rating = o.optDouble("rating", 0);
+            p.cert = o.optString("cert");
+            p.logo = o.optString("logo").isEmpty() ? null : o.optString("logo");
+            p.badges = o.optString("badges");
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");

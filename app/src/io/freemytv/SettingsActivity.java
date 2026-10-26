@@ -48,6 +48,9 @@ public class SettingsActivity extends Activity {
     private SettingsView view;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
 
+    /** Opens straight on the Sleep Timer (the home screen's Control Center). */
+    static final String EXTRA_SLEEP = "sleep";
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (openFireHome(getIntent())) return;
@@ -77,6 +80,10 @@ public class SettingsActivity extends Activity {
         super.onResume();
         if (view == null) return;
         view.resume();
+        if (getIntent().getBooleanExtra(EXTRA_SLEEP, false)) {
+            getIntent().removeExtra(EXTRA_SLEEP);
+            view.openSleepTimer();
+        }
         // From ADB: am start -n io.freemytv/.SettingsActivity --ez screensaver true (straight to the preview).
         if (preview == null && getIntent().getBooleanExtra("screensaver", false)) {
             getIntent().removeExtra("screensaver");
@@ -316,6 +323,14 @@ public class SettingsActivity extends Activity {
             }
             focusBox.set(LIST_X * k, top * k, LIST_R * k, (top + height) * k);
             return focusBox;
+        }
+
+        /** The Sleep Timer screen, focused on its first row. */
+        void openSleepTimer() {
+            screen = POWER;
+            focus = powerFocus(P_SLEEP);
+            invalidate();
+            spoken.focusMoved();
         }
 
         void resume() {

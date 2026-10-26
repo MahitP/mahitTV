@@ -367,9 +367,41 @@ var Data = (function () {
     return best;
   }
 
+  /** The age rating in the region (then the US): "PG-13", "TV-MA"; '' without one. */
+  function certification(kind, o) {
+    var regions = [REGION, 'US'];
+    for (var r = 0; r < regions.length; r++) {
+      if (kind === 'movie') {
+        var rel = o.release_dates && o.release_dates.results || [];
+        for (var i = 0; i < rel.length; i++) {
+          if (rel[i].iso_3166_1 !== regions[r]) continue;
+          var dates = rel[i].release_dates || [];
+          for (var j = 0; j < dates.length; j++) if (dates[j].certification) return dates[j].certification;
+        }
+      } else {
+        var cr = o.content_ratings && o.content_ratings.results || [];
+        for (var k = 0; k < cr.length; k++) if (cr[k].iso_3166_1 === regions[r] && cr[k].rating) return cr[k].rating;
+      }
+    }
+    return '';
+  }
+
+  /** The title's logo (a transparent title treatment): in the TV's language, else English, else one without text. */
+  function bestLogo(images) {
+    var list = images && images.logos || [], langs = [I18N.base, 'en', null];
+    for (var l = 0; l < langs.length; l++) {
+      for (var i = 0; i < list.length; i++) {
+        var f = list[i].file_path || '';
+        if (list[i].iso_639_1 === langs[l] && /\.png$/i.test(f)) return f;
+      }
+    }
+    return '';
+  }
+
   /** Genre, runtime or seasons, and the service it's on among the TV's apps. */
   function details(p, done) {
-    tmdb('/' + p.kind + '/' + p.id + '?language=' + lang() + '&append_to_response=watch/providers,images&include_image_language=null,'
+    tmdb('/' + p.kind + '/' + p.id + '?language=' + lang() + '&append_to_response=watch/providers,images,'
+        + (p.kind === 'movie' ? 'release_dates' : 'content_ratings') + '&include_image_language=null,'
         + I18N.base + ',en', function (err, o) {
       if (err) { done(err); return; }
       var best = bestBackdrop(o.images);
@@ -397,6 +429,8 @@ var Data = (function () {
       p.year = date.length >= 4 ? date.slice(0, 4) : '';
       p.overview = o.overview || '';
       p.rating = o.vote_average || 0;
+      p.cert = certification(p.kind, o);
+      p.logo = bestLogo(o.images);
       title(p, o, function () {
         p.detailed = true;
         done(null);

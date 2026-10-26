@@ -133,7 +133,7 @@ final class Shaders {
     /**
      * Liquid Glass (macOS 27 style) for the shelf and the cards: the background shows through the glass, lightly
      * blurred (`imageA`: the photo at 480×270, or the frosted aurora), with a slight color boost; near the edge the
-     * glass is "thick" and bends the image outward (a lens), with slight color dispersion; the rim has a thin
+     * glass is "thick" and bends the image outward (a lens), with slight color dispersion (DESIGN-TVOS.md §2); the rim has a thin
      * highlight, strong where it faces the light (top left), and an echo on the opposite side, plus a soft inner halo.
      * `imageB`/`mixB`: the next photo during a transition, blended here (no texture rebuild every frame). band = width
      * of the thick rim (px), refraction = how much it bends (px), specular = highlight strength. Premultiplied color.
@@ -165,37 +165,41 @@ final class Shaders {
         "half4 main(float2 xy) {\n" +
         "  float2 d = xy - center;\n" +
         "  float2 q = abs(d) - (halfSize - radius);\n" +
-        // Continuous-curvature corners (tvOS's "squircle"): a superellipse norm instead of the circle's.
+        // Continuous-curvature corners (tvOS's "squircle"): a superellipse norm, exponent 4, instead of the circle's.
         "  float2 m = max(q, 0.0);\n" +
-        "  float corner = (m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, 2.6) + pow(m.y, 2.6), 1.0 / 2.6) : max(m.x, m.y);\n" +
+        "  float corner = (m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, 4.0) + pow(m.y, 4.0), 0.25) : max(m.x, m.y);\n" +
         "  float sd = corner + min(max(q.x, q.y), 0.0) - radius;\n" +
         "  float aa = clamp(0.5 - sd, 0.0, 1.0);\n" +
         "  if (aa <= 0.0) { return half4(0.0); }\n" +
         "  float2 sg = float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);\n" +
         "  float2 n = (q.x > 0.0 && q.y > 0.0) ? normalize(q) * sg : (q.x > q.y ? float2(sg.x, 0.0) : float2(0.0, sg.y));\n" +
         "  float inner = -sd;\n" +
+        // Lensing: the rim band bends the image outward, harder near the edge, with a little color dispersion.
         "  float e = clamp(inner / band, 0.0, 1.0);\n" +
-        "  float bend = (1.0 - e) * (1.0 - e);\n" +
+        "  float bend = pow(1.0 - e, 2.2);\n" +
         "  float2 p = xy + offset - n * (bend * refraction);\n" +
         "  half3 bg;\n" +
         "  if (bend > 0.01) {\n" +
-        "    float2 ca = n * (bend * refraction * 0.22);\n" +
+        "    float2 ca = n * (bend * refraction * 0.28);\n" +
         "    bg = half3(bgAt(p + ca).r, bgAt(p).g, bgAt(p - ca).b);\n" +
         "  } else {\n" +
         "    bg = bgAt(p);\n" +
         "  }\n" +
+        // Vibrancy: what's behind keeps its color, a little stronger.
         "  half l = dot(bg, half3(0.2126, 0.7152, 0.0722));\n" +
-        "  bg = mix(half3(l), bg, 1.25) * 1.04;\n" +
+        "  bg = mix(half3(l), bg, 1.35) * 1.02;\n" +
         "  half3 col = mix(bg, tint.rgb, tint.a) + half3(lift);\n" +
         "  float ny = d.y / halfSize.y;\n" +
-        "  col *= half(1.0 - 0.12 * smoothstep(0.1, 1.0, ny));\n" +
-        "  col += half3(0.045 * (1.0 - smoothstep(-1.0, -0.15, ny)));\n" +
-        "  float2 L = float2(-0.4, -0.917);\n" +
-        "  float facing = clamp(dot(n, L), 0.0, 1.0);\n" +
+        "  col *= half(1.0 - 0.10 * smoothstep(0.1, 1.0, ny));\n" +
+        "  col += half3(0.05 * (1.0 - smoothstep(-1.0, -0.2, ny)));\n" +
+        // Key light from the top left: a catchlight on the rim where it faces the light, fading along the sides, a
+        // faint bounce opposite, and a soft inner halo.
+        "  float2 L = float2(-0.4512, -0.8924);\n" +
+        "  float facing = pow(clamp(dot(n, L), 0.0, 1.0), 1.5);\n" +
         "  float back = clamp(-dot(n, L), 0.0, 1.0);\n" +
-        "  float rim = 1.0 - smoothstep(0.0, 2.4, inner);\n" +
-        "  float halo = 1.0 - smoothstep(0.0, 11.0, inner);\n" +
-        "  float spec = rim * (0.22 + 0.78 * facing + 0.4 * back) + halo * (0.12 * facing + 0.05 * back);\n" +
+        "  float rim = 1.0 - smoothstep(0.0, 2.2, inner);\n" +
+        "  float halo = 1.0 - smoothstep(0.0, 14.0, inner);\n" +
+        "  float spec = rim * (0.18 + 0.82 * facing + 0.35 * back) + halo * (0.14 * facing + 0.06 * back);\n" +
         "  col += half3(spec * specular);\n" +
         "  col += half3((hash(xy) - 0.5) * 0.0039);\n" +
         "  return half4(col * half(aa), half(aa));\n" +

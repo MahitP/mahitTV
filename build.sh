@@ -91,6 +91,7 @@ ASSETS=(-A app/assets)
 if $PREVIEW; then
   mkdir -p out/preview-assets/preview
   cp preview/art/*.jpg out/preview-assets/preview/
+  for f in preview/art/*.png; do if [ -f "$f" ]; then cp "$f" out/preview-assets/preview/; fi; done   # title logos
   ASSETS+=(-A out/preview-assets)
 fi
 # Fonts uncompressed: Android reads them straight from the APK.

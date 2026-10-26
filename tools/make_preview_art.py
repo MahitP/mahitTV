@@ -64,13 +64,52 @@ def fill_below(img, ys, color, fade=None):
     return img
 
 
-def save(img, name, blur=0.6):
-    out = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+def blurred(img, radius):
+    return np.asarray(Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius)), np.float32)
+
+
+def rays(img, cx, cy, strength=0.5, threshold=170):
+    """God rays: the brightest parts zoom-blurred outward from the light source."""
+    lum = img.mean(axis=2)
+    bright = img * (np.clip((lum - threshold) / (255 - threshold), 0, 1))[..., None]
+    src = Image.fromarray(np.clip(bright, 0, 255).astype(np.uint8))
+    acc = np.zeros_like(img)
+    steps = 14
+    for i in range(steps):
+        s = 1 + 0.035 * i
+        w, h = int(W * s), int(H * s)
+        z = src.resize((w, h), Image.BILINEAR)
+        left, top = int(cx * s - cx), int(cy * s - cy)
+        acc += np.asarray(z.crop((left, top, left + W, top + H)), np.float32) * (1 - i / steps)
+    return img + blurred(acc / steps, 6) * strength * 2.2
+
+
+def save(img, name, blur=0.6, warm=(1.04, 1.0, 0.94), cool=(0.92, 1.0, 1.08)):
+    """The finish of a graded film still: bloom, split-tone grade, lens vignette, a touch of chromatic aberration, grain."""
     if blur:
-        out = out.filter(ImageFilter.GaussianBlur(blur))
-    grain = (rng.standard_normal((H, W, 1)) * 3).astype(np.float32)
+        img = blurred(img, blur)
+    # bloom: the highlights spread softly
+    lum = img.mean(axis=2, keepdims=True)
+    img = img + blurred(img * np.clip((lum - 150) / 105, 0, 1), 26) * 0.45
+    # split-tone: cool shadows, warm highlights, then a gentle S-curve
+    t = np.clip(img.mean(axis=2, keepdims=True) / 255, 0, 1)
+    img = img * (np.array(cool) * (1 - t) + np.array(warm) * t)
+    x = np.clip(img / 255, 0, 1)
+    img = (x * x * (3 - 2 * x) * 0.35 + x * 0.65) * 255
+    # vignette
+    y, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+    d = np.sqrt(((xx - W / 2) / (W / 2)) ** 2 + ((y - H / 2) / (H / 2)) ** 2)
+    img *= (1 - 0.32 * np.clip(d - 0.55, 0, 1) ** 1.5)[..., None]
+    # chromatic aberration: red slightly larger, blue slightly smaller, toward the edges
+    out = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    r, g, b = out.split()
+    r = r.resize((W + 4, H + 2), Image.BILINEAR).crop((2, 1, W + 2, H + 1))
+    b = b.resize((W - 4, H - 2), Image.BILINEAR)
+    b2 = Image.new('L', (W, H)); b2.paste(b, (2, 1)); b2.paste(g.crop((0, 0, W, 1)), (0, 0))
+    out = Image.merge('RGB', (r, g, b2))
+    grain = (rng.standard_normal((H, W, 1)) * 4.2).astype(np.float32)
     out = Image.fromarray(np.clip(np.asarray(out, np.float32) + grain, 0, 255).astype(np.uint8))
-    out.save(os.path.join(OUT, name), quality=86, optimize=True, progressive=True)
+    out.save(os.path.join(OUT, name), quality=88, optimize=True, progressive=True)
     print('wrote', name)
 
 
@@ -105,13 +144,16 @@ def neon_city():
         col = (255, 80, 180) if r.random() < 0.5 else (80, 200, 255)
         img = glow(img, cx, cy, rad, col, 0.35)
     img += noise(4, 4, 11)[..., None] * np.array((30, 10, 40), np.float32)
-    save(img, 'neon-meridian.jpg', 1.2)
+    # haze between the skyline's layers, lit from below by the street
+    haze = np.exp(-((np.arange(H, dtype=np.float32) - 780) / 140) ** 2)[:, None] * (0.5 + 0.5 * noise(3, 4, 12))
+    img += haze[..., None] * np.array((90, 30, 80), np.float32)
+    save(img, 'neon-meridian.jpg', 1.0, warm=(1.06, 0.98, 1.0), cool=(0.9, 0.98, 1.12))
 
 
 def dunes():
     img = vgrad((40, 60, 120), (250, 170, 90), 0.8)
-    img = glow(img, 1380, 470, 260, (255, 230, 170), 1.1)
-    img = glow(img, 1380, 470, 60, (255, 255, 235), 3.0)
+    img = glow(img, 1380, 470, 240, (255, 220, 160), 0.75)
+    img = glow(img, 1380, 470, 52, (255, 250, 230), 1.6)
     for i, (base, amp, color) in enumerate([(560, 40, (196, 110, 60)), (640, 55, (170, 86, 46)),
                                             (760, 70, (130, 62, 34)), (900, 80, (86, 38, 24))]):
         ys = ridge(20 + i, base, amp, 1.4)
@@ -120,7 +162,14 @@ def dunes():
         rows = np.arange(H)[:, None]
         band = (rows >= ys[None, :]) & (rows < ys[None, :] + 10)
         img[band] = img[band] * 0.6 + np.array((255, 200, 140)) * 0.4
+    # sand ripples and light falling across the dunes from the sun
+    ripples = 0.5 + 0.5 * np.sin(np.arange(H, dtype=np.float32)[:, None] * 0.55 + noise(3, 14, 8) * 22)
+    ground = np.arange(H)[:, None] > 560
+    img = np.where(ground[..., None], img * (0.94 + 0.08 * ripples[..., None]), img)
+    xs = np.arange(W, dtype=np.float32)[None, :]
+    img *= (0.82 + 0.3 * np.exp(-((xs - 1380) / 700) ** 2))[..., None]
     img = img * (0.92 + 0.16 * noise(5, 8, 5)[..., None])
+    img = rays(img, 1380, 470, 0.28, 215)
     save(img, 'long-dunes.jpg', 0.8)
 
 
@@ -139,6 +188,10 @@ def peak():
     img[lake:] = img[lake - (H - lake):lake][::-1] * vgrad((0.8, 0.85, 0.95), (0.5, 0.55, 0.7))[lake:]
     ripples = noise(3, 60, 77)[lake:]
     img[lake:] *= (0.9 + 0.2 * ripples)[..., None]
+    img = rays(img, 520, 560, 0.35, 210)
+    # mist in the valleys
+    mist = np.exp(-((np.arange(H, dtype=np.float32) - 700) / 90) ** 2)[:, None] * (0.6 + 0.4 * noise(3, 5, 61))
+    img += mist[..., None] * np.array((60, 55, 80), np.float32)
     save(img, 'quiet-peak.jpg', 0.9)
 
 
@@ -165,7 +218,7 @@ def orbital():
     img[planet] = (np.array((20, 40, 70)) * (0.3 + 0.7 * shade[planet][:, None]))
     atmo = np.exp(-((d - 1150) / 26) ** 2)
     img += atmo[..., None] * np.array((90, 170, 255), np.float32)
-    save(img, 'orbital.jpg', 0.5)
+    save(img, 'orbital.jpg', 0.5, warm=(1.0, 1.0, 1.0), cool=(0.9, 1.0, 1.1))
 
 
 def tidebreak():
@@ -192,7 +245,66 @@ def tidebreak():
     img[540:735, 1680:1712] = (225, 222, 226)
     img[530:560, 1672:1720] = (40, 40, 48)
     img = glow(img, 1696, 545, 46, (255, 240, 200), 1.3)
+    img = rays(img, 900, 600, 0.45, 190)
     save(img, 'tidebreak.jpg', 0.8)
+
+
+FONT = os.path.join(os.path.dirname(OUT), '..', 'app', 'assets', 'fonts', 'InterVariable.ttf')
+
+
+def wordmark(name, text, weight, size, tracking=0.0, upper=False, glow_color=None, gradient=None, sub=None):
+    """A title treatment (the logo a streaming service supplies): white type on a transparent PNG, ≤ 1200 × 400."""
+    from PIL import ImageDraw, ImageFont
+    text = text.upper() if upper else text
+    font = ImageFont.truetype(FONT, size)
+    font.set_variation_by_axes([32, weight])   # Inter's axes: optical size, then weight
+    widths = [font.getlength(ch) for ch in text]
+    total = sum(widths) + tracking * size * (len(text) - 1)
+    pad = int(size * 0.35)
+    sub_h = int(size * 0.42) if sub else 0
+    w, h = int(total + 2 * pad), int(size * 1.25 + 2 * pad + sub_h)
+    canvas = Image.new('L', (w, h), 0)
+    d = ImageDraw.Draw(canvas)
+    x = pad
+    for ch, cw in zip(text, widths):
+        d.text((x, pad), ch, font=font, fill=255)
+        x += cw + tracking * size
+    if sub:
+        sf = ImageFont.truetype(FONT, int(size * 0.24))
+        sf.set_variation_by_axes([14, 600])
+        sw = sf.getlength(sub) + 0.5 * size * 0.24 * (len(sub) - 1)
+        sx = (w - sw) / 2
+        for ch in sub:
+            d.text((sx, pad + size * 1.12), ch, font=sf, fill=230)
+            sx += sf.getlength(ch) + 0.5 * size * 0.24
+    alpha = np.asarray(canvas, np.float32) / 255
+    rgb = np.ones((h, w, 3), np.float32) * 255
+    if gradient:   # a vertical tint across the letters
+        t = np.linspace(0, 1, h, dtype=np.float32)[:, None, None]
+        rgb = np.array(gradient[0], np.float32) * (1 - t) + np.array(gradient[1], np.float32) * t
+        rgb = np.broadcast_to(rgb, (h, w, 3)).copy()
+    out = np.dstack([rgb, alpha * 255])
+    if glow_color:
+        g = np.asarray(Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(size * 0.18)), np.float32) / 255
+        ga = np.clip(g * 0.9, 0, 1)
+        base = np.dstack([np.broadcast_to(np.array(glow_color, np.float32), (h, w, 3)), ga * 255])
+        a_top = alpha[..., None]
+        comb_rgb = out[..., :3] * a_top + base[..., :3] * (1 - a_top)
+        comb_a = np.maximum(alpha, ga) * 255
+        out = np.dstack([comb_rgb, comb_a])
+    img = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), 'RGBA')
+    img = img.crop(img.getbbox())
+    img.thumbnail((1200, 400), Image.LANCZOS)
+    img.save(os.path.join(OUT, name + '-logo.png'), optimize=True)
+    print('wrote', name + '-logo.png')
+
+
+def logos():
+    wordmark('neon-meridian', 'Neon Meridian', 800, 150, tracking=-0.02, glow_color=(255, 70, 190))
+    wordmark('long-dunes', 'The Long Dunes', 300, 130, tracking=0.12, upper=True, gradient=((255, 236, 205), (240, 178, 110)))
+    wordmark('quiet-peak', 'Quiet Peak', 200, 160, tracking=0.04, upper=True, sub='A MOUNTAIN STORY')
+    wordmark('orbital', 'Orbital', 700, 170, tracking=0.32, upper=True, glow_color=(90, 200, 255))
+    wordmark('tidebreak', 'Tidebreak', 900, 170, tracking=-0.03, upper=True, gradient=((255, 255, 255), (200, 220, 230)))
 
 
 if __name__ == '__main__':
@@ -202,3 +314,4 @@ if __name__ == '__main__':
     peak()
     orbital()
     tidebreak()
+    logos()

@@ -166,7 +166,11 @@ var TV = (function () {
     ['com.disney.disneyplus-prod', 'Disney+', '#1838C8'], ['com.hbo.hbomax', 'Max', '#6C3BE0'],
     ['com.apple.appletv', 'Apple TV', '#B8BCC6'], ['globoplaywebos', 'Globoplay', '#FF5A1F'], ['spotify-beehive', 'Spotify', '#1DB954'],
     ['cdp-30', 'Plex', '#E5A00D'], ['com.crunchyroll.webapp', 'Crunchyroll', '#F47521'], ['com.webos.app.browser', 'Web Browser', '#3A7BD5'],
-    ['com.palm.app.settings', 'Settings', '#8E8E93']
+    ['com.palm.app.settings', 'Settings', '#8E8E93'],
+    // More apps, for the browser preview's app grid (their logos are in web/icons)
+    ['youtube.kids', 'YouTube Kids', '#FF0033'], ['jellyfin', 'Jellyfin', '#00A4DC'], ['steam-link', 'Steam Link', '#1B2838'],
+    ['ted', 'TED', '#E62B1E'], ['redbull.tv', 'Red Bull TV', '#0A1A3D'], ['deezer', 'Deezer', '#A238FF'],
+    ['fox.sports', 'FOX Sports', '#003366'], ['google.play', 'Google Play', '#01875F']
   ];
 
   // Newer webOS (11 tested) denies listLaunchPoints to Developer Mode apps, but still answers getAppLoadStatus for
@@ -411,7 +415,11 @@ var TV = (function () {
     apps: function (done) {
       if (samsung) { samsungApps(done); return; }
       if (!webos) {
-        done(SAMPLE.map(function (s) { return {id: s[0], title: s[1], icon: '', color: s[2]}; }));
+        // The browser preview: the sample apps with the logos bundled in web/icons, as a TV would show them.
+        var logos = {netflix: 'netflix.svg', 'youtube.leanback.v4': 'youtube.png', amazon: 'prime.png', 'com.hbo.hbomax': 'max.svg',
+          'spotify-beehive': 'spotify.svg', 'youtube.kids': 'youtubekids.svg', jellyfin: 'jellyfin.svg', 'steam-link': 'steam.svg',
+          ted: 'ted.svg', 'redbull.tv': 'redbull.svg', deezer: 'deezer.svg', 'fox.sports': 'fox.svg', 'google.play': 'googleplay.svg'};
+        done(SAMPLE.map(function (s) { return {id: s[0], title: s[1], icon: logos[s[0]] ? 'icons/' + logos[s[0]] : '', color: s[2]}; }));
         return;
       }
       function list(res) {

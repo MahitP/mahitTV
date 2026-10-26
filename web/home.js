@@ -67,25 +67,28 @@
 
   /** Shelf apps in this order when installed, like the Android app: key, LG app id, name on the TV, brand gradient. */
   var SHELF = [
-    ['netflix', /^netflix$/, /netflix/i, ['#0A0A0A', '#000000']],
-    ['youtube', /youtube/, /^youtube$/i, ['#1C1C1E', '#09090A']],
-    ['prime', /^amazon$/, /prime video|amazon/i, ['#2AA8FF', '#0A68D4']],
-    ['disney', /disney/, /disney/i, ['#173584', '#08143F']],
-    ['max', /hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5C30E8', '#221684']],
-    ['appletv', /appletv|apple\.tv/, /apple tv/i, ['#1C1C1E', '#000000']],
-    ['hulu', /^hulu/, /hulu/i, ['#1CE783', '#0B8F4E']],
+    ['netflix', /^netflix$/, /netflix/i, ['#141414', '#000000']],
+    ['youtube', /youtube/, /^youtube$/i, ['#202020', '#0B0B0B']],
+    ['prime', /^amazon$/, /prime video|amazon/i, ['#1FA2FF', '#0A62C9']],
+    ['disney', /disney/, /disney/i, ['#1A3E9A', '#0A1854']],
+    ['max', /hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5B2EEA', '#1F1477']],
+    ['appletv', /appletv|apple\.tv/, /apple tv/i, ['#2C2C2E', '#000000']],
+    ['hulu', /^hulu/, /hulu/i, ['#1CE783', '#0E9F57']],
     ['paramount', /paramount|cbs/, /paramount/i, ['#0064FF', '#002A86']],
     ['peacock', /peacock/, /peacock/i, ['#1C1C1E', '#000000']],
     ['nfl', /nfl/, /^nfl/i, ['#013369', '#00163D']],
     ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
     ['jellyfin', /jellyfin/i, /jellyfin/i, ['#AA5CC3', '#00A4DC']],
-    ['spotify', /spotify/, /spotify/i, ['#1DB954', '#0F7A36']]
+    ['spotify', /spotify/, /spotify/i, ['#202020', '#050505']],
+    ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']],
+    ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']]
   ];
   // Apps shown at once, as on Android: 8 (today's smallest tiles, 178 wide); the shelf scrolls for the rest. The
   // built-in list keeps 8 too.
   // The Dock shows 5 at once (tvOS's 5:3 tiles, 300 × 180) and scrolls for the rest.
-  var SHELF_VISIBLE = 5, FEW_APPS = 8, TILE_W = 300, TILE_H = 180, TILE_GAP = 40, DOCK_PAD = 26, DOCK_TOP = 734;
-  var GRID_LIFT = 600, GRID_ROW = 250, GRID_TOP = 430;
+  // tvOS's grid (DESIGN-TVOS.md): 5 columns of 320 × 192, 40 apart, between 80 px side margins; rows 292 apart.
+  var SHELF_VISIBLE = 5, FEW_APPS = 8, TILE_W = 320, TILE_H = 192, TILE_GAP = 40, DOCK_PAD = 32, DOCK_TOP = 688;
+  var GRID_LIFT = 640, GRID_ROW = 292, GRID_TOP = 372, GRID_LEFT = 80;
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -260,6 +263,11 @@
 
   /** An app's face: its logo on its brand color (or its name, when the icon can't be read). */
   function face(app, box, wordSize) {
+    if (!app.icon && /(^|\.)settings$/i.test(app.id)) {   // the TV's settings: graphite with a white gear, as tvOS draws it
+      paint(box, '#8E8E93', '#48484A');
+      sym('settings', box).className += ' big';
+      return;
+    }
     var k = shelfKey(app);
     var top = k ? k[3][0] : app.color ? darken(app.color, 0.92) : '#2A2A2E';
     var bottom = k ? k[3][1] : app.color ? darken(app.color, 0.62) : '#161618';
@@ -383,30 +391,32 @@
   function renderTop() {
     var buttons = $('buttons');
     buttons.innerHTML = '';
-    var defs = [['live_tv', tr('light|Live TV')], ['hdmi', tr('HDMI Inputs')], ['settings', tr('light|Settings')]];
-    for (var b = 0; b < 3; b++) {
-      var r = el('button', 'round' + (b === 2 ? ' last' : ''), buttons);
-      r.style.left = (1830 - 64 - (2 - b) * 80) + 'px';
-      sym(defs[b][0], r);
-      el('div', 'tip', r, defs[b][1]);
-      hover(r, Z.TOP, 3 + b);
-    }
+    // One glass button, as on tvOS: Control Center (Live TV, the inputs and the settings live there).
+    var r = el('button', 'round last', buttons);
+    r.style.left = (1840 - 60) + 'px';
+    sym('tv_settings', r);
+    el('div', 'tip', r, tr('Control Center'));
+    hover(r, Z.TOP, 3);
     hover($('watch'), Z.HERO, 0);
     renderPill();
   }
 
-  /** The time and the weather in a glass capsule, left of the buttons. */
+  /** The time and the weather at the top right, left of the button: plain text, no box. */
   function renderPill() {
-    var pill = $('pill'), w = Data.weather;
-    pill.className = 'glass';
-    pill.innerHTML = '';
-    pill.style.right = (1920 - (1830 - 64 - 2 * 80 - 20)) + 'px';
-    pill.appendChild(document.createTextNode(formatDate('format|h:mm', Date.now())));
+    var status = $('status'), w = Data.weather, right = 1920 - (1840 - 60) + 24;
+    status.innerHTML = '';
+    status.style.right = right + 'px';
+    status.appendChild(document.createTextNode(formatDate('format|h:mm', Date.now())));
     if (Prefs.weather() && w && !isNaN(w.temp)) {
-      sym(Data.symbol(w.code, w.isDay), pill);
-      pill.appendChild(document.createTextNode(Data.degrees(w.temp)));
+      sym(Data.symbol(w.code, w.isDay), status);
+      status.appendChild(document.createTextNode(Data.degrees(w.temp)));
     }
-    $('quotes').style.right = (1920 - (1830 - 64 - 2 * 80 - 20) + pill.offsetWidth + 24) + 'px';
+    $('quotes').style.right = (right + status.offsetWidth + 28) + 'px';
+    var cc = $('drawer').querySelector('.time');
+    if (cc) {
+      cc.textContent = formatDate('format|h:mm', Date.now());
+      cc.nextSibling.textContent = formatDate('format|EEEE, MMMM d', Date.now());
+    }
   }
 
   function renderQuotes() {
@@ -459,41 +469,32 @@
     }, 200);
   }
 
-  function star(parent) {
-    var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg');
-    svg.setAttribute('viewBox', '-1 -1 2 2');
-    svg.setAttribute('width', '20');
-    svg.setAttribute('height', '20');
-    var path = document.createElementNS(ns, 'path'), dd = '';
-    for (var i = 0; i < 10; i++) {
-      var a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 0.42 : 1;
-      dd += (i ? 'L' : 'M') + (Math.cos(a) * r).toFixed(3) + ' ' + (Math.sin(a) * r + 0.08).toFixed(3);
-    }
-    path.setAttribute('d', dd + 'Z');
-    svg.appendChild(path);
-    parent.appendChild(svg);
-  }
-
   function fillHero(p) {
     var hero = $('hero'), watch = $('watch');
     if (!p) { hero.children[1].textContent = ''; return; }
-    hero.children[0].textContent = periodLabel();
+    // The title's own logo (TMDB's title treatment) when it has one; the title in type otherwise.
+    var logo = hero.children[0], url = p.logo ? Data.image(p.logo, 'w500') : '';
+    setClass(hero, 'has-logo', false);
+    logo.onload = function () { if (logo.getAttribute('src') === url) setClass(hero, 'has-logo', true); };
+    if (url) logo.setAttribute('src', url); else logo.removeAttribute('src');
+    if (url && logo.complete && logo.naturalWidth) setClass(hero, 'has-logo', true);
     hero.children[1].textContent = p.title;
     var meta = hero.children[2];
     meta.innerHTML = '';
-    if (p.rating > 0) {
-      var badge = el('span', 'badge', meta);
-      star(badge);
-      badge.appendChild(document.createTextNode(fmtRating(p.rating)));
-    }
-    meta.appendChild(document.createTextNode(p.year ? (p.meta ? p.year + ' · ' + p.meta : p.year) : p.meta || ''));
+    meta.appendChild(document.createTextNode(p.year ? (p.meta ? p.meta.replace(/ · /, ' · ' + p.year + ' · ') : p.year) : p.meta || ''));
+    var badges = [];
+    if (p.cert) badges.push(p.cert);
+    if (p.rating > 0) badges.push('\u2605 ' + fmtRating(p.rating));
+    var extra = typeof p.badges === 'string' ? p.badges.split(',') : p.badges || [];
+    for (var i = 0; i < extra.length; i++) if (extra[i]) badges.push(extra[i]);
+    for (var b = 0; b < badges.length; b++) el('span', 'badge', meta, badges[b]);
     hero.children[3].textContent = p.overview || '';
     var app = Data.appFor(p.app);
     watch.innerHTML = '';
     watch.style.display = app ? '' : 'none';
     if (app) {
       sym('play', watch);
-      watch.appendChild(document.createTextNode(p.service || app.title));
+      watch.appendChild(document.createTextNode(tr('Play')));
     }
   }
 
@@ -564,10 +565,27 @@
       setClass(canvas, 'on', true);
       setClass($(bgFront), 'on', false);
       bgFront = next;
-      var bleed = $('platter').firstChild;
-      bleed.getContext('2d').drawImage(img, 0, 0, bleed.width, bleed.height);
+      // The glass's copies (the Dock, Control Center), with Liquid Glass's color boost baked in.
+      var glasses = [$('platter').firstChild, $('drawer').firstChild];
+      for (var gi = 0; gi < glasses.length; gi++) {
+        var gc = glasses[gi].getContext('2d');
+        gc.drawImage(img, 0, 0, glasses[gi].width, glasses[gi].height);
+        vivid(gc, glasses[gi].width, glasses[gi].height);
+      }
     };
     img.src = url;
+  }
+
+  /** Saturation ×1.35 (DESIGN-TVOS.md §2) on a tiny canvas: old Chromium has no CSS filter for it on every TV. */
+  function vivid(ctx, w, h) {
+    try {
+      var data = ctx.getImageData(0, 0, w, h), px = data.data;
+      for (var i = 0; i < px.length; i += 4) {
+        var l = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+        for (var c = 0; c < 3; c++) px[i + c] = Math.max(0, Math.min(255, (l + (px[i + c] - l) * 1.35) * 1.02));
+      }
+      ctx.putImageData(data, 0, 0);
+    } catch (e) {}   // a photo from another origin can't be read back: it stays as it is
   }
 
   function renderClock() {
@@ -665,8 +683,9 @@
 
   var drawerItems = [], drawerInputs = 0;
 
+  /** Control Center: the time, a 2-column bento of glass cards (the inputs, All Apps, the settings), the weather. */
   function renderDrawer() {
-    var d = $('drawer');
+    var d = $('drawer').lastChild;
     d.innerHTML = '';
     drawerItems = [];
     for (var i = 0; i < inputs.length; i++) {
@@ -674,110 +693,74 @@
       drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label)});
     }
     drawerInputs = drawerItems.length;
-    drawerItems.push({label: tr('All Apps'), symbol: 'apps', run: function () { openApps(0); }});
+    drawerItems.push({label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }});
     drawerItems.push({label: tr('Home Settings'), symbol: 'settings', run: openSettings});
     if (TV.canOpenSettings) drawerItems.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
-    var n = drawerItems.length, gap = 18, groupGap = 56, groups = drawerInputs > 0 && drawerInputs < n ? 2 : 1;
-    var tw = Math.min(230, (1760 - Math.max(0, n - groups) * gap - (groups - 1) * groupGap) / Math.max(1, n));
-    var xPos = 80;
-    for (var k = 0; k < n; k++) {
-      if (k === drawerInputs && k > 0) {
-        xPos += groupGap - gap;
-        el('div', 'row-title', d, tr('Shortcuts')).style.left = (xPos + 4) + 'px';
-      }
-      if (k === 0 && drawerInputs) el('div', 'row-title', d, tr('Inputs')).style.left = '84px';
-      var item = drawerItems[k], key = el('div', 'key glass' + (item.off ? ' off' : ''), d);
-      key.style.left = xPos + 'px';
-      key.style.width = tw + 'px';
+    el('div', 'time', d, formatDate('format|h:mm', Date.now()));
+    el('div', 'date', d, formatDate('format|EEEE, MMMM d', Date.now()));
+    var rows = Math.min(4, Math.ceil(drawerItems.length / 2));
+    drawerItems = drawerItems.slice(0, rows * 2);
+    for (var k = 0; k < drawerItems.length; k++) {
+      var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : ''), d);
+      key.style.left = (k % 2) * 240 + 'px';
+      key.style.top = (128 + Math.floor(k / 2) * 136) + 'px';
       sym(item.symbol, key);
       el('div', 'label', key, item.label);
       hover(key, Z.DRAWER, k);
-      xPos += tw + gap;
     }
+    var w = el('div', '', d);
+    w.id = 'weather';
     renderPanels();
     updateFocus();
   }
 
   function renderPanels() {
-    var d = $('drawer');
-    var old = d.querySelectorAll('.panel');
-    for (var o = 0; o < old.length; o++) d.removeChild(old[o]);
-    var wx = Prefs.weather(), coins = Data.activeCoins(), qt = coins.length > 0;
-    var split = 80 + 1760 * 0.585;
-    if (wx) {
-      var w = el('div', 'panel glass', d);
-      w.id = 'weather';
-      w.style.left = '80px';
-      w.style.width = ((qt ? split - 16 : 1840) - 80) + 'px';
-      renderWeather(w);
-    }
-    if (qt) {
-      var q = el('div', 'panel glass', d);
-      q.id = 'prices';
-      var left = wx ? split + 16 : 80;
-      q.style.left = left + 'px';
-      q.style.width = (1840 - left) + 'px';
-      renderPrices(q, coins);
-    }
+    var w = $('weather');
+    if (!w) return;
+    w.innerHTML = '';
+    w.style.display = Prefs.weather() ? '' : 'none';
+    if (Prefs.weather()) renderWeather(w);
   }
 
   function renderWeather(card) {
     el('div', 'head', card, Data.city || tr('Weather'));
     var w = Data.weather;
     if (!w) {
-      el('div', 'cond', card, tr('No weather data right now.')).style.top = '96px';
+      el('div', 'cond', card, tr('No weather data right now.')).style.top = '60px';
       return;
     }
     var now = el('div', 'now', card);
     sym(Data.symbol(w.code, w.isDay), now);
     el('span', 'temp', now, Data.degrees(w.temp));
     el('div', 'cond', card, Data.condition(w.code, w.isDay));
-    el('div', 'range', card, trf('H:{max}', {max: Data.degrees(w.max)}) + '   ' + trf('L:{min}', {min: Data.degrees(w.min)}));
-    el('div', 'split', card);
-    // Home Settings → Forecast: the next 6 hours or the next 5 days (the hours until a forecast has days).
-    var days = Prefs.forecast() === 'days' && w.days && w.days.length > 0, list = days ? w.days : w.hours, n = days ? 5 : 6;
-    var hours = el('div', 'hours', card), width = parseFloat(card.style.width) - 30 - 422, hw = width / n;
+    el('div', 'range', card, trf('H:{max}', {max: Data.degrees(w.max)}) + '  ' + trf('L:{min}', {min: Data.degrees(w.min)}));
+    // The next 4 hours (or days, with Home Settings → Forecast).
+    var days = Prefs.forecast() === 'days' && w.days && w.days.length > 0, list = days ? w.days : w.hours, n = 4;
+    var hours = el('div', 'hours', card), hw = 278 / n;
     for (var i = 0; list && i < list.length && i < n; i++) {
       var h = el('div', 'hour', hours), x = list[i];
       h.style.left = (hw * i) + 'px';
       h.style.width = hw + 'px';
       el('div', 't', h, days ? Data.weekday(x.at) : Data.hour(x.at));
       sym(Data.symbol(x.code, days || x.day), h);
-      var t = el('div', 'd', h, Data.degrees(days ? x.max : x.temp));
-      if (days) el('span', 'low', t, Data.degrees(x.min));
+      el('div', 'd', h, Data.degrees(days ? x.max : x.temp));
     }
-    var sun = el('div', 'sun', card);
-    if (w.sunrise) { var a = el('span', '', sun); sym('sunrise', a); a.appendChild(document.createTextNode(trf('Sunrise {time}', {time: Data.time(w.sunrise)}))); }
-    if (w.sunset) { var b = el('span', '', sun); sym('sunset', b); b.appendChild(document.createTextNode(trf('Sunset {time}', {time: Data.time(w.sunset)}))); }
   }
 
-  function renderPrices(card, coins) {
-    el('div', 'head', card, tr('Crypto'));
-    var stale = Data.staleness(Data.pricesAt, 5 * 60000);
-    el('div', 'side', card, stale ? trf('quotes|{ago}', {ago: stale}) : tr('24h change'));
-    for (var j = 0; j < coins.length; j++) {
-      var i = coins[j], row = el('div', 'coin', card);
-      row.style.top = (86 + 52 * j) + 'px';
-      coin(i, row);
-      el('span', 'n', row, Data.coinName(i));
-      el('span', 'p', row, Data.money(Data.prices[i]));
-      var ch = Data.changes[i];
-      if (!isNaN(ch)) el('span', 'c ' + (ch >= 0 ? 'up' : 'down'), row, Data.change(ch));
-    }
-  }
+  var drawerFrom = Z.SHELF;
 
   function openDrawer() {
     if (!drawerItems.length) return;
-    var tiles = $('tiles').children;
+    drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
-    st.drawer = Math.min(drawerItems.length - 1, nearest(document.querySelectorAll('#drawer .key'), centerX(tiles[st.shelf])));
+    st.drawer = 0;
+    renderPill();
     updateFocus();
   }
 
+  /** Back where the focus was (the button that opened it, or the Dock). */
   function closeDrawer() {
-    var keys = document.querySelectorAll('#drawer .key');
-    st.zone = Z.SHELF;
-    if (shelf.length) st.shelf = nearest($('tiles').children, centerX(keys[st.drawer]));
+    st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO ? drawerFrom : Z.SHELF;
     updateFocus();
   }
 
@@ -790,7 +773,7 @@
     grid.innerHTML = '';
     for (var i = 0; i < others.length; i++) {
       var r = Math.floor(i / 5), c = i % 5, cell = el('div', 'cell', grid);
-      cell.style.left = (130 + c * (TILE_W + TILE_GAP)) + 'px';
+      cell.style.left = (GRID_LEFT + c * (TILE_W + TILE_GAP)) + 'px';
       cell.style.top = (GRID_TOP + r * GRID_ROW) + 'px';
       var f = el('div', 'face', cell);
       face(others[i], f, wordFit(others[i].title, TILE_W, 34));
@@ -1071,10 +1054,7 @@
   function activate() {
     switch (st.zone) {
       case Z.TOP:
-        if (st.top < 3) return;
-        if (st.top === 3) { var live = liveTV(); if (live) launcher(live.id, tr('Live TV'))(); }
-        else if (st.top === 4) { st.zone = Z.SHELF; openDrawer(); st.drawer = 1 < drawerInputs ? 1 : 0; updateFocus(); }
-        else openSettings();
+        openDrawer();
         return;
       case Z.HERO:
         var p = cards[st.page], app = p && Data.appFor(p.app);
@@ -1119,21 +1099,23 @@
           return;
         } else if (dy < 0) {
           if (cards.length) st.zone = Z.HERO;
-          else { st.zone = Z.TOP; st.top = 5; }
+          else { st.zone = Z.TOP; st.top = 3; }
         }
         break;
       case Z.HERO:
         if (dx) page(dx);
-        else if (dy < 0) { st.zone = Z.TOP; st.top = 5; }
+        else if (dy < 0) { st.zone = Z.TOP; st.top = 3; }
         else if (shelf.length) st.zone = Z.SHELF;
         break;
       case Z.TOP:
-        if (dx) st.top = Math.max(3, Math.min(5, st.top + dx));
+        if (dx) st.top = 3;
         else if (dy > 0) st.zone = cards.length ? Z.HERO : Z.SHELF;
         break;
       case Z.DRAWER:
-        if (dx) st.drawer = Math.max(0, Math.min(drawerItems.length - 1, st.drawer + dx));
-        else if (dy < 0) { closeDrawer(); return; }
+        // Two columns: ← from the left one closes it, as swiping does on tvOS.
+        if (dx < 0 && st.drawer % 2 === 0) { closeDrawer(); return; }
+        if (dx && st.drawer + dx >= 0 && st.drawer + dx < drawerItems.length && Math.floor((st.drawer + dx) / 2) === Math.floor(st.drawer / 2)) st.drawer += dx;
+        else if (dy && st.drawer + 2 * dy >= 0 && st.drawer + 2 * dy < drawerItems.length) st.drawer += 2 * dy;
         break;
       case Z.APPS:
         if (dy < 0 && st.grid < 5) {
@@ -1186,7 +1168,7 @@
       if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.ABOUT))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
-      if (zone === Z.SHELF && st.zone === Z.DRAWER) closeDrawer();
+      if (zone !== Z.DRAWER && st.zone === Z.DRAWER) return;
       st.zone = zone;
       if (zone === Z.TOP) st.top = index;
       else if (zone === Z.SHELF) st.shelf = index;

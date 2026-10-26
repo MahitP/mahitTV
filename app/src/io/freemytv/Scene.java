@@ -53,6 +53,8 @@ final class Scene {
     // The glass's continuous-curvature ("squircle") outline, as the shaders draw it: made once per size and radius.
     private final android.graphics.Path squircle = new android.graphics.Path();
     private float squircleW = -1, squircleH = -1, squircleR = -1;
+    /** The corners' superellipse exponent: 4, as in Shaders.LIQUID (DESIGN-TVOS.md §2). */
+    static final double SQUIRCLE_N = 4;
     private final Matrix softMatrix = new Matrix();
     private final RectF sheenRect = new RectF();
     private int[] softPxA, softPxB, softPxFrost;         // reused pixel buffers
@@ -100,8 +102,11 @@ final class Scene {
         if (glass == null) {
             // The sheen fades over a fixed height from each glass's top edge, drawn with a translate: a local matrix
             // per glass would rebuild the native gradient on every draw on Android 8 to 12.
-            sheenPaint.setShader(new android.graphics.LinearGradient(0, 0, 0, Math.max(1, h * 0.1f),
-                    new int[] {0xB3FFFFFF, 0x26FFFFFF, 0x05FFFFFF}, new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP));
+            // The rim's light, from the glass's top-left corner along the diagonal (drawn moved to each glass's corner):
+            // a catchlight there, fading along the top and left edges to a faint line.
+            float reach = Math.max(1, h * 0.45f);
+            sheenPaint.setShader(new android.graphics.LinearGradient(0, 0, reach, reach * 0.55f,
+                    new int[] {0xC0FFFFFF, 0x40FFFFFF, 0x18FFFFFF}, new float[] {0, 0.35f, 1}, Shader.TileMode.CLAMP));
             echoPaint.setShader(new android.graphics.LinearGradient(0, 0, 0, -Math.max(1, h * 0.05f),
                     new int[] {0x2EFFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP));
         }
@@ -214,7 +219,7 @@ final class Scene {
      * over it (made again each time: a BitmapShader keeps the pixels as they were when it was created). Scaled up on
      * screen with bilinear filtering, the small copy reads as a wide blur. ~20k to 130k pixel reads: well under a
      * millisecond, so it can run on every step of a photo fade. `vivid`: the Liquid Glass's color boost (saturation
-     * ×1.25, brightness ×1.04, as in Shaders.LIQUID), baked in here instead of computed per pixel on screen.
+     * ×1.35, brightness ×1.02, as in Shaders.LIQUID), baked in here instead of computed per pixel on screen.
      */
     private static BitmapShader soften(int[] src, int srcW, int f, int w, int h, int[] px, Bitmap into, boolean vivid) {
         int n = f * f;
@@ -236,9 +241,9 @@ final class Scene {
                 b /= n;
                 if (vivid) {
                     float l = 0.2126f * r + 0.7152f * g + 0.0722f * b;
-                    r = Math.min(255, Math.max(0, Math.round((l + (r - l) * 1.25f) * 1.04f)));
-                    g = Math.min(255, Math.max(0, Math.round((l + (g - l) * 1.25f) * 1.04f)));
-                    b = Math.min(255, Math.max(0, Math.round((l + (b - l) * 1.25f) * 1.04f)));
+                    r = Math.min(255, Math.max(0, Math.round((l + (r - l) * 1.35f) * 1.02f)));
+                    g = Math.min(255, Math.max(0, Math.round((l + (g - l) * 1.35f) * 1.02f)));
+                    b = Math.min(255, Math.max(0, Math.round((l + (b - l) * 1.35f) * 1.02f)));
                 }
                 px[y * w + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
             }
@@ -258,7 +263,7 @@ final class Scene {
             if (imageGlass && softShaderA != null) {
                 // Mapped by what the copy covers: 270 / 8 = 33.75 rows, of which the bitmap holds 33.
                 bitmapGlass(c, r, radius, softShaderA, Backdrop.GW / (float) SOFT, Backdrop.GH / (float) SOFT, softShaderB,
-                        glassMix, tint, Math.max(0.3f, tintAlpha), lift, 1, specular, alpha);
+                        glassMix, tint, Math.max(0.24f, tintAlpha), lift, 1, specular, alpha);
             } else {
                 glass(c, r, radius, tint, Math.max(0.5f, tintAlpha), 0, 0, lift, 1, alpha);
             }
@@ -417,8 +422,8 @@ final class Scene {
             int a8 = Math.round(255 * Math.min(1, specular) * alpha);
             sheenPaint.setAlpha(a8);
             c.save();
-            c.translate(0, r.top);
-            sheenRect.set(r.left, 0, r.right, r.height());
+            c.translate(r.left, r.top);
+            sheenRect.set(0, 0, r.width(), r.height());
             shape(c, sheenRect, radius, sheenPaint, curved);
             c.restore();
             echoPaint.setAlpha(a8);
@@ -437,14 +442,14 @@ final class Scene {
         squircleH = h;
         squircleR = radius;
         squircle.rewind();
-        // Each corner a superellipse quadrant, |x|^2.6 + |y|^2.6 = r^2.6 (Shaders.LIQUID's corner), 12 steps apiece,
+        // Each corner a superellipse quadrant, |x|^4 + |y|^4 = r^4 (Shaders.LIQUID's corner), 12 steps apiece,
         // clockwise from the top edge; the straight edges join them.
         float[][] centers = {{w - radius, radius}, {w - radius, h - radius}, {radius, h - radius}, {radius, radius}};
         for (int q = 0; q < 4; q++) {
             for (int i = 0; i <= 12; i++) {
                 double t = Math.PI / 2 * (q - 1 + i / 12.0), ct = Math.cos(t), st = Math.sin(t);
-                float x = centers[q][0] + (float) (Math.signum(ct) * Math.pow(Math.abs(ct), 2 / 2.6)) * radius;
-                float y = centers[q][1] + (float) (Math.signum(st) * Math.pow(Math.abs(st), 2 / 2.6)) * radius;
+                float x = centers[q][0] + (float) (Math.signum(ct) * Math.pow(Math.abs(ct), 2 / SQUIRCLE_N)) * radius;
+                float y = centers[q][1] + (float) (Math.signum(st) * Math.pow(Math.abs(st), 2 / SQUIRCLE_N)) * radius;
                 if (q == 0 && i == 0) squircle.moveTo(x, y);
                 else squircle.lineTo(x, y);
             }

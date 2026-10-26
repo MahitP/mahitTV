@@ -12,7 +12,8 @@ const http = require('http');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
-const SITE = path.join(ROOT, 'out', 'webos');
+// SITE=<folder> shoots a copy elsewhere (./build.sh empties out/ when it runs).
+const SITE = process.env.SITE ? path.resolve(process.env.SITE) : path.join(ROOT, 'out', 'webos');
 const OUT = path.join(ROOT, 'previews');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.json': 'application/json' };
@@ -35,6 +36,8 @@ const SHOTS = [
   ['dock-next', ['ArrowRight', 'ArrowRight']],
   ['hero', ['ArrowUp']],
   ['grid', ['ArrowDown', 'ArrowRight']],
+  ['grid-scrolled', ['ArrowDown', 'ArrowDown', 'ArrowRight', 'ArrowDown']],
+  ['control-center', ['ArrowUp', 'ArrowUp', 'Enter', 'ArrowDown']],
   ['clock', [], true],
 ];
 
