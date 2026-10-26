@@ -1,9 +1,11 @@
 /*
- * The home screen on a 1920 × 1080 stage, with the Android app's measurements (HomeView): the title and tabs at the top
- * left, icon-only glass buttons at the top right, three picks, and the glass shelf at the bottom; ↓ on the shelf opens
- * the drawer (inputs, shortcuts, weather, prices). Light by day, dark from sunset to sunrise.
+ * The home screen on a 1920 × 1080 stage, with the Android app's measurements (HomeView, DESIGN-TVOS.md), after Apple
+ * TV's: the Top Shelf (this hour's pick edge to edge, its text at the bottom left), the status pill and icon-only glass
+ * buttons at the top right, the glass Dock with the apps, and the app grid that comes up from below it (↓). HDMI Inputs
+ * opens the drawer (inputs, shortcuts, weather). Light by day, dark from sunset to sunrise.
  * No CSS variables, grid or backdrop-filter: older LG TVs (webOS 3 and 4) don't have them, and blur is too heavy for
- * their GPUs. Only transform and opacity animate.
+ * their GPUs; the glass shows a tiny copy of the photo, stretched (already as soft as a blur). Only transform and
+ * opacity animate.
  */
 @font-face {
   font-family: 'Inter';
@@ -51,15 +53,50 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background-color: currentColor;
 }
 
-/* MARK: - Background: the first pick's photo, very blurred and almost white (almost black at night). */
+/* MARK: - Background: the Top Shelf's photo, edge to edge; without picks, a gradient (or the blurred photo). */
 
 #sky { background: #EBEBEF; }
 #sky .grad { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky .day { background: -webkit-linear-gradient(top, #F5F5F7, #E2E2E7); background: linear-gradient(#F5F5F7, #E2E2E7); }
 #sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
+#sky .photo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  -webkit-transition: opacity 0.8s;
+  transition: opacity 0.8s;
+}
+#sky .photo.on { opacity: 1; }
+/* Darker only where text sits: the title at the bottom left, the Dock's names, the pill at the top. */
+#sky .scrim {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  background: -webkit-linear-gradient(left, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.38) 21%, rgba(0, 0, 0, 0.14) 42%, rgba(0, 0, 0, 0) 70%),
+    -webkit-linear-gradient(bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.42) 16%, rgba(0, 0, 0, 0.18) 33%, rgba(0, 0, 0, 0) 55%),
+    -webkit-linear-gradient(top, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0) 22%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.38) 21%, rgba(0, 0, 0, 0.14) 42%, rgba(0, 0, 0, 0) 70%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.42) 16%, rgba(0, 0, 0, 0.18) 33%, rgba(0, 0, 0, 0) 55%),
+    linear-gradient(rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0) 22%);
+  -webkit-transition: opacity 0.8s;
+  transition: opacity 0.8s;
+}
+.has-photo #sky .scrim { opacity: 1; }
 #sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.8s; transition: opacity 0.8s; }
 #sky canvas.on { opacity: 1; }
-#sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(245, 245, 247, 0.74); -webkit-transition: background-color 2s; transition: background-color 2s; }
+/* Over the photo, the blurred copy shows only behind the app grid (tvOS blurs the Top Shelf there). */
+.has-photo #sky canvas.on { opacity: 0; }
+.has-photo.grid-open #sky canvas.on { opacity: 1; }
+#sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(245, 245, 247, 0.74); -webkit-transition: background-color 2s, opacity 0.8s; transition: background-color 2s, opacity 0.8s; }
+.has-photo #sky .veil { opacity: 0; }
 #sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #FFF; opacity: 0; -webkit-transition: opacity 0.45s, background-color 2s; transition: opacity 0.45s, background-color 2s; }
 .night #sky .day { opacity: 0; }
 .night #sky .night { opacity: 1; }
@@ -67,8 +104,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night #sky .lift { background: #000; }
 .drawer-open #sky .lift { opacity: 0.32; }
 .night.drawer-open #sky .lift { opacity: 0.42; }
+.grid-open #sky .lift { opacity: 0.6; }
 
-/* MARK: - Moving parts: the top fades and everything rises when the drawer opens. */
+/* MARK: - Moving parts: the drawer and the app grid lift the page; the Top Shelf's text fades. */
 
 /* Each part is its own stack, so a focused tile (z-index) never shows over the drawer, a sheet or the screensaver. */
 #home { z-index: 1; }
@@ -77,71 +115,124 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #saver { z-index: 4; }
 
 #home, #drawer {
-  -webkit-transition: -webkit-transform 0.38s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
-  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
+  -webkit-transition: -webkit-transform 0.42s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
 }
 .drawer-open #home { -webkit-transform: translateY(-560px); transform: translateY(-560px); }
 #top { -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
-.drawer-open #top { opacity: 0; }
+.drawer-open #top, .grid-open #top { opacity: 0; }
 #drawer { -webkit-transform: translateY(560px); transform: translateY(560px); opacity: 0; }
 .drawer-open #drawer { -webkit-transform: none; transform: none; opacity: 1; }
 /* Closed, it still spans the screen below the shelf: only its keys take the pointer, and only when it's open. */
 #drawer { pointer-events: none; }
 .drawer-open #drawer .key { pointer-events: auto; }
 
-/* MARK: - Title and tabs */
+/* MARK: - Top Shelf: label, title, rating and details, synopsis (bottom-anchored above the Dock), its button, dots */
 
-#title {
+#hero {
   position: absolute;
-  left: 76px;
-  top: 52px;
+  left: 90px;
+  bottom: 460px;
+  width: 1000px;
+  color: #FFF;
+  text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
+  -webkit-transition: opacity 0.22s, -webkit-transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition: opacity 0.22s, transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+#hero.out { opacity: 0; -webkit-transform: translateX(-48px); transform: translateX(-48px); }
+#hero.out.back { -webkit-transform: translateX(48px); transform: translateX(48px); }
+#hero .label { font-size: 22px; font-weight: 600; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.7); margin-bottom: 12px; }
+#hero h1 {
   margin: 0;
-  font-size: 76px;
-  font-weight: 600;
-  letter-spacing: 0.004em;
-  line-height: 1;
-  white-space: nowrap;
-  color: #1D1D1F;
-  -webkit-transition: color 2s;
-  transition: color 2s;
+  font-size: 84px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 0.98;
+  max-height: 166px;
+  overflow: hidden;
 }
-
-#tabs { position: absolute; left: 54px; top: 158px; height: 68px; white-space: nowrap; }
-.tab {
-  position: relative;
+#hero .meta { margin-top: 26px; height: 38px; font-size: 26px; font-weight: 500; line-height: 38px; color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
+#hero .badge {
   display: inline-block;
-  height: 68px;
-  padding: 0 26px;
-  margin-right: 4px;
-  border-radius: 34px;
-  font-size: 30px;
-  font-weight: 500;
-  line-height: 68px;
-  color: #6E6E73;
-  -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.17s, box-shadow 0.2s, color 0.17s;
-  transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), background-color 0.17s, box-shadow 0.2s, color 0.17s;
+  height: 38px;
+  padding: 0 14px;
+  margin-right: 18px;
+  border-radius: 19px;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  font-size: 22px;
+  font-weight: 600;
+  color: #FFF;
+  vertical-align: top;
+  -webkit-font-feature-settings: 'tnum';
+  font-feature-settings: 'tnum';
 }
-.tab.on { font-weight: 600; color: #1D1D1F; }
-.tab.focus {
-  background: #FFF;
-  color: #1D1D1F;
-  -webkit-transform: scale(1.05);
-  transform: scale(1.05);
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.22);
+#hero .badge svg { width: 20px; height: 20px; vertical-align: -3px; margin-right: 6px; fill: #FFD60A; }
+#hero .overview {
+  margin-top: 22px;
+  max-width: 900px;
+  max-height: 68px;
+  overflow: hidden;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 34px;
+  color: rgba(255, 255, 255, 0.72);
 }
-.night #title, .night .tab.on { color: #F5F5F7; }
-.night .tab { color: rgba(245, 245, 247, 0.62); }
-.night .tab.focus { color: #1D1D1F; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4); }
 
-/* Crypto quotes at the right end of the tab row: a quiet detail. */
+#watch {
+  position: absolute;
+  left: 90px;
+  top: 646px;
+  height: 52px;
+  padding: 0 26px;
+  border-radius: 26px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 52px;
+  white-space: nowrap;
+  color: #FFF;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.14));
+  background: linear-gradient(rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  -webkit-transition: -webkit-transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.22s, box-shadow 0.22s;
+  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.22s, box-shadow 0.22s;
+}
+#watch .sym { width: 24px; height: 24px; vertical-align: -4px; margin-right: 12px; }
+#watch.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4); }
+#watch.out { opacity: 0; }
+.no-picks #watch, .no-picks #hero, .no-picks #dots { display: none; }
+
+#dots { position: absolute; left: 0; right: 0; top: 708px; height: 8px; text-align: center; font-size: 0; }
+#dots span { display: inline-block; width: 8px; height: 8px; margin: 0 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.4); }
+#dots span.on { background: #FFF; }
+
+/* MARK: - Status pill: the time and the weather, quiet glass */
+
+#pill {
+  position: absolute;
+  top: 60px;
+  height: 64px;
+  padding: 0 24px;
+  border-radius: 32px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 64px;
+  white-space: nowrap;
+  -webkit-font-feature-settings: 'tnum';
+  font-feature-settings: 'tnum';
+}
+#pill .sym { width: 30px; height: 30px; vertical-align: -6px; margin: 0 8px 0 20px; }
+#pill { color: #1D1D1F; }
+.night #pill { color: #F5F5F7; }
+
+/* Crypto quotes (show_crypto) or what's playing: left of the pill. */
 #quotes {
   position: absolute;
-  right: 80px;
-  top: 178px;
+  top: 78px;
   height: 28px;
   font-size: 21px;
   line-height: 28px;
-  color: #8E8E93;
+  color: rgba(255, 255, 255, 0.8);
   white-space: nowrap;
   -webkit-transition: opacity 0.17s;
   transition: opacity 0.17s;
@@ -149,18 +240,18 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   font-feature-settings: 'tnum';
 }
 #quotes .q { display: inline-block; margin-left: 24px; }
-#quotes svg { width: 15px; height: 15px; vertical-align: -1px; margin-right: 6px; fill: rgba(142, 142, 147, 0.7); }
+#quotes svg { width: 15px; height: 15px; vertical-align: -1px; margin-right: 6px; fill: rgba(255, 255, 255, 0.6); }
 #quotes.hide { opacity: 0; }
-.night #quotes { color: rgba(245, 245, 247, 0.62); }
-.night #quotes svg { fill: rgba(245, 245, 247, 0.55); }
+.no-picks #quotes { color: #8E8E93; }
+.night.no-picks #quotes { color: rgba(245, 245, 247, 0.62); }
 
 /* Live TV, HDMI Inputs and Settings: glass circles; the focused one turns white, with its name below. */
 .round {
   position: absolute;
-  top: 69px;
-  width: 68px;
-  height: 68px;
-  border-radius: 34px;
+  top: 60px;
+  width: 64px;
+  height: 64px;
+  border-radius: 32px;
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5));
   background: linear-gradient(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5));
   box-shadow: 0 6px 26px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
@@ -168,11 +259,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.2s, background-color 0.17s;
   transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.2s, background-color 0.17s;
 }
-.round .sym { position: absolute; left: 20px; top: 20px; width: 28px; height: 28px; }
+.round .sym { position: absolute; left: 18px; top: 18px; width: 28px; height: 28px; }
 .round.focus { background: #FFF; -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24); }
 .round .tip {
   position: absolute;
-  top: 88px;
+  top: 84px;
   left: 50%;
   width: 300px;
   margin-left: -150px;
@@ -186,6 +277,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 .round.last .tip { left: auto; right: -10px; margin-left: 0; text-align: right; }
 .round.focus .tip { opacity: 1; }
+.has-photo .round .tip { color: #FFF; text-shadow: 0 1px 16px rgba(0, 0, 0, 0.5); }
 .night .round {
   background: -webkit-linear-gradient(top, rgba(40, 40, 44, 0.8), rgba(17, 17, 19, 0.62));
   background: linear-gradient(rgba(40, 40, 44, 0.8), rgba(17, 17, 19, 0.62));
@@ -195,83 +287,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night .round.focus { background: #FFF; color: #1D1D1F; }
 .night .round.focus .tip { color: #F5F5F7; }
 
-/* MARK: - Picks: a wide card and two tall ones; focused, a card grows 5%, rises and its edge lights up. */
-
-.card {
-  position: absolute;
-  top: 262px;
-  height: 442px;
-  -webkit-transition: -webkit-transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.15);
-  transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.15);
-}
-.card .img {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 18px;
-  overflow: hidden;
-  background-color: #DADADF;
-  background-size: cover;
-  background-position: center;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
-  -webkit-transition: box-shadow 0.22s;
-  transition: box-shadow 0.22s;
-}
-.card .img::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 18px;
-  box-shadow: inset 0 0 0 2.5px rgba(255, 255, 255, 0.85);
-  background: -webkit-linear-gradient(-60deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%);
-  opacity: 0;
-  -webkit-transition: opacity 0.17s;
-  transition: opacity 0.17s;
-}
-.card.focus { -webkit-transform: translateY(-6px) scale(1.05); transform: translateY(-6px) scale(1.05); z-index: 2; }
-.card.focus .img { box-shadow: 0 24px 46px rgba(0, 0, 0, 0.34); }
-.card.focus .img::after { opacity: 1; }
-.card .name {
-  position: absolute;
-  left: 0;
-  top: 464px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 31px;
-  font-weight: 600;
-  letter-spacing: 0.012em;
-  color: #1D1D1F;
-  -webkit-transition: color 2s;
-  transition: color 2s;
-}
-.card .meta {
-  position: absolute;
-  left: 0;
-  top: 506px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 25px;
-  font-weight: 500;
-  color: #6E6E73;
-}
-.night .card .img { background-color: #2C2C2E; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32); }
-.night .card .name { color: #F5F5F7; }
-.night .card .meta { color: rgba(245, 245, 247, 0.62); }
-
-/* Without a TMDB key (or picks yet): the date and the time instead of the cards. */
+/* Without a TMDB key (or picks yet): the date and the time in the Top Shelf. */
 #clock {
   position: absolute;
-  left: 76px;
+  left: 90px;
   top: 300px;
   font-size: 176px;
   font-weight: 200;
@@ -285,21 +304,43 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night #clock { color: #F5F5F7; }
 .night #clock .date { color: rgba(245, 245, 247, 0.62); }
 
-/* MARK: - Shelf: the glass bar with the apps, each in its brand color; focused, a tile grows 20% and rises. */
+/* MARK: - Dock: one Liquid Glass bar with the apps (5:3, tvOS's icon shape); focused, an app rises 10% */
 
 #platter {
   position: absolute;
-  top: 814px;
-  height: 206px;
-  border-radius: 62px;
+  top: 734px;
+  height: 232px;
+  border-radius: 56px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16);
+}
+/* The photo behind, tiny and stretched (soft as a blur) and a little more saturated: its colors bleed through. */
+#platter .bleed { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; opacity: 0; }
+.has-photo #platter .bleed { opacity: 1; }
+#platter .tint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 56px;
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.4));
   background: linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.4));
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12), inset 0 1.5px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
-.night #platter {
-  background: -webkit-linear-gradient(top, rgba(34, 34, 38, 0.72), rgba(17, 17, 19, 0.6));
-  background: linear-gradient(rgba(34, 34, 38, 0.72), rgba(17, 17, 19, 0.6));
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32), inset 0 1.5px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+.has-photo #platter .tint {
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.22));
+  background: linear-gradient(rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.22));
+}
+.night #platter { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.36); }
+.night #platter .tint {
+  background: -webkit-linear-gradient(top, rgba(34, 34, 38, 0.6), rgba(17, 17, 19, 0.5));
+  background: linear-gradient(rgba(34, 34, 38, 0.6), rgba(17, 17, 19, 0.5));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.night.has-photo #platter .tint {
+  background: -webkit-linear-gradient(top, rgba(28, 28, 32, 0.3), rgba(17, 17, 19, 0.16));
+  background: linear-gradient(rgba(28, 28, 32, 0.3), rgba(17, 17, 19, 0.16));
 }
 
 #tiles {
@@ -312,16 +353,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 .tile {
   position: absolute;
-  top: 854px;
-  height: 126px;
-  border-radius: 22px;
+  top: 760px;
+  height: 180px;
+  border-radius: 30px;
   overflow: hidden;
   color: #FFF;
-  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.14);
-  -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.2s, opacity 0.3s;
-  transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.2s, opacity 0.3s;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  -webkit-transition: -webkit-transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.18), box-shadow 0.32s, opacity 0.3s;
+  transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.18), box-shadow 0.32s, opacity 0.3s;
 }
-.tile img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+.tile img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.32s; transition: transform 0.32s; }
 /* a logo lifted off the TV's icon (home.js): as large as the tile allows */
 .tile img.logo { width: 70%; height: 50%; max-width: none; max-height: none; object-fit: contain; }
 .tile .word {
@@ -340,26 +381,72 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The focused tile's light: a sheen on its top half and a thin rim. */
 .tile::after {
   content: '';
   position: absolute;
   left: 0;
   top: 0;
   right: 0;
-  height: 50%;
-  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
-  background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+  bottom: 0;
+  border-radius: 30px;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 50%);
+  background: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 50%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
   opacity: 0;
   -webkit-transition: opacity 0.17s;
   transition: opacity 0.17s;
 }
-.tile.focus { -webkit-transform: scale(1.2); transform: scale(1.2); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34); z-index: 2; }
+/* The glint: a diagonal band that sweeps once across the tile when it takes the focus. */
+.glint {
+  position: absolute;
+  left: -40%;
+  top: -10%;
+  width: 30%;
+  height: 120%;
+  background: -webkit-linear-gradient(left, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  -webkit-transform: translateX(0) rotate(20deg);
+  transform: translateX(0) rotate(20deg);
+  pointer-events: none;
+}
+.tile.focus .glint, .cell.focus .glint {
+  -webkit-transform: translateX(560%) rotate(20deg);
+  transform: translateX(560%) rotate(20deg);
+  -webkit-transition: -webkit-transform 0.6s cubic-bezier(0.4, 0, 0.3, 1);
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.3, 1);
+}
+.tile.focus { -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 30px 44px rgba(0, 0, 0, 0.34); z-index: 2; }
 .tile.focus::after { opacity: 1; }
-.night .tile { box-shadow: 0 4px 22px rgba(0, 0, 0, 0.3); }
-.night .tile.focus { box-shadow: 0 18px 40px rgba(0, 0, 0, 0.6); }
+/* A touch of parallax: the focused logo leans the way the focus last moved. */
+.lean-r .tile.focus img { -webkit-transform: translate(-46%, -50%); transform: translate(-46%, -50%); }
+.lean-l .tile.focus img { -webkit-transform: translate(-54%, -50%); transform: translate(-54%, -50%); }
+.night .tile { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3); }
+.night .tile.focus { box-shadow: 0 30px 44px rgba(0, 0, 0, 0.55); }
 .more { position: absolute; width: 17px; height: 17px; color: rgba(0, 0, 0, 0.6); }
 .more.back { -webkit-transform: scaleX(-1); transform: scaleX(-1); }
-.night .more { color: rgba(255, 255, 255, 0.8); }
+.night .more, .has-photo .more { color: rgba(255, 255, 255, 0.8); }
+
+/* The focused app's name, under it (tvOS); resting apps have none. */
+#dockname {
+  position: absolute;
+  top: 984px;
+  width: 400px;
+  margin-left: -200px;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #1D1D1F;
+  opacity: 0;
+  -webkit-transition: opacity 0.2s;
+  transition: opacity 0.2s;
+}
+#dockname.on { opacity: 1; }
+.night #dockname, .has-photo #dockname { color: #FFF; }
+.has-photo #dockname { text-shadow: 0 1px 16px rgba(0, 0, 0, 0.5); }
 
 /* MARK: - Drawer: inputs and shortcuts, weather, prices */
 
@@ -447,26 +534,32 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet.open { opacity: 1; visibility: visible; pointer-events: auto; -webkit-transform: none; transform: none; -webkit-transition-delay: 0s; transition-delay: 0s; }
 .sheet h2 { position: absolute; left: 0; right: 0; top: 84px; margin: 0; text-align: center; font-size: 40px; font-weight: 600; }
 
-#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); }
-.cell { position: absolute; width: 300px; height: 169px; }
+/* The app grid (↓ from the Dock): no scrim or title of its own, it comes up on the Dock's columns under the risen page. */
+#apps { background: none; -webkit-transform: translateY(600px); transform: translateY(600px); }
+#apps.open { -webkit-transform: none; transform: none; }
+#apps h2 { display: none; }
+#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.42s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.42s cubic-bezier(0.32, 0.72, 0.2, 1); }
+.cell { position: absolute; width: 300px; height: 180px; }
 .cell .face {
   position: absolute;
   left: 0;
   top: 0;
   width: 300px;
-  height: 169px;
-  border-radius: 22px;
+  height: 180px;
+  border-radius: 30px;
   overflow: hidden;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08);
-  -webkit-transition: -webkit-transform 0.19s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.19s;
-  transition: transform 0.19s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.19s;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  -webkit-transition: -webkit-transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.18), box-shadow 0.32s;
+  transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.18), box-shadow 0.32s;
 }
 .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 70%; max-height: 60%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
 .cell .face img.logo { width: 64%; height: 46%; max-width: none; max-height: none; object-fit: contain; }
 .cell .face .word { position: absolute; left: 6%; right: 6%; top: 50%; margin-top: -22px; height: 44px; line-height: 44px; text-align: center; font-size: 32px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFF; }
-.cell .label { position: absolute; left: 0; right: 0; top: 186px; text-align: center; font-size: 24px; font-weight: 500; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cell.focus .face { -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.55), inset 0 0 0 2px rgba(255, 255, 255, 0.4); }
-.cell.focus .label { color: #FFF; }
+.cell .label { position: absolute; left: -40px; right: -40px; top: 214px; text-align: center; font-size: 26px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+.night .cell .label { color: #FFF; }
+.cell.focus .face { -webkit-transform: scale(1.1); transform: scale(1.1); box-shadow: 0 30px 44px rgba(0, 0, 0, 0.34), inset 0 0 0 1.5px rgba(255, 255, 255, 0.35); }
+.night .cell.focus .face { box-shadow: 0 30px 44px rgba(0, 0, 0, 0.55), inset 0 0 0 1.5px rgba(255, 255, 255, 0.35); }
+.cell.focus .label { opacity: 1; }
 
 #settings .box, #shelfedit .box, #langpick .box, #about .box {
   position: absolute;

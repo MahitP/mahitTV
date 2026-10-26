@@ -46,6 +46,8 @@ final class Recs {
         int id;
         String kind;            // "movie" or "tv"
         String title, backdrop, meta = "", app, pkg;
+        String year = "", overview = "";   // the Top Shelf's details: release year and synopsis
+        double rating;                     // TMDB's vote average (0 = none)
         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
@@ -60,7 +62,7 @@ final class Recs {
     private static final int ANIMATION = 16;
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 4;
+    private static final int CACHE_VERSION = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
@@ -161,7 +163,7 @@ final class Recs {
     void removeListener(Listener l) { listeners.remove(l); }
 
     static boolean hasKey(Context c) {
-        return !Config.TMDB_KEY.trim().isEmpty();
+        return Config.PREVIEW || !Config.TMDB_KEY.trim().isEmpty();
     }
 
     /** Last fetch, for the settings screen: {count, error, at}. Written by the home screen (another process). */
@@ -206,6 +208,7 @@ final class Recs {
     List<Pick> now(String kind) {
         List<Pick> list = new ArrayList<>();
         if (!hasKey(context)) return list;    // no TMDB key: no recommendations
+        if (Config.PREVIEW) return Preview.picks(kind);
         Map<String, Boolean> have = new HashMap<>();   // one look per app, not per title (this runs every 15 s)
         for (Pick p : picks) {
             if ((kind == null || kind.equals(p.kind))
@@ -265,7 +268,7 @@ final class Recs {
 
     /** With a key: fetches the list if stale or the time of day (morning/afternoon/night) changed; then the details. */
     void refreshIfStale() {
-        if (!hasKey(context) || fetching) return;
+        if (!hasKey(context) || fetching || Config.PREVIEW) return;
         long now = System.currentTimeMillis();
         long stamp = sourceStamp();   // a new key, country, animation choice or installed streaming-app set refetches
         boolean newKey = stamp != keyStamp;
@@ -348,7 +351,7 @@ final class Recs {
      * time in the background, so it has more photos. Not used otherwise.
      */
     void prefetchAll() {
-        if (!hasKey(context) || fetching) return;
+        if (!hasKey(context) || fetching || Config.PREVIEW) return;
         long sinceFail = System.currentTimeMillis() - failedAt;
         if (failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         List<Pick> todo = new ArrayList<>();
@@ -535,6 +538,10 @@ final class Recs {
         }
         if (p.app != null) parts.add(SERVICE_NAME.get(p.app));
         p.meta = String.join(" · ", parts);
+        String date = o.optString(p.kind.equals("movie") ? "release_date" : "first_air_date");
+        p.year = date.length() >= 4 ? date.substring(0, 4) : "";
+        p.overview = o.optString("overview");
+        p.rating = o.optDouble("vote_average", 0);
         p.detailed = true;
     }
 
@@ -758,6 +765,12 @@ final class Recs {
         }
         File f = imageFile(p);
         try {
+            if (Preview.isAsset(p)) {
+                Bitmap art = Preview.image(context, p);
+                if (art == null) throw new IOException("missing preview art");
+                ready(p, art);
+                return;
+            }
             download(p);
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
@@ -768,19 +781,33 @@ final class Recs {
             Bitmap b = BitmapFactory.decodeFile(f.getPath(), opts);
             if (b == null) throw new IOException("unreadable image");
             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight + " → " + Backdrop.W + "×" + Backdrop.H);
-            boolean forLight = light;
-            Backdrop backdrop = Backdrop.make(b, forLight);
-            if (forLight != light) return;   // the design changed midway: this one is stale
-            synchronized (images) {
-                images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? 10 : 4)) images.remove(images.keySet().iterator().next());
-            }
-            notifyListeners();
+            ready(p, b);
         } catch (IOException | RuntimeException | OutOfMemoryError e) {
             //noinspection ResultOfMethodCallIgnored
             f.delete();
             AppLog.w("recommendation image: " + e.getMessage());
         }
+    }
+
+    /** Builds the backdrop from the decoded photo and keeps it ready (the Top Shelf's pages: up to 5 photos). */
+    private void ready(Pick p, Bitmap b) {
+        boolean forLight = light;
+        Backdrop backdrop = Backdrop.make(b, forLight);
+        if (forLight != light) return;   // the design changed midway: this one is stale
+        synchronized (images) {
+            images.put(p.backdrop, backdrop);
+            while (images.size() > (forLight ? 10 : SHELF_PAGES)) images.remove(images.keySet().iterator().next());
+        }
+        notifyListeners();
+    }
+
+    /** How many picks the Top Shelf pages through (each keeps a full-screen photo ready). */
+    static final int SHELF_PAGES = 5;
+
+    /** The Top Shelf's pages: this hour's picks from the three lists, without repeats. */
+    List<Pick> shelf() {
+        List<Pick> all = wanted();
+        return all.size() > SHELF_PAGES ? new ArrayList<>(all.subList(0, SHELF_PAGES)) : all;
     }
 
     void trim() {
@@ -817,6 +844,7 @@ final class Recs {
             for (Pick p : picks) {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
+                        .put("year", p.year).put("overview", p.overview).put("rating", p.rating)
                         .put("detailed", p.detailed));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
@@ -843,6 +871,9 @@ final class Recs {
             p.backdrop = o.optString("backdrop");
             p.link = o.optString("link").isEmpty() ? null : o.optString("link");
             p.meta = o.optString("meta");
+            p.year = o.optString("year");
+            p.overview = o.optString("overview");
+            p.rating = o.optDouble("rating", 0);
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");

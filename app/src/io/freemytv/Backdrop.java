@@ -47,6 +47,7 @@ final class Backdrop {
     final Bitmap lightImage;            // by day: the background (the lightened frosted version, scaled up on screen)
     final int[] nightFrost, nightGlass; // at night: frosted (the bottom drawer's frosted glass) and glass, darkened
     final Bitmap nightImage;            // at night: the background (the darkened frosted version)
+    final Bitmap soft;                  // the Top Shelf's photo frosted (behind the app grid), or null
 
     private Backdrop(Bitmap image, int[] frost, int[] glass, Bitmap wide, Bitmap tall, int[] light, int[] lightGlass,
                      int[] night, int[] nightGlass) {
@@ -69,6 +70,7 @@ final class Backdrop {
         this.nightGlass = nightGlass;
         lightImage = lightBg == null ? null : Bitmap.createBitmap(lightBg, bw, bh, Bitmap.Config.ARGB_8888);
         nightImage = nightBg == null ? null : Bitmap.createBitmap(nightBg, bw, bh, Bitmap.Config.ARGB_8888);
+        soft = image != null && frost != null ? Bitmap.createBitmap(frost, FW, FH, Bitmap.Config.ARGB_8888) : null;
     }
 
     static Backdrop make(Bitmap src, boolean forLight) {
@@ -111,30 +113,25 @@ final class Backdrop {
             return new Backdrop(null, frost, null, wide, tall, light, lightGlass, night, nightGlass);
         }
 
-        float boost = Math.max(0, Math.min(0.3f, (luminance(out, 0, 0.22f, 0.5f, 0.62f) - 0.22f) * 1.1f));
-        Paint scrim = new Paint(Paint.DITHER_FLAG);
-        scrim.setShader(new LinearGradient(0, 0, W * 0.68f, 0,
-                new int[] {black(0.66f + boost), black(0.52f + boost * 0.8f), black(0.26f + boost * 0.4f), black(0.07f), 0},
-                new float[] {0, 0.25f, 0.55f, 0.8f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, W, H, scrim);
-        // At the bottom, a faint scrim: the photo must show through the glass shelf (the glass provides the contrast).
-        scrim.setShader(new LinearGradient(0, H, 0, H * 0.4f,
-                new int[] {black(0.38f), black(0.3f), black(0.18f), black(0.05f), 0},
-                new float[] {0, 0.25f, 0.55f, 0.8f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, H * 0.4f, W, H, scrim);
-        // Behind the prices (above the shelf, on the right), a localized scrim for the small text.
-        scrim.setShader(new android.graphics.RadialGradient(W * 0.8f, H * 0.65f, W * 0.24f,
-                new int[] {black(0.42f), black(0.18f), 0}, new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP));
-        c.save();
-        c.scale(1, 0.32f, W * 0.8f, H * 0.65f);
-        c.drawCircle(W * 0.8f, H * 0.65f, W * 0.24f, scrim);
-        c.restore();
-        scrim.setShader(new LinearGradient(0, 0, 0, H * 0.24f, new int[] {black(0.34f), black(0.1f), 0},
-                new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, W, H * 0.24f, scrim);
-
+        // The glass reads the photo as it is (its colors bleed through the dock), not the scrims below.
         int[] frost = reduce(out, FW, FH, 3, 3);
         int[] glass = reduce(out, GW, GH, 2, 2);
+        // tvOS Top Shelf: the photo edge to edge, darkened only where text sits (the title at the bottom left, the
+        // dock's labels at the bottom, the status pill at the top), stronger when the photo is bright there.
+        float boost = Math.max(0, Math.min(0.25f, (luminance(out, 0, 0.3f, 0.55f, 0.7f) - 0.25f) * 1.1f));
+        Paint scrim = new Paint(Paint.DITHER_FLAG);
+        scrim.setShader(new LinearGradient(0, 0, W * 0.7f, 0,
+                new int[] {black(0.55f + boost), black(0.38f + boost * 0.7f), black(0.14f + boost * 0.3f), black(0.03f), 0},
+                new float[] {0, 0.3f, 0.6f, 0.85f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, W, H, scrim);
+        scrim.setShader(new LinearGradient(0, H, 0, H * 0.45f,
+                new int[] {black(0.6f), black(0.42f), black(0.18f), black(0.04f), 0},
+                new float[] {0, 0.3f, 0.6f, 0.85f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, H * 0.45f, W, H, scrim);
+        scrim.setShader(new LinearGradient(0, 0, 0, H * 0.22f, new int[] {black(0.25f), black(0.08f), 0},
+                new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, W, H * 0.22f, scrim);
+
         return new Backdrop(gpu(out), frost, glass, null, null, null, null, null, null);
     }
 

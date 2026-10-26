@@ -52,9 +52,11 @@ else
   CURRENCY="$(prop currency USD)"
 fi
 ASSIST=false; [ "$(prop disable_assistant false)" = "true" ] && ASSIST=true
-CRYPTO=false; [ "$(prop show_crypto true)" = "true" ] && CRYPTO=true
+CRYPTO=false; [ "$(prop show_crypto false)" = "true" ] && CRYPTO=true
 ANIMATION=false; [ "$(prop hide_animation false)" = "true" ] && ANIMATION=true
 SAVER=true; [ "$(prop screensaver true)" = "false" ] && SAVER=false
+# preview=true: sample picks with generated photos (preview/art) instead of TMDB, to see the Top Shelf without a key.
+PREVIEW=false; [ "$(prop preview false)" = "true" ] && PREVIEW=true
 
 rm -rf out && mkdir -p out/gen/io/freemytv out/classes
 cat > out/gen/io/freemytv/Config.java <<EOF
@@ -79,14 +81,21 @@ final class Config {
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;
     static final boolean SCREENSAVER = $SAVER;   // false: the TV keeps its own
+    static final boolean PREVIEW = $PREVIEW;   // sample picks (Preview), never in a release
 }
 EOF
 
 # --- Build
 "$BT/aapt2" compile --dir app/res -o out/res.zip
+ASSETS=(-A app/assets)
+if $PREVIEW; then
+  mkdir -p out/preview-assets/preview
+  cp preview/art/*.jpg out/preview-assets/preview/
+  ASSETS+=(-A out/preview-assets)
+fi
 # Fonts uncompressed: Android reads them straight from the APK.
 "$BT/aapt2" link -o out/base.apk -I "$AJ" --manifest app/AndroidManifest.xml --java out/gen out/res.zip \
-  --min-sdk-version 26 --target-sdk-version 33 -A app/assets -0 ttf
+  --min-sdk-version 26 --target-sdk-version 33 "${ASSETS[@]}" -0 ttf -0 jpg
 # Windows aapt2 packs assets with backslash separators ("assets/symbols\x.png") and Android
 # cannot find them: the home screen loses its icons and fonts. Rename the zip entries to "/".
 case "$(uname -s 2>/dev/null)" in

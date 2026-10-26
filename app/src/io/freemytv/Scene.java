@@ -48,6 +48,11 @@ final class Scene {
     private static final int SW = Backdrop.GW / SOFT, SH = Backdrop.GH / SOFT, SFW = Backdrop.FW / SOFT_FROST, SFH = Backdrop.FH / SOFT_FROST;
     private final Paint softPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
     private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** The faint echo of the rim along the bottom edge (the shaders' light from the top left, seen through). */
+    private final Paint echoPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    // The glass's continuous-curvature ("squircle") outline, as the shaders draw it: made once per size and radius.
+    private final android.graphics.Path squircle = new android.graphics.Path();
+    private float squircleW = -1, squircleH = -1, squircleR = -1;
     private final Matrix softMatrix = new Matrix();
     private final RectF sheenRect = new RectF();
     private int[] softPxA, softPxB, softPxFrost;         // reused pixel buffers
@@ -81,6 +86,8 @@ final class Scene {
         if (glass == null) {
             sheenPaint.setStyle(Paint.Style.STROKE);
             sheenPaint.setStrokeWidth(1.5f);
+            echoPaint.setStyle(Paint.Style.STROKE);
+            echoPaint.setStrokeWidth(1.5f);
         }
     }
 
@@ -94,7 +101,9 @@ final class Scene {
             // The sheen fades over a fixed height from each glass's top edge, drawn with a translate: a local matrix
             // per glass would rebuild the native gradient on every draw on Android 8 to 12.
             sheenPaint.setShader(new android.graphics.LinearGradient(0, 0, 0, Math.max(1, h * 0.1f),
-                    new int[] {0x66FFFFFF, 0x1AFFFFFF, 0x05FFFFFF}, new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP));
+                    new int[] {0xB3FFFFFF, 0x26FFFFFF, 0x05FFFFFF}, new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP));
+            echoPaint.setShader(new android.graphics.LinearGradient(0, 0, 0, -Math.max(1, h * 0.05f),
+                    new int[] {0x2EFFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP));
         }
         if (aurora != null) {
             aurora.setFloatUniform("res", w, h);
@@ -157,11 +166,11 @@ final class Scene {
         if (liquid == null) {           // no AGSL (Android 8 to 12): the bitmaps path reads small soft copies instead
             if (softPxA == null) softPxA = new int[SW * SH];
             if (softA == null) softA = Bitmap.createBitmap(SW, SH, Bitmap.Config.ARGB_8888);
-            softShaderA = soften(from, Backdrop.GW, SOFT, SW, SH, softPxA, softA);
+            softShaderA = soften(from, Backdrop.GW, SOFT, SW, SH, softPxA, softA, true);
             if (to != null) {
                 if (softPxB == null) softPxB = new int[SW * SH];
                 if (softB == null) softB = Bitmap.createBitmap(SW, SH, Bitmap.Config.ARGB_8888);
-                softShaderB = soften(to, Backdrop.GW, SOFT, SW, SH, softPxB, softB);
+                softShaderB = soften(to, Backdrop.GW, SOFT, SW, SH, softPxB, softB, true);
             } else {
                 softShaderB = null;
             }
@@ -204,9 +213,10 @@ final class Scene {
      * Box-averages `src` (stride `srcW`) by `f` on each side into `px` (`w` × `h`) and `into`, and returns a shader
      * over it (made again each time: a BitmapShader keeps the pixels as they were when it was created). Scaled up on
      * screen with bilinear filtering, the small copy reads as a wide blur. ~20k to 130k pixel reads: well under a
-     * millisecond, so it can run on every step of a photo fade.
+     * millisecond, so it can run on every step of a photo fade. `vivid`: the Liquid Glass's color boost (saturation
+     * ×1.25, brightness ×1.04, as in Shaders.LIQUID), baked in here instead of computed per pixel on screen.
      */
-    private static BitmapShader soften(int[] src, int srcW, int f, int w, int h, int[] px, Bitmap into) {
+    private static BitmapShader soften(int[] src, int srcW, int f, int w, int h, int[] px, Bitmap into, boolean vivid) {
         int n = f * f;
         for (int y = 0; y < h; y++) {
             int rowBase = y * f * srcW;
@@ -221,7 +231,16 @@ final class Scene {
                         b += c & 0xFF;
                     }
                 }
-                px[y * w + x] = 0xFF000000 | ((r / n) << 16) | ((g / n) << 8) | (b / n);
+                r /= n;
+                g /= n;
+                b /= n;
+                if (vivid) {
+                    float l = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+                    r = Math.min(255, Math.max(0, Math.round((l + (r - l) * 1.25f) * 1.04f)));
+                    g = Math.min(255, Math.max(0, Math.round((l + (g - l) * 1.25f) * 1.04f)));
+                    b = Math.min(255, Math.max(0, Math.round((l + (b - l) * 1.25f) * 1.04f)));
+                }
+                px[y * w + x] = 0xFF000000 | (r << 16) | (g << 8) | b;
             }
         }
         into.setPixels(px, 0, w, 0, 0, w, h);
@@ -239,7 +258,7 @@ final class Scene {
             if (imageGlass && softShaderA != null) {
                 // Mapped by what the copy covers: 270 / 8 = 33.75 rows, of which the bitmap holds 33.
                 bitmapGlass(c, r, radius, softShaderA, Backdrop.GW / (float) SOFT, Backdrop.GH / (float) SOFT, softShaderB,
-                        glassMix, tint, Math.max(0.5f, tintAlpha), lift, 1, specular, alpha);
+                        glassMix, tint, Math.max(0.3f, tintAlpha), lift, 1, specular, alpha);
             } else {
                 glass(c, r, radius, tint, Math.max(0.5f, tintAlpha), 0, 0, lift, 1, alpha);
             }
@@ -264,7 +283,7 @@ final class Scene {
         if (glass == null) {            // as above: a small soft copy for the bitmaps path (also mid-fade, every step)
             if (softPxFrost == null) softPxFrost = new int[SFW * SFH];
             if (softFrost == null) softFrost = Bitmap.createBitmap(SFW, SFH, Bitmap.Config.ARGB_8888);
-            softShaderFrost = soften(pixels, Backdrop.FW, SOFT_FROST, SFW, SFH, softPxFrost, softFrost);
+            softShaderFrost = soften(pixels, Backdrop.FW, SOFT_FROST, SFW, SFH, softPxFrost, softFrost, false);
             return;
         }
         if (frostImage == null) frostImage = Bitmap.createBitmap(Backdrop.FW, Backdrop.FH, Bitmap.Config.ARGB_8888);
@@ -377,26 +396,74 @@ final class Scene {
     private void bitmapGlass(Canvas c, RectF r, float radius, BitmapShader a, float aw, float ah, BitmapShader b, float mix,
                              int tint, float tintAlpha, float lift, float body, float specular, float alpha) {
         radius = Math.min(radius, Math.min(r.width(), r.height()) / 2);
+        // A capsule (the pill, the buttons) keeps the plain round rect: its size changes as it grows with the focus,
+        // and a path per size would be a new mask every frame. The Dock's glass is a squircle, as the shaders draw it.
+        boolean curved = radius < Math.min(r.width(), r.height()) / 2 - 0.5f;
+        if (curved) squircle(r.width(), r.height(), radius);
         if (body > 0) {
-            drawThrough(c, r, radius, a, aw, ah, alpha * body);
-            if (b != null && mix > 0.004f) drawThrough(c, r, radius, b, aw, ah, alpha * body * mix);
+            drawThrough(c, r, radius, a, aw, ah, alpha * body, curved);
+            if (b != null && mix > 0.004f) drawThrough(c, r, radius, b, aw, ah, alpha * body * mix, curved);
             // The tint and the lift in one pass (fill rate is what this GPU runs out of): the lift pulls the tint a
             // little toward white instead of a second full-area fill.
             int tinted = lift > 0.001f ? blend(tint | 0xFF000000, 0xFFFFFFFF, Math.min(0.25f, lift * 2)) : tint | 0xFF000000;
             flatFill.setColor(Ui.alpha(tinted, tintAlpha * alpha * body));
-            c.drawRoundRect(r, radius, radius, flatFill);
+            shape(c, r, radius, flatFill, curved);
         }
-        flatRim.setAlpha(Math.round(0x33 * alpha));
-        c.drawRoundRect(r, radius, radius, flatRim);
+        flatRim.setAlpha(Math.round(0x24 * alpha));
+        shape(c, r, radius, flatRim, curved);
         flatRim.setAlpha(0x33);
         if (specular > 0.001f) {
-            sheenPaint.setAlpha(Math.round(255 * Math.min(1, specular) * alpha));
+            // The rim's highlight: bright along the top, fading down; and its faint echo along the bottom edge.
+            int a8 = Math.round(255 * Math.min(1, specular) * alpha);
+            sheenPaint.setAlpha(a8);
             c.save();
             c.translate(0, r.top);
             sheenRect.set(r.left, 0, r.right, r.height());
-            c.drawRoundRect(sheenRect, radius, radius, sheenPaint);
+            shape(c, sheenRect, radius, sheenPaint, curved);
+            c.restore();
+            echoPaint.setAlpha(a8);
+            c.save();
+            c.translate(0, r.bottom);
+            sheenRect.set(r.left, -r.height(), r.right, 0);
+            shape(c, sheenRect, radius, echoPaint, curved);
             c.restore();
         }
+    }
+
+    /** The squircle outline for a `w` × `h` glass with corner `radius`, at the origin (kept while the size stays). */
+    private void squircle(float w, float h, float radius) {
+        if (w == squircleW && h == squircleH && radius == squircleR) return;
+        squircleW = w;
+        squircleH = h;
+        squircleR = radius;
+        squircle.rewind();
+        // Each corner a superellipse quadrant, |x|^2.6 + |y|^2.6 = r^2.6 (Shaders.LIQUID's corner), 12 steps apiece,
+        // clockwise from the top edge; the straight edges join them.
+        float[][] centers = {{w - radius, radius}, {w - radius, h - radius}, {radius, h - radius}, {radius, radius}};
+        for (int q = 0; q < 4; q++) {
+            for (int i = 0; i <= 12; i++) {
+                double t = Math.PI / 2 * (q - 1 + i / 12.0), ct = Math.cos(t), st = Math.sin(t);
+                float x = centers[q][0] + (float) (Math.signum(ct) * Math.pow(Math.abs(ct), 2 / 2.6)) * radius;
+                float y = centers[q][1] + (float) (Math.signum(st) * Math.pow(Math.abs(st), 2 / 2.6)) * radius;
+                if (q == 0 && i == 0) squircle.moveTo(x, y);
+                else squircle.lineTo(x, y);
+            }
+        }
+        squircle.close();
+    }
+
+    /**
+     * Fills or strokes the glass's outline: the cached squircle (moved to `r`, then back, so every paint's shader stays
+     * in screen coordinates) or a plain rounded rectangle.
+     */
+    private void shape(Canvas c, RectF r, float radius, Paint p, boolean curved) {
+        if (!curved) {
+            c.drawRoundRect(r, radius, radius, p);
+            return;
+        }
+        squircle.offset(r.left, r.top);
+        c.drawPath(squircle, p);
+        squircle.offset(-r.left, -r.top);
     }
 
     private static int blend(int a, int b, float t) {
@@ -407,13 +474,13 @@ final class Scene {
     }
 
     /** `shader` (covering `bw` × `bh` of its bitmap's scale) stretched over the screen, inside the rounded rectangle. */
-    private void drawThrough(Canvas c, RectF r, float radius, BitmapShader shader, float bw, float bh, float alpha) {
+    private void drawThrough(Canvas c, RectF r, float radius, BitmapShader shader, float bw, float bh, float alpha, boolean curved) {
         softMatrix.setScale(w / bw, h / bh);
         softMatrix.postTranslate(-offX, -offY);
         shader.setLocalMatrix(softMatrix);
         softPaint.setShader(shader);
         softPaint.setAlpha(Math.round(255 * Math.max(0, Math.min(1, alpha))));
-        c.drawRoundRect(r, radius, radius, softPaint);
+        shape(c, r, radius, softPaint, curved);
         softPaint.setShader(null);
     }
 }

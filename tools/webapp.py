@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 import translate  # noqa: E402  (the catalogues and the keys the web app uses)
 
 GENERIC = {'tmdbKey': '', 'tmdbRegion': '', 'latitude': '', 'longitude': '', 'city': '', 'language': 'auto',
-           'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': True, 'hideAnimation': False, 'hideApps': [],
+           'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': False, 'hideAnimation': False, 'hideApps': [],
            'shelfApps': []}
 
 
@@ -57,7 +57,7 @@ def read_config(path):
         'currency': values.get('currency', 'USD') or 'USD',
         'temperature': values.get('temperature', 'auto') or 'auto',
         'theme': values.get('theme', 'auto') or 'auto',
-        'showCrypto': values.get('show_crypto', 'true').lower() != 'false',
+        'showCrypto': values.get('show_crypto', 'false').lower() == 'true',
         'hideAnimation': values.get('hide_animation', 'false').lower() == 'true',
         'hideApps': [s.strip() for s in values.get('hide_apps', '').split(',') if s.strip()],
         'shelfApps': [s.strip() for s in values.get('shelf_apps', '').split(',') if s.strip()],
@@ -109,9 +109,21 @@ def files(config, made_by):
 
 
 def preview(app, out_dir):
-    """Leaves the app's files in out_dir, to open index.html in a browser."""
+    """Leaves the app's files in out_dir, to open index.html in a browser.
+
+    Adds preview/preview.js and the generated photos (preview/art): without a TMDB key, sample picks show on the Top
+    Shelf. Only here: the LG and Samsung packages never carry them.
+    """
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
+    app = dict(app)
+    art = os.path.join(ROOT, 'preview', 'art')
+    for name in sorted(os.listdir(art)):
+        with open(os.path.join(art, name), 'rb') as f:
+            app['preview/' + name] = f.read()
+    with open(os.path.join(ROOT, 'preview', 'preview.js'), 'rb') as f:
+        app['preview.js'] = f.read()
+    app['index.html'] = app['index.html'].replace(b'<script src="data.js">', b'<script src="preview.js"></script>\n<script src="data.js">')
     for path, content in app.items():
         target = os.path.join(out_dir, path)
         os.makedirs(os.path.dirname(target), exist_ok=True)

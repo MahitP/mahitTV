@@ -165,7 +165,10 @@ final class Shaders {
         "half4 main(float2 xy) {\n" +
         "  float2 d = xy - center;\n" +
         "  float2 q = abs(d) - (halfSize - radius);\n" +
-        "  float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;\n" +
+        // Continuous-curvature corners (tvOS's "squircle"): a superellipse norm instead of the circle's.
+        "  float2 m = max(q, 0.0);\n" +
+        "  float corner = (m.x > 0.0 && m.y > 0.0) ? pow(pow(m.x, 2.6) + pow(m.y, 2.6), 1.0 / 2.6) : max(m.x, m.y);\n" +
+        "  float sd = corner + min(max(q.x, q.y), 0.0) - radius;\n" +
         "  float aa = clamp(0.5 - sd, 0.0, 1.0);\n" +
         "  if (aa <= 0.0) { return half4(0.0); }\n" +
         "  float2 sg = float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);\n" +
@@ -182,7 +185,7 @@ final class Shaders {
         "    bg = bgAt(p);\n" +
         "  }\n" +
         "  half l = dot(bg, half3(0.2126, 0.7152, 0.0722));\n" +
-        "  bg = mix(half3(l), bg, 1.18) * 1.06;\n" +
+        "  bg = mix(half3(l), bg, 1.25) * 1.04;\n" +
         "  half3 col = mix(bg, tint.rgb, tint.a) + half3(lift);\n" +
         "  float ny = d.y / halfSize.y;\n" +
         "  col *= half(1.0 - 0.12 * smoothstep(0.1, 1.0, ny));\n" +

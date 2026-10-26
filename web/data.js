@@ -310,6 +310,10 @@ var Data = (function () {
   /** This hour's 3 picks: movies ("movie"), shows ("tv") or both (null). */
   function now(kind) {
     var list = [];
+    if (window.PREVIEW_PICKS) {   // preview builds without a key (preview/preview.js)
+      for (var k = 0; k < PREVIEW_PICKS.length; k++) if (kind === null || kind === PREVIEW_PICKS[k].kind) list.push(PREVIEW_PICKS[k]);
+      return kind === null ? list.slice(0, 3) : list;
+    }
     if (!KEY) return list;
     for (var i = 0; i < picks.length; i++) {
       var p = picks[i];
@@ -389,6 +393,10 @@ var Data = (function () {
       }
       if (p.service && p.app) parts.push(p.service);
       p.meta = parts.join(' · ');
+      var date = (p.kind === 'movie' ? o.release_date : o.first_air_date) || '';
+      p.year = date.length >= 4 ? date.slice(0, 4) : '';
+      p.overview = o.overview || '';
+      p.rating = o.vote_average || 0;
       title(p, o, function () {
         p.detailed = true;
         done(null);
@@ -552,11 +560,26 @@ var Data = (function () {
     changes: changes,
     get pricesAt() { return pricesAt; },
     activeCoins: activeCoins,
-    hasKey: function () { return !!KEY; },
+    hasKey: function () { return !!KEY || !!window.PREVIEW_PICKS; },
     recsError: function () { return recsError; },
     picks: now,
+    /** The Top Shelf's pages: this hour's picks of the three lists, without repeats (up to 5, as on Android). */
+    shelf: function () {
+      var out = [], seen = {}, kinds = [null, 'movie', 'tv'];
+      for (var i = 0; i < kinds.length; i++) {
+        var list = now(kinds[i]);
+        for (var j = 0; j < list.length && out.length < 5; j++) {
+          var key = list[j].kind + ':' + list[j].id;
+          if (!seen[key]) { seen[key] = true; out.push(list[j]); }
+        }
+      }
+      return out;
+    },
     showcase: all,
-    image: function (path, size) { return path ? 'https://image.tmdb.org/t/p/' + (size || 'w1280') + path : ''; },
+    image: function (path, size) {
+      if (path && path.indexOf('preview/') === 0) return path;   // a preview build's sample photo
+      return path ? 'https://image.tmdb.org/t/p/' + (size || 'w1280') + path : '';
+    },
 
     /** Night at the location: from sunset to sunrise (the last forecast; without one, 6:00 and 18:00). */
     isNight: function (at) {
