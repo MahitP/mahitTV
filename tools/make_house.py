@@ -151,6 +151,39 @@ def chair(room, x, y, back='north', color='chair', h=0.46, back_h=0.5, gaming=Fa
         box(room, 'chair-back', bx, y, h, 0.08, s, tall, color, shadow=False)
 
 
+def keyboard(room, x, y, length=1.2, depth=0.36):
+    """A digital piano against a west wall, its keys facing east (the player stands east of it): legs and a cross
+    bar, a slim body, a control strip with a small screen and two knobs along the back, the music rest, a run of
+    white keys and the black keys in their twos and threes, a sustain pedal and a bench."""
+    top = 0.74
+    for ly in (y + 0.06, y + length - 0.1):
+        box(room, 'leg', x + 0.06, ly, 0, 0.24, 0.04, 0.62, 'charcoal', shadow=False)
+    box(room, 'stand-bar', x + 0.16, y + 0.06, 0.18, 0.04, length - 0.12, 0.04, 'charcoal', shadow=False)
+    box(room, 'piano', x, y, 0.62, depth, length, 0.12, 'silver')
+    # Along the back: the control strip (a dark screen, two knobs), then the music rest standing up.
+    box(room, 'controls', x + 0.02, y + 0.06, top, 0.1, length - 0.12, 0.012, 'charcoal', shadow=False)
+    box(room, 'display', x + 0.04, y + length / 2 - 0.1, top + 0.012, 0.06, 0.2, 0.004, 'glass-dark', shadow=False)
+    for ky in (y + 0.16, y + 0.26):
+        disc(room, 'knob', x + 0.07, ky, top + 0.014, 0.02, 'up', 'silver')
+    box(room, 'music-rest', x + 0.02, y + length / 2 - 0.32, top + 0.012, 0.02, 0.64, 0.22, 'charcoal', shadow=False)
+    # The keys: white along the front half, the black ones toward the back of it, 2 then 3 per octave.
+    kx, kw, ky0, ky1 = x + 0.17, depth - 0.18, y + 0.05, y + length - 0.05
+    box(room, 'keys', kx, ky0, top, kw, ky1 - ky0, 0.016, 'white', shadow=False)
+    white = (ky1 - ky0) / 52
+    for i in range(1, 52):
+        box(room, 'key-gap', kx + 0.002, ky0 + i * white - 0.0015, top + 0.016, kw - 0.004, 0.003, 0.001, 'silver',
+            shadow=False)
+    for i in range(51):
+        if i % 7 in (2, 6):        # no black key between E and F, or B and C
+            continue
+        box(room, 'black-key', kx, ky0 + (i + 1) * white - 0.0065, top + 0.016, kw * 0.6, 0.013, 0.012, 'black-key',
+            shadow=False)
+    box(room, 'pedal', x + depth + 0.05, y + length / 2 - 0.05, 0, 0.14, 0.1, 0.035, 'charcoal', shadow=False)
+    # The bench in front of it.
+    legs(room, x + depth + 0.3, y + length / 2 - 0.35, 0.36, 0.7, 0.44, 'charcoal', inset=0.02, size=0.04)
+    box(room, 'bench', x + depth + 0.3, y + length / 2 - 0.35, 0.44, 0.36, 0.7, 0.06, 'chair-dark')
+
+
 def washer(room, x, y, w=0.7, d=0.68, h=0.94, kind='washer'):
     """A front-load washer (or dryer) facing south: the body, a control strip with a dial and a detergent drawer, and
     a round door: a metal ring around dark glass."""
@@ -233,19 +266,18 @@ box('living', 'pillow', 8.78, 2.95, 0.44, 0.18, 0.46, 0.4, 'pillow-terracotta', 
 box('living', 'pillow', 8.78, 3.55, 0.44, 0.18, 0.46, 0.4, 'pillow-slate', shadow=False)
 box('living', 'pillow', 6.75, 2.42, 0.44, 0.46, 0.18, 0.4, 'pillow-slate', shadow=False)
 box('living', 'pillow', 7.6, 2.42, 0.44, 0.46, 0.18, 0.4, 'pillow', shadow=False)
-# The oak and glass table beside the keyboard by the kitchen wall (the rug's centre stays open).
-legs('living', 4.8, 5.15, 0.62, 1.15, 0.38, 'oak', inset=0.02, size=0.05)
-box('living', 'shelf', 4.82, 5.17, 0.12, 0.58, 1.11, 0.03, 'oak', shadow=False)
-box('living', 'glass', 4.77, 5.12, 0.38, 0.68, 1.21, 0.03, 'glass', alpha=0.62)
-box('living', 'book', 4.9, 5.4, 0.41, 0.24, 0.3, 0.04, 'pillow-terracotta', shadow=False)
+# The oak and glass table against the kitchen wall, right beside the keyboard on its player's right (north).
+legs('living', 4.3, 4.0, 0.6, 1.05, 0.42, 'oak', inset=0.02, size=0.05)
+box('living', 'shelf', 4.32, 4.02, 0.12, 0.56, 1.01, 0.03, 'oak', shadow=False)
+box('living', 'glass', 4.28, 3.98, 0.42, 0.64, 1.09, 0.03, 'glass', alpha=0.62)
+box('living', 'book', 4.42, 4.25, 0.45, 0.3, 0.24, 0.04, 'pillow-terracotta', shadow=False)
 # The floating console and the black glass TV above it (thin bezel, screen just in front).
 box('living', 'console', 6.1, 6.68, 0.22, 1.8, 0.34, 0.3, 'oak')
 box('living', 'tv', 6.15, 6.99, 0.82, 1.7, 0.04, 0.98, 'bezel', focusable=False, shadow=False)
 box('living', 'screen', 6.18, 6.975, 0.85, 1.64, 0.015, 0.92, 'screen', focusable=False, shadow=False)
 box('living', 'remote', 7.3, 6.78, 0.52, 0.16, 0.05, 0.02, 'charcoal', shadow=False)
 plant('living', 8.7, 6.45, size=0.38, tall=1.15)
-box('living', 'piano', 4.3, 5.15, 0.62, 0.36, 1.2, 0.12, 'silver')
-legs('living', 4.3, 5.15, 0.36, 1.2, 0.62, 'charcoal', inset=0.02, size=0.04)
+keyboard('living', 4.3, 5.15)
 box('living', 'cabinet', 4.85, 2.12, 0, 0.85, 0.48, 0.78, 'white')
 # The balcony's sliding glass door in the north wall (it lowers with the wall when the camera turns around).
 box('living', 'door-glass', 5.8, 1.98, 0, 2.1, 0.04, 2.1, 'glass', alpha=0.5, wall='living-n1', shadow=False)
@@ -412,9 +444,9 @@ CLAY = {
     'granite': '#6C7078', 'basin': '#E3EEF4', 'bin-1': '#C9B79C', 'bin-2': '#9FB0C2', 'coat-1': '#7C8AA3',
     'coat-2': '#C88F6E', 'print-sky': '#9DB9D3', 'print-sage': '#B5CBA9', 'print-terracotta': '#E0A88C',
     'glass-dark': '#2E3642', 'heater': '#9AA3AE', 'copper': '#C98E62', 'burner': '#2B2D33', 'indicator': '#6FCF97',
-    'baseboard': '#E2DCD3',
+    'baseboard': '#E2DCD3', 'black-key': '#1E2026',
 }
-UNTINTED = {'screen', 'bezel', 'glass-dark', 'indicator'}     # the black glass stays black, lit or not
+UNTINTED = {'screen', 'bezel', 'glass-dark', 'indicator', 'black-key'}     # the black glass stays black, lit or not
 SLATE, AMBER = (0x7C, 0x88, 0x9E), (0xFF, 0xB8, 0x72)
 
 
