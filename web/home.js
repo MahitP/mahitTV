@@ -365,63 +365,477 @@
     others = apps.filter(function (x) { return shelf.indexOf(x) < 0; });
   }
 
+  // MARK: - Motion (ANIMATIONS-SPEC.md): springs from motion.js drive every transform that can change mid-flight
+
+  var P = Motion.P, BUMP = Motion.BUMP_VELOCITY, scrubbing = false, lastMove = {dx: 0, dy: 0, at: 0};
+
+  function spring(preset, value) { return new Motion.Spring(preset, value || 0); }
+  // Styles are written only when they change: a write that changes nothing still costs a style pass per frame.
+  function T(e, t) {
+    if (!e || e._t === t) return;
+    e._t = t;
+    e.style.webkitTransform = e.style.transform = t;
+  }
+  function A(e, a) {
+    if (!e) return;
+    var v = String(r4(Motion.clamp(a, 0, 1)));
+    if (e._o === v) return;
+    e._o = v;
+    e.style.opacity = v;
+  }
+  /** Hidden once fully faded, so a transparent layer doesn't take the pointer or cost the GPU. */
+  function V(e, a) {
+    if (!e) return;
+    var v = a < 0.002 ? 'hidden' : 'visible';
+    if (e._v === v) return;
+    e._v = v;
+    e.style.visibility = v;
+  }
+  function r2(v) { return Math.round(v * 100) / 100; }
+  function r4(v) { return Math.round(v * 10000) / 10000; }
+
+  /** While an arrow is held, focus moves faster and the tilt, sheen and labels wait (ANIMATIONS-SPEC.md §5.1). */
+  var scrub = spring([0.2, 1]);
+
+  var fxAll = [];
+
+  /**
+   * One focusable thing's motion: focus (scale, lift shadow, label, sheen), the OK press squish, the arrival tilt
+   * with its emblem parallax, the dead-end bump (through the rubber band), and a launch zoom. Its owner can add a
+   * stagger offset (ex, ey) and opacity (ea).
+   */
+  function Fx(node, o) {
+    o = o || {};
+    this.node = node;
+    this.grow = o.grow || 0;
+    this.squish = o.squish === undefined ? 0.04 : o.squish;
+    this.f = spring(scrubbing ? P.FAST_FOCUS : P.SNAPPY_FOCUS);
+    this.p = spring(P.MICRO_PRESS);
+    this.nx = spring(P.BOUNDARY_BUMP).px();
+    this.ny = spring(P.BOUNDARY_BUMP).px();
+    this.tilt = !!o.tilt;
+    this.ry = spring(P.TILT).deg();
+    this.rx = spring(P.TILT).deg();
+    this.shadow = o.shadow || null;
+    this.img = o.img || null;
+    this.sheen = o.sheen || null;
+    this.label = o.label || null;
+    this.avatar = o.avatar || null;
+    this.lab = spring(P.SNAPPY_FOCUS);
+    this.launch = spring(P.SHEET_OPEN);
+    this.ex = 0;
+    this.ey = 0;
+    this.ea = -1;
+    this.on = false;
+    this.alive = true;
+    this.dirty = true;
+    fxAll.push(this);
+    Motion.kick();
+  }
+
+  Fx.prototype.focus = function (on) {
+    if (on === this.on) return;
+    this.on = on;
+    this.f.set(on ? 1 : 0);
+    // The label comes in with the focus and leaves fast (120 ms), so names never overlap when scrubbing.
+    this.lab.tune(on ? P.SNAPPY_FOCUS : [0.12, 1]).set(on ? 1 : 0);
+    if (!on) this.p.set(0);
+    if (on && Date.now() - lastMove.at < 120) this.arrive(lastMove.dx, lastMove.dy);
+  };
+
+  /** Arrival: a 3° lean toward where it was reached from, settling flat (an impulse on the tilt springs). */
+  Fx.prototype.arrive = function (dx, dy) {
+    if (!this.tilt || scrubbing) return;
+    this.ry.impulse(-90 * dx);
+    this.rx.impulse(90 * dy);
+  };
+
+  /** A dead end: a tug the way it was pushed, through UIScrollView's rubber band, and back. */
+  Fx.prototype.bump = function (dx, dy) {
+    this.nx.impulse(dx * BUMP);
+    this.ny.impulse(dy * BUMP);
+  };
+
+  Fx.prototype.step = function (dt) {
+    var m = this.f.step(dt);
+    m = this.p.step(dt) || m;
+    m = this.nx.step(dt) || m;
+    m = this.ny.step(dt) || m;
+    m = this.ry.step(dt) || m;
+    m = this.rx.step(dt) || m;
+    m = this.lab.step(dt) || m;
+    m = this.launch.step(dt) || m;
+    if (m || this.dirty) this.draw();
+    this.dirty = false;
+    return m;
+  };
+
+  Fx.prototype.draw = function () {
+    var f = this.f.x, pr = this.p.x, l = this.launch.x;
+    var s = (1 + this.grow * f - this.squish * pr) * (1 + 1.4 * l);
+    var x = this.ex + Motion.rubber(this.nx.x), y = this.ey + Motion.rubber(this.ny.x), t = '';
+    if (x || y) t = 'translate(' + r2(x) + 'px,' + r2(y) + 'px) ';
+    var ry = this.ry.x, rx = this.rx.x;
+    if (ry || rx) t += 'perspective(900px) rotateY(' + r2(ry) + 'deg) rotateX(' + r2(rx) + 'deg) ';
+    T(this.node, t + 'scale(' + r4(s) + ')');
+    var a = (this.ea >= 0 ? this.ea : 1) * (1 - l);
+    if (this.ea >= 0 || l > 0.0001) A(this.node, a);
+    else if (this.node._o !== '') { this.node._o = ''; this.node.style.opacity = ''; }
+    if (this.shadow) {
+      A(this.shadow, f * (1 - 0.45 * pr) * a);
+      T(this.shadow, 'translate(' + r2(x) + 'px,' + r2(y - 16 * pr) + 'px) scale(' + r4(s) + ')');
+    }
+    // Layers: the emblem drifts with the tilt (6 px at 3°) and grows 3%, the sheen the other way.
+    if (this.img) T(this.img, 'translate(-50%, -50%) translateX(' + r2(-2 * ry) + 'px) scale(' + r4(1 + 0.03 * f) + ')');
+    if (this.sheen) {
+      A(this.sheen, f * (1 - scrub.x));
+      T(this.sheen, 'translateX(' + r2(4 * ry) + 'px)');
+    }
+    if (this.label) {
+      A(this.label, this.lab.x * (1 - scrub.x));
+      T(this.label, 'translateY(' + r2(6 * (1 - this.lab.x)) + 'px)');
+    }
+    if (this.avatar) T(this.avatar, 'scale(' + r4(1 + 0.12 * f) + ')');
+  };
+
+  function killFx(list) {
+    for (var i = 0; i < list.length; i++) list[i].alive = false;
+    list.length = 0;
+  }
+
+  function setScrub(on) {
+    if (on === scrubbing) return;
+    scrubbing = on;
+    scrub.set(on ? 1 : 0);
+    for (var i = 0; i < fxAll.length; i++) fxAll[i].f.tune(on ? P.FAST_FOCUS : P.SNAPPY_FOCUS);
+  }
+
+  // The page's springs. lift: how far the page has risen for the grid (px); tab: TV 0, Home 1, Welly 2 (between them
+  // mid-swap); drawer: Control Center 0..1; full: the Top Shelf's full screen 0..1; dock: the Dock's scroll (px);
+  // par: the art's counter-parallax (px); launch/wake: the page receding for an app, and back from the screensaver.
+  var mv = {
+    lift: spring(P.SPATIAL_SCROLL).px(), tab: spring(P.TAB_SWAP), drawer: spring(P.SHEET_OPEN), full: spring(P.SPATIAL_SCROLL),
+    dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
+    heroX: spring(P.TITLE_SETTLE).px(), heroA: spring(P.TITLE_SETTLE, 1), heroShow: spring([0.3, 1], 1),
+    lensX: spring(P.LIQUID_PILL).px(), lensW: spring(P.LIQUID_PILL, 100).px(), dot: spring(P.SNAPPY_FOCUS).px(),
+    rowNudge: spring(P.BOUNDARY_BUMP).px()
+  };
+  var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
+  var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
+  var fxTiles = [], fxCells = [], fxTabs = [], fxKeys = [], fxWho = [], fxPill = null, fxWatch = null, launching = null;
+  var pending = [];
+
+  /** Sets a spring's target after `ms` (a stagger); a newer call for the same spring replaces it. */
+  function later(s, value, ms, preset) {
+    for (var i = pending.length - 1; i >= 0; i--) if (pending[i].s === s) pending.splice(i, 1);
+    if (ms <= 0 || Motion.instant) { if (preset) s.tune(preset); s.set(value); return; }
+    pending.push({s: s, v: value, at: Date.now() + ms, preset: preset});
+    Motion.kick();
+  }
+
+  function cancel(s) {
+    for (var i = pending.length - 1; i >= 0; i--) if (pending[i].s === s) pending.splice(i, 1);
+  }
+
+  function stepAll(list, dt) {
+    var m = false;
+    for (var i = 0; i < list.length; i++) if (list[i].step(dt)) m = true;
+    return m;
+  }
+
+  Motion.tick(function (dt) {
+    var moving = false, i, k, now = Date.now();
+    for (i = pending.length - 1; i >= 0; i--) {
+      if (now < pending[i].at) continue;
+      var q = pending.splice(i, 1)[0];
+      if (q.preset) q.s.tune(q.preset);
+      q.s.set(q.v);
+    }
+    if (pending.length) moving = true;
+    for (k in mv) if (mv.hasOwnProperty(k) && mv[k].step(dt)) moving = true;
+    if (stepAll(detail, dt)) moving = true;
+    if (stepAll(rowLag, dt)) moving = true;
+    if (stepAll(drawerRows, dt)) moving = true;
+    for (k in sheetSprings) if (sheetSprings.hasOwnProperty(k) && sheetSprings[k].step(dt)) moving = true;
+    for (k in holders) if (holders.hasOwnProperty(k) && holders[k].s.step(dt)) moving = true;
+    var scrubbed = scrub.step(dt);
+    if (scrubbed) moving = true;
+    for (i = 0; i < fxAll.length; i++) {
+      var fx = fxAll[i];
+      if (!fx.alive) { fxAll.splice(i--, 1); continue; }
+      if (scrubbed) fx.dirty = true;
+      if (fx.step(dt)) moving = true;
+    }
+    drawPage();
+    return moving;
+  });
+
+  var home = $('home'), tvLayer = $('tv'), el$ = {};
+  /** An element by id or selector, looked up once. */
+  function q(sel) { return el$[sel] || (el$[sel] = sel.charAt(0) === '#' && sel.indexOf(' ') < 0 ? $(sel.slice(1)) : document.querySelector(sel)); }
+
+  /** Where a tab's layer is while the tabs swap: d = its index − the tab position, −1..1 (TAB_SWAP: 60 px, 0.96). */
+  function tabLayer(e, index, extra, behind) {
+    var d = Motion.clamp(index - mv.tab.x, -1, 1), a = Math.max(0, 1 - Math.abs(d) * 1.6);
+    T(e, 'translateX(' + r2(60 * d) + 'px)' + (extra || '') + ' scale(' + r4((1 - 0.04 * Math.abs(d)) * behind) + ')');
+    return a;
+  }
+
+  /** Writes every spring-driven style of the page (runs only while something moves). */
+  function drawPage() {
+    var y = mv.lift.x, p = Motion.clamp(y / 640, 0, 1), d = mv.drawer.x, full = mv.full.x;
+    var night = hasClass(body, 'night'), away = Motion.clamp(mv.tab.x, 0, 1);
+    // Behind Control Center, a launching app or the screensaver going, the page recedes.
+    var behind = (1 - 0.025 * d) * (1 - 0.02 * mv.wake.x);
+    var launch = mv.launch.x;
+    T(home, 'translateY(' + r2(-y) + 'px) scale(' + r4(behind * (1 - 0.05 * launch)) + ')');
+    A(home, 1 - 0.6 * launch);
+    // The tabs' layers.
+    var tvA = tabLayer(tvLayer, 0, '', 1);
+    A(tvLayer, tvA);
+    var apps = q('#apps');
+    A(apps, tabLayer(apps, 0, ' translateY(' + r2(722 - y + 300 * full) + 'px)', behind) * (1 - full));
+    var house = q('#house'), welly = q('#welly'), ha = tabLayer(house, 1, '', behind), wa = tabLayer(welly, 2, '', behind);
+    A(house, ha); V(house, ha);
+    A(welly, wa); V(welly, wa);
+    // The grid's rows, each a little behind the one above.
+    for (var r = 0; r < gridRows.length && r < rowLag.length; r++) {
+      var lag = r2(rowLag[r].x - y);
+      for (var c = 0; c < gridRows[r].length; c++) T(gridRows[r][c], lag ? 'translateY(' + lag + 'px)' : '');
+    }
+    // Scrolling down to the grid frosts and darkens the art continuously (p), as does leaving the TV tab.
+    A(q('#shelftop'), 1 - p);
+    A(q('#top'), 1 - p);
+    A(q('#blur'), hasClass(body, 'has-photo') ? Math.max(p, away) : 1);
+    var lift = q('#sky .lift');
+    A(lift, Math.max(p * (night ? 0.42 : 0.6), d * (night ? 0.42 : 0.32)));
+    A(q('#sky .shade'), away * (night ? 0.55 : 0.45));
+    A(q('#dim'), d * (night ? 0.3 : 0.22));
+    T(q('#art'), 'translateX(' + r2(mv.par.x) + 'px)');
+    // The Dock: its scroll, and in full screen it drops away.
+    T(q('#tiles'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(300 * full) + 'px)');
+    T(q('#shadows'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(300 * full) + 'px)');
+    T(q('#platter'), full ? 'translateY(' + r2(300 * full) + 'px)' : '');
+    A(q('#platter'), 1 - full);
+    A(q('#tiles'), 1 - full);
+    A(q('#shadows'), 1 - full);
+    // The Top Shelf's title: out the way it goes, in from the other side.
+    var hero = q('#hero');
+    T(hero, 'translateX(' + r2(mv.heroX.x) + 'px)');
+    A(hero, mv.heroA.x * mv.heroShow.x);
+    // Full screen's details, in order (metadata, synopsis, Play), rising 16 px.
+    var det = q('#details');
+    for (var i = 0; i < 2; i++) {
+      A(det.children[i], detail[i].x);
+      T(det.children[i], 'translateY(' + r2(16 * (1 - detail[i].x)) + 'px)');
+    }
+    if (fxWatch && (fxWatch.ea !== detail[2].x)) {
+      fxWatch.ey = 16 * (1 - detail[2].x);
+      fxWatch.ea = detail[2].x;
+      fxWatch.draw();
+    }
+    var cur = $('dots').querySelector('.cur');
+    if (cur) T(cur, 'translateX(' + r2(mv.dot.x) + 'px)');
+    // Control Center: in from the right, its rows 25 ms apart.
+    var drawer = q('#drawer'), da = Motion.clamp(d * 2.5, 0, 1);
+    T(drawer, 'translateX(' + r2(480 * (1 - d)) + 'px)');
+    A(drawer, da);
+    V(drawer, da);
+    var prof = drawer.querySelector('.profiles');
+    if (prof && drawerRows[0]) {
+      T(prof, 'translateX(' + r2(28 * (1 - drawerRows[0].x)) + 'px)');
+      A(prof, drawerRows[0].x);
+    }
+    for (var k = 0; k < fxKeys.length; k++) {
+      var row = drawerRows[1 + Math.floor(k / 2)], rx = row ? row.x : 1, fk = fxKeys[k];
+      var ex = 28 * (1 - rx), ea = rx * (hasClass(fk.node, 'off') && !fk.on ? 0.5 : 1);
+      if (ex !== fk.ex || ea !== fk.ea) { fk.ex = ex; fk.ea = ea; fk.draw(); }
+    }
+    var weather = $('weather'), wr = drawerRows[drawerRows.length - 1];
+    if (weather && wr) {
+      T(weather, 'translateX(' + r2(28 * (1 - wr.x)) + 'px)');
+      A(weather, wr.x);
+    }
+    // Sheets: fade and settle from 1.04.
+    for (var id in sheetSprings) {
+      if (!sheetSprings.hasOwnProperty(id)) continue;
+      var sh = $(id), sv = sheetSprings[id].x;
+      A(sh, sv);
+      V(sh, sv);
+      T(sh, 'scale(' + r4(1.04 - 0.04 * sv) + ')');
+    }
+    for (var h in holders) if (holders.hasOwnProperty(h)) T(holders[h].el, 'translateY(' + r2(holders[h].s.x) + 'px)');
+    var focusedRow = document.querySelector('.sheet.open .row.focus');
+    if (focusedRow) T(focusedRow, 'translateY(' + r2(Motion.rubber(mv.rowNudge.x)) + 'px)');
+    drawLens();
+  }
+
   // MARK: - Focus
 
   var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', ABOUT: 'about',
     TABS: 'tabs', HOUSE: 'house', WELLY: 'welly'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
   var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0};
-  var cards = [], lean = 0;
+  var cards = [];
+  var was = {drawer: false, full: false, row: null};
 
   function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.ABOUT; }
+
+  function focusList(list, on, index) {
+    for (var i = 0; i < list.length; i++) {
+      setClass(list[i].node.parentNode && hasClass(list[i].node, 'face') ? list[i].node.parentNode : list[i].node, 'focus', on && index === i);
+      list[i].focus(on && index === i);
+    }
+  }
 
   function updateFocus() {
     var i, list;
     setClass($('pill'), 'focus', st.zone === Z.TOP);
+    if (fxPill) fxPill.focus(st.zone === Z.TOP);
     setClass($('watch'), 'focus', st.zone === Z.HERO);
+    if (fxWatch) fxWatch.focus(st.zone === Z.HERO);
     setClass(body, 'full', st.zone === Z.HERO);
-    list = $('tiles').children;
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.SHELF && st.shelf === i);
+    focusList(fxTiles, st.zone === Z.SHELF, st.shelf);
     revealShelf();
     placeName();
+    var P1 = people().length;
+    focusList(fxWho, st.zone === Z.DRAWER, st.drawer);
     list = document.querySelectorAll('#drawer .who');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
-    list = document.querySelectorAll('#drawer .key');
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === people().length + i);
-    list = document.querySelectorAll('#apps .cell');
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.APPS && st.grid === i);
+    focusList(fxKeys, st.zone === Z.DRAWER, st.drawer - P1);
+    focusList(fxCells, st.zone === Z.APPS, st.grid);
     // The grid shows 2 rows under the risen Dock; past them, the page (Dock and all) scrolls on.
     var rows = Math.max(1, Math.ceil(others.length / COLS)), r = Math.floor(st.grid / COLS), first = Math.max(0, Math.min(rows - 2, r - 1));
-    var grid = st.zone === Z.APPS;
-    $('apps').lastChild.style.webkitTransform = $('apps').lastChild.style.transform = 'translateY(' + (-first * GRID_ROW) + 'px)';
-    var home = grid ? 'translateY(' + (-(GRID_LIFT + first * GRID_ROW)) + 'px)' : '';
-    $('home').style.webkitTransform = $('home').style.transform = home;
+    var grid = st.zone === Z.APPS, lift = grid ? GRID_LIFT + first * GRID_ROW : 0;
+    if (lift !== mv.lift.to) {
+      mv.lift.set(lift);
+      for (i = 0; i < rowLag.length; i++) later(rowLag[i], lift, 18 * i);
+    }
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     focusRows($('langpick'), st.lang, st.zone === Z.LANG);
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
-    setClass(body, 'drawer-open', st.zone === Z.DRAWER);
+    var row = document.querySelector('.sheet.open .row.focus');
+    if (row !== was.row) {
+      if (was.row) T(was.row, '');
+      was.row = row;
+      mv.rowNudge.snap(0);
+    }
+    // Control Center: presented a little slower than it's dismissed; its rows follow 25 ms apart.
+    var drawerOpen = st.zone === Z.DRAWER;
+    setClass(body, 'drawer-open', drawerOpen);
+    if (drawerOpen !== was.drawer) {
+      was.drawer = drawerOpen;
+      mv.drawer.tune(drawerOpen ? P.SHEET_OPEN : P.SHEET_CLOSE).set(drawerOpen ? 1 : 0);
+      for (i = 0; i < drawerRows.length; i++) {
+        if (drawerOpen) { drawerRows[i].snap(0); later(drawerRows[i], 1, 25 * i, P.SHEET_OPEN); }
+        else { cancel(drawerRows[i]); drawerRows[i].snap(1); }
+      }
+    }
+    // Full screen: the details come up in order, 40 ms apart, and leave together in 180 ms.
+    var full = st.zone === Z.HERO;
+    if (full !== was.full) {
+      was.full = full;
+      mv.full.set(full ? 1 : 0);
+      for (i = 0; i < detail.length; i++) {
+        if (full) later(detail[i], 1, 40 * i, P.TITLE_SETTLE);
+        else { cancel(detail[i]); detail[i].tune([0.12, 1]).set(0); }
+      }
+    }
+    syncSheets();
     setClass(body, 'grid-open', grid);
-    setClass(body, 'lean-l', lean < 0);
-    setClass(body, 'lean-r', lean > 0);
-    // The tab bar: the selected tab is a lighter lens, the focused one a white pill.
-    list = $('tabs').children;
+    setClass(body, 'dock-focus', st.zone === Z.SHELF && st.tab === TAB.TV);
+    // The Top Shelf's art drifts ±8 px against the focus moving along the Dock.
+    var n = Math.min(shelf.length, SHELF_VISIBLE);
+    mv.par.set(st.zone === Z.SHELF && n > 1 ? -8 * (2 * (st.shelf - shelfFirst) / (n - 1) - 1) : 0);
+    mv.heroShow.set(hasClass(body, 'wallpaper') || hasClass(body, 'no-picks') ? 0 : 1);
+    // The tab bar: the selected tab is a lighter lens that slides; the focused one a white pill.
+    list = $('tabs').querySelectorAll('.tab');
     for (i = 0; i < list.length; i++) {
       setClass(list[i], 'sel', st.tab === i);
       setClass(list[i], 'focus', st.zone === Z.TABS && st.tab === i);
     }
+    for (i = 0; i < fxTabs.length; i++) fxTabs[i].focus(st.zone === Z.TABS && st.tab === i);
+    placeLens();
+    mv.tab.set(st.tab);
     setClass(body, 'tab-home', st.tab === TAB.HOME);
     setClass(body, 'tab-welly', st.tab === TAB.WELLY);
     if (window.House) { House.show(st.tab === TAB.HOME); House.focus(st.zone === Z.HOUSE); }
     if (window.Welly) { Welly.show(st.tab === TAB.WELLY); Welly.focus(st.zone === Z.WELLY); }
+    Motion.kick();
+  }
+
+  /** The sheets (Home Settings, Shelf, Language, About) open on SHEET_OPEN and close on SHEET_CLOSE. */
+  function syncSheets() {
+    var ids = ['settings', 'shelfedit', 'langpick', 'about'];
+    for (var i = 0; i < ids.length; i++) {
+      var s = sheetSprings[ids[i]] || (sheetSprings[ids[i]] = spring(P.SHEET_OPEN)), open = hasClass($(ids[i]), 'open');
+      if (open !== (s.to === 1)) s.tune(open ? P.SHEET_OPEN : P.SHEET_CLOSE).set(open ? 1 : 0);
+    }
+  }
+
+  /** The thing with the focus, for the press squish and the dead-end bump. */
+  function focusedFx() {
+    switch (st.zone) {
+      case Z.SHELF: return fxTiles[st.shelf] || null;
+      case Z.APPS: return fxCells[st.grid] || null;
+      case Z.TABS: return fxTabs[st.tab] || null;
+      case Z.TOP: return fxPill;
+      case Z.HERO: return fxWatch;
+      case Z.DRAWER: return st.drawer < people().length ? fxWho[st.drawer] || null : fxKeys[st.drawer - people().length] || null;
+    }
+    return null;
+  }
+
+  function bump(dx, dy) {
+    var fx = focusedFx();
+    if (fx) fx.bump(dx, dy);
+    else if (st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG) mv.rowNudge.impulse(dy * BUMP);
   }
 
   // MARK: - Tabs: TV · Home · Welly
 
+  var lens = null;
+
   function renderTabs() {
     var bar = $('tabs'), names = [tr('TV'), tr('Home'), 'Welly'];
     bar.innerHTML = '';
-    for (var i = 0; i < names.length; i++) hover(el('span', 'tab', bar, names[i]), Z.TABS, i);
+    killFx(fxTabs);
+    // The selected tab's lens: two round caps and a stretchable middle, so it can change width and stretch with
+    // its speed without its round ends going oval.
+    lens = el('div', 'lens', bar);
+    lens.box = el('div', 'box', lens);
+    lens.left = el('span', 'cap l', lens.box);
+    lens.mid = el('span', 'mid', lens.box);
+    lens.right = el('span', 'cap r', lens.box);
+    lens.shine = el('span', 'shine', lens);
+    for (var i = 0; i < names.length; i++) {
+      var tab = el('span', 'tab', bar, names[i]);
+      hover(tab, Z.TABS, i);
+      fxTabs.push(new Fx(tab, {grow: 0.06}));
+    }
+    placeLens(true);
+  }
+
+  /** The lens's target: under the selected tab. */
+  function placeLens(snap) {
+    var tabs = $('tabs').querySelectorAll('.tab'), t = tabs[st.tab];
+    if (!t || !lens) return;
+    mv.lensX.set(t.offsetLeft);
+    mv.lensW.set(t.offsetWidth);
+    if (snap) { mv.lensX.snap(t.offsetLeft); mv.lensW.snap(t.offsetWidth); }
+  }
+
+  /** The lens stretches with its speed: sx = 1 + clamp(|v|·0.00018, 0, 0.12), sy = 1/√sx; its shine moves against it. */
+  function drawLens() {
+    if (!lens) return;
+    var v = mv.lensX.v, sx = 1 + Motion.clamp(Math.abs(v) * 0.00018, 0, 0.12), sy = 1 / Math.sqrt(sx);
+    var w = mv.lensW.x * sx, x = mv.lensX.x - (w - mv.lensW.x) / 2, cap = 25.5, mid = Math.max(0, w - 2 * cap);
+    T(lens.box, 'translateX(' + r2(x) + 'px) scaleY(' + r4(sy) + ')');
+    T(lens.mid, 'translateX(' + cap + 'px) scaleX(' + r2(mid) + ')');
+    T(lens.right, 'translateX(' + r2(cap + mid) + 'px)');
+    A(lens.shine, Math.min(0.7, Math.abs(v) / 1400));
+    T(lens.shine, 'translateX(' + r2(x + w / 2 - 40 - Motion.clamp(v * 0.02, -30, 30)) + 'px)');
   }
 
   /** ↓ or OK on the tab bar: into the selected tab's content. */
@@ -448,8 +862,14 @@
     for (var i = 0; i < rows.length; i++) setClass(rows[i], 'focus', on && i === index);
     var holder = sheet.querySelector('.rows');
     if (!holder) return;
-    var visible = 7, first = Math.max(0, Math.min(rows.length - visible, index - 3));
-    holder.style.webkitTransform = holder.style.transform = 'translateY(' + (-first * 78) + 'px)';
+    var visible = 7, first = Math.max(0, Math.min(rows.length - visible, index - 3)), y = -first * 78;
+    // The list scrolls on a spring; a list just drawn again (a value changed) starts where it is.
+    var h = holders[sheet.id];
+    if (!h || h.el !== holder) {
+      h = holders[sheet.id] = {el: holder, s: h ? h.s : spring(P.SNAPPY_FOCUS).px()};
+      if (h.s.to !== y && !hasClass(sheet, 'open')) h.s.snap(y);
+    }
+    h.s.set(y);
   }
 
   function nearest(nodes, x) {
@@ -473,6 +893,8 @@
     $('buttons').innerHTML = '';
     hover($('pill'), Z.TOP, 3);
     hover($('watch'), Z.HERO, 0);
+    if (!fxPill) fxPill = new Fx($('pill'), {grow: 0.08, avatar: $('pill').querySelector('.avatar')});
+    if (!fxWatch) fxWatch = new Fx($('watch'), {grow: 0.08});
     renderPill();
   }
 
@@ -491,10 +913,36 @@
 
   /** The status pill: the time, then the current profile's avatar; the quotes (or what's playing) left of it. */
   function renderPill() {
-    var pill = $('pill');
-    pill.firstChild.textContent = formatDate('format|h:mm a', Date.now());
-    pill.lastChild.style.backgroundImage = avatarUrl(person());
+    var pill = $('pill'), avatar = pill.querySelector('.avatar'), url = avatarUrl(person());
+    pill.querySelector('.time').textContent = formatDate('format|h:mm a', Date.now());
+    // Another profile: the new face dissolves in over the old one.
+    if (avatar.style.backgroundImage && avatar.getAttribute('data-url') !== url && !Motion.instant) {
+      var old = el('span', 'prev', avatar);
+      old.style.backgroundImage = avatar.style.backgroundImage;
+      setTimeout(function () { A(old, 0); }, 20);
+      setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); }, 450);
+    }
+    avatar.setAttribute('data-url', url);
+    avatar.style.backgroundImage = url;
     $('quotes').style.right = (45 + pill.offsetWidth + 24) + 'px';
+  }
+
+  /** What's playing (or a timer), when the TV tells us: the pill widens to show it with three moving bars. */
+  function nowPlaying(text) {
+    var pill = $('pill'), np = pill.querySelector('.np');
+    if (!text) {
+      if (np) { setClass(pill, 'playing', false); setTimeout(function () { if (np.parentNode && !hasClass(pill, 'playing')) pill.removeChild(np); renderPill(); }, 260); }
+      return;
+    }
+    if (!np) {
+      np = el('span', 'np');
+      pill.insertBefore(np, pill.firstChild);
+      for (var i = 0; i < 3; i++) el('span', 'bar', np);
+      el('span', 'what', np);
+    }
+    np.lastChild.textContent = text;
+    setClass(pill, 'playing', true);
+    renderPill();
   }
 
   function renderQuotes() {
@@ -556,17 +1004,32 @@
     var p = cards[index];
     photo(p ? Data.image(p.backdrop, 'original') : '');
     backdrop(p ? Data.image(p.backdrop, 'w300') : '');
-    var dots = $('dots'), own = appPicks();
-    dots.innerHTML = '';
-    for (var d = 0; own.length > 1 && d < own.length; d++) setClass(el('span', '', dots), 'on', own[d] === index);
-    var hero = $('hero');
+    var dots = $('dots'), own = appPicks(), n = own.length > 1 ? own.length : 0;
+    // The page dots: the white one slides to the page shown.
+    if (dots.querySelectorAll('.dot').length !== n) {
+      dots.innerHTML = '';
+      for (var d = 0; d < n; d++) el('span', 'dot', dots);
+      if (n) el('span', 'cur', dots);
+      mv.dot.snap(Math.max(0, own.indexOf(index)) * 22);
+    }
+    mv.dot.set(Math.max(0, own.indexOf(index)) * 22);
     clearTimeout(heroTimer);
-    if (!dir) { fillHero(p); return; }
-    setClass(hero, 'out', true);
+    if (!dir || Motion.instant) {
+      fillHero(p);
+      mv.heroX.snap(0);
+      mv.heroA.snap(1);
+      Motion.kick();
+      return;
+    }
+    // The title leaves the way the pages go (−14 px, 220 ms); the next one comes in from +22 px, 80 ms later.
+    mv.heroX.tune([0.22, 1]).set(-14 * dir);
+    mv.heroA.tune([0.16, 1]).set(0);
     heroTimer = setTimeout(function () {
       fillHero(cards[st.page]);
-      setClass(hero, 'out', false);
-    }, 220);
+      mv.heroX.tune(P.TITLE_SETTLE).snap(22 * dir);
+      mv.heroX.set(0);
+      mv.heroA.tune(P.TITLE_SETTLE).set(1);
+    }, 300);
   }
 
   function fillHero(p) {
@@ -614,6 +1077,7 @@
     if (url === photoUrl) return;
     photoUrl = url;
     setClass(body, 'has-photo', !!url);
+    Motion.kick();   // the frosted copy and the shades depend on whether there's a photo
     var next = photoFront === 'photoA' ? 'photoB' : 'photoA';
     if (!url) {
       setClass($('photoA'), 'on', false);
@@ -624,11 +1088,27 @@
     img.onload = function () {
       if (photoUrl !== url) return;
       $(next).style.backgroundImage = 'url(' + url + ')';
+      kenBurns($(next), 'opacity 0.7s', 16, 'scale(1.04) translateX(-12px)');
       setClass($(next), 'on', true);
       setClass($(photoFront), 'on', false);
       photoFront = next;
     };
     img.src = url;
+  }
+
+  /**
+   * A slow drift across a photo (Ken Burns), started again from rest each time the photo is shown: the start is set
+   * with no transition, then the long one runs to `to`. `fade` is the element's own opacity transition.
+   */
+  function kenBurns(e, fade, seconds, to) {
+    e.style.webkitTransition = e.style.transition = fade;
+    T(e, 'none');
+    void e.offsetWidth;   // the start applies now, so the drift runs from it
+    if (Motion.instant) return;
+    var curve = ' ' + seconds + 's cubic-bezier(0.37, 0, 0.63, 1)';
+    e.style.webkitTransition = fade + ', -webkit-transform' + curve;
+    e.style.transition = fade + ', transform' + curve;
+    T(e, to);
   }
 
   /** ← → in full screen (or by itself): the focused app's next pick. */
@@ -708,22 +1188,25 @@
     platter.style.width = (width + 2 * pad) + 'px';
     platter.style.top = DOCK_TOP + 'px';
     platter.style.height = (th + 2 * DOCK_PAD_Y) + 'px';
+    var firstRender = !fxTiles.length;
     // The glass's copy of the photo sits where the photo is on screen.
     var bleed = platter.firstChild;
     bleed.style.left = -(left - pad) + 'px';
     bleed.style.top = -DOCK_TOP + 'px';
-    var tiles = $('tiles');
+    var tiles = $('tiles'), shadows = $('shadows');
     tiles.innerHTML = '';
+    shadows.innerHTML = '';
+    killFx(fxTiles);
     tileStep = tw + gap;
     tileLeft = left;
     shelfFirst = Math.max(0, Math.min(shelfFirst, shelf.length - n));
     for (var i = 0; i < shelf.length; i++) {
-      var t = el('div', 'tile', tiles);
-      t.style.top = (DOCK_TOP + DOCK_PAD_Y) + 'px';
-      t.style.width = tw + 'px';
-      t.style.height = th + 'px';
+      var t = el('div', 'tile', tiles), sh = el('div', 'lift-shadow', shadows);
+      t.style.top = sh.style.top = (DOCK_TOP + DOCK_PAD_Y) + 'px';
       face(shelf[i], t, wordFit(shelf[i].title, tw, 32));
+      var sheen = el('span', 'sheen', t);
       hover(t, Z.SHELF, i);
+      fxTiles.push(new Fx(t, {grow: 0.23, squish: 0.08, tilt: true, shadow: sh, img: t.querySelector('img'), sheen: sheen}));
     }
     // More apps than fit: a small arrow inside the glass's edge on each side that has more, where no tile reaches
     // even focused (inside the screen's safe area, as on Android).
@@ -737,6 +1220,7 @@
     }
     st.shelf = Math.min(st.shelf, Math.max(0, shelf.length - 1));
     placeTiles();
+    if (firstRender) mv.dock.snap(shelfFirst * tileStep);
     if (st.zone !== Z.APPS) renderApps();   // the grid is always there: its first row peeks under the Dock
   }
 
@@ -749,16 +1233,16 @@
     name.style.left = (tileLeft + (st.shelf - shelfFirst) * tileStep + TILE_W / 2) + 'px';
   }
 
-  /** The row slides (a transform on #tiles, which old TVs animate), and the apps it takes past the glass fade out. */
+  /** The row slides (on a spring, see drawPage), and the apps it takes past the glass fade out. */
   function placeTiles() {
-    var row = $('tiles'), tiles = row.children, n = Math.min(shelf.length, SHELF_VISIBLE);
+    var row = $('tiles'), tiles = row.children, shadows = $('shadows').children, n = Math.min(shelf.length, SHELF_VISIBLE);
     for (var i = 0; i < shelf.length; i++) {
       var shown = i >= shelfFirst && i < shelfFirst + n;
-      tiles[i].style.left = (tileLeft + i * tileStep) + 'px';
-      tiles[i].style.opacity = shown ? '' : '0';
+      tiles[i].style.left = shadows[i].style.left = (tileLeft + i * tileStep) + 'px';
+      setClass(tiles[i], 'gone', !shown);
       tiles[i].style.pointerEvents = shown ? '' : 'none';
     }
-    row.style.webkitTransform = row.style.transform = 'translateX(' + (-shelfFirst * tileStep) + 'px)';
+    mv.dock.set(shelfFirst * tileStep);
     var arrows = $('platter').querySelectorAll('.more');
     arrows[0].style.visibility = shelfFirst > 0 ? '' : 'hidden';
     arrows[1].style.visibility = shelfFirst + n < shelf.length ? '' : 'hidden';
@@ -781,6 +1265,8 @@
   function renderDrawer() {
     var d = $('drawer').lastChild;
     d.innerHTML = '';
+    killFx(fxKeys);
+    killFx(fxWho);
     drawerItems = [];
     for (var i = 0; i < inputs.length; i++) {
       var x = inputs[i];
@@ -795,9 +1281,11 @@
     for (var w = 0; w < P; w++) {
       var who = el('div', 'who' + (list[w] === person() ? ' on' : ''), row);
       who.style.left = (w * 116) + 'px';
-      el('span', 'face', who).style.backgroundImage = avatarUrl(list[w]);
+      var faceEl = el('span', 'face', who);
+      faceEl.style.backgroundImage = avatarUrl(list[w]);
       el('span', 'name', who, list[w].name);
       hover(who, Z.DRAWER, w);
+      fxWho.push(new Fx(faceEl, {grow: 0.12}));
     }
     var rows = Math.min(4, Math.ceil(drawerItems.length / 2));
     drawerItems = drawerItems.slice(0, rows * 2);
@@ -808,9 +1296,14 @@
       sym(item.symbol, key);
       el('div', 'label', key, item.label);
       hover(key, Z.DRAWER, P + k);
+      fxKeys.push(new Fx(key, {grow: 0.06}));
     }
     var w = el('div', '', d);
     w.id = 'weather';
+    // One spring per row (profiles, each pair of cards, the weather): they come in 25 ms apart.
+    var count = 2 + rows;
+    while (drawerRows.length < count) drawerRows.push(spring(P.SHEET_OPEN, 1));
+    drawerRows.length = count;
     renderPanels();
     updateFocus();
   }
@@ -872,15 +1365,23 @@
     sheet.firstChild.textContent = tr('All Apps');
     var grid = sheet.lastChild;
     grid.innerHTML = '';
+    killFx(fxCells);
+    gridRows = [];
     for (var i = 0; i < others.length; i++) {
       var r = Math.floor(i / COLS), c = i % COLS, cell = el('div', 'cell', grid);
       cell.style.left = (GRID_LEFT + c * (TILE_W + TILE_GAP)) + 'px';
       cell.style.top = (GRID_TOP + r * GRID_ROW) + 'px';
-      var f = el('div', 'face', cell);
+      var sh = el('div', 'lift-shadow', cell), f = el('div', 'face', cell);
       face(others[i], f, wordFit(others[i].title, TILE_W, 34));
-      el('div', 'label', cell, others[i].title);
+      var sheen = el('span', 'sheen', f), label = el('div', 'label', cell, others[i].title);
       hover(cell, Z.APPS, i);
+      fxCells.push(new Fx(f, {grow: 0.23, squish: 0.08, tilt: true, shadow: sh, img: f.querySelector('img'), sheen: sheen, label: label}));
+      (gridRows[r] || (gridRows[r] = [])).push(cell);
     }
+    // Each row follows the page 18 ms after the one above.
+    while (rowLag.length < gridRows.length) rowLag.push(spring(P.SPATIAL_SCROLL, mv.lift.to).px());
+    rowLag.length = gridRows.length;
+    Motion.kick();
   }
 
   function openApps(index) {
@@ -1140,6 +1641,28 @@
     };
   }
 
+  /**
+   * The app opens at once; meanwhile its tile keeps growing and fades toward full screen and the page recedes to
+   * 0.95. Back on the home screen (or if nothing took over), it all returns.
+   */
+  var launchTimer = 0;
+  function launchMotion(fx) {
+    if (Motion.instant) return;
+    launching = fx;
+    if (fx) fx.launch.set(1);
+    mv.launch.set(1);
+    clearTimeout(launchTimer);
+    launchTimer = setTimeout(function () { if (!document.hidden) endLaunch(false); }, 1500);
+  }
+
+  function endLaunch(snap) {
+    clearTimeout(launchTimer);
+    if (launching) { if (snap) launching.launch.snap(0); else launching.launch.set(0); launching.p.snap(0); }
+    launching = null;
+    if (snap) mv.launch.snap(0); else mv.launch.set(0);
+    Motion.kick();
+  }
+
   function tvSettings() {
     TV.settings(function (ok) {
       if (!ok) toast(tr("Couldn't open TV Settings"));
@@ -1168,10 +1691,10 @@
         return;
       case Z.HERO:
         var p = cards[st.page], app = p && Data.appFor(p.app);
-        if (app) launcher(app.id, app.title)();
+        if (app) { launchMotion(fxWatch); launcher(app.id, app.title)(); }
         return;
       case Z.SHELF:
-        if (shelf[st.shelf]) launcher(shelf[st.shelf].id, shelf[st.shelf].title)();
+        if (shelf[st.shelf]) { launchMotion(fxTiles[st.shelf]); launcher(shelf[st.shelf].id, shelf[st.shelf].title)(); }
         return;
       case Z.DRAWER:
         if (st.drawer < people().length) {   // a profile: switch to it
@@ -1183,7 +1706,7 @@
         if (drawerItems[st.drawer - people().length]) drawerItems[st.drawer - people().length].run();
         return;
       case Z.APPS:
-        if (others[st.grid]) launcher(others[st.grid].id, others[st.grid].title)();
+        if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
         return;
       case Z.SETTINGS:
         if (rowsNow[st.row]) { rowsNow[st.row].step(1); if (st.zone === Z.SETTINGS) renderSettings(); }
@@ -1200,8 +1723,20 @@
     }
   }
 
+  function snapshot() {
+    return [st.zone, st.tab, st.top, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang].join(',');
+  }
+
   function move(dx, dy) {
-    if (dx) lean = dx;
+    lastMove = {dx: dx, dy: dy, at: Date.now()};
+    var before = snapshot(), zone = st.zone;
+    moveFocus(dx, dy);
+    // Nothing that way: the focused thing tugs toward the press and comes back (the house and Welly do their own).
+    var changesValue = (zone === Z.SETTINGS && dx) || (zone === Z.EDIT && dx);
+    if (snapshot() === before && !changesValue && zone !== Z.HOUSE && zone !== Z.WELLY) bump(dx, dy);
+  }
+
+  function moveFocus(dx, dy) {
     switch (st.zone) {
       case Z.SHELF:
         if (dx) {
@@ -1342,6 +1877,7 @@
   function checkNight() {
     var night = Data.isNight(Date.now());
     setClass(body, 'night', night);
+    Motion.kick();   // the page's shades are darker at night
     if (night === lastNight) return;
     lastNight = night;
     document.documentElement.style.background = night ? '#0B0B0D' : '';
@@ -1361,7 +1897,12 @@
     saverPick = null;
     var s = $('saver');
     s.innerHTML = '';
-    var a = el('div', 'photo', s), b = el('div', 'photo', s);
+    s.style.webkitTransition = s.style.transition = '';
+    // It comes in over 1.2 s, settling from 1.06 to 1.0.
+    var zoom = el('div', 'zoom', s);
+    T(zoom, Motion.instant ? '' : 'scale(1.06)');
+    setTimeout(function () { T(zoom, ''); }, 30);
+    var a = el('div', 'photo', zoom), b = el('div', 'photo', zoom);
     el('div', 'shade', s);
     var clock = el('div', 'clock', s);
     el('div', 'time', clock);
@@ -1375,16 +1916,17 @@
       var back = front === a ? b : a;
       if (p) {
         back.style.backgroundImage = 'url(' + Data.image(p.backdrop, 'original') + ')';
-        back.style.webkitTransform = back.style.transform = 'scale(1.0)';
+        T(back, 'none');
         clock.children[2].textContent = p.title;
         saverPick = p;
         // With Watch from the screensaver on, OK opens this title's app (any other key only closes).
         var app = Prefs.saverWatch() && Data.appFor(p.app);
         hint.textContent = app ? trf('Press OK to watch on {app} · any other button to close', {app: app.title}) : '';
         setTimeout(function () {
+          // Each photo drifts from rest (the reset above has no transition, so the drift runs every time).
+          kenBurns(back, 'opacity 2.4s', 24, 'scale(1.08) translateX(-1.5%)');
           setClass(back, 'on', true);
           setClass(front, 'on', false);
-          back.style.webkitTransform = back.style.transform = 'scale(1.08) translateX(-1.5%)';
           front = back;
         }, 60);
       }
@@ -1401,26 +1943,38 @@
     clock.children[1].textContent = formatDate('format|EEEE, MMMM d', d.getTime());
   }
 
-  function hideSaver() {
+  /** Woken by a key: it dissolves in 320 ms while the home screen settles from 0.98. */
+  function hideSaver(woken) {
+    var s = $('saver');
+    if (woken && saverOn) {
+      s.style.webkitTransition = s.style.transition = 'opacity 0.32s, visibility 0s 0.32s';
+      mv.wake.snap(1);
+      mv.wake.set(0);
+    }
     saverOn = false;
     clearTimeout(saverTimer);
-    setClass($('saver'), 'on', false);
+    setClass(s, 'on', false);
   }
 
   function poke(ok) {
     idleAt = Date.now();
     if (!saverOn) return false;
     var app = ok && saverPick && Prefs.saverWatch() && Data.appFor(saverPick.app);
-    hideSaver();
+    hideSaver(true);
     if (app) launcher(app.id, app.title)();
     return true;
   }
 
   // MARK: - Keys
 
+  var okDown = false, pressed = null, lastKey = 0, lastKeyAt = 0;
+
+  function isArrow(k) { return k === TV.keys.left || k === TV.keys.right || k === TV.keys.up || k === TV.keys.down; }
+
   document.addEventListener('keydown', function (e) {
-    var k = e.keyCode;
+    var k = e.keyCode, now = Date.now();
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
+    if (launching) endLaunch(true);
     // Welly's text field has the keyboard: the field keeps the letters and the ← →, Welly takes OK and ↑ ↓ Back.
     if (st.zone === Z.WELLY && Welly.typing()) {
       var r = Welly.typingKey(k, TV.keys);
@@ -1429,14 +1983,45 @@
       updateFocus();
       return;
     }
+    if (isArrow(k)) {
+      // A held arrow (the remote repeats it): fast scrub until it's released.
+      setScrub(!!e.repeat || (k === lastKey && now - lastKeyAt < 150));
+      lastKey = k;
+      lastKeyAt = now;
+    }
     if (k === TV.keys.left) move(-1, 0);
     else if (k === TV.keys.right) move(1, 0);
     else if (k === TV.keys.up) move(0, -1);
     else if (k === TV.keys.down) move(0, 1);
-    else if (k === TV.keys.ok) activate();
+    else if (k === TV.keys.ok) {
+      // OK squishes what's focused on the press and acts on the release, as the Android app and tvOS do.
+      e.preventDefault();
+      if (okDown || e.repeat) return;
+      okDown = true;
+      // Welly does its own press: OK down presses there, its release lets go (Welly.release, when it has one).
+      if (st.zone === Z.WELLY) { okDown = 'welly'; activate(); return; }
+      pressed = focusedFx();
+      if (pressed) pressed.p.set(1);
+      return;
+    }
     else if (k === TV.keys.back || k === 27 || k === 8) back();
     else return;
     e.preventDefault();
+  });
+  document.addEventListener('keyup', function (e) {
+    var k = e.keyCode;
+    if (isArrow(k)) { setScrub(false); return; }
+    if (k !== TV.keys.ok || !okDown) return;
+    if (okDown === 'welly') {
+      okDown = false;
+      if (window.Welly && Welly.release) Welly.release();
+      return;
+    }
+    okDown = false;
+    if (pressed) pressed.p.set(0);
+    pressed = null;
+    e.preventDefault();
+    activate();
   });
   document.addEventListener('mousemove', function () { poke(); });
 
@@ -1507,6 +2092,7 @@
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { hideSaver(); return; }
     idleAt = Date.now();
+    endLaunch(true);   // back from the app: the page is in place again
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
   });
 
@@ -1544,5 +2130,7 @@
 
   // For the browser preview and tests.
   window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
-    tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); }};
+    tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
+    // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
+    nowPlaying: nowPlaying};
 })();

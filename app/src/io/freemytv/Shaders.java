@@ -86,6 +86,8 @@ final class Shaders {
      */
     static final String GLASS =
         "uniform shader frost;\n" +
+        "uniform shader frostB;\n" +         // the next blurred image during a fade (day ⇄ night, a new photo)
+        "uniform float frostMix;\n" +        // how much of frostB shows (0: only frost)
         "uniform float2 frostScale;\n" +     // frosted image size / screen size
         "uniform float2 offset;\n" +         // layer offset on screen (the layer moves without being redrawn)
         "uniform float2 center;\n" +
@@ -122,7 +124,10 @@ final class Shaders {
         "  if (body > 0.0) {\n" +
         "    float edge = 1.0 - clamp(-sd * depth.x, 0.0, 1.0);\n" +
         "    float2 sxy = xy - dir * (edge * edge * depth.y);\n" +
-        "    half3 bg = frost.eval((sxy + offset) * frostScale).rgb * 1.12 + half3(0.02);\n" +
+        "    float2 fp = (sxy + offset) * frostScale;\n" +
+        "    half3 bg = frost.eval(fp).rgb;\n" +
+        "    if (frostMix > 0.0) { bg = mix(bg, frostB.eval(fp).rgb, half(frostMix)); }\n" +
+        "    bg = bg * 1.12 + half3(0.02);\n" +
         "    col = mix(bg, tint.rgb, tint.a);\n" +
         "    col = mix(col, glow.rgb, glow.a * smoothstep(0.1, 1.0, ty * depth.w));\n" +
         "    col += half3(lift);\n" +
@@ -155,6 +160,7 @@ final class Shaders {
         "uniform float band;\n" +
         "uniform float refraction;\n" +
         "uniform float specular;\n" +
+        "uniform float2 light;\n" +          // the key light's direction (top left; it turns as the tab bar's lens moves)
         "float hash(float2 p) {\n" +
         "  p = fract(p * float2(123.34, 456.21));\n" +
         "  p += dot(p, p + 45.32);\n" +
@@ -200,7 +206,7 @@ final class Shaders {
         "  col += half3(0.05 * (1.0 - smoothstep(-1.0, -0.2, ny)));\n" +
         // Key light from the top left: a catchlight on the rim where it faces the light, fading along the sides, a
         // faint bounce opposite, and a soft inner halo.
-        "  float2 L = float2(-0.4512, -0.8924);\n" +
+        "  float2 L = light;\n" +
         "  float facing = pow(clamp(dot(n, L), 0.0, 1.0), 1.5);\n" +
         "  float back = clamp(-dot(n, L), 0.0, 1.0);\n" +
         "  float rim = 1.0 - smoothstep(0.0, 2.2, inner);\n" +

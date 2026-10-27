@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=1920, height=1080">
 <title>Free My TV</title>
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="house.css">
+<link rel="stylesheet" href="welly.css">
 </head>
 <body>
 <script>
@@ -20,29 +22,32 @@
   <div id="sky" class="layer">
     <div class="grad day"></div>
     <div class="grad night"></div>
-    <div id="photoA" class="photo"></div>
-    <div id="photoB" class="photo"></div>
+    <div id="art"><div id="photoA" class="photo"></div><div id="photoB" class="photo"></div></div>
     <div class="scrim"></div>
-    <canvas id="bgA" width="48" height="27"></canvas>
-    <canvas id="bgB" width="48" height="27"></canvas>
+    <div id="blur"><canvas id="bgA" width="48" height="27"></canvas><canvas id="bgB" width="48" height="27"></canvas></div>
     <div class="veil"></div>
     <div class="lift"></div>
     <div class="shade"></div>
   </div>
   <div id="home" class="layer">
+    <div id="tv" class="layer">
+      <div id="shelftop" class="layer">
+        <div id="hero"><img class="logo" alt=""><h1></h1></div>
+        <div id="details"><div class="meta"></div><div class="overview"></div><button id="watch"></button></div>
+        <div id="dots"></div>
+        <div id="chevron"></div>
+      </div>
+      <div id="platter"><canvas class="bleed" width="48" height="27"></canvas><div class="tint"></div></div>
+      <div id="shadows"></div>
+      <div id="tiles"></div>
+      <div id="dockname"></div>
+    </div>
     <div id="top" class="layer">
-      <div id="hero"><img class="logo" alt=""><h1></h1></div>
-      <div id="details"><div class="meta"></div><div class="overview"></div><button id="watch"></button></div>
-      <div id="dots"></div>
-      <div id="chevron"></div>
       <div id="quotes"></div>
       <div id="pill"><span class="time"></span><span class="avatar"></span></div>
       <div id="buttons"></div>
       <div id="clock"><span class="time"></span><span class="date"></span></div>
     </div>
-    <div id="platter"><canvas class="bleed" width="48" height="27"></canvas><div class="tint"></div></div>
-    <div id="tiles"></div>
-    <div id="dockname"></div>
   </div>
   <div id="dim" class="layer"></div>
   <div id="house" class="layer"><canvas width="1920" height="1080"></canvas><div class="pill"><span class="n"></span><span class="s"></span></div></div>
@@ -62,6 +67,7 @@
 <script src="i18n.js"></script>
 <script src="strings.js"></script>
 <script src="tv.js"></script>
+<script src="motion.js"></script>
 <script src="zones.js"></script>
 <script src="data.js"></script>
 <script src="house-data.js"></script>

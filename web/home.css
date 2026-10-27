@@ -5,7 +5,8 @@
  * opens the drawer (inputs, shortcuts, weather). Light by day, dark from sunset to sunrise.
  * No CSS variables, grid or backdrop-filter: older LG TVs (webOS 3 and 4) don't have them, and blur is too heavy for
  * their GPUs; the glass shows a tiny copy of the photo, stretched (already as soft as a blur). Only transform and
- * opacity animate.
+ * opacity animate. Everything that can change mid-flight (focus, the Dock, the grid lift, tabs, Control Center, sheets)
+ * moves on springs from motion.js, written by home.js (ANIMATIONS-SPEC.md); CSS keeps only short one-shot fades.
  */
 @font-face {
   font-family: 'Inter';
@@ -68,10 +69,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background-size: cover;
   background-position: center;
   opacity: 0;
-  -webkit-transition: opacity 0.8s;
-  transition: opacity 0.8s;
+  -webkit-transition: opacity 0.7s;
+  transition: opacity 0.7s;
 }
 #sky .photo.on { opacity: 1; }
+/* The art, a little wider than the screen: it drifts ±8 px against the focus moving along the Dock. */
+#art { position: absolute; left: -8px; top: 0; width: 1936px; height: 100%; }
+/* The blurred copy (behind the grid, Home and Welly): home.js sets its opacity from how far the page has gone. */
+#blur { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 /* Darker only where text sits: the title at the bottom left, the Dock's names, the pill at the top. */
 #sky .scrim {
   position: absolute;
@@ -108,19 +113,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .has-photo #sky .scrim { opacity: 1; }
 #sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.8s; transition: opacity 0.8s; }
 #sky canvas.on { opacity: 1; }
-/* Over the photo, the blurred copy shows only behind the app grid (tvOS blurs the Top Shelf there). */
-.has-photo #sky canvas.on { opacity: 0; }
-.has-photo.grid-open #sky canvas.on { opacity: 1; }
 #sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(245, 245, 247, 0.74); -webkit-transition: background-color 2s, opacity 0.8s; transition: background-color 2s, opacity 0.8s; }
 .has-photo #sky .veil { opacity: 0; }
-#sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #FFF; opacity: 0; -webkit-transition: opacity 0.45s, background-color 2s; transition: opacity 0.45s, background-color 2s; }
+#sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #FFF; opacity: 0; -webkit-transition: background-color 2s; transition: background-color 2s; }
 .night #sky .day { opacity: 0; }
 .night #sky .night { opacity: 1; }
 .night #sky .veil { background: rgba(11, 11, 13, 0.78); }
 .night #sky .lift { background: #000; }
-.drawer-open #sky .lift { opacity: 0.32; }
-.night.drawer-open #sky .lift { opacity: 0.42; }
-.grid-open #sky .lift { opacity: 0.6; }
 
 /* MARK: - Moving parts: the app grid lifts the page; Control Center floats in from the right over everything. */
 
@@ -131,17 +130,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .sheet { z-index: 4; }
 #saver { z-index: 5; }
 
-#home {
-  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
-  transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.28s;
-  transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), opacity 0.28s;
-}
-#top { -webkit-transition: opacity 0.24s; transition: opacity 0.24s; }
-.grid-open #top { opacity: 0; }
-/* Control Center keeps the art visible: the page only dims a little behind it. */
-#dim { background: #000; opacity: 0; pointer-events: none; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
-.drawer-open #dim { opacity: 0.18; }
-.night.drawer-open #dim { opacity: 0.3; }
+/* Layers that hold others: only what's inside them takes the pointer. */
+#tv, #shelftop, #top { pointer-events: none; }
+#tv .tile, #platter, #watch, #pill, #buttons > * { pointer-events: auto; }
+/* Control Center keeps the art visible: the page only dims a little behind it (home.js, with the panel). */
+#dim { background: #000; opacity: 0; pointer-events: none; }
 
 /* MARK: - Top Shelf (Apple's photo, 1:1): the title's logo top left, nothing else over the art */
 
@@ -152,15 +145,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 700px;
   color: #FFF;
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
-  -webkit-transition: opacity 0.4s;
-  transition: opacity 0.4s;
 }
-#hero.out { opacity: 0; }
 #hero .logo { display: none; max-width: 380px; max-height: 200px; -webkit-filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.35)); filter: drop-shadow(0 3px 14px rgba(0, 0, 0, 0.35)); }
 #hero.has-logo .logo { display: block; }
 #hero.has-logo h1 { display: none; }
 #hero h1 { margin: 0; font-size: 76px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.02; max-height: 156px; overflow: hidden; }
-.wallpaper #hero, .wallpaper #chevron, .no-picks #hero { opacity: 0; }
+.wallpaper #chevron { opacity: 0; }
 
 /* The chevron: ↑ for full screen. */
 #chevron {
@@ -185,6 +175,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 #chevron::before { left: 1px; -webkit-transform: rotate(-22deg); transform: rotate(-22deg); }
 #chevron::after { right: 1px; -webkit-transform: rotate(22deg); transform: rotate(22deg); }
+/* It breathes while the Dock has the focus (±2.5 px over 3.2 s), on the compositor: no frames from the page. */
+.dock-focus #chevron { -webkit-animation: breathe 3.2s ease-in-out infinite; animation: breathe 3.2s ease-in-out infinite; }
+@-webkit-keyframes breathe { 0%, 100% { -webkit-transform: translateY(-2.5px); } 50% { -webkit-transform: translateY(2.5px); } }
+@keyframes breathe { 0%, 100% { transform: translateY(-2.5px); } 50% { transform: translateY(2.5px); } }
 
 /* Full screen (↑ on a pick): the Dock slides away; the details come up at the bottom left. */
 #details {
@@ -194,18 +188,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   width: 1000px;
   color: #FFF;
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  -webkit-transform: translateY(30px);
-  transform: translateY(30px);
-  -webkit-transition: opacity 0.35s, -webkit-transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: opacity 0.35s, transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1);
 }
-.full #details { opacity: 1; -webkit-transform: none; transform: none; }
-/* Entry by hierarchy (metadata, synopsis, then Play, 40 ms apart); on exit they go together. */
-#details > * { opacity: 0; -webkit-transform: translateY(16px); transform: translateY(16px); -webkit-transition: opacity 0.2s, -webkit-transform 0.2s; transition: opacity 0.2s, transform 0.2s; }
-.full #details > * { opacity: 1; -webkit-transform: none; transform: none; -webkit-transition: opacity 0.35s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: opacity 0.35s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); }
-.full #details .overview { -webkit-transition-delay: 0.04s; transition-delay: 0.04s; }
-.full #details #watch { -webkit-transition-delay: 0.08s; transition-delay: 0.08s; }
+/* Entry by hierarchy (metadata, synopsis, then Play, 40 ms apart, on springs in home.js); on exit they go together. */
+#details > * { opacity: 0; }
 .full #chevron { opacity: 0; }
 #details .meta { height: 34px; font-size: 29px; font-weight: 500; line-height: 34px; color: rgba(255, 255, 255, 0.8); white-space: nowrap; }
 #details .meta .badge {
@@ -239,15 +224,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
   box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.6), inset -1px -1px 0 rgba(255, 255, 255, 0.14), 0 8px 24px rgba(0, 0, 0, 0.2);
   text-shadow: none;
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.26s;
+  -webkit-transition: background-color 0.17s, color 0.17s, box-shadow 0.26s;
+  transition: background-color 0.17s, color 0.17s, box-shadow 0.26s;
 }
 #watch .sym { width: 26px; height: 26px; vertical-align: -5px; margin-right: 12px; }
-#watch.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4); }
+#watch.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4); }
 #dots { position: absolute; right: 80px; bottom: 106px; height: 8px; font-size: 0; white-space: nowrap; opacity: 0; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
 .full #dots { opacity: 1; }
-#dots span { display: inline-block; width: 8px; height: 8px; margin-left: 14px; border-radius: 4px; background: rgba(255, 255, 255, 0.38); }
-#dots span.on { background: #FFF; }
+#dots .dot { display: inline-block; width: 8px; height: 8px; margin-left: 14px; border-radius: 4px; background: rgba(255, 255, 255, 0.38); }
+/* The current page's dot: one white dot that slides between them. */
+#dots .cur { position: absolute; left: 14px; top: 0; width: 8px; height: 8px; border-radius: 4px; background: #FFF; }
 
 /* MARK: - The status pill (top right): the time and your profile's avatar, in smoke glass */
 
@@ -267,12 +253,23 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px rgba(0, 0, 0, 0.16);
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s, opacity 0.25s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s, opacity 0.25s;
+  -webkit-transition: background-color 0.17s, color 0.17s, opacity 0.25s, box-shadow 0.17s;
+  transition: background-color 0.17s, color 0.17s, opacity 0.25s, box-shadow 0.17s;
 }
 #pill .time { display: inline-block; margin-right: 20px; vertical-align: top; }
-#pill .avatar { display: inline-block; width: 49px; height: 49px; margin-top: 4px; border-radius: 25px; background-size: cover; background-position: center; vertical-align: top; }
-#pill.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
+#pill .avatar { position: relative; display: inline-block; width: 49px; height: 49px; margin-top: 4px; border-radius: 25px; background-size: cover; background-position: center; vertical-align: top; }
+/* Another profile: the old face over the new one, fading out. */
+#pill .avatar .prev { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 25px; background-size: cover; background-position: center; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
+/* Focused: white, with a brighter rim (the scale and the avatar's pop are springs in home.js). */
+#pill.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
+/* What's playing (FreeMyTV.nowPlaying): three bars and the title, left of the time. */
+#pill .np { display: inline-block; margin-right: 18px; vertical-align: top; opacity: 0; -webkit-transition: opacity 0.25s; transition: opacity 0.25s; }
+#pill.playing .np { opacity: 1; }
+#pill .np .bar { display: inline-block; width: 4px; height: 22px; margin-right: 3px; border-radius: 2px; background: currentColor; vertical-align: -3px; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; -webkit-animation: eq 0.9s ease-in-out infinite; animation: eq 0.9s ease-in-out infinite; }
+#pill .np .bar:nth-child(2) { -webkit-animation-delay: 0.3s; animation-delay: 0.3s; }
+#pill .np .bar:nth-child(3) { -webkit-animation-delay: 0.6s; animation-delay: 0.6s; margin-right: 12px; }
+@-webkit-keyframes eq { 0%, 100% { -webkit-transform: scaleY(0.35); } 50% { -webkit-transform: scaleY(1); } }
+@keyframes eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
 .no-picks #pill, .night.no-picks #pill { background: rgba(52, 62, 76, 0.52); }
 
 /* Crypto quotes (show_crypto) or what's playing: left of the pill. */
@@ -309,13 +306,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Dock: one Liquid Glass bar of 6 tiles, 251 × 150 (5:3), 49 apart; focused, a tile grows 1.23× in place */
 
-#platter, #tiles, #apps {
-  -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.35s;
-  transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), opacity 0.35s;
-  transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), opacity 0.35s;
-}
-.full #platter, .full #tiles { -webkit-transform: translateY(300px); transform: translateY(300px); opacity: 0; }
-.full #apps.sheet { -webkit-transform: translateY(1022px); transform: translateY(1022px); opacity: 0; }
 .drawer-open #pill, .drawer-open #quotes { opacity: 0; }
 
 #platter {
@@ -368,7 +358,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: linear-gradient(rgba(40, 40, 40, 0.5), rgba(20, 20, 22, 0.46));
 }
 
-#tiles { position: absolute; left: 0; top: 0; }
+#tiles, #shadows { position: absolute; left: 0; top: 0; }
+/* A focused tile's lift shadow: its own element behind the tile (the tile clips), faded in with the focus. */
+.lift-shadow { position: absolute; width: 251px; height: 150px; border-radius: 24px; box-shadow: 0 28px 46px rgba(0, 0, 0, 0.36); opacity: 0; pointer-events: none; }
+.night .lift-shadow { box-shadow: 0 28px 46px rgba(0, 0, 0, 0.48); }
+.cell .lift-shadow { left: 0; top: 0; }
 
 /*
  * An app tile, flat at rest as in Apple's photo: the backdrop (painted by home.js) and the emblem, nothing baked in
@@ -383,11 +377,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: 24px;
   overflow: hidden;
   color: #FFF;
-  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, opacity 0.3s;
-  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, opacity 0.3s;
-  transition: transform 0.3s linear(0, 0.012, 0.049, 0.107, 0.185, 0.278, 0.383, 0.493, 0.601, 0.702, 0.791, 0.865, 0.924, 0.967, 0.995, 1.013, 1.019, 1.016, 1.009, 1.003, 1), box-shadow 0.3s, opacity 0.3s;
+  -webkit-transition: opacity 0.3s;
+  transition: opacity 0.3s;
 }
-.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); }
+.tile.gone { opacity: 0; }
+.tile img, .cell .face img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
 .tile img.logo, .cell .face img.logo { width: 66%; height: 46%; max-width: none; max-height: none; object-fit: contain; }
 /* An app with only a launcher icon: the icon, square, centred on its colour. */
 .tile img.icon, .cell .face img.icon { width: auto; height: 58%; max-width: none; max-height: none; border-radius: 18%; }
@@ -409,9 +403,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   color: #FFF;
 }
 .tile .sym.big, .cell .face .sym.big { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; color: #FFF; }
-/* The one specular sheen, only on focus; it slides with the sway. */
-.tile::before, .cell .face::before {
-  content: '';
+/* The one specular sheen, only on focus; it slides against the tilt (home.js). */
+.tile .sheen, .cell .face .sheen {
   position: absolute;
   left: -20%;
   top: -40%;
@@ -420,29 +413,11 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background: -webkit-radial-gradient(50% 50%, ellipse, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 65%);
   background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 65%);
   opacity: 0;
-  -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
-  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
   pointer-events: none;
 }
-.tile.focus::before, .cell.focus .face::before { opacity: 1; }
-.tile.focus, .cell.focus .face {
-  -webkit-transform: scale(1.23);
-  transform: scale(1.23);
-  box-shadow: 0 22px 40px rgba(0, 0, 0, 0.34);
-  z-index: 2;
-}
-.lean-r .tile.focus, .lean-r .cell.focus .face { -webkit-animation: sway-r 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-r 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); }
-.lean-l .tile.focus, .lean-l .cell.focus .face { -webkit-animation: sway-l 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); animation: sway-l 0.45s cubic-bezier(0.2, 0.8, 0.3, 1); }
-@-webkit-keyframes sway-r { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(-3deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
-@keyframes sway-r { 0% { transform: scale(1.23) perspective(900px) rotateY(-3deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
-@-webkit-keyframes sway-l { 0% { -webkit-transform: scale(1.23) perspective(900px) rotateY(3deg); } 100% { -webkit-transform: scale(1.23) perspective(900px) rotateY(0); } }
-@keyframes sway-l { 0% { transform: scale(1.23) perspective(900px) rotateY(3deg); } 100% { transform: scale(1.23) perspective(900px) rotateY(0); } }
-/* Parallax, near-subliminal: the emblem 4 px with the travel, the sheen the other way. */
-.lean-r .tile.focus img, .lean-r .cell.focus .face img { -webkit-transform: translate(-47.6%, -50%); transform: translate(-47.6%, -50%); }
-.lean-l .tile.focus img, .lean-l .cell.focus .face img { -webkit-transform: translate(-52.4%, -50%); transform: translate(-52.4%, -50%); }
-.lean-r .tile.focus::before, .lean-r .cell.focus .face::before { -webkit-transform: translateX(-12px); transform: translateX(-12px); }
-.lean-l .tile.focus::before, .lean-l .cell.focus .face::before { -webkit-transform: translateX(12px); transform: translateX(12px); }
-.night .tile.focus, .night .cell.focus .face { box-shadow: 0 22px 40px rgba(0, 0, 0, 0.5); }
+/* Focused: on top of its neighbours. Its scale, tilt, sheen and parallax are springs (home.js, ANIMATIONS-SPEC.md §2.1). */
+.tile.focus, .cell.focus .face, .cell.focus .lift-shadow { z-index: 2; }
+.cell.focus { z-index: 2; }
 .glint { display: none; }
 .more { position: absolute; width: 17px; height: 17px; color: rgba(255, 255, 255, 0.8); }
 .more.back { -webkit-transform: scaleX(-1); transform: scaleX(-1); }
@@ -461,23 +436,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   color: #FFF;
   opacity: 0;
   visibility: hidden;
-  -webkit-transform: translateX(80px);
-  transform: translateX(80px);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
-  /* dismiss: 400 ms, brisk */
-  -webkit-transition: opacity 0.25s, -webkit-transform 0.4s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s 0.4s;
-  transition: opacity 0.25s, transform 0.4s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s 0.4s;
-  transition: opacity 0.25s, transform 0.4s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), visibility 0s 0.4s;
-}
-/* present: 450 ms, deliberate */
-.drawer-open #drawer {
-  opacity: 1;
-  visibility: visible;
-  -webkit-transform: none;
-  transform: none;
-  -webkit-transition: opacity 0.3s, -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s;
-  transition: opacity 0.3s, transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1), visibility 0s;
-  transition: opacity 0.3s, transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1), visibility 0s;
+  /* Presented on SHEET_OPEN from +480 px and dismissed on SHEET_CLOSE (home.js); its own layer (it's small). */
+  will-change: transform, opacity;
 }
 #drawer .bleed { left: -1340px; top: -60px; }
 #drawer .body { position: absolute; left: 28px; top: 28px; right: 28px; bottom: 28px; }
@@ -485,10 +446,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night #drawer { color: #FFF; }
 #drawer .profiles { position: absolute; left: 0; right: 0; top: 0; height: 130px; }
 #drawer .who { position: absolute; top: 0; width: 104px; text-align: center; }
-#drawer .who .face { display: block; width: 84px; height: 84px; margin: 0 auto; border-radius: 42px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); -webkit-transition: -webkit-transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.2s; transition: transform 0.24s cubic-bezier(0.2, 0.9, 0.25, 1.22), box-shadow 0.2s; }
+#drawer .who .face { display: block; width: 84px; height: 84px; margin: 0 auto; border-radius: 42px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); -webkit-transition: box-shadow 0.2s; transition: box-shadow 0.2s; }
 #drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.25); }
 #drawer .who .name { display: block; margin-top: 10px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#drawer .who.focus .face { -webkit-transform: scale(1.12); transform: scale(1.12); box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.4); }
+#drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.4); }
 #drawer .time { font-size: 57px; font-weight: 300; line-height: 66px; letter-spacing: -0.01em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 #drawer .date { font-size: 25px; font-weight: 500; line-height: 32px; opacity: 0.72; }
 
@@ -499,16 +460,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: 26px;
   color: inherit;
   background: rgba(255, 255, 255, 0.12);
-  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, background-color 0.14s;
-  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s, background-color 0.14s;
-  transition: transform 0.3s linear(0, 0.012, 0.049, 0.107, 0.185, 0.278, 0.383, 0.493, 0.601, 0.702, 0.791, 0.865, 0.924, 0.967, 0.995, 1.013, 1.019, 1.016, 1.009, 1.003, 1), box-shadow 0.3s, background-color 0.14s;
+  -webkit-transition: box-shadow 0.3s, background-color 0.14s;
+  transition: box-shadow 0.3s, background-color 0.14s;
 }
 /* Plain fills, not glass: never glass on the panel's glass. */
 .night .key { background: rgba(0, 0, 0, 0.22); }
 .key .sym { position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; }
 .key .label { position: absolute; left: 20px; right: 14px; bottom: 18px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.key.off { opacity: 0.5; }
-.key.focus { background: #FFF; color: #1C1C1E; opacity: 1; -webkit-transform: scale(1.06); transform: scale(1.06); box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); z-index: 2; }
+.key.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); z-index: 2; }
 
 #weather { position: absolute; left: 0; right: 0; bottom: 0; height: 210px; border-radius: 26px; background: rgba(255, 255, 255, 0.12); }
 .night #weather { background: rgba(0, 0, 0, 0.22); }
@@ -532,24 +491,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   opacity: 0;
   visibility: hidden;
   pointer-events: none; /* while it fades out, the pointer goes to what's under it, not to its rows */
-  -webkit-transform: scale(1.04);
-  transform: scale(1.04);
-  -webkit-transition: opacity 0.24s, -webkit-transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0s 0.3s;
-  transition: opacity 0.24s, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1), visibility 0s 0.3s;
 }
-.sheet.open { opacity: 1; visibility: visible; pointer-events: auto; -webkit-transform: none; transform: none; -webkit-transition-delay: 0s; transition-delay: 0s; }
+/* Open: SHEET_OPEN from 1.04 (home.js sets the opacity and scale). */
+.sheet.open { pointer-events: auto; }
 .sheet h2 { position: absolute; left: 0; right: 0; top: 84px; margin: 0; text-align: center; font-size: 40px; font-weight: 600; }
 
 /* The app grid: always there under the Dock (its first row peeks at the bottom of the screen); ↓ lifts the page 722. */
 #apps.sheet { background: none; opacity: 1; visibility: visible; pointer-events: none; z-index: 1; -webkit-transform: translateY(722px); transform: translateY(722px); }
-#apps.sheet.open { pointer-events: auto; -webkit-transform: none; transform: none; }
+#apps.sheet.open { pointer-events: auto; }
 #apps h2 { display: none; }
-#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.45s cubic-bezier(0.32, 0.72, 0.2, 1); transition: transform 0.45s linear(0, 0.0037, 0.0142, 0.031, 0.0534, 0.0804, 0.1108, 0.1438, 0.1784, 0.2135, 0.2484, 0.3145, 0.3746, 0.4283, 0.4755, 0.5562, 0.6215, 0.6726, 0.7112, 0.7735, 0.8196, 0.854, 0.8793, 0.9185, 0.9458, 0.9647, 0.9779, 0.9921, 1); }
+#apps .grid { position: absolute; left: 0; top: 0; width: 1920px; }
 .cell { position: absolute; width: 251px; height: 150px; }
 .cell .face { top: 0; left: 0; }
-.cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+.cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 .night .cell .label, .has-photo .cell .label { color: #FFF; }
-.cell.focus .label { opacity: 1; }
 
 #settings .box, #shelfedit .box, #langpick .box, #about .box {
   position: absolute;
@@ -566,7 +521,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .box .title { font-size: 38px; font-weight: 700; padding: 6px 18px 18px; letter-spacing: -0.01em; }
 .box .title .sym { width: 36px; height: 36px; vertical-align: -5px; margin-right: 14px; color: rgba(255, 255, 255, 0.85); }
 .box .list { position: relative; overflow: hidden; }
-.box .rows { -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.3, 1); }
 .box .row { position: relative; height: 70px; margin-bottom: 8px; border-radius: 20px; font-size: 30px; font-weight: 600; line-height: 70px; padding: 0 24px; white-space: nowrap; -webkit-transition: background-color 0.13s; transition: background-color 0.13s; }
 .box .row.focus { background: rgba(255, 255, 255, 0.13); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14); }
 .box .row .value { position: absolute; right: 24px; top: 0; color: rgba(255, 255, 255, 0.92); font-weight: 500; }
@@ -585,7 +539,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 #saver { background: #000; opacity: 0; visibility: hidden; -webkit-transition: opacity 1.2s, visibility 0s 1.2s; transition: opacity 1.2s, visibility 0s 1.2s; }
 #saver.on { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
-#saver .photo { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background-size: cover; background-position: center; opacity: 0; -webkit-transition: opacity 2.4s, -webkit-transform 24s linear; transition: opacity 2.4s, transform 24s linear; }
+/* Coming in it settles from 1.06 to 1.0 over the 1.2 s dissolve; each photo drifts from rest (home.js). */
+#saver .zoom { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; -webkit-transition: -webkit-transform 1.2s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 1.2s cubic-bezier(0.2, 0.9, 0.3, 1); }
+#saver .photo { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background-size: cover; background-position: center; opacity: 0; -webkit-transition: opacity 2.4s; transition: opacity 2.4s; }
 #saver .photo.on { opacity: 1; }
 #saver .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); }
 #saver .clock {
@@ -626,6 +582,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: opacity 0.25s;
 }
 #tabs .tab {
+  position: relative;
   display: inline-block;
   height: 51px;
   margin-top: 3px;
@@ -633,207 +590,34 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   border-radius: 26px;
   vertical-align: top;
   color: rgba(255, 255, 255, 0.7);
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
+  -webkit-transition: background-color 0.17s, color 0.17s;
+  transition: background-color 0.17s, color 0.17s;
 }
-#tabs .tab.sel { background: rgba(255, 255, 255, 0.18); color: #FFF; }
-#tabs .tab.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
+#tabs .tab.sel { color: #FFF; }
+#tabs .tab.focus { background: #FFF; color: #1C1C1E; }
+/* The selected tab's lens: it slides between tabs and stretches with its speed (home.js drawLens). */
+#tabs .lens { position: absolute; left: 3px; top: 3px; width: 0; height: 51px; }
+#tabs .lens .box { position: absolute; left: 0; top: 0; height: 51px; will-change: transform; }
+#tabs .lens .cap, #tabs .lens .mid { position: absolute; left: 0; top: 0; height: 51px; background: rgba(255, 255, 255, 0.18); }
+#tabs .lens .cap { width: 25.5px; }
+#tabs .lens .cap.l { border-radius: 25.5px 0 0 25.5px; }
+#tabs .lens .cap.r { border-radius: 0 25.5px 25.5px 0; }
+#tabs .lens .mid { width: 1px; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
+/* While it moves, the glass catches the light: a soft highlight that runs against the motion. */
+#tabs .lens .shine { position: absolute; left: 0; top: 3px; width: 80px; height: 45px; border-radius: 23px; opacity: 0; background: -webkit-radial-gradient(50% 50%, ellipse, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%); background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%); }
 .full #tabs, .grid-open #tabs, .drawer-open #tabs { opacity: 0; }
 
 /* Home and Welly: the TV tab's content steps aside; the same background stays, frosted and dimmed as under the grid. */
 .tab-home #hero, .tab-home #details, .tab-home #dots, .tab-home #chevron, .tab-home #quotes, .tab-home #platter, .tab-home #tiles, .tab-home #dockname, .tab-home #apps.sheet,
 .tab-welly #hero, .tab-welly #details, .tab-welly #dots, .tab-welly #chevron, .tab-welly #quotes, .tab-welly #platter, .tab-welly #tiles, .tab-welly #dockname, .tab-welly #apps.sheet {
-  opacity: 0;
   pointer-events: none;
 }
-.has-photo.tab-home #sky canvas.on, .has-photo.tab-welly #sky canvas.on { opacity: 1; }
-#sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; opacity: 0; -webkit-transition: opacity 0.35s; transition: opacity 0.35s; }
-.tab-home #sky .shade, .tab-welly #sky .shade { opacity: 0.45; }
-.night.tab-home #sky .shade, .night.tab-welly #sky .shade { opacity: 0.55; }
-/* Above the TV tab's layer, under the dimmer that Control Center brings. */
+.tab-home #quotes, .tab-welly #quotes { opacity: 0; }
+/* Home and Welly over the art: home.js darkens it as the tabs swap (TAB_SWAP). */
+#sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; opacity: 0; }
+/* Above the TV tab's layer, under the dimmer that Control Center brings. The tabs slide in and out (home.js). */
 #house, #welly, #tabs { z-index: 1; }
-#house, #welly { opacity: 0; visibility: hidden; color: #FFF; -webkit-transition: opacity 0.35s, visibility 0s 0.35s; transition: opacity 0.35s, visibility 0s 0.35s; }
-.tab-home #house, .tab-welly #welly { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
-
-/* MARK: - Home: the house on one canvas (rooms.js); the focused light's name and state in a pill above its dot */
-
-#house canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
-/* A smoke capsule like the status pill's, not glass over the model; rooms.js places it and keeps it in the safe area. */
-#house .pill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 52px;
-  padding: 0 24px;
-  border-radius: 26px;
-  white-space: pre;
-  font-size: 26px;
-  line-height: 52px;
-  color: #FFF;
-  background: rgba(28, 28, 30, 0.8);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 26px rgba(0, 0, 0, 0.32);
-  opacity: 0;
-  -webkit-transition: opacity 0.2s;
-  transition: opacity 0.2s;
-}
-#house .pill.on { opacity: 1; }
-#house .pill .n { font-weight: 600; }
-#house .pill .s { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
-#house .pill.lit .s { color: #FFC07A; }
-
-/* MARK: - Welly: a column of 1180, cards as plain fills, glass prompt pills and the "Ask Welly…" capsule */
-
-#welly .col { position: absolute; left: 370px; top: 0; width: 1180px; height: 820px; }
-#welly .who { position: absolute; left: 0; top: 150px; font-size: 24px; font-weight: 600; color: rgba(255, 255, 255, 0.6); white-space: pre; }
-#welly .hello { position: absolute; left: 0; top: 300px; }
-#welly .hello .big { font-size: 57px; font-weight: 600; letter-spacing: -0.01em; }
-#welly .hello .sub { margin-top: 14px; font-size: 31px; color: rgba(255, 255, 255, 0.7); }
-#welly .you { position: absolute; right: 0; top: 232px; max-width: 900px; text-align: right; font-size: 26px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#welly .reply { position: absolute; left: 0; top: 280px; width: 1180px; font-size: 31px; line-height: 1.32; max-height: 123px; overflow: hidden; }
-#welly .reply.thinking span {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  margin: 18px 10px 0 0;
-  border-radius: 7px;
-  background: #FFF;
-  -webkit-animation: welly-dot 1s infinite;
-  animation: welly-dot 1s infinite;
-}
-#welly .reply.thinking span:nth-child(2) { -webkit-animation-delay: 0.16s; animation-delay: 0.16s; }
-#welly .reply.thinking span:nth-child(3) { -webkit-animation-delay: 0.32s; animation-delay: 0.32s; }
-@-webkit-keyframes welly-dot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
-@keyframes welly-dot { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
-
-#welly .cards { position: absolute; left: 0; top: 470px; height: 240px; white-space: nowrap; }
-#welly .card {
-  position: relative;
-  display: inline-block;
-  height: 240px;
-  margin-right: 36px;
-  border-radius: 24px;
-  vertical-align: top;
-  white-space: normal;
-  overflow: hidden;
-  background: rgba(28, 28, 30, 0.82);
-  background-size: cover;
-  background-position: center;
-  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s;
-  transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1), box-shadow 0.3s;
-}
-#welly .card.focus { -webkit-transform: scale(1.08); transform: scale(1.08); box-shadow: 0 22px 40px rgba(0, 0, 0, 0.5); }
-#welly .card.media { width: 427px; }
-#welly .media .scrim { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); }
-#welly .media .t { position: absolute; left: 24px; right: 24px; bottom: 50px; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#welly .media .m { position: absolute; left: 24px; right: 24px; bottom: 20px; font-size: 21px; color: rgba(255, 255, 255, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#welly .card.score { width: 300px; }
-#welly .score .league, #welly .weather .place { position: absolute; left: 26px; top: 22px; font-size: 20px; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.6); }
-#welly .score .team { position: relative; height: 48px; margin: 0 26px; font-size: 26px; font-weight: 600; line-height: 48px; color: rgba(255, 255, 255, 0.62); }
-#welly .score .team:nth-child(2) { margin-top: 64px; }
-#welly .score .team.ahead { color: #FFF; }
-#welly .score .score { position: absolute; right: 0; top: 0; font-size: 32px; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#welly .score .status, #welly .home .state { position: absolute; left: 26px; bottom: 22px; font-size: 21px; color: rgba(255, 255, 255, 0.6); }
-#welly .card.weather { width: 430px; }
-#welly .weather .now { position: absolute; left: 26px; top: 60px; height: 70px; white-space: nowrap; }
-#welly .weather .now .sym { vertical-align: top; margin: 8px 14px 0 0; }
-#welly .weather .temp { font-size: 64px; font-weight: 300; line-height: 70px; }
-#welly .weather .range { position: absolute; right: 26px; top: 84px; font-size: 22px; color: rgba(255, 255, 255, 0.7); }
-#welly .weather .hours { position: absolute; left: 14px; right: 14px; bottom: 18px; height: 88px; white-space: nowrap; }
-#welly .weather .hour { display: inline-block; width: 25%; text-align: center; font-size: 19px; color: rgba(255, 255, 255, 0.7); }
-#welly .weather .hour .sym { display: block; margin: 6px auto; color: #FFF; }
-#welly .weather .hour .d { font-size: 21px; font-weight: 600; color: #FFF; }
-#welly .card.schedule { width: 560px; padding-top: 18px; box-sizing: border-box; }
-#welly .schedule .line { position: relative; height: 41px; margin: 0 26px; font-size: 24px; line-height: 41px; white-space: nowrap; }
-#welly .schedule .at { display: inline-block; width: 128px; color: rgba(255, 255, 255, 0.6); -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#welly .schedule .show { font-weight: 600; }
-#welly .schedule .net { position: absolute; right: 0; top: 0; color: rgba(255, 255, 255, 0.6); }
-#welly .card.home { width: 300px; }
-#welly .home .bulb { position: absolute; left: 26px; top: 26px; width: 46px; height: 46px; border-radius: 23px; background: rgba(255, 255, 255, 0.2); }
-#welly .home.lit .bulb { background: #FFD9A8; box-shadow: 0 0 30px rgba(255, 192, 122, 0.85); }
-#welly .home .room { position: absolute; left: 26px; top: 100px; font-size: 22px; color: rgba(255, 255, 255, 0.6); }
-#welly .home .fix { position: absolute; left: 26px; top: 132px; font-size: 30px; font-weight: 600; }
-#welly .home.lit .state { color: #FFC07A; }
-
-#welly .pills { position: absolute; left: 352px; top: 832px; width: 1216px; height: 84px; overflow: hidden; }
-/* A fade at an edge with more pills past it. */
-#welly .pills.more-r { -webkit-mask-image: -webkit-linear-gradient(left, #000 92%, rgba(0, 0, 0, 0)); }
-#welly .pills.more-l { -webkit-mask-image: -webkit-linear-gradient(left, rgba(0, 0, 0, 0), #000 8%); }
-#welly .pills.more-l.more-r { -webkit-mask-image: -webkit-linear-gradient(left, rgba(0, 0, 0, 0), #000 8%, #000 92%, rgba(0, 0, 0, 0)); }
-#welly .strip { position: absolute; left: 18px; top: 13px; white-space: nowrap; -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); transition: transform 0.3s cubic-bezier(0.25, 1.05, 0.5, 1); }
-#welly .pill {
-  display: inline-block;
-  height: 57px;
-  margin-right: 18px;
-  padding: 0 28px;
-  border-radius: 29px;
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 57px;
-  color: #FFF;
-  background: rgba(52, 62, 76, 0.52);
-  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22), background-color 0.17s, color 0.17s;
-}
-#welly .pill.focus { background: #FFF; color: #1C1C1E; -webkit-transform: scale(1.06); transform: scale(1.06); }
-
-#welly .ask { position: absolute; left: 370px; top: 934px; width: 1180px; height: 76px; border-radius: 38px; -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22); transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.22); }
-#welly .ask .fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 38px;
-  background: rgba(52, 62, 76, 0.52);
-  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08);
-  -webkit-transition: background-color 0.17s;
-  transition: background-color 0.17s;
-}
-#welly .ask.focus { -webkit-transform: scale(1.02); transform: scale(1.02); }
-#welly .ask.focus .fill { background: #FFF; }
-#welly .mic { position: absolute; left: 8px; top: 8px; width: 60px; height: 60px; border-radius: 30px; color: #FFF; -webkit-transition: background-color 0.17s, color 0.17s; transition: background-color 0.17s, color 0.17s; }
-#welly .mic .sym { position: absolute; left: 15px; top: 15px; }
-#welly .mic.focus { background: #FFF; color: #1C1C1E; }
-#welly .ask.focus .mic { color: #1C1C1E; }
-#welly .field {
-  position: absolute;
-  left: 84px;
-  right: 30px;
-  top: 0;
-  height: 76px;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  font: inherit;
-  font-size: 30px;
-  color: #FFF;
-}
-#welly .field::-webkit-input-placeholder { color: rgba(255, 255, 255, 0.55); }
-#welly .field::placeholder { color: rgba(255, 255, 255, 0.55); }
-#welly .ask.focus .field { color: #1D1D1F; }
-#welly .ask.focus .field::-webkit-input-placeholder { color: rgba(29, 29, 31, 0.45); }
-#welly .ask.focus .field::placeholder { color: rgba(29, 29, 31, 0.45); }
-/* Listening: the one moment of colour, a band of Apple Intelligence hues moving round the capsule's rim. */
-#welly .ask .edge { position: absolute; left: -4px; top: -4px; right: -4px; bottom: -4px; border-radius: 42px; overflow: hidden; opacity: 0; -webkit-transition: opacity 0.3s; transition: opacity 0.3s; }
-#welly .ask .edge::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 300%;
-  height: 100%;
-  background: -webkit-linear-gradient(left, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF);
-  background: linear-gradient(90deg, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF, #C959DD, #FF2E54, #FF9004, #0894FF);
-  -webkit-animation: welly-edge 2.4s linear infinite;
-  animation: welly-edge 2.4s linear infinite;
-}
-@-webkit-keyframes welly-edge { from { -webkit-transform: translateX(0); } to { -webkit-transform: translateX(-50%); } }
-@keyframes welly-edge { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-#welly .ask.listening .edge { opacity: 1; }
-#welly .ask.listening .fill { background: rgba(24, 24, 28, 0.94); }
-#welly .ask.listening .field { color: #FFF; }
+#house, #welly { opacity: 0; visibility: hidden; color: #FFF; }
 
 /* MARK: - Toast */
 
@@ -863,7 +647,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 * { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 
 /* Tizen 2 (see tv.js): no shadows or animations, which its GPU can't keep up with while the focus moves. */
-.lite * { box-shadow: none !important; -webkit-transition: none !important; transition: none !important; }
+.lite * { box-shadow: none !important; -webkit-transition: none !important; transition: none !important; -webkit-animation: none !important; animation: none !important; }
 
 /* Apple's continuous corners (DESIGN-TVOS.md §0b #1): superellipse(1.39) is the exponent 2.62 fitted to Apple's
    Bézier corner, over 1.245× the radius. Browsers without corner-shape (all TVs today) keep the plain radius. */
@@ -873,21 +657,26 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   #drawer { corner-shape: superellipse(1.39); border-radius: 55px; }
   .key, #weather { corner-shape: superellipse(1.39); border-radius: 32px; }
   #watch { corner-shape: superellipse(1.39); }
-  #welly .card { corner-shape: superellipse(1.39); border-radius: 30px; }
 }
 
-/* Reduce Motion: no sway or parallax, quick fades instead of travel. */
+/* Reduce Motion: motion.js makes the springs jump (no tilt, bump or drift); the CSS fades get short and the loops stop.
+   !important so they win over every state rule above. */
 @media (prefers-reduced-motion: reduce) {
-  .lean-r .tile.focus, .lean-l .tile.focus, .lean-r .cell.focus .face, .lean-l .cell.focus .face { -webkit-animation: none; animation: none; }
-  .tile, .cell .face, .key, #home, #platter, #tiles, #apps, #apps .grid, #drawer, #details > * { -webkit-transition-duration: 0.15s; transition-duration: 0.15s; }
-  #welly .card, #welly .strip, #welly .pill, #tabs .tab { -webkit-transition-duration: 0.15s; transition-duration: 0.15s; }
-  #welly .ask .edge::before { -webkit-animation: none; animation: none; }
-  .lean-r .tile.focus img, .lean-l .tile.focus img, .lean-r .cell.focus .face img, .lean-l .cell.focus .face img { -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+  #stage *, #stage *::before, #stage *::after { -webkit-animation: none !important; animation: none !important; }
+  #sky .photo, #sky canvas, #toast, #pill, #watch, #tabs .tab, .tile, .key, #saver, #saver .photo, #saver .zoom, .box .row, #pill .np, #pill .avatar .prev {
+    -webkit-transition-duration: 0.15s !important;
+    transition-duration: 0.15s !important;
+  }
+  #toast, #toast.on { -webkit-transform: translate(-50%, 0) !important; transform: translate(-50%, 0) !important; }
 }
 
-/* Reduce Transparency: the glass becomes near-opaque. */
+/* Reduce Transparency: the glass becomes near-opaque, whatever the time of day or the picks. */
 @media (prefers-reduced-transparency: reduce) {
-  #pill, #tabs, #welly .pill, #welly .ask .fill { background: rgba(44, 48, 56, 0.96); }
-  #platter .tint, #drawer .tint, .has-photo #platter .tint, .has-photo #drawer .tint, .night.has-photo #platter .tint, .night.has-photo #drawer .tint { background: rgba(36, 36, 40, 0.96); }
-  #platter .bleed, #drawer .bleed { opacity: 0; }
+  #pill, #tabs, .round, .no-picks #pill, .night.no-picks #pill { background: rgba(44, 48, 56, 0.96) !important; }
+  #pill.focus { background: #FFF !important; }
+  #platter .tint, #drawer .tint { background: rgba(36, 36, 40, 0.96) !important; }
+  #platter .bleed, #drawer .bleed { opacity: 0 !important; }
+  #toast { background: rgba(17, 17, 19, 0.98) !important; }
+  .sheet:not(#apps) { background: rgba(0, 0, 0, 0.9) !important; }
+  #saver .clock { background: rgba(30, 30, 34, 0.94) !important; }
 }

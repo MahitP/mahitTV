@@ -94,7 +94,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Control Center (§4): a floating glass panel on the right, its bento cards in 2 columns, the weather at the bottom.
     private static final float CC_LEFT = 1340, CC_RIGHT = 1860, CC_TOP = 60, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
     private static final float CC_CARD_W = 224, CC_CARD_H = 120, CC_GAP = 16, CC_CARD_RADIUS = 26, CC_WEATHER_H = 210;
-    private static final float CC_SLIDE = 80;
+    private static final float CC_SLIDE = 480;   // the panel slides in from 480 px to the right
     private static final long ROTATE_MS = 8000;
     // Corner capsule.
     // Corner capsule: the height and top offset of the tvOS tab bar (68 and 46).
@@ -106,10 +106,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             GRID_RADIUS = TV_TILE_RADIUS;
     private static final int SMOKE = 0xFF111113, INK = 0xFF1C1C1E, WHITE = 0xFFF5F5F7;
     private static final int UP_COLOR = 0xFF30D158, DOWN_COLOR = 0xFFFF453A;
-    private static final long TOAST_MS = 6000, FADE_MS = 800;
+    private static final long TOAST_MS = 6000, FADE_MS = 700;
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 44, KEY_BLUR = 16;
     private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, TABBAR = 8;
+    private static final int CHEVRON = 9;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -157,8 +158,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int zone = Z_SHELF;
     // The tabs: tabAway = the TV tab's content hidden and the background frosted and dimmed (Home or Welly); the two
     // contents cross-fade (smooth); lens = where the selected tab's lighter lens is (0 to 2, snappy).
-    private final Spring tabAway = new Spring(0.45f, 0.9f, 0), homeShown = new Spring(0.45f, 0.9f, 0);
-    private final Spring wellyShown = new Spring(0.45f, 0.9f, 0), lens = new Spring(0.30f, 0.80f, 0);
+    private final Spring tabAway = new Spring(Spring.TAB_SWAP, 0), homeShown = new Spring(Spring.TAB_SWAP, 0);
+    private final Spring wellyShown = new Spring(Spring.TAB_SWAP, 0);
     private final RectF tabBarRect = new RectF();
     private Paint tabText;
     private final float[] tabTextW = new float[3];
@@ -219,10 +220,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float tileFxW;
     private final android.graphics.Matrix imageMatrix = new android.graphics.Matrix();
     // The focused tile sways toward where the focus came from, then settles (tvOS's tilt): angles from these springs.
-    private final Spring swayX = new Spring(0.5f, 0.45f, 0), swayY = new Spring(0.5f, 0.45f, 0);
+    private final Spring swayX = new Spring(Spring.TILT, 0), swayY = new Spring(Spring.TILT, 0);
     private final android.graphics.Camera tiltCamera = new android.graphics.Camera();
     private final android.graphics.Matrix tiltMatrix = new android.graphics.Matrix();
     private int lastDx, lastDy;
+    /** The velocity that tilts a tile ~3° (TILT's peak for this push is ~1). */
+    private static final float SWAY_KICK = 30;
     private float nameCap;
     /** Each app's tile like its Apple TV icon: brand colors (top, bottom) and logo (0 = as is, 1 = white, 2 = dark). */
     private static final Map<String, int[]> TILE_STYLE = new HashMap<>();
@@ -272,14 +275,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Hero and background: all of this hour's picks, and those of the focused Dock app (the Top Shelf shows these)
     private List<Recs.Pick> picks = new ArrayList<>(), appPicks = new ArrayList<>();
     /** Full screen (↑ on a pick): 0 = the Dock, 1 = the details at the bottom and the Dock away. */
-    private final Spring full = new Spring(0.45f, 0.9f, 0);   // smooth (apple-design-motion: push-like transitions)
+    private final Spring full = new Spring(Spring.SPATIAL_SCROLL, 0);   // smooth (apple-design-motion: push-like transitions)
     // The wallpaper when the focused app has no pick: a bundled aerial (one per hour), built like a pick's backdrop.
     private Backdrop wallpaper;
     private int wallpaperIndex = -1;
     private boolean wallpaperLoading;
     private String[] aerials;
     // The status pill: its focus, and the current profile's avatar at its size.
-    private final Spring pillFocus = new Spring(0.26f, 0.8f, 0);
+    private final Spring pillFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
     private Bitmap pillAvatar;
     private int pillFrom = Z_SHELF;          // where ↓ from the pill goes back to
     private float pillTimeW;
@@ -296,10 +299,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int pickIndex, heroSlide = 1;
     private Hero hero, heroFrom;
     private long heroFadeAt, bgFadeAt;
-    private final Spring heroFocus = new Spring(0.28f, 0.85f, 0);
+    private final Spring heroFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
     private final RectF heroButton = new RectF();
     private Backdrop bgFrom, bgTo;     // null = gradient (no photo)
-    private final int[] frostMix = new int[Backdrop.FW * Backdrop.FH];
+    // What the glass shows now (setFrost / setGlassImage copy pixels and make a shader: only when these change).
+    private int[] frostShown, glassShown;
 
     // Bottom drawer
     private List<HomeApps.Item> drawerItems = new ArrayList<>();
@@ -310,7 +314,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String[] drawerLabels = new String[0];
     private int drawerFrom = Z_SHELF;            // where the focus goes back when Control Center closes
     private Paint ccTime, ccDate, ccLabel, ccTemp;
-    private final Spring drawer = new Spring(0.45f, 0.85f, 0);   // Control Center: presents (0.45, 0.85), dismisses (0.40, 0.88)
+    private final Spring drawer = new Spring(Spring.SHEET_OPEN, 0);   // Control Center: SHEET_OPEN, SHEET_CLOSE
     private boolean drawerOpen;
     private int drawerIndex;
 
@@ -318,8 +322,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private List<HomeApps.Item> others = new ArrayList<>();
     private Spring[] gridFocus = new Spring[0];
     private String[] gridLabels;
-    private final Spring sheet = new Spring(0.45f, 0.9f, 0);   // the grid's lift: smooth
-    private final Spring scroll = new Spring(0.34f, 1f, 0);
+    private final Spring sheet = new Spring(Spring.SPATIAL_SCROLL, 0);   // the grid's lift: smooth
+    private final Spring scroll = new Spring(Spring.SPATIAL_SCROLL, 0);
     private final RectF focusedCell = new RectF(), gridFocusCell = new RectF();
     private boolean sheetOpen, shelfEdited;
     private int gridIndex;
@@ -329,6 +333,54 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final ArrayDeque<String> toasts = new ArrayDeque<>();
     private StaticLayout toast;
     private long toastAt;
+
+    // Motion (ANIMATIONS-SPEC.md): dead ends, the OK press, an app opening, coming back, fast scrubbing.
+    /** A press toward nothing: the focused thing's nudge (1920-px units; drawn through the rubber band, bumpX/Y). */
+    private final Spring nudgeX = new Spring(Spring.BOUNDARY_BUMP, 0).px(), nudgeY = new Spring(Spring.BOUNDARY_BUMP, 0).px();
+    private float bumpX, bumpY;
+    /** OK held down: the focused thing presses in (MICRO_PRESS), and comes back on release. */
+    private final Spring press = new Spring(Spring.MICRO_PRESS, 0);
+    private static final float TILE_PRESS = 0.08f, PRESS = 0.04f;
+    /** An app opening from a tile: the tile grows on and the home recedes (reset when the home comes back). */
+    private final Spring launch = new Spring(Spring.TAB_SWAP, 0);
+    private static final int LAUNCH_GRID = -2;
+    private int launchZone = -1, launchIndex = -1;
+    private long launchAt;
+    /** Back on the home screen (from an app or the screensaver): it settles from 0.98 while fading in (320 ms). */
+    private final Spring wakeScale = new Spring(Spring.TITLE_SETTLE, 1), wakeAlpha = new Spring(0.32f, 1f, 1);
+    /** An arrow held down (key repeat): focus on FAST_FOCUS, without tilt, sheen or names (scrub: 0 to 1). */
+    private boolean scrubbing;
+    private final Spring scrub = new Spring(Spring.ROOM_FADE, 0);
+    /** The tab bar's lens: its centre and width (px), stretched by its speed; the direction of the last tab change. */
+    private final Spring lensX = new Spring(Spring.LIQUID_PILL, 0).px(), lensW = new Spring(Spring.LIQUID_PILL, 0).px();
+    private boolean lensPlaced;
+    private int tabDir = 1;
+    private static final float TAB_SLIDE = 60;
+    /** The Top Shelf: the new title settles in 80 ms after the old one starts leaving (220 ms); the dots slide. */
+    private final Spring titleIn = new Spring(Spring.TITLE_SETTLE, 1), dotAt = new Spring(Spring.SNAPPY_FOCUS, 0);
+    /** Ken Burns on the Top Shelf's photo since kenAt (16 s), and its counter-parallax against the Dock's focus (px). */
+    private static final long KEN_MS = 16_000;
+    private long kenAt;
+    private int kenDir = 1;
+    private final Spring parallax = new Spring(Spring.SPATIAL_SCROLL, 0).px();
+    /** The ⌃ above the Dock: its own small layer, so it fades and breathes without redrawing the tiles. */
+    private Layer chevronLayer;
+    private final Spring chevronShown = new Spring(Spring.SNAPPY_FOCUS, 0);
+    private float chevronAlpha, chevronY;
+    /** The status pill: wider while something plays (its equalizer); its avatar cross-dissolving on a profile switch. */
+    private final Spring pillWide = new Spring(Spring.LIQUID_PILL, 0), avatarFade = new Spring(Spring.ROOM_FADE, 1);
+    private Bitmap pillAvatarFrom;
+    private int pillAvatarProfile = -1;
+    private final android.graphics.Path pillClip = new android.graphics.Path();
+    private final RectF pillNow = new RectF();
+    /** Control Center's rows come in 25 ms apart from this time. */
+    private long drawerOpenedAt;
+    private static final long CC_ROW_MS = 25, CC_ROW_IN_MS = 260;
+    /** The grid's lift over the last frames (rows lag 18 ms each behind the one above). */
+    private final long[] liftAt = new long[32];
+    private final float[] liftValue = new float[32];
+    private int liftHead, liftCount;
+    private static final long ROW_LAG_MS = 18;
 
     // Frames
     private boolean running, tilesDirty, statusDirty, heroDirty, drawerDirty, gridDirty, motionDirty = true;
@@ -425,6 +477,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case DRAWER: drawDrawer(c); break;
                 case SHEET: drawSheet(c); break;
                 case TABBAR: drawTabBar(c); break;
+                case CHEVRON: drawChevron(c, w / 2f, TV_CHEVRON_Y * k); break;
                 default: drawToast(c); break;
             }
             scene.setOffset(0, 0);
@@ -481,7 +534,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recs = Recs.get(a);
         playing = new NowPlaying.Watch(a, () -> {
             fitPlaying();
-            heroDirty = true;
+            heroDirty = statusDirty = true;
+            pillWide.target = HomeView.this.playing.text != null ? 1 : 0;   // the pill widens for its equalizer
             wake();
             bounceBars();
         });
@@ -501,6 +555,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer = new Layer(a, SHEET);
         toastLayer = new Layer(a, TOAST);
         tabBar = new Layer(a, TABBAR);
+        chevronLayer = new Layer(a, CHEVRON);
         house = new HouseView(a);
         welly = new WellyView(a, scene);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
@@ -511,7 +566,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             v.setLayerType(Ui.LEGACY ? LAYER_TYPE_NONE : LAYER_TYPE_HARDWARE, null);
         }
         // The Home and Welly tabs sit on the background, under the TV tab's layers and the tab bar.
-        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, drawerLayer, sheetLayer, toastLayer}) {
+        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, chevronLayer, drawerLayer, sheetLayer, toastLayer}) {
             // TalkBack reads the items (Spoken); Welly speaks for itself.
             if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
@@ -521,7 +576,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         setContentDescription("Free My TV");
         drawerLayer.setVisibility(INVISIBLE);
         for (int i = 0; i < topFocus.length; i++) {
-            topFocus[i] = i < 3 ? new Spring(0.30f, 0.80f, 0) : new Spring(0.26f, 0.85f, 0);   // tabs: snappy
+            topFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
             topRects[i] = new RectF();
         }
         for (int i = 0; i < 3; i++) {
@@ -585,6 +640,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             closeSheet();
         }
         sheet.snap(sheet.target);
+        // Back from an app or the screensaver: the opening tile's motion is over; the home settles in from 0.98.
+        launch.snap(0);
+        launchZone = launchIndex = -1;
+        press.snap(0);
+        if (!again && !Spring.instant) {
+            wakeScale.snap(0.98f);
+            wakeScale.target = 1;
+            wakeAlpha.snap(0);
+            wakeAlpha.target = 1;
+        } else {
+            wakeScale.snap(1);
+            wakeAlpha.snap(1);
+        }
+        applyHome();
         motionDirty = true;
         invalidateAll();
         idle = false;
@@ -605,7 +674,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(tick);
         handler.removeCallbacks(rotate);
         handler.removeCallbacks(reloadSoon);
-        handler.removeCallbacks(bars);
         playing.stop();
         data.removeListener(this);
         recs.removeListener(this);
@@ -638,7 +706,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         updatePicks();
         selectTab(TAB_TV);
         if (!animated) {
-            for (Spring sp : new Spring[] {tabAway, homeShown, wellyShown, lens}) sp.snap(sp.target);
+            for (Spring sp : new Spring[] {tabAway, homeShown, wellyShown, lensX, lensW}) sp.snap(sp.target);
         }
         retarget(!animated);
         motionDirty = true;
@@ -681,7 +749,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void invalidateAll() {
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, tabBar}) v.invalidate();
+        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, tabBar, chevronLayer}) v.invalidate();
     }
 
     // MARK: - Size and layers
@@ -700,6 +768,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
         measure(tabBar, width, Math.round(160 * kk));
+        measure(chevronLayer, Math.round(80 * kk), Math.round(48 * kk));
         measure(house, width, height);
         measure(welly, width, height);
         setMeasuredDimension(width, height);
@@ -723,6 +792,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer.setPivotY(height / 2f);
         place(toastLayer, (width - toastLayer.getMeasuredWidth()) / 2, 0);
         place(tabBar, 0, 0);
+        place(chevronLayer, (width - chevronLayer.getMeasuredWidth()) / 2, Math.round(TV_CHEVRON_Y * kk) - chevronLayer.getMeasuredHeight() / 2);
         house.layout(0, 0, width, height);
         welly.layout(0, 0, width, height);
     }
@@ -858,11 +928,45 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        float dt = lastNanos == 0 ? 1 / 60f : Math.min(0.05f, (frameTimeNanos - lastNanos) / 1e9f);
+        float dt = lastNanos == 0 ? 1 / 60f : Math.min(1 / 30f, (frameTimeNanos - lastNanos) / 1e9f);
         lastNanos = frameTimeNanos;
         long up = SystemClock.uptimeMillis();
 
         boolean swaying = swayX.step(dt) | swayY.step(dt);
+        // Dead-end nudges and the OK press move whatever has the focus.
+        boolean nudging = nudgeX.step(dt) | nudgeY.step(dt) | press.step(dt) | scrub.step(dt);
+        bumpX = Spring.rubber(nudgeX.value) * k;
+        bumpY = Spring.rubber(nudgeY.value) * k;
+        if (nudging) {
+            View v = focusLayer();
+            if (v != null) v.invalidate();
+        }
+        if (launch.target > 0 && up - launchAt > 1500) launch.target = 0;   // the app never came up: back
+        boolean homeMoving = launch.step(dt) | wakeScale.step(dt) | wakeAlpha.step(dt);
+        if (homeMoving) {
+            applyHome();
+            if (launchZone == LAUNCH_GRID) sheetLayer.invalidate();
+            else if (launchZone >= 0) tiles.invalidate();
+        }
+        boolean lensMoving = lensX.step(dt) | lensW.step(dt);
+        // The Top Shelf: the new title comes in 80 ms after the old one starts to leave.
+        if (heroFadeAt != 0 && titleIn.target < 1 && up - heroFadeAt >= 80) titleIn.target = 1;
+        boolean titleMoving = titleIn.step(dt) | dotAt.step(dt);
+        boolean parallaxMoving = parallax.step(dt);
+        boolean kenMoving = kenBurns(up);
+        if (titleMoving) heroLayer.invalidate();
+        if (kenMoving || parallaxMoving) sky.invalidate();
+        boolean pillMoving = pillWide.step(dt) | avatarFade.step(dt);
+        boolean barsMoving = playingTab != null && up < barsUntil;
+        if (pillMoving || barsMoving) {
+            status.invalidate();
+            if (pillMoving) tabBar.invalidate();
+        }
+        boolean chevronMoving = chevronShown.step(dt) | breathe(up);
+        // Control Center's rows come in one after another while it opens.
+        boolean ccStagger = drawer.target > 0.5f && !Ui.LEGACY && !Spring.instant
+                && up - drawerOpenedAt < CC_ROW_MS * (drawerItems.size() / 2 + 3) + CC_ROW_IN_MS;
+        if (ccStagger) drawerLayer.invalidate();
         boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt);
@@ -876,14 +980,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen);
         boolean drawerMoving = drawer.step(dt);
         boolean sheetMoving = sheet.step(dt);
+        if (sheetMoving) {
+            recordLift(up);
+            if (!Ui.LEGACY) sheetLayer.invalidate();   // the rows trail one another as the grid comes up
+        } else {
+            liftCount = 0;
+        }
         boolean toastFading = tickToast(up);
         boolean heroFading = tickHeroFade(up);
         boolean bgFading = tickBackgroundFade(up);
         boolean nightMoving = tickNight(up);
         boolean tabMoving = tabAway.step(dt) | homeShown.step(dt) | wellyShown.step(dt);
-        boolean lensMoving = lens.step(dt);
 
-        if (drawerMoving || sheetMoving || scrollMoving || fullMoving || tabMoving || motionDirty) updateMotion();
+        // With animations off the springs jump without reporting motion: the layers follow every frame then.
+        if (drawerMoving || sheetMoving || scrollMoving || fullMoving || tabMoving || chevronMoving || motionDirty || Spring.instant) {
+            updateMotion();
+        }
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
         // drop frames (measured: ~50 ms of GPU per frame). The app tiles have no glass; the top buttons fade out as
         // they rise; the drawer is drawn resting in place; the glass shelf is redrawn once the drawer stops, so the
@@ -906,14 +1018,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tabBar.invalidate();
         }
 
-        // Busy: something is moving, or the sheet or the drawer is open.
+        // Busy: something is moving. At rest, one frame a second (the clock), or when the toast on screen ends.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
-                || sheetOpen || sheet.value > 0.001f
-                || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty();
+                || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving || barsMoving
+                || chevronMoving || ccStagger || !toasts.isEmpty();
         idle = !busy;
-        if (busy) Choreographer.getInstance().postFrameCallback(this);
-        else Choreographer.getInstance().postFrameCallbackDelayed(this, 1000);
+        if (busy) {
+            Choreographer.getInstance().postFrameCallback(this);
+        } else {
+            long next = 1000;
+            if (toast != null) next = Math.max(16, Math.min(next, toastAt + TOAST_MS - 450 - up));
+            Choreographer.getInstance().postFrameCallbackDelayed(this, next);
+        }
     }
 
     private void wake() {
@@ -939,18 +1056,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float top = 1 - smoothstep(0, 0.45f, s);
         // Full screen: the Dock and the grid's peek slide down and fade.
         float drop = full.value * TV_FULL_DROP * k, away = 1 - smoothstep(0, 0.7f, fs);
-        // Control Center: nothing moves; the page dims a little behind the panel (the sky darkens too, drawLightSky).
-        float dim = 1 - 0.25f * dc;
-        // The tabs: the TV tab's content fades out over Home and Welly, which cross-fade.
+        // Control Center: the page behind it steps back (0.975) and dims 30% (the sky darkens too, drawLightSky).
+        float dim = 1 - 0.30f * dc, back = 1 - 0.025f * dc;
+        // The tabs (TAB_SWAP): the one leaving slides 60 px away and shrinks to 0.96 as it fades (quickly); the one
+        // coming in arrives from 60 px on the other side. Moving right (TV → Home → Welly) the leaving one goes left.
         float tv = 1 - Ui.clamp(tabAway.value);
-        show(heroLayer, top * dim * tv, -rise);
-        show(status, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k);
+        float tvA = tabAlpha(tv, TAB_TV), tvX = tabX(tv, TAB_TV), tvS = (0.96f + 0.04f * tv) * back;
+        show(heroLayer, top * dim * tvA, -rise, tvX, tvS);
+        show(status, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
         // The tab bar leaves with the title logo when the grid or full screen owns the screen.
-        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)) * (1 - smoothstep(0, 0.6f, fs)), -sheet.value * TV_GRID_LIFT * k);
-        show(platter, dim * away * tv, -rise + drop);
-        show(tiles, dim * away * tv, -rise + drop);
-        show(house, dim * Ui.clamp(homeShown.value), 0);
-        show(welly, dim * Ui.clamp(wellyShown.value), 0);
+        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)) * (1 - smoothstep(0, 0.6f, fs)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
+        show(platter, dim * away * tvA, -rise + drop, tvX, tvS);
+        show(tiles, dim * away * tvA, -rise + drop, tvX, tvS);
+        chevronAlpha = dim * away * tvA * Ui.clamp(chevronShown.value);
+        chevronY = -rise + drop;
+        show(chevronLayer, chevronAlpha, chevronY + chevronBreath, tvX, 1);
+        float hv = Ui.clamp(homeShown.value), wv = Ui.clamp(wellyShown.value);
+        show(house, dim * tabAlpha(hv, TAB_HOME), 0, tabX(hv, TAB_HOME), (0.96f + 0.04f * hv) * back);
+        show(welly, dim * tabAlpha(wv, TAB_WELLY), 0, tabX(wv, TAB_WELLY), (0.96f + 0.04f * wv) * back);
         float da = (1 - s) * smoothstep(0, 0.6f, dc);
         drawerLayer.setTranslationX((1 - d) * CC_SLIDE * k);
         drawerLayer.setTranslationY(0);
@@ -962,10 +1085,122 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer.setTranslationY((1 - sheet.value) * TV_GRID_LIFT * k + drop);
     }
 
-    private static void show(View v, float alpha, float translationY) {
+    /** A layer's opacity, position and scale (around the screen's centre), without redrawing it. */
+    private void show(View v, float alpha, float translationY, float translationX, float scale) {
         v.setAlpha(alpha);
         v.setTranslationY(translationY);
+        v.setTranslationX(translationX);
+        if (v.getScaleX() != scale) {
+            v.setPivotX(w / 2f - v.getLeft());
+            v.setPivotY(h / 2f - v.getTop());
+            v.setScaleX(scale);
+            v.setScaleY(scale);
+        }
         v.setVisibility(alpha > 0.002f ? VISIBLE : INVISIBLE);
+    }
+
+    /** A tab's content offset (px) when it's `shown` (0 to 1): the selected one comes in, the others go out. */
+    private float tabX(float shown, int index) {
+        float off = (1 - shown) * TAB_SLIDE * k * tabDir;
+        return index == tab ? off : -off;
+    }
+
+    /** A tab's content opacity: coming in, as shown; going out, faster (gone in ~220 ms of the swap). */
+    private float tabAlpha(float shown, int index) {
+        return index == tab ? shown : Ui.clamp((shown - 0.45f) / 0.55f);
+    }
+
+    /** The whole home screen: settling in when it comes back, receding behind an app opening. */
+    private void applyHome() {
+        float l = Ui.clamp(launch.value), sc = wakeScale.value * (1 - 0.05f * l);
+        setScaleX(sc);
+        setScaleY(sc);
+        // Fading the whole screen takes an offscreen pass: Android 8 to 11's GPUs only get the scale.
+        setAlpha(Ui.LEGACY ? 1 : Ui.clamp(wakeAlpha.value) * (1 - 0.5f * l));
+    }
+
+    /** The layer drawing what has the focus (to redraw it while it nudges or presses). */
+    private View focusLayer() {
+        if (sheetOpen) return sheetLayer;
+        switch (zone) {
+            case Z_SHELF: return tiles;
+            case Z_HERO: return heroLayer;
+            case Z_STATUS: return status;
+            case Z_TOP: return topIndex < 3 ? tabBar : status;
+            case Z_DRAWER:
+            case WIDGETS: return drawerLayer;
+            default: return null;
+        }
+    }
+
+    /** No neighbour that way: the focused thing tugs toward it through the rubber band, with the boundary knock. */
+    private void deadEnd(int dx, int dy) {
+        nudgeX.impulse(dx * Spring.BUMP_VELOCITY);
+        nudgeY.impulse(dy * Spring.BUMP_VELOCITY);
+        click.bump();
+        wake();
+    }
+
+    /** An arrow held down (key repeat) or let go: the focus keeps up without tilt, sheen or names. */
+    private void setScrubbing(boolean on) {
+        if (on == scrubbing) return;
+        scrubbing = on;
+        scrub.target = on ? 1 : 0;
+        float[] preset = on ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS;
+        for (Spring[] group : new Spring[][] {tileFocus, gridFocus, topFocus, drawerFocus, profileFocus}) {
+            for (Spring f : group) f.tune(preset);
+        }
+        pillFocus.tune(preset);
+        wake();
+    }
+
+    /** An app opens from the focused tile (or Play): the tile grows on, the home recedes. */
+    private void startLaunch() {
+        if (Spring.instant) return;
+        launchZone = sheetOpen ? LAUNCH_GRID : zone == Z_SHELF ? Z_SHELF : -1;
+        launchIndex = sheetOpen ? gridIndex : shelfIndex;
+        launch.snap(0);
+        launch.target = 1;
+        launchAt = SystemClock.uptimeMillis();
+        wake();
+    }
+
+    /** Ken Burns on the Top Shelf's photo: true while it moves (only there, and not on Android 8 to 11). */
+    private boolean kenBurns(long up) {
+        return tab == TAB_TV && !sheetOpen && !Spring.instant && !Ui.LEGACY && bgTo != null && bgTo.image != null
+                && kenAt != 0 && up - kenAt < KEN_MS;
+    }
+
+    /** The ⌃ breathes (±2.5 px over 3.2 s) while the Dock has the focus and a pick shows. */
+    private float chevronBreath;
+
+    private boolean breathe(long up) {
+        chevronShown.target = hero != null && tab == TAB_TV ? 1 : 0;
+        boolean on = chevronShown.value > 0.01f && zone == Z_SHELF && !sheetOpen && !Spring.instant && !Ui.LEGACY;
+        float b = on ? (float) Math.sin(up * 2 * Math.PI / 3200) * 2.5f * k : 0;
+        if (b == chevronBreath && !on) return false;
+        chevronBreath = b;
+        chevronLayer.setTranslationY(chevronY + b);
+        return on;
+    }
+
+    /** Keeps the grid's lift over the last frames (for the rows' lag). */
+    private void recordLift(long up) {
+        liftHead = (liftHead + 1) % liftAt.length;
+        liftAt[liftHead] = up;
+        liftValue[liftHead] = sheet.value;
+        liftCount = Math.min(liftCount + 1, liftAt.length);
+    }
+
+    /** The grid's lift at time `t` (the oldest kept if t is older). */
+    private float liftAgo(long t) {
+        float v = sheet.value;
+        for (int i = 0; i < liftCount; i++) {
+            int at = (liftHead - i + liftAt.length) % liftAt.length;
+            v = liftValue[at];
+            if (liftAt[at] <= t) break;
+        }
+        return v;
     }
 
     private void updateSleep() {
@@ -974,6 +1209,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         String text = left == 0 ? "" : Ui.trf("Off in {time}", "time", SleepTimer.duration(left));
         if (text.equals(sleepText)) return;
         sleepText = text;
+        sleepTextW = lQuote == null ? 0 : lQuote.measureText(text);
         statusDirty = true;
     }
 
@@ -1110,10 +1346,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (next.pick == null && hero == null) return;
         if (next.sameText(hero) && hero.dots == next.dots && hero.dot == next.dot && hero.button == next.button) return;
         boolean other = hero != null && (next.pick == null || !hero.title.equals(next.title));
-        if (animate && other) {
+        if (animate && other && !Spring.instant) {
+            // The old title leaves (−14 px, 220 ms); the new one settles in from +22 px 80 ms later (TITLE_SETTLE).
             heroFrom = hero;
             heroFadeAt = SystemClock.uptimeMillis();
+            titleIn.snap(0);
+        } else if (heroFadeAt == 0) {
+            titleIn.snap(1);
         }
+        if (next.pick != null && (hero == null || hero.dots != next.dots)) dotAt.snap(next.dot);
+        dotAt.target = next.dot;
         hero = next.pick == null ? null : next;
         heroDirty = tilesDirty = true;   // the tiles layer holds the chevron
     }
@@ -1199,13 +1441,32 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         bgTo = b;
         bgFadeAt = up;
         nightPair = false;
-        if (b == null || glassOf(b) == null) return;
-        if (bgFrom == null || glassOf(bgFrom) == null) {
-            scene.setFrost(frostOf(b));
-            scene.setGlassImage(glassOf(b));
-        } else {
-            scene.setGlassImages(glassOf(bgFrom), glassOf(b));
+        if (b != null && b.image != null) {   // a new photo: its slow Ken Burns starts over, the other way
+            kenAt = up;
+            kenDir = -kenDir;
         }
+        if (b == null || glassOf(b) == null) return;
+        if (bgFrom == null || glassOf(bgFrom) == null || Spring.instant) {
+            showFrost(frostOf(b));
+            showGlass(glassOf(b));
+        } else {
+            // Both images once; each step of the fade only moves the mix (tickBackgroundFade).
+            scene.setGlassImages(glassOf(bgFrom), glassOf(b));
+            scene.setFrostPair(frostOf(bgFrom), frostOf(b));
+            frostShown = glassShown = null;
+        }
+    }
+
+    private void showFrost(int[] frost) {
+        if (frost == frostShown && frost != frostNight) return;
+        frostShown = frost;
+        scene.setFrost(frost);
+    }
+
+    private void showGlass(int[] glass) {
+        if (glass == glassShown && glass != glassNight) return;
+        glassShown = glass;
+        scene.setGlassImage(glass);
     }
 
     /** What the glass shows: the photo lightened (by day), darkened (at night) or blended in between. */
@@ -1228,10 +1489,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         int color = blend(0xFFEBEBF0, 0xFF141416, night);
+        if (neutralFrostPx[0] == color && frostShown == neutralFrostPx && glassShown == neutralGlassPx) return;
         java.util.Arrays.fill(neutralFrostPx, color);
         java.util.Arrays.fill(neutralGlassPx, color);
         scene.setFrost(neutralFrostPx);
         scene.setGlassImage(neutralGlassPx);
+        frostShown = neutralFrostPx;
+        glassShown = neutralGlassPx;
         nightPair = false;
     }
 
@@ -1264,7 +1528,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Advances the day ⇄ night transition; true while it runs. */
     private boolean tickNight(long up) {
         if (nightAt == 0) return false;
-        float t = Ui.clamp((up - nightAt) / NIGHT_MS), to = nightTarget ? 1 : 0;
+        float t = Spring.instant ? 1 : Ui.clamp((up - nightAt) / NIGHT_MS), to = nightTarget ? 1 : 0;
         night = nightFrom + (to - nightFrom) * t * t * (3 - 2 * t);
         if (t >= 1) {
             night = to;
@@ -1277,15 +1541,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Redraws for the current night value (the glass now reads the lightened, blended or darkened photo). */
     private void nightChanged() {
         if (bgFadeAt == 0 && bgTo != null && glassOf(bgTo) != null) {
-            scene.setFrost(frostOf(bgTo));
             if (nightAt != 0 && bgTo.nightGlass != null) {
-                if (!nightPair) {
+                if (!nightPair) {   // both looks once; each step only moves the mix
                     scene.setGlassImages(bgTo.lightGlass, bgTo.nightGlass);
+                    if (bgTo.nightFrost != null) scene.setFrostPair(bgTo.frost, bgTo.nightFrost);
+                    else scene.setFrost(bgTo.frost);
+                    frostShown = glassShown = null;
                     nightPair = true;
                 }
                 scene.setGlassMix(night);
+                scene.setFrostMix(night);
             } else {
-                scene.setGlassImage(glassOf(bgTo));
+                showFrost(frostOf(bgTo));
+                showGlass(glassOf(bgTo));
                 nightPair = false;
             }
         } else if (bgFadeAt == 0 && bgTo == null) {
@@ -1330,11 +1598,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (bgFadeAt == 0) return false;
         float e = fadeEase(bgFadeAt, up);
         if (bgTo != null && bgFrom != null && glassOf(bgFrom) != null && glassOf(bgTo) != null) {
-            if (drawerLayer.getVisibility() == VISIBLE || toast != null) {
-                int[] from = frostOf(bgFrom), to = frostOf(bgTo);
-                for (int i = 0; i < frostMix.length; i++) frostMix[i] = mix(from[i], to[i], e);
-                scene.setFrost(frostMix);
-            }
+            scene.setFrostMix(e);
             scene.setGlassMix(e);
         }
         if (e >= 1) {
@@ -1343,8 +1607,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (bgTo == null) {
                 neutralGlass();
             } else {
-                scene.setFrost(frostOf(bgTo));
-                if (glassOf(bgTo) != null) scene.setGlassImage(glassOf(bgTo));
+                showFrost(frostOf(bgTo));
+                if (glassOf(bgTo) != null) showGlass(glassOf(bgTo));
             }
         }
         return true;
@@ -1352,9 +1616,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private boolean tickHeroFade(long up) {
         if (heroFadeAt == 0) return false;
-        if (fadeEase(heroFadeAt, up) >= 1) {
+        if (Spring.instant || (up - heroFadeAt >= 220 && titleIn.target >= 1 && titleIn.settled())) {
             heroFadeAt = 0;
             heroFrom = null;
+            titleIn.snap(1);
         }
         return true;
     }
@@ -1364,6 +1629,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private static float fadeEase(long start, long up, float duration) {
+        if (Spring.instant) return 1;   // animations off: every fade is already over
         float t = Ui.clamp((up - start) / duration);
         return t * t * (3 - 2 * t);
     }
@@ -1384,17 +1650,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Blends a color on top (the drawer's veil) as part of drawing the image, without another layer. */
     private android.graphics.ColorFilter veil(float amount, int color) {
         if (amount <= 0.002f) return null;
-        amount = Math.round(amount * 255) / 255f;
+        // 64 levels (a step is invisible on a moving fade), each made once and kept: no filter made per frame.
+        int level = Math.round(amount * 64);
+        amount = level / 64f;
         if (amount == veilAmount && color == veilColor) return veilFilter;
         veilAmount = amount;
         veilColor = color;
+        long key = ((long) level << 32) | (color & 0xFFFFFFFFL);
+        android.graphics.ColorFilter cached = veils.get(key);
+        if (cached != null) return veilFilter = cached;
         float keep = 1 - amount;
-        return veilFilter = new android.graphics.ColorMatrixColorFilter(new float[] {
+        veilFilter = new android.graphics.ColorMatrixColorFilter(new float[] {
             keep, 0, 0, 0, ((color >> 16) & 255) * amount,
             0, keep, 0, 0, ((color >> 8) & 255) * amount,
             0, 0, keep, 0, (color & 255) * amount,
             0, 0, 0, 1, 0});
+        if (veils.size() > 512) veils.clear();
+        veils.put(key, veilFilter);
+        return veilFilter;
     }
+
+    private final android.util.LongSparseArray<android.graphics.ColorFilter> veils = new android.util.LongSparseArray<>();
 
     private void drawImage(Canvas c, Bitmap image, float alpha) {
         if (image == null || alpha <= 0.004f) return;
@@ -1430,7 +1706,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             statusRects = new RectF[list.size()];
             int index = Math.min(statusIndex, Math.max(0, list.size() - 1));
             for (int i = 0; i < statusFocus.length; i++) {
-                statusFocus[i] = new Spring(0.26f, 0.85f, 0);
+                statusFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
                 statusRects[i] = new RectF();
                 if (list.get(i).key.equals(focusedKey)) index = i;   // a device came on: keep focus on the same button
             }
@@ -1485,8 +1761,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tileSlide = new Spring[list.size()];
             tileRects = new RectF[list.size()];
             for (int i = 0; i < tileFocus.length; i++) {
-                tileFocus[i] = new Spring(0.30f, 0.80f, 0);   // snappy: a focus is a quick state change
-                tileSlide[i] = new Spring(0.32f, 0.86f, 0);
+                tileFocus[i] = new Spring(scrubbing ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS, 0);
+                tileSlide[i] = new Spring(0.32f, 0.86f, 0).px();
                 tileRects[i] = new RectF();
             }
             shelfIndex = Math.min(shelfIndex, Math.max(0, list.size() - 1));
@@ -1587,22 +1863,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF barRect = new RectF();
     // The bars bounce for a few seconds when the screen shows or the title changes, then stand still: bouncing all
     // along redrew the top layer 10 times a second (~8% of a core on a Skyworth's Cortex-A55), the still screen nothing.
-    private static final long BAR_FRAME_MS = 100, BARS_BOUNCE_MS = 3000;
+    private static final long BARS_BOUNCE_MS = 3000;
     private long barsUntil;
-    private final Runnable bars = new Runnable() {
-        @Override public void run() {
-            if (!running || playingTab == null) return;
-            heroDirty = true;
-            wake();
-            if (SystemClock.uptimeMillis() < barsUntil) handler.postDelayed(this, BAR_FRAME_MS);
-        }
-    };
-
+    /** The equalizer in the status pill bounces for a few seconds (driven by the frame loop), then stands still. */
     private void bounceBars() {
-        handler.removeCallbacks(bars);
         if (playingTab == null) return;
         barsUntil = SystemClock.uptimeMillis() + BARS_BOUNCE_MS;
-        handler.post(bars);
+        wake();
     }
 
     private void fitPlaying() {
@@ -1638,9 +1905,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (line != null) {
             float cap = clock ? playingClockCap : playingTabCap, gap = cap * 0.6f;
             float base = clock ? L_QUOTES_BASE * k : (L_TABBAR_TOP + L_TABBAR_H / 2) * k + cap / 2;
-            float x = clock ? MARGIN * k : right - playingTabWidth - gap - NowPlaying.barsWidth(cap);
-            NowPlaying.drawBars(c, x, base, cap, text, SystemClock.uptimeMillis() < barsUntil, barRect);
-            c.drawText(line, x + NowPlaying.barsWidth(cap) + gap, base, text);
+            // The equalizer is in the status pill now; here only the title.
+            float x = clock ? MARGIN * k : right - playingTabWidth;
+            c.drawText(line, x, base, text);
             text.setColor(textColor);
             return;
         }
@@ -1716,7 +1983,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (scrolls) c.restore();
         // No names under the Dock's apps (as in Apple's photo). Above the Dock, a thin ⌃ while a pick shows: ↑ goes full
         // screen.
-        if (hero != null) drawChevron(c, w / 2f, TV_CHEVRON_Y * k);
         // More apps than fit: a small arrow inside the glass's edge on each side that has more, where no tile reaches
         // even focused (inside the screen's safe area).
         float cy = platterRect.centerY(), size = 28 * k, inset = 14 * k;
@@ -1758,7 +2024,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawShelfTile(Canvas c, int i) {
         // Lifted to be moved: a little bigger than focused, with a deeper shadow.
         float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
-        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, l);
+        float go = launchZone == Z_SHELF && i == launchIndex ? launch.value : 0;
+        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, l, go);
     }
 
     /**
@@ -1768,22 +2035,32 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * from with the emblem leaning 4 px (parallax), and one specular highlight that moves with the sway. `l`: lifted
      * to be moved. Nothing is allocated here.
      */
-    private void drawAppTile(Canvas c, HomeApps.Item it, RectF base, float f, float l) {
-        float fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f + LIFT_GROW * l;
+    private void drawAppTile(Canvas c, HomeApps.Item it, RectF base, float f, float l, float go) {
+        // Focus 1.23× (SNAPPY_FOCUS); OK pressed: back to 1.15×; opening: it keeps growing as the app comes up.
+        float fc = Ui.clamp(f), p = press.value * fc;
+        float s = 1 + FOCUS_GROW * f + LIFT_GROW * l - TILE_PRESS * p + 0.6f * go;
         float bw = base.width(), bh = base.height(), r0 = TV_TILE_RADIUS * k;
-        float cx = base.centerX(), cy = base.centerY() - TV_FOCUS_LIFT * k * f;
+        float cx = base.centerX() + bumpX * fc, cy = base.centerY() - TV_FOCUS_LIFT * k * f + bumpY * fc;
         tileFx(bw, bh);
         android.graphics.Path shape = tileShape.of(bw, bh, r0);
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
         float lift = Math.max(fc, Ui.clamp(l));
-        if (lift > 0.01f) {
-            // The one lift shadow, at the resting size and enlarged by the transform (the blur stays cached).
+        // Two shadows, crossfaded with the lift (at the resting size; the transform enlarges them, the blur stays
+        // cached): resting y 6, blur 18, 18%; lifted y 28 (12 pressed), blur 46, 48%.
+        if (lift < 0.99f) {
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-            tmp.offset(0, (10 + 18 * lift) * k);
+            tmp.offset(0, 6 * k);
+            tmp.inset(4 * k, 4 * k);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, tone(0.12f, 0.18f) * (1 - lift)));
+            shadows.draw(c, tmp, r0, KEY_BLUR * k, shadowSoft);
+        }
+        if (lift > 0.01f) {
+            tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
+            tmp.offset(0, (6 + 22 * lift - 16 * p) * k);
             tmp.inset(6 * k, 4 * k);
-            shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.30f, 0.45f) * lift));
+            shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.34f, 0.48f) * lift));
             shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         }
         // The sway: a small 3D turn toward where the focus came from, settling back (only while focused).
@@ -1828,18 +2105,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawPath(shape, tileFill);
         }
         c.translate(bw / 2, bh / 2);
-        // Parallax: the emblem leans with the sway.
-        float px = (0.4f * lean + 0.6f * swayX.value) * 4 * k * fc, py = swayY.value * 3 * k * fc;
-        if (emblem) drawEmblem(c, it, style == null ? 0 : style[2], s, px, py);
-        if (fc > 0.01f) {
+        // Layer parallax (tvOS's layered icons): the back stays, the logo shifts 6 px with the tilt and grows 1.03×.
+        float px = swayX.value * 6 * k * fc, py = swayY.value * 4 * k * fc;
+        if (emblem) drawEmblem(c, it, style == null ? 0 : style[2], s, px, py, 1 + 0.03f * fc);
+        float sheenA = fc * (1 - Ui.clamp(scrub.value));   // no sheen while scrubbing fast
+        if (sheenA > 0.01f) {
             // The one specular highlight: soft, ≤ 14 %, sitting up and to the left and following the sway. The canvas
             // moves and the shape moves back: the shader keeps its matrix (a new local matrix every frame rebuilds the
             // native gradient on Android 8 to 12).
-            float hx = -bw * (0.22f + 0.12f * swayX.value), hy = -bh * (0.3f + 0.1f * swayY.value);
+            // The sheen slides the other way from the tilt (the light stays where it is as the tile turns).
+            float hx = -bw * (0.22f - 0.12f * swayX.value), hy = -bh * (0.3f - 0.1f * swayY.value);
             c.translate(hx - bw / 2, hy - bh / 2);
             shape.offset(-hx, -hy);
             tileFill.setShader(tileSheen);
-            tileFill.setAlpha(Math.round(255 * fc));
+            tileFill.setAlpha(Math.round(255 * sheenA));
             c.drawPath(shape, tileFill);
             tileFill.setShader(null);
             tileFill.setAlpha(255);
@@ -1878,12 +2157,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * resampling (on a 720p UI, shrinking at draw time made it look jagged), over its soft shadow. The canvas is in the
      * tile's coordinates and scaled by `s`.
      */
-    private void drawEmblem(Canvas c, HomeApps.Item it, int mode, float s, float px, float py) {
+    private void drawEmblem(Canvas c, HomeApps.Item it, int mode, float s, float px, float py, float zoom) {
         Emblem e = emblem(it, mode == 2 && it.logoDark != null);
         if (e == null) return;
-        boolean rest = s < 1 + FOCUS_GROW / 2;
+        // The resting copy only at rest: as soon as the tile grows, the focused (sharper, bigger) copy, so the logo never
+        // swaps mid-grow.
+        boolean rest = s < 1.01f && zoom < 1.001f;
         Bitmap logo = rest ? e.rest : e.focus;
-        float scale = rest ? 1 : 1 / (1 + FOCUS_GROW);   // the focused copy is 1.15× bigger: the canvas scales it back
+        float scale = (rest ? 1 : 1 / (1 + FOCUS_GROW)) * zoom;   // the focused copy is 1.23× bigger: the canvas scales it back
         float dw = logo.getWidth() * scale, dh = logo.getHeight() * scale, left = px - dw / 2, top = py - dh / 2;
         tmp2.set(left, top, left + dw, top + dh);
         bitmapPaint.setColorFilter(mode == 1 ? whiteLogo : null);
@@ -1966,7 +2247,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             drawerFocus = new Spring[list.size()];
             drawerRects = new RectF[list.size()];
             for (int i = 0; i < drawerFocus.length; i++) {
-                drawerFocus[i] = new Spring(0.28f, 0.78f, 0);
+                drawerFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
                 drawerRects[i] = new RectF();
             }
             drawerIndex = Math.min(drawerIndex, Math.max(0, list.size() - 1));
@@ -2017,7 +2298,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             profileFocus = new Spring[n];
             for (int i = 0; i < n; i++) {
                 profileRects[i] = new RectF();
-                profileFocus[i] = new Spring(0.28f, 0.78f, 0);
+                profileFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
             }
             profileIndex = Math.min(profileIndex, Math.max(0, n - 1));
         }
@@ -2036,26 +2317,26 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (drawerItems.isEmpty()) return;
         drawerFrom = zone == Z_TOP ? Z_TOP : zone == Z_STATUS ? Z_STATUS : Z_SHELF;
         drawerOpen = true;
-        drawer.tune(0.45f, 0.85f);   // appearing is a little slower than disappearing
+        drawer.tune(Spring.SHEET_OPEN);   // appearing is a little slower than disappearing
         drawer.target = 1;
+        drawerOpenedAt = SystemClock.uptimeMillis();
+        motionDirty = true;
         zone = Z_DRAWER;
         drawerIndex = 0;
-        // On the profiles when there is more than one to switch to; else on the first card.
+        // On the profiles when there is more than one to switch to; else on the first card. The focus grows in as the
+        // panel arrives (retarget), not already there.
         ccOnProfiles = profiles.size() > 1;
         profileIndex = Profiles.current(getContext());
-        for (int i = 0; i < profileFocus.length; i++) profileFocus[i].snap(ccOnProfiles && i == profileIndex ? 1 : 0);
-        for (int i = 0; i < drawerFocus.length; i++) drawerFocus[i].snap(!ccOnProfiles && i == drawerIndex ? 1 : 0);
         drawerDirty = true;
     }
 
     private void closeDrawer() {
         drawerOpen = false;
-        drawer.tune(0.40f, 0.88f);   // disappearing is brisker than appearing
+        drawer.tune(Spring.SHEET_CLOSE);   // disappearing is brisker than appearing
         drawer.target = 0;
+        motionDirty = true;
         zone = drawerFrom == Z_TOP && !lightButtons.isEmpty() ? Z_TOP : drawerFrom == Z_STATUS ? Z_STATUS : Z_SHELF;
         if (zone == Z_SHELF && tab != TAB_TV) zone = Z_STATUS;   // the Dock isn't there on Home and Welly
-        for (Spring f : drawerFocus) f.snap(0);   // the panel goes away: its focus doesn't need to animate
-        for (Spring f : profileFocus) f.snap(0);
     }
 
     /** Color for Control Center's text and symbols: dark by day, white at night. */
@@ -2094,12 +2375,38 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadows.draw(c, tmp, pr, SHADOW_BLUR * k, shadow);
         scene.liquid(c, panelRect, pr, tone(0xFFFFFFFF, SMOKE), tone(0.46f, 0.40f), tone(0.03f, 0.03f), 34 * k, 26 * k,
                 tone(0.7f, 0.9f), 1);
+        long since = SystemClock.uptimeMillis() - drawerOpenedAt;
+        int save = rowIn(c, 0, since, panelRect.left, panelRect.top, panelRect.right, drawerRects.length > 0 ? drawerRects[0].top : weatherCard.top);
         drawProfiles(c);
+        if (save >= 0) c.restoreToCount(save);
         int top = -1;
         for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
-        for (int i = 0; i < drawerItems.size(); i++) if (i != top) drawDrawerTile(c, i);
+        for (int i = 0; i < drawerItems.size(); i++) {
+            if (i == top) continue;
+            save = rowIn(c, 1 + i / 2, since, panelRect.left, drawerRects[i].top - 30 * k, panelRect.right, drawerRects[i].bottom + 30 * k);
+            drawDrawerTile(c, i);
+            if (save >= 0) c.restoreToCount(save);
+        }
         if (top >= 0) drawDrawerTile(c, top);
-        if (Prefs.weather()) drawWeatherCard(c, weatherCard);
+        if (Prefs.weather()) {
+            save = rowIn(c, 2 + (drawerItems.size() + 1) / 2, since, weatherCard.left, weatherCard.top, weatherCard.right, weatherCard.bottom);
+            drawWeatherCard(c, weatherCard);
+            if (save >= 0) c.restoreToCount(save);
+        }
+    }
+
+    /**
+     * While Control Center opens, its rows come in 25 ms apart (fading in and sliding 24 px from the right): row `row`
+     * in a layer of its own until it's in. Returns the save count to restore, or -1 when the row is already in.
+     */
+    private int rowIn(Canvas c, int row, long since, float l, float t, float r, float b) {
+        if (drawer.target < 0.5f || Ui.LEGACY || Spring.instant) return -1;
+        float u = Ui.clamp((since - CC_ROW_MS * row) / (float) CC_ROW_IN_MS);
+        if (u >= 1) return -1;
+        float e = 1 - (1 - u) * (1 - u) * (1 - u);   // ease out
+        int save = c.saveLayerAlpha(l - 40 * k, t - 40 * k, r + 40 * k, b + 40 * k, Math.round(255 * e));
+        c.translate(24 * k * (1 - e), 0);
+        return save;
     }
 
     /** The profiles: avatars with names; the current one ringed; the focused one grows and turns its ring white. */
@@ -2108,8 +2415,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccName.setColor(drawerInk(0.9f));
         for (int i = 0; i < profileRects.length && i < profileAvatars.length; i++) {
             RectF r = profileRects[i];
-            float f = Ui.clamp(profileFocus[i].value), s = 1 + 0.1f * profileFocus[i].value, rad = r.width() / 2;
+            float f = Ui.clamp(profileFocus[i].value), s = 1 + 0.1f * profileFocus[i].value - PRESS * press.value * f;
+            float rad = r.width() / 2;
             c.save();
+            c.translate(bumpX * f, bumpY * f);
             c.scale(s, s, r.centerX(), r.centerY());
             if (f > 0.01f) {
                 tmp.set(r);
@@ -2142,10 +2451,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawDrawerTile(Canvas c, int i) {
         HomeApps.Item it = drawerItems.get(i);
-        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.06f * drawerFocus[i].value;
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.06f * drawerFocus[i].value - PRESS * press.value * f;
         RectF base = drawerRects[i];
         float r = CC_CARD_RADIUS * k;
         c.save();
+        c.translate(bumpX * f, bumpY * f);
         c.scale(s, s, base.centerX(), base.centerY());
         if (f > 0.01f) {
             tmp.set(base);
@@ -2174,9 +2484,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The weather: the place, now (large), the condition and the day's high and low, and the next 4 hours or days. */
     private void drawWeatherCard(Canvas c, RectF r) {
         drawerCard(c, r, weatherShape, 1);
-        if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), cc -> drawWeather(cc, r));
+        if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), weatherContent);
         else drawWeather(c, r);
     }
+
+    private final Consumer<Canvas> weatherContent = cc -> drawWeather(cc, weatherCard);
 
     private void drawWeather(Canvas c, RectF r) {
         refreshDrawerText();
@@ -2234,9 +2546,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * What the drawer cards show depends on: the data, the settings, the language, day or night, and the minute (the
      * sunrise and sunset, "12 min ago").
      */
-    private String drawerCardsKey() {
-        return data.weatherAt + "|" + data.pricesAt + "|" + Prefs.version + "|" + Ui.language + "|"
-                + Float.floatToIntBits(dark()) + "|" + System.currentTimeMillis() / 60_000;
+    private long drawerCardsKey() {
+        long key = data.weatherAt;
+        key = key * 31 + data.pricesAt;
+        key = key * 31 + Prefs.version;
+        key = key * 31 + Ui.language.hashCode();
+        key = key * 31 + Float.floatToIntBits(dark());
+        return key * 31 + System.currentTimeMillis() / 60_000;
     }
 
     /**
@@ -2245,21 +2561,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private static final class Snapshot {
         private Bitmap bitmap;
-        private String key = "";
+        private long key;
+        private boolean drawn;
 
-        void draw(Canvas c, RectF r, String key, Consumer<Canvas> content) {
+        void draw(Canvas c, RectF r, long key, Consumer<Canvas> content) {
             int left = Math.round(r.left), top = Math.round(r.top);
             int w = Math.max(1, Math.round(r.right) - left), h = Math.max(1, Math.round(r.bottom) - top);
             if (bitmap == null || bitmap.getWidth() != w || bitmap.getHeight() != h) {
                 bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                this.key = "";
+                drawn = false;
             }
-            if (!key.equals(this.key)) {
+            if (!drawn || key != this.key) {
                 bitmap.eraseColor(0);
                 Canvas cc = new Canvas(bitmap);
                 cc.translate(-left, -top);
                 content.accept(cc);
                 this.key = key;
+                drawn = true;
             }
             c.drawBitmap(bitmap, left, top, null);
         }
@@ -2282,10 +2600,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (swayNow < 0) {
             swayTile = -1;
         }
-        // The focused Dock app's own Top Shelf (or the wallpaper).
-        if (zone == Z_SHELF && !sheetOpen) followShelf(!snap);
+        // The focused Dock app's own Top Shelf (or the wallpaper); its photo shifts ±8 px against the focus.
+        if (zone == Z_SHELF && !sheetOpen) {
+            followShelf(!snap);
+            int n = Math.max(1, shelf.size() - 1);
+            parallax.target = shelf.size() < 2 || Spring.instant ? 0 : -8 * (2f * shelfIndex / n - 1);
+            if (snap) parallax.snap(parallax.target);
+        }
         float fullWas = full.target;
         full.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
+        if (full.target != fullWas) motionDirty = true;
         if (full.target > fullWas) fullAt = SystemClock.uptimeMillis();   // the details' stagger starts now
         if (snap) full.snap(full.target);
         boolean pillChanged = pillFocus.target != (!sheetOpen && zone == Z_STATUS ? 1 : 0);
@@ -2312,13 +2636,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The newly focused tile turns toward where the focus came from, then sways back (tvOS's tilt). */
     private void sway() {
-        if (Spring.instant) return;   // animations off: no sway
-        swayX.value = lastDx;
-        swayX.velocity = 0;
+        if (Spring.instant || scrubbing) return;   // animations off, or the arrow held down: no tilt
+        // An impulse toward where the focus came from (TILT peaks at ~1, so 3°, and settles flat); a tilt already
+        // under way carries on and bends.
         swayX.target = 0;
-        swayY.value = lastDy;
-        swayY.velocity = 0;
         swayY.target = 0;
+        swayX.impulse(lastDx * SWAY_KICK);
+        swayY.impulse(lastDy * SWAY_KICK);
         wake();
     }
 
@@ -2339,7 +2663,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void setOthers(List<HomeApps.Item> list) {
         others = list;
         gridFocus = new Spring[list.size()];
-        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(0.30f, 0.80f, 0);
+        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(scrubbing ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS, 0);
         gridLabels = null;
         gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
         retargetGrid(true);
@@ -2367,15 +2691,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetOpen = true;
         gridIndex = Math.max(0, Math.min(index, others.size() - 1));
         scroll.snap(0);
-        retargetGrid(true);
+        for (Spring f : gridFocus) f.snap(0);
+        retargetGrid(false);   // the focused app grows as the grid comes up
         retarget(false);
         sheet.target = 1;
-        gridDirty = true;
+        gridDirty = motionDirty = true;
     }
 
     private void closeSheet() {
         sheetOpen = false;
         sheet.target = 0;
+        retargetGrid(false);   // the focused app shrinks as the grid goes down
+        motionDirty = true;
         retarget(false);
         if (shelfEdited) {     // the grid was kept as it was while open: apps that went to the shelf leave it now
             shelfEdited = false;
@@ -2417,8 +2744,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // The focused app last: it grows over its neighbours without being covered by them.
         int top = -1;
         for (int i = 0; i < n; i++) if (gridFocus[i].value > 0.02f && (top < 0 || gridFocus[i].value > gridFocus[top].value)) top = i;
-        for (int i = 0; i < n; i++) if (i != top) drawGridTile(c, i, shift);
-        if (top >= 0) drawGridTile(c, top, shift);
+        for (int i = 0; i < n; i++) if (i != top) drawGridTile(c, i, shift - rowLag(i / COLUMNS));
+        if (top >= 0) drawGridTile(c, top, shift - rowLag(top / COLUMNS));
+    }
+
+    /** How far row `r` trails the grid's lift (each row 18 ms behind the one above, while it moves). */
+    private float rowLag(int r) {
+        if (liftCount == 0 || r == 0 || Ui.LEGACY) return 0;
+        long now = liftAt[liftHead];
+        return (sheet.value - liftAgo(now - ROW_LAG_MS * r)) * TV_GRID_LIFT * k;
     }
 
     private void drawGridTile(Canvas c, int i, float shift) {
@@ -2430,16 +2764,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float x = left + col * (GRID_W + GRID_GAP) * k;
         gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
         float f = gridFocus[i].value, fc = Ui.clamp(f);
-        drawAppTile(c, others.get(i), gridCell, f, 0);
+        drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex ? launch.value : 0);
         if (sheetOpen && i == gridIndex) {
             float s = 1 + FOCUS_GROW, cx = gridCell.centerX(), cy = gridCell.centerY() - TV_FOCUS_LIFT * k;
             gridFocusCell.set(cx - gridCell.width() * s / 2, cy - gridCell.height() * s / 2, cx + gridCell.width() * s / 2, cy + gridCell.height() * s / 2);
         }
-        // Only the focused app's name, centred under it, as on tvOS.
-        if (fc <= 0.01f) return;
-        gridLabel.setColor(Ui.alpha(tone(L_INK, WHITE), fc));
-        float bottom = gridCell.bottom + gridCell.height() * TV_FOCUS_HALF * f - TV_FOCUS_LIFT * k * f;
-        c.drawText(gridLabels[i], gridCell.centerX(), bottom + 22 * k + nameCap, gridLabel);
+        // Only the focused app's name, centred under it, as on tvOS: it rises 6 px into place with the focus, and
+        // leaves fast (~120 ms) so two names never overlap while scrubbing; none while an arrow is held.
+        float la = (gridFocus[i].target > 0.5f ? fc : Ui.clamp(2 * fc - 1)) * (1 - Ui.clamp(scrub.value));
+        if (la <= 0.01f) return;
+        gridLabel.setColor(Ui.alpha(tone(L_INK, WHITE), la));
+        float bottom = gridCell.bottom + gridCell.height() * TV_FOCUS_HALF * f - TV_FOCUS_LIFT * k * f + 6 * k * (1 - fc);
+        c.drawText(gridLabels[i], gridCell.centerX() + bumpX * fc, bottom + 22 * k + nameCap + bumpY * fc, gridLabel);
     }
 
     // MARK: - Toasts
@@ -2473,7 +2809,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawToast(Canvas c) {
         if (toast == null) return;
         float age = (SystemClock.uptimeMillis() - toastAt) / 1000f;
-        float a = Math.min(Ui.clamp(age / 0.3f), Ui.clamp((TOAST_MS / 1000f - age) / 0.4f));
+        float a = Spring.instant ? (age < TOAST_MS / 1000f ? 1 : 0) : Math.min(Ui.clamp(age / 0.3f), Ui.clamp((TOAST_MS / 1000f - age) / 0.4f));
         if (a <= 0) return;
         float padX = 28 * k, padY = 18 * k, icon = 26 * k, iconW = Symbols.width(getContext(), "bell", icon);
         float tw = toast.getWidth() + iconW + 16 * k, th = toast.getHeight();
@@ -2582,6 +2918,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             holdArmed = false;      // another key while OK is held: no move mode
             handler.removeCallbacks(holdStart);
         }
+        boolean arrow = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN;
+        if (arrow) setScrubbing(down && e.getRepeatCount() > 0);   // held down: fast scrub until it's let go
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down) move(-1, 0);
@@ -2605,6 +2944,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // after a hold opens nothing.
                 if (down) {
                     if (e.getRepeatCount() == 0) {
+                        press.target = 1;   // the focused thing presses in (MICRO_PRESS) on the frame the key goes down
+                        wake();
                         okDown = true;
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
@@ -2614,6 +2955,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         hold();
                     }
                 } else {
+                    press.target = 0;
                     holdArmed = false;
                     handler.removeCallbacks(holdStart);
                     if (okDown && !okHeld && !e.isCanceled() && spoken.keyClick()) activate();
@@ -2676,7 +3018,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_SHELF:
                 if (dx != 0) {
                     int next = Math.max(0, Math.min(shelf.size() - 1, shelfIndex + dx));
-                    if (next == shelfIndex) return;
+                    if (next == shelfIndex) {
+                        deadEnd(dx, 0);
+                        return;
+                    }
                     shelfIndex = next;
                 } else if (dy < 0) {
                     if (hero != null && hero.button) {
@@ -2685,18 +3030,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         zone = Z_STATUS;
                         statusIndex = shelf.isEmpty() ? 0 : nearest(statusRects, tileRects[shelfIndex].centerX());
                     } else {
+                        deadEnd(0, dy);
                         return;
                     }
                 } else {
-                    if (drawerItems.isEmpty()) return;
+                    if (drawerItems.isEmpty()) {
+                        deadEnd(0, dy);
+                        return;
+                    }
                     openDrawer();
                 }
                 break;
             case Z_HERO:
                 if (dx != 0) {
-                    if (!browse(dx)) return;
+                    if (!browse(dx)) {
+                        deadEnd(dx, 0);
+                        return;
+                    }
                 } else if (dy < 0) {
-                    if (statusItems.isEmpty()) return;
+                    if (statusItems.isEmpty()) {
+                        deadEnd(0, dy);
+                        return;
+                    }
                     zone = Z_STATUS;
                     statusIndex = 0;
                 } else {
@@ -2706,7 +3061,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_STATUS:
                 if (dx != 0) {
                     int next = Math.max(0, Math.min(statusItems.size() - 1, statusIndex + dx));
-                    if (next == statusIndex) return;
+                    if (next == statusIndex) {
+                        deadEnd(dx, 0);
+                        return;
+                    }
                     statusIndex = next;
                 } else if (dy > 0) {
                     if (hero != null && hero.button) {
@@ -2716,6 +3074,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         if (!shelf.isEmpty()) shelfIndex = nearest(tileRects, statusRects[statusIndex].centerX());
                     }
                 } else {
+                    deadEnd(0, dy);
                     return;
                 }
                 break;
@@ -2727,6 +3086,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else if (dx != 0 && at + dx >= 0 && at + dx < on.size()) {
                     widgetIndex = on.get(at + dx);
                 } else {
+                    deadEnd(dx, dy);
                     return;
                 }
                 break;
@@ -2738,10 +3098,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     closeDrawer();
                 } else if (dx != 0) {
                     int next = drawerIndex + dx;
-                    if (next < 0 || next >= n || next / 2 != drawerIndex / 2) return;
+                    if (next < 0 || next >= n || next / 2 != drawerIndex / 2) {
+                        deadEnd(dx, 0);
+                        return;
+                    }
                     drawerIndex = next;
                 } else if (dy < 0) {
-                    if (drawerIndex < 2) return;
+                    if (drawerIndex < 2) {
+                        deadEnd(0, dy);
+                        return;
+                    }
                     drawerIndex -= 2;
                 } else if (drawerIndex + 2 < n) {
                     drawerIndex += 2;
@@ -2752,6 +3118,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     zone = WIDGETS;
                     widgetIndex = widgets().get(0);
                 } else {
+                    deadEnd(0, dy);
                     return;
                 }
                 break;
@@ -2798,7 +3165,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             int targetRow = r + dy;
             if (targetRow >= 0 && targetRow < rows) next = Math.min(n - 1, targetRow * COLUMNS + col);
         }
-        if (next == gridIndex) return;
+        if (next == gridIndex) {
+            deadEnd(dx, dy);
+            return;
+        }
         gridIndex = next;
         retargetGrid(false);
         click.move();
@@ -2884,14 +3254,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
             return;
         }
+        if (sheetOpen || zone == Z_SHELF || zone == Z_HERO) startLaunch();
         boolean opened = HomeApps.open(activity, it, this, Math.round(r.left), Math.round(r.top),
                 Math.round(r.width()), Math.round(r.height()));
-        if (!opened) showToast(Ui.trf("Couldn't open {app}.", "app", it.label));
+        if (!opened) {
+            launch.target = 0;
+            showToast(Ui.trf("Couldn't open {app}.", "app", it.label));
+        }
     }
 
     // MARK: - Holding OK: All Apps puts the app on the shelf or takes it off; on the shelf, the app is lifted to move
 
     private void hold() {
+        press.target = 0;
         if (sheetOpen) toggleShelf(); else startReorder();
     }
 
@@ -3384,7 +3759,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (tvPill == null) return;
         profiles = Profiles.all(getContext());
         int size = Math.round(PILL_AVATAR * k);
-        pillAvatar = Profiles.avatar(getContext(), profiles.get(Profiles.current(getContext())), size);
+        int current = Profiles.current(getContext());
+        Bitmap avatar = Profiles.avatar(getContext(), profiles.get(current), size);
+        if (pillAvatarProfile >= 0 && current != pillAvatarProfile && pillAvatar != null && !Spring.instant) {
+            pillAvatarFrom = pillAvatar;   // another profile: the avatars cross-dissolve
+            avatarFade.snap(0);
+            avatarFade.target = 1;
+            wake();
+        }
+        pillAvatarProfile = current;
+        pillAvatar = avatar;
         pillTimeW = tvPill.measureText(clockText);
         float right = PILL_RIGHT * k, top = PILL_TOP * k, ph = PILL_H * k;
         float width = 24 * k + pillTimeW + 18 * k + PILL_AVATAR * k + 4 * k;
@@ -3418,6 +3802,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topRects[i].set(x, top + inset, x + tabTextW[i], top + height - inset);
             x += tabTextW[i];
         }
+        lensX.target = topRects[tab].centerX();
+        lensW.target = topRects[tab].width();
+        if (!lensPlaced) {
+            lensX.snap(lensX.target);
+            lensW.snap(lensW.target);
+            lensPlaced = true;
+        }
     }
 
     /**
@@ -3432,22 +3823,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tmp.offset(0, 6 * k);
         shadow.setColor(0x2E000000);
         shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
+        // The lens (LIQUID_PILL): its speed stretches it like a drop (sx = 1 + |v|·0.00018 up to +12%, sy = 1/√sx), and
+        // turns the glass's light so its rim catches it as it moves.
+        float vx = lensX.velocity / k, sx = 1 + Math.min(0.12f, Math.abs(vx) * 0.00018f), sy = 1 / (float) Math.sqrt(sx);
+        float turn = Math.max(-0.7f, Math.min(0.7f, vx * 0.0006f));
+        if (turn != 0) {
+            float cs = (float) Math.cos(turn), sn = (float) Math.sin(turn);
+            scene.setLight(Scene.LIGHT_X * cs - Scene.LIGHT_Y * sn, Scene.LIGHT_X * sn + Scene.LIGHT_Y * cs);
+        }
         scene.liquid(c, tabBarRect, rr, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f, 1);
-        // The lens, between the two segments it's moving between.
-        float l = Math.max(0, Math.min(2, lens.value));
-        int i0 = Math.min(1, (int) l);
-        float t = l - i0;
-        RectF a = topRects[i0], b = topRects[i0 + 1];
-        cell.set(a.left + (b.left - a.left) * t, a.top, a.right + (b.right - a.right) * t, a.bottom);
+        scene.lightDefault();
+        float lcx = lensX.value, lw = lensW.value * sx, lh = topRects[0].height() * sy, lcy = topRects[0].centerY();
+        cell.set(lcx - lw / 2, lcy - lh / 2, lcx + lw / 2, lcy + lh / 2);
         fill.setShader(null);
         fill.setColor(0x2EFFFFFF);
         c.drawRoundRect(cell, cell.height() / 2, cell.height() / 2, fill);
         String[] names = tabs();
         for (int i = 0; i < 3; i++) {
             RectF r = topRects[i];
-            float f = Ui.clamp(topFocus[i].value), s = 1 + 0.06f * topFocus[i].value;
-            float selected = Ui.clamp(1 - Math.abs(lens.value - i));
+            float f = Ui.clamp(topFocus[i].value), s = 1 + 0.06f * topFocus[i].value - PRESS * press.value * f;
+            float selected = Ui.clamp(1 - Math.abs(lcx - r.centerX()) / Math.max(1, r.width()));
             c.save();
+            c.translate(bumpX * f, bumpY * f);
             c.scale(s, s, r.centerX(), r.centerY());
             if (f > 0.01f) {
                 float pr = r.height() / 2;
@@ -3502,11 +3899,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Shows a tab (TV, Home, Welly): the contents cross-fade and the background frosts and dims behind Home and Welly. */
     private void selectTab(int index) {
         if (index == tab) return;
+        tabDir = index > tab ? 1 : -1;
         tab = index;
+        lensX.target = topRects[index].centerX();
+        lensW.target = topRects[index].width();
         tabAway.target = index == TAB_TV ? 0 : 1;
         homeShown.target = index == TAB_HOME ? 1 : 0;
         wellyShown.target = index == TAB_WELLY ? 1 : 0;
-        lens.target = index;
         if (index != TAB_TV) pillFrom = Z_SHELF;   // back on TV, ↓ from the bar goes to the Dock
         if (index == TAB_HOME) house.refresh();     // the lights' states, every time Home opens
         motionDirty = true;
@@ -3554,8 +3953,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawLightImage(Canvas c, Backdrop b, float alpha) {
         if (b.image != null) {   // the Top Shelf's photo, sharp; with the app grid (or Home, Welly), its frosted copy over it
+            // Ken Burns (1.00 → 1.04 and 12 px over 16 s, from each new photo) over a 2% margin, and the counter-parallax
+            // against the Dock's focus (±8 px).
+            float e = 0;
+            if (b == bgTo && kenAt != 0 && !Spring.instant && !Ui.LEGACY) {
+                float t = Ui.clamp((SystemClock.uptimeMillis() - kenAt) / (float) KEN_MS);
+                e = 0.5f - 0.5f * (float) Math.cos(Math.PI * t);
+            }
+            float sc = 1.02f + 0.04f * e, tx = (12 * e * kenDir + parallax.value) * k;
+            c.save();
+            c.translate(w / 2f + tx, h / 2f);
+            c.scale(sc, sc);
+            c.translate(-w / 2f, -h / 2f);
             drawImage(c, b.image, alpha);
             drawImage(c, b.soft, alpha * Math.max(Ui.clamp(sheet.value), Ui.clamp(tabAway.value)));
+            c.restore();
             return;
         }
         if (night < 0.999f || b.nightImage == null) drawImage(c, b.lightImage, alpha);
@@ -3581,20 +3993,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             fill.setAlpha(255);
         }
         long up = SystemClock.uptimeMillis();
-        float e = heroFadeAt == 0 ? 1 : fadeEase(heroFadeAt, up);
-        float slide = 48 * k * heroSlide;
-        if (heroFrom != null && e < 1) drawShelfText(c, heroFrom, 1 - e, -slide * e);
-        if (hero != null) drawShelfText(c, hero, e, slide * (1 - e));
-        // Page dots, in full screen: right-aligned to the content's edge, on the Play button's centre line.
+        // The old title leaves (−14 px, 220 ms); the new one settles in from +22 px (TITLE_SETTLE), 80 ms later.
+        float out = heroFadeAt == 0 ? 1 : Ui.clamp((up - heroFadeAt) / 220f);
+        if (heroFrom != null && out < 1) drawShelfText(c, heroFrom, 1 - out, -14 * k * heroSlide * out);
+        if (hero != null) drawShelfText(c, hero, Ui.clamp(titleIn.value), 22 * k * heroSlide * (1 - titleIn.value));
+        // Page dots, in full screen: right-aligned to the content's edge, on the Play button's centre line; the current
+        // one slides between them.
         if (hero != null && hero.dots > 1 && fs > 0.01f) {
             float dot = 8 * k, gap = 14 * k, total = hero.dots * dot + (hero.dots - 1) * gap;
-            float x = CONTENT_R * k - total + dot / 2, y = (TV_FULL_BOTTOM - TV_BUTTON_H / 2) * k;
+            float x0 = CONTENT_R * k - total + dot / 2, x = x0, y = (TV_FULL_BOTTOM - TV_BUTTON_H / 2) * k;
             fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, 0.4f * fs));
             for (int i = 0; i < hero.dots; i++) {
-                fill.setColor(Ui.alpha(0xFFFFFFFF, (i == hero.dot ? 1f : 0.4f) * fs));
                 c.drawCircle(x, y, dot / 2, fill);
                 x += dot + gap;
             }
+            fill.setColor(Ui.alpha(0xFFFFFFFF, fs));
+            c.drawCircle(x0 + dotAt.value * (dot + gap), y, dot / 2, fill);
         }
         if (playingTab != null) drawQuotes(c);
     }
@@ -3621,18 +4036,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             h.titleLayout.draw(c);
             c.restore();
         }
-        float fa = alpha * Ui.clamp(full.value);
-        if (fa <= 0.004f) return;
-        // Entering, the details come in after each other (metadata, synopsis, Play: 40 ms apart); leaving, together.
+        // Entering, the details come in after each other (badges, synopsis, Play: 40 ms apart, rising 16 px); leaving,
+        // all together in ~180 ms.
         long since = SystemClock.uptimeMillis() - fullAt;
         boolean entering = full.target >= 0.5f;
-        float a0 = fa * (entering ? stage(since, 0) : 1), a1 = fa * (entering ? stage(since, 40) : 1);
-        float a2 = fa * (entering ? stage(since, 80) : 1);
+        float fs = Ui.clamp(full.value), fa = alpha * (entering ? fs : smoothstep(0.55f, 1, fs));
+        if (fa <= 0.004f) return;
+        float s0 = entering ? stage(since, 0) : 1, s1 = entering ? stage(since, 40) : 1, s2 = entering ? stage(since, 80) : 1;
+        float a0 = fa * s0, a1 = fa * s1, a2 = fa * s2;
+        float r0 = 16 * k * (1 - s0), r1 = 16 * k * (1 - s1), r2 = 16 * k * (1 - s2);
         float x = TV_MARGIN * k + dx, bh = 30 * k;
-        float buttonTop = (TV_FULL_BOTTOM - TV_BUTTON_H) * k;
+        float buttonTop = (TV_FULL_BOTTOM - TV_BUTTON_H) * k + r2;
         float overviewH = h.overviewLayout == null ? 0 : h.overviewLayout.getHeight();
         float overviewTop = buttonTop - 30 * k - overviewH;
-        float metaMid = overviewTop - (overviewH > 0 ? 22 : 0) * k - bh / 2;
+        float metaMid = overviewTop - r2 + r0 - (overviewH > 0 ? 22 : 0) * k - bh / 2;
+        overviewTop += r1 - r2;
         tvMeta.setAlpha(Math.round(0xCC * a0));
         c.drawText(h.meta, x, metaMid + Ui.halfCap(tvMeta), tvMeta);
         // Outline badges after the details: rounded rectangles, the ★ score with a star.
@@ -3660,11 +4078,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.restore();
         }
         if (!h.button) return;
-        // "▶ Play": focused in full screen (white with ink, 1.08×).
-        float f = Ui.clamp(heroFocus.value), s = 1 + 0.08f * heroFocus.value;
+        // "▶ Play": focused in full screen (white with ink, 1.08×; pressed, a little less; a dead end nudges it).
+        float f = Ui.clamp(heroFocus.value), s = 1 + 0.08f * heroFocus.value - PRESS * press.value * f;
         float ph = TV_BUTTON_H * k, icon = 24 * k, pad = 34 * k;
         float pw = pad + icon + 12 * k + h.appW + pad;
-        heroButton.set(x, buttonTop, x + pw, buttonTop + ph);
+        heroButton.set(x + bumpX * f, buttonTop + bumpY * f, x + pw + bumpX * f, buttonTop + ph + bumpY * f);
         cell.set(heroButton.centerX() - pw * s / 2, heroButton.centerY() - ph * s / 2, heroButton.centerX() + pw * s / 2, heroButton.centerY() + ph * s / 2);
         float rr = cell.height() / 2;
         if (f > 0.01f) {
@@ -3719,11 +4137,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawLightButtons(Canvas c) {
         applyTone();
         drawPill(c);
+        c.save();
+        c.translate(-pillExtra(), 0);   // the buttons make room while the pill is wide
         for (int i = 0; i < lightButtons.size(); i++) {
             HomeApps.Item it = lightButtons.get(i);
             RectF r = topRects[3 + i];
-            float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.1f * f, rad = r.width() / 2 * s;
-            cell.set(r.centerX() - rad, r.centerY() - rad, r.centerX() + rad, r.centerY() + rad);
+            float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.1f * f - PRESS * press.value * f, rad = r.width() / 2 * s;
+            float bx = bumpX * f, by = bumpY * f;
+            cell.set(r.centerX() - rad + bx, r.centerY() - rad + by, r.centerX() + rad + bx, r.centerY() + rad + by);
             tmp.set(cell);
             tmp.offset(0, (6 + 8 * f) * k);
             shadow.setColor(Ui.alpha(0xFF000000, tone(0.1f, 0.3f) + tone(0.14f, 0.2f) * f));
@@ -3745,16 +4166,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawText(label, x, r.bottom + (40 + 4 * f) * k, lTip);
             }
         }
-        if (sleepText.isEmpty()) return;
-        float right = (lightButtons.isEmpty() ? pillRect.left : topRects[3].left) - 24 * k, cy = pillRect.centerY();
-        lQuote.setColor(0xE6FFFFFF);
-        float tw = lQuote.measureText(sleepText), size = lQuote.getTextSize();
-        c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
-        Symbols.draw(getContext(), c, "bedtime", right - tw - size * 0.9f, cy, size, lQuote.getColor());
+        if (!sleepText.isEmpty()) {
+            float right = (lightButtons.isEmpty() ? pillRect.left : topRects[3].left) - 24 * k, cy = pillRect.centerY();
+            lQuote.setColor(0xE6FFFFFF);
+            float tw = sleepTextW, size = lQuote.getTextSize();
+            c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
+            Symbols.draw(getContext(), c, "bedtime", right - tw - size * 0.9f, cy, size, lQuote.getColor());
+        }
+        c.restore();
     }
+
+    private float sleepTextW;
 
     /** How far one of full screen's details has come in, `delay` ms after the others started (eased, 200 ms). */
     private static float stage(long since, long delay) {
+        if (Spring.instant) return 1;
         float t = Ui.clamp((since - delay) / 200f);
         return t * t * (3 - 2 * t);
     }
@@ -3788,26 +4214,64 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawPill(Canvas c) {
         if (pillRect.isEmpty()) return;
-        float f = Ui.clamp(pillFocus.value), s = 1 + 0.06f * pillFocus.value, rr = pillRect.height() / 2;
+        // Focused: 1.08× with a brighter rim, then white with ink; the Memoji pops 1.12× inside its circle. Something
+        // playing: the pill widens (LIQUID_PILL) to show a three-bar equalizer before the time.
+        float f = Ui.clamp(pillFocus.value), s = 1 + 0.08f * pillFocus.value - PRESS * press.value * f;
+        float rr = pillRect.height() / 2, cap = Ui.cap(tvPill), wide = Ui.clamp(pillWide.value);
+        float extra = pillExtra();
+        pillNow.set(pillRect.left - extra, pillRect.top, pillRect.right, pillRect.bottom);
         c.save();
-        c.scale(s, s, pillRect.centerX(), pillRect.centerY());
-        tmp.set(pillRect);
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, pillNow.centerX(), pillNow.centerY());
+        tmp.set(pillNow);
         tmp.offset(0, (6 + 8 * f) * k);
         shadow.setColor(Ui.alpha(0xFF000000, 0.18f + 0.2f * f));
         shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
-        scene.liquid(c, pillRect, rr, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f, 1 - f);
+        scene.liquid(c, pillNow, rr, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * f, 1 - f);
         if (f > 0.01f) {
             fill.setShader(null);
             fill.setColor(Ui.alpha(0xFFFFFFFF, f));
-            c.drawRoundRect(pillRect, rr, rr, fill);
+            c.drawRoundRect(pillNow, rr, rr, fill);
         }
-        tvPill.setColor(blend(0xFFFFFFFF, INK, f));
-        c.drawText(clockText, pillRect.left + 24 * k, pillRect.centerY() + Ui.halfCap(tvPill), tvPill);
+        int ink = blend(0xFFFFFFFF, INK, f);
+        tvPill.setColor(ink);
+        float base = pillNow.centerY() + Ui.halfCap(tvPill);
+        if (wide > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(ink, wide));
+            NowPlaying.drawBars(c, pillNow.left + 24 * k, base, cap, fill, SystemClock.uptimeMillis() < barsUntil && !Spring.instant, barRect);
+        }
+        c.drawText(clockText, pillRect.left + 24 * k, base, tvPill);
         if (pillAvatar != null) {
-            float d = PILL_AVATAR * k;
-            c.drawBitmap(pillAvatar, pillRect.right - 4 * k - d, pillRect.centerY() - d / 2, bitmapPaint);
+            float d = PILL_AVATAR * k, ax = pillNow.right - 4 * k - d, ay = pillNow.centerY() - d / 2;
+            boolean pop = f > 0.01f;
+            if (pop) {
+                c.save();
+                pillClip.rewind();
+                pillClip.addCircle(ax + d / 2, ay + d / 2, d / 2, android.graphics.Path.Direction.CW);
+                c.clipPath(pillClip);
+                float z = 1 + 0.12f * f;
+                c.scale(z, z, ax + d / 2, ay + d / 2);
+            }
+            float fade = Ui.clamp(avatarFade.value);
+            if (pillAvatarFrom != null && fade < 0.999f) {
+                bitmapPaint.setAlpha(Math.round(255 * (1 - fade)));
+                c.drawBitmap(pillAvatarFrom, ax, ay, bitmapPaint);
+                bitmapPaint.setAlpha(Math.round(255 * fade));
+            } else {
+                pillAvatarFrom = null;
+            }
+            c.drawBitmap(pillAvatar, ax, ay, bitmapPaint);
+            bitmapPaint.setAlpha(255);
+            if (pop) c.restore();
         }
         c.restore();
+    }
+
+    /** How much wider the pill is now (its equalizer), px. */
+    private float pillExtra() {
+        float cap = tvPill == null ? 0 : Ui.cap(tvPill);
+        return (NowPlaying.barsWidth(cap) + 14 * k) * Ui.clamp(pillWide.value);
     }
 
     private boolean moveLight(int dx, int dy) {
@@ -3819,7 +4283,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 if (dy > 0) {
                     // ↓: the app grid comes up, focused on the app under this one.
-                    if (others.isEmpty()) return true;
+                    if (others.isEmpty()) {
+                        deadEnd(0, dy);
+                        return true;
+                    }
                     int col = shelf.isEmpty() ? 0 : nearest(gridColumns(), COLUMNS, tileRects[shelfIndex].centerX());
                     openSheet(col);
                     click.move();
@@ -3835,7 +4302,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             case Z_HERO:
                 if (dx != 0) {
-                    if (!browse(dx)) return true;
+                    if (!browse(dx)) {
+                        deadEnd(dx, 0);
+                        return true;
+                    }
                     click.move();
                     retarget(false);
                     return true;
@@ -3855,6 +4325,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else if (dy > 0) {
                     enterTab();
                 } else {
+                    deadEnd(dx, dy);
                     return true;
                 }
                 break;
@@ -3864,6 +4335,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                     } else if (next < 0) {
+                        deadEnd(dx, 0);
                         return true;
                     } else {
                         topIndex = next;
@@ -3872,12 +4344,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else if (dy > 0) {
                     enterTab();
                 } else {
+                    deadEnd(0, dy);
                     return true;
                 }
                 break;
             case Z_HOUSE:
                 if (house.move(dx, dy)) {
-                    click.move();
+                    if (!house.bumped()) click.move();   // a dead end there: the house nudged and knocked itself
                     return true;
                 }
                 if (dy >= 0) return true;
@@ -3902,6 +4375,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (next < 0) {
                         closeDrawer();
                     } else if (next >= profileRects.length) {
+                        deadEnd(dx, 0);
                         return true;
                     } else {
                         profileIndex = next;
@@ -3910,6 +4384,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     ccOnProfiles = false;
                     drawerIndex = profileRects[profileIndex].centerX() > (CC_LEFT + CC_RIGHT) / 2 * k && drawerItems.size() > 1 ? 1 : 0;
                 } else {
+                    deadEnd(0, dy);
                     return true;
                 }
                 break;

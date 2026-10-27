@@ -38,7 +38,10 @@ final class Scene {
     private int w = 1, h = 1, lw = 1, lh = 1;
     private float speed = 1, baseDim, dim, time;
     private boolean auroraDirty = true, imageFrost, imageGlass;
-    private Bitmap frostImage, glassA, glassB;
+    private Bitmap frostImage, frostImageB, glassA, glassB;
+    /** The key light's direction for the Liquid Glass (Shaders.LIQUID), top left unless something turns it. */
+    static final float LIGHT_X = -0.4512f, LIGHT_Y = -0.8924f;
+    private float lightX = LIGHT_X, lightY = LIGHT_Y, frostMix;
     private BitmapShader glassShaderA;
     private final boolean withGlass;
 
@@ -56,9 +59,10 @@ final class Scene {
     /** The corners' superellipse exponent: 4, as in Shaders.LIQUID (DESIGN-TVOS.md §2). */
     private final Matrix softMatrix = new Matrix();
     private final RectF sheenRect = new RectF();
-    private int[] softPxA, softPxB, softPxFrost;         // reused pixel buffers
-    private Bitmap softA, softB, softFrost;               // reused small bitmaps
-    private BitmapShader softShaderA, softShaderB, softShaderFrost;   // remade after each setPixels (a shader keeps the pixels as they were)
+    private int[] softPxA, softPxB, softPxFrost, softPxFrostB;         // reused pixel buffers
+    private Bitmap softA, softB, softFrost, softFrostB;               // reused small bitmaps
+    // Remade after each setPixels (a shader keeps the pixels as they were).
+    private BitmapShader softShaderA, softShaderB, softShaderFrost, softShaderFrostB;
     private float glassMix, offX, offY;
 
     Scene() {
@@ -74,6 +78,8 @@ final class Scene {
             auroraPaint.setShader(aurora);
             glassPaint.setShader(glass);
             liquidPaint.setShader(liquid);
+            liquid.setFloatUniform("light", LIGHT_X, LIGHT_Y);
+            glass.setFloatUniform("frostMix", 0);
         } catch (RuntimeException | LinkageError e) {   // Android 8 to 12: no AGSL, flat look instead
             AppLog.w("shader unavailable, using gradient: " + e.getMessage());
             aurora = null;
@@ -147,7 +153,11 @@ final class Scene {
         aurora.setFloatUniform("t", seconds);
         if (withGlass && (!imageFrost || !imageGlass)) {
             BitmapShader s = frost.render(seconds, speed, dim, palette.c, (float) w / h);
-            if (!imageFrost) glass.setInputShader("frost", s);
+            if (!imageFrost) {
+                glass.setInputShader("frost", s);
+                glass.setInputShader("frostB", s);
+                glass.setFloatUniform("frostMix", 0);
+            }
             if (!imageGlass) {
                 liquid.setInputShader("imageA", s);
                 liquid.setInputShader("imageB", s);
@@ -283,19 +293,60 @@ final class Scene {
 
     /** The glass now reads the blurred background image (Backdrop.FW × FH, ARGB). */
     void setFrost(int[] pixels) {
+        setFrostPair(pixels, null);
+    }
+
+    /**
+     * A fade between two blurred images (day ⇄ night, one photo to the next): both are loaded once here, and each step
+     * of the fade only moves setFrostMix (no pixels copied, no shader made per frame). `b` null: just `a`.
+     */
+    void setFrostPair(int[] a, int[] b) {
         imageFrost = true;
-        if (glass == null) {            // as above: a small soft copy for the bitmaps path (also mid-fade, every step)
+        frostMix = 0;
+        if (glass == null) {            // as above: small soft copies for the bitmaps path
             if (softPxFrost == null) softPxFrost = new int[SFW * SFH];
             if (softFrost == null) softFrost = Bitmap.createBitmap(SFW, SFH, Bitmap.Config.ARGB_8888);
-            softShaderFrost = soften(pixels, Backdrop.FW, SOFT_FROST, SFW, SFH, softPxFrost, softFrost, false);
+            softShaderFrost = soften(a, Backdrop.FW, SOFT_FROST, SFW, SFH, softPxFrost, softFrost, false);
+            if (b != null) {
+                if (softPxFrostB == null) softPxFrostB = new int[SFW * SFH];
+                if (softFrostB == null) softFrostB = Bitmap.createBitmap(SFW, SFH, Bitmap.Config.ARGB_8888);
+                softShaderFrostB = soften(b, Backdrop.FW, SOFT_FROST, SFW, SFH, softPxFrostB, softFrostB, false);
+            } else {
+                softShaderFrostB = null;
+            }
             return;
         }
         if (frostImage == null) frostImage = Bitmap.createBitmap(Backdrop.FW, Backdrop.FH, Bitmap.Config.ARGB_8888);
-        frostImage.setPixels(pixels, 0, Backdrop.FW, 0, 0, Backdrop.FW, Backdrop.FH);
-        BitmapShader s = new BitmapShader(frostImage, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-        s.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
+        frostImage.setPixels(a, 0, Backdrop.FW, 0, 0, Backdrop.FW, Backdrop.FH);
+        BitmapShader s = linear(frostImage);
         glass.setInputShader("frost", s);
+        if (b != null) {
+            if (frostImageB == null) frostImageB = Bitmap.createBitmap(Backdrop.FW, Backdrop.FH, Bitmap.Config.ARGB_8888);
+            frostImageB.setPixels(b, 0, Backdrop.FW, 0, 0, Backdrop.FW, Backdrop.FH);
+            glass.setInputShader("frostB", linear(frostImageB));
+        } else {
+            glass.setInputShader("frostB", s);
+        }
+        glass.setFloatUniform("frostMix", 0);
         setFrostScale();
+    }
+
+    /** How far a setFrostPair fade has come (0 = the first image). */
+    void setFrostMix(float t) {
+        frostMix = Math.max(0, Math.min(1, t));
+        if (glass != null) glass.setFloatUniform("frostMix", frostMix);
+    }
+
+    /** Turns the Liquid Glass's key light (a unit direction); lightDefault() puts it back at the top left. */
+    void setLight(float x, float y) {
+        if (x == lightX && y == lightY) return;
+        lightX = x;
+        lightY = y;
+        if (liquid != null) liquid.setFloatUniform("light", x, y);
+    }
+
+    void lightDefault() {
+        setLight(LIGHT_X, LIGHT_Y);
     }
 
     /** Back to the frosted aurora. */
@@ -364,7 +415,8 @@ final class Scene {
         if (alpha <= 0.004f) return;
         if (glass == null) {
             if (imageFrost && softShaderFrost != null) {
-                bitmapGlass(c, r, radius, softShaderFrost, Backdrop.FW / (float) SOFT_FROST, Backdrop.FH / (float) SOFT_FROST, null, 0,
+                bitmapGlass(c, r, radius, softShaderFrost, Backdrop.FW / (float) SOFT_FROST, Backdrop.FH / (float) SOFT_FROST,
+                        softShaderFrostB, frostMix,
                         tint, Math.max(0.35f, tintAlpha), lift, body, 1, alpha);
                 return;
             }

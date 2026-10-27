@@ -11,14 +11,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Soft click for the home screen (moving focus and opening). The app synthesizes the sound itself (a short, low
- * "tock"), writes it once as a WAV in the cache and plays it quietly through SoundPool. It only plays on the home
- * screen, never inside apps.
+ * Soft click for the home screen (moving focus, opening, and a duller knock when focus can't go further). The app
+ * synthesizes the sounds itself (a short, low "tock"), writes them once as WAVs in the cache and plays them quietly
+ * through SoundPool. They only play on the home screen, never inside apps. The views of the home screen play the knock
+ * through `boundary()`, on the same frame as their dead-end bump (ANIMATIONS-SPEC.md §5.4).
  */
 final class Click {
     private static final int RATE = 48_000;
+    private static Click current;
     private SoundPool pool;
-    private int move, open;
+    private int move, open, bump;
 
     Click(Context c) {
         try {
@@ -27,6 +29,8 @@ final class Click {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
             move = pool.load(wav(c, "click-move.wav", 1450f, 0.009f, 0.030f), 1);
             open = pool.load(wav(c, "click-open.wav", 880f, 0.022f, 0.090f), 1);
+            bump = pool.load(wav(c, "click-bump.wav", 310f, 0.014f, 0.060f), 1);
+            current = this;
         } catch (IOException | RuntimeException e) {
             AppLog.w("click sound unavailable: " + e.getMessage());
             release();
@@ -41,9 +45,21 @@ final class Click {
         if (pool != null && Prefs.sounds()) pool.play(open, 0.18f, 0.18f, 1, 0, 1f);
     }
 
+    /** Focus can't go further that way. */
+    void bump() {
+        if (pool != null && Prefs.sounds()) pool.play(bump, 0.12f, 0.12f, 1, 0, 1f);
+    }
+
+    /** The knock, from any view of the home screen. */
+    static void boundary() {
+        Click c = current;
+        if (c != null) c.bump();
+    }
+
     void release() {
         if (pool != null) pool.release();
         pool = null;
+        if (current == this) current = null;
     }
 
     /** Sine wave plus one harmonic, 1.5 ms attack (no pop) and exponential decay. */

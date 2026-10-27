@@ -1,9 +1,11 @@
 /*
- * The Welly tab: a witty roommate who runs the TV (WELLY-HOME-REMOTE-SPEC.md §3). A greeting, the last exchange, its
- * answer's cards (plain fills), a row of prompt pills and an "Ask Welly…" capsule with the mic. With a Gemini key
- * (gemini_key) or an Ollama on the LAN (ollama_url) it asks them, OpenAI-style with tools; the preview answers the
- * pills from app/assets/welly-preview.json. The web app has fewer tools than the Android app: no Kasa (TVs can't open
- * raw sockets), no media sessions.
+ * The Welly tab: a witty roommate who runs the TV (WELLY-HOME-REMOTE-SPEC.md §3, ANIMATIONS-SPEC.md §4). Welly's orb
+ * sits centre stage over the greeting while idle, listening and thinking; when an answer arrives it shrinks beside
+ * "Welly · mood", the reply is revealed word by word and its cards (plain fills) rise out of the orb. Below: a row of
+ * prompt pills and an "Ask Welly…" capsule with the mic. With a Gemini key (gemini_key) or an Ollama on the LAN
+ * (ollama_url) it asks them, OpenAI-style with tools; the preview answers the pills from app/assets/welly-preview.json.
+ * The web app has fewer tools than the Android app: no Kasa (TVs can't open raw sockets), no media sessions. Motion
+ * runs on motion.js's springs (the same as the Android app's WellyView).
  */
 (function () {
   'use strict';
@@ -22,9 +24,39 @@
     'roast': tr('Roast my watchlist')
   };
   var MOODS = {'Curious': tr('Curious'), 'Smug': tr('Smug'), 'Sleepy': tr('Sleepy'), 'On it': tr('On it'), 'Embarrassed': tr('Embarrassed')};
+  // While thinking, a line that follows the tool at work (the same lines as the Android app).
+  var STATUS = {
+    weather: tr('Checking South Brunswick skies…'),
+    titles: tr('Judging your watchlist…'),
+    scores: tr('Squinting at the scoreboard…'),
+    lights: tr('Finding the light switch…'),
+    on: tr('Flipping through the channels…'),
+    other: tr('Thinking it over…')
+  };
+  var TOOL_STATUS = {weather: 'weather', search_titles: 'titles', open_title: 'titles', recap: 'titles', cast_crossref: 'titles',
+    scores: 'scores', lights: 'lights', scene: 'lights', whats_on: 'on'};
+  var PILL_TOOL = {'watching': 'whats_playing', 'movie-mode': 'lights', 'scores': 'scores', 'weather': 'weather', 'tonight': 'whats_on', 'roast': 'search_titles'};
 
-  var opts, root, els = {}, row = 'pills', index = 0, scrollX = 0, cards = [], pills = [], mood = P.mood || 'Curious';
+  // Layout (stage px): the orb centre stage, the lines under it, and the docked orb beside "Welly · mood".
+  var MID = 960, ORB_Y = 296, ORB_R = 104, DOCK_X = 391, DOCK_Y = 232, DOCK_R = 21;
+  var ORB_SIZE = 500, WHO_DOCK_LEFT = 426, WHO_DOCK_TOP = 222, WHO_FRESH_TOP = 528, CENTRE_TOP = 438;
+  var CARDS_LEFT = 370, CARDS_TOP = 568, CARD_H = 240, WORDS_PER_SECOND = 28, CARD_STAGGER = 0.045, TILT_PUSH = 90;
+  var BLOB = ['100,210,255', '191,90,242', '255,159,10', '10,132,255'];
+  var RIM = ['#FF9F0A', '#FF375F', '#BF5AF2', '#0A84FF', '#64D2FF', '#FF9F0A'];
+
+  var opts, root, els = {}, row = 'pills', index = 0, cards = [], pills = [], mood = P.mood || 'Curious';
   var shown = false, focused = false, busy = false, listening = false, recognizer = null, history = [], skipUntil = {};
+  var thinkingNow = false, userWords = '';
+
+  // Motion (ANIMATIONS-SPEC.md §1, §4).
+  var S = Motion.P;
+  var dock = Motion.spring(S.ORB, 0), listenS = Motion.spring(S.ORB, 0), think = Motion.spring(S.ORB, 0);
+  var speak = Motion.spring(S.ORB, 0), level = new Motion.Spring(0.12, 1, 0), press = Motion.spring(S.MICRO_PRESS, 0);
+  var nudge = Motion.spring(S.BOUNDARY_BUMP, 0).px(), pillScroll = new Motion.Spring(0.34, 1, 0).px(), fly = Motion.spring(S.TAB_SWAP, 0);
+  var pillFocus = [], cardFocus = [], cardTilt = [], cardEnter = [], enterAt = [], askFocus = Motion.spring(S.SNAPPY_FOCUS, 0);
+  var nudgeX = true, pressAt = 0, seconds = 0, orbPhase = 0, ringPhase = 0, nodeAngle = 0, orbX = MID, orbY = ORB_Y;
+  var words = [], shownWords = 0, revealAt = 0, flying = false, flyFrom = null, orbCtx = null, orbDrawn = false;
+  var grads = null, everySpring = [dock, listenS, think, speak, level, press, nudge, pillScroll, askFocus];
 
   function el(tag, cls, parent, text) {
     var e = document.createElement(tag);
@@ -43,17 +75,31 @@
   }
 
   function preview() { return !!window.PREVIEW_PICKS && !CONFIG.geminiKey && !CONFIG.ollamaUrl; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function opacity(node, a) { node.style.opacity = a > 0.999 ? '' : String(Math.round(a * 1000) / 1000); }
 
   // MARK: - Layout
 
   function build() {
     root.innerHTML = '';
+    els.orb = el('canvas', 'orb', root);
+    els.orb.width = ORB_SIZE;
+    els.orb.height = ORB_SIZE;
+    orbCtx = els.orb.getContext && els.orb.getContext('2d');
+    grads = null;
+    // The lines under the orb: each a pair of slots, so a change crossfades.
+    els.lines = el('div', 'lines', root);
+    els.centre = [el('div', 'centre', els.lines), el('div', 'centre', els.lines)];
+    els.below = [el('div', 'below', els.lines), el('div', 'below', els.lines)];
+    els.centreAt = 0;
+    els.belowAt = 0;
     var col = el('div', 'col', root);
-    els.who = el('div', 'who', col);
-    els.hello = el('div', 'hello', col);
-    els.you = el('div', 'you', col);
-    els.reply = el('div', 'reply', col);
-    els.cards = el('div', 'cards', col);
+    els.who = el('div', 'who', root);
+    els.exchange = el('div', 'exchange', col);
+    els.you = el('div', 'you', els.exchange);
+    els.reply = el('div', 'reply', els.exchange);
+    els.cards = el('div', 'cards', root);
     els.pillsBox = el('div', 'pills', root);
     els.pills = el('div', 'strip', els.pillsBox);
     els.ask = el('div', 'ask', root);
@@ -63,18 +109,26 @@
     sym('mic', els.mic, 30);
     els.field = el('input', 'field', fill);
     els.field.type = 'text';
-    els.field.setAttribute('placeholder', tr('Ask Welly…'));
-    els.field.onkeydown = null;
+    // The placeholder as two lines that crossfade ("Ask Welly…" ↔ "Listening…").
+    els.phAsk = el('div', 'ph on', fill, tr('Ask Welly…'));
+    els.phListen = el('div', 'ph', fill, tr('Listening…'));
+    els.field.oninput = function () { placeholders(); };
+    els.fly = el('div', 'flypill', root);
+    els.flyBg = el('div', 'bg', els.fly);
+    els.flyText = el('div', 't', els.fly);
     pills = [];
+    pillFocus = [];
     for (var i = 0; i < P.pills.length; i++) {
       var p = P.pills[i], b = el('div', 'pill', els.pills, PROMPTS[p.id] || p.prompt);
       pills.push({node: b, data: p});
+      pillFocus.push(Motion.spring(S.SNAPPY_FOCUS, 0));
       pointer(b, 'pills', i);
     }
     pointer(els.mic, 'input', 0);
     pointer(els.field, 'input', 1);
     renderWho();
     greet();
+    Motion.tick(frame);
   }
 
   function pointer(node, r, i) {
@@ -86,16 +140,47 @@
     var line = 'Welly  ·  ' + (MOODS[mood] || mood);
     if (preview()) line += '  ·  ' + tr('Preview');
     els.who.textContent = line;
+    els.whoW = els.who.offsetWidth || 300;
   }
 
+  function placeholders() {
+    var typed = !!els.field.value;
+    setClass(els.phAsk, 'on', !typed && !listening);
+    setClass(els.phListen, 'on', !typed && listening);
+  }
+
+  /** Back to the start: the orb centre stage, the greeting, no exchange. */
   function greet() {
-    els.hello.innerHTML = '';
-    el('div', 'big', els.hello, trf('Hey {name}.', {name: opts.name()}));
-    el('div', 'sub', els.hello, tr('Ask me anything, or pick one below.'));
-    els.hello.style.display = '';
+    userWords = '';
     els.you.textContent = '';
     els.reply.textContent = '';
+    words = [];
+    shownWords = 0;
     setCards([]);
+    dock.set(0);
+    lines();
+  }
+
+  /** What the two lines under the orb say now; a change crossfades (a short CSS fade between two slots). */
+  function lines() {
+    var c, b = '', big = false;
+    if (listening) c = (els.field.value || '') || tr('Listening…');
+    else if (thinkingNow) { c = userWords; b = els.status || STATUS.other; }
+    else if (!userWords) { c = trf('Hey {name}.', {name: opts.name()}); big = true; b = tr('Ask me anything, or pick one below.'); }
+    else c = userWords;
+    swap(els.centre, 'centreAt', c, big);
+    swap(els.below, 'belowAt', b, false);
+  }
+
+  function swap(slots, at, text, big) {
+    var cur = slots[els[at]];
+    if (cur.textContent === text && hasClass(cur, 'big') === big) return;
+    var next = slots[1 - els[at]];
+    next.textContent = text;
+    setClass(next, 'big', big);
+    setClass(cur, 'on', false);
+    setClass(next, 'on', !!text);
+    els[at] = 1 - els[at];
   }
 
   // MARK: - Focus
@@ -110,23 +195,33 @@
   function size(r) { return r === 'cards' ? cards.length : r === 'pills' ? pills.length : 2; }
 
   function paint() {
-    var i, list = els.cards.children;
+    var i;
+    for (i = 0; i < cardFocus.length; i++) cardFocus[i].set(focused && row === 'cards' && index === i ? 1 : 0);
+    for (i = 0; i < pills.length; i++) {
+      var on = focused && row === 'pills' && index === i;
+      setOn(pills[i].node, on);
+      pillFocus[i].set(on ? 1 : 0);
+    }
+    var list = els.cards.children;
     for (i = 0; i < list.length; i++) setOn(list[i], focused && row === 'cards' && index === i);
-    for (i = 0; i < pills.length; i++) setOn(pills[i].node, focused && row === 'pills' && index === i);
     setOn(els.mic, focused && row === 'input' && index === 0);
     setOn(els.ask, focused && row === 'input' && index === 1);
+    askFocus.set(focused && row === 'input' && index === 1 ? 1 : 0);
     // The pills scroll only as far as it takes to show the focused one, as a tvOS row does.
     if (row === 'pills' && pills[index]) {
-      var left = pills[index].node.offsetLeft, width = pills[index].node.offsetWidth;
-      if (left - scrollX < 0) scrollX = left;
-      else if (left + width - scrollX > 1180) scrollX = left + width - 1180;
+      var left = pills[index].node.offsetLeft, width = pills[index].node.offsetWidth, x = pillScroll.to;
+      if (left - x < 0) x = left;
+      else if (left + width - x > 1180) x = left + width - 1180;
+      pillScroll.set(x);
     }
-    els.pills.style.webkitTransform = els.pills.style.transform = 'translateX(' + (-scrollX) + 'px)';
-    setClass(els.pillsBox, 'more-l', scrollX > 0);
-    setClass(els.pillsBox, 'more-r', els.pills.offsetWidth - scrollX > 1190);
+    setClass(els.pillsBox, 'more-l', pillScroll.to > 0);
+    setClass(els.pillsBox, 'more-r', els.pills.offsetWidth - pillScroll.to > 1190);
+    Motion.kick();
   }
 
   function setOn(node, on) { setClass(node, 'focus', on); }
+
+  function hasClass(node, name) { return (' ' + node.className + ' ').indexOf(' ' + name + ' ') >= 0; }
 
   function setClass(node, name, on) {
     var c = ' ' + node.className + ' ', has = c.indexOf(' ' + name + ' ') >= 0;
@@ -134,14 +229,32 @@
     else if (!on && has) node.className = c.replace(' ' + name + ' ', ' ').replace(/^\s+|\s+$/g, '');
   }
 
-  // MARK: - Cards (plain fills, one focus lift)
+  /** No neighbour that way: a short rubber-band tug of the focused thing. */
+  function bump(dir, alongX) {
+    if (Motion.instant) return;
+    nudgeX = alongX;
+    nudge.impulse(dir * Motion.BUMP_VELOCITY);
+  }
+
+  // MARK: - Cards (plain fills, one focus lift; they rise out of the orb)
 
   function setCards(list) {
     cards = list;
     els.cards.innerHTML = '';
-    for (var i = 0; i < list.length; i++) drawCard(list[i], i);
+    cardFocus = [];
+    cardTilt = [];
+    cardEnter = [];
+    enterAt = [];
+    for (var i = 0; i < list.length; i++) {
+      drawCard(list[i], i);
+      cardFocus.push(Motion.spring(S.SNAPPY_FOCUS, 0));
+      cardTilt.push(Motion.spring(S.TILT, 0).deg());
+      cardEnter.push(Motion.spring(S.CARD_ENTER, Motion.instant ? 1 : 0));
+      enterAt.push(seconds + 0.16 + i * CARD_STAGGER);   // once the orb is on its way to the header
+    }
     if (row === 'cards' && !list.length) { row = 'pills'; index = 0; }
     if (row === 'cards') index = Math.min(index, list.length - 1);
+    Motion.kick();
   }
 
   function pickFor(id) {
@@ -152,6 +265,7 @@
 
   function drawCard(c, i) {
     var box = el('div', 'card ' + c.type, els.cards);
+    box.style.opacity = '0';
     pointer(box, 'cards', i);
     if (c.type === 'media') {
       var p = c.pickData || pickFor(c.pick);
@@ -196,6 +310,16 @@
     }
   }
 
+  /** A home card flips with its light (OK on it): its state changes in place, no new entrance. */
+  function refreshHomeCard(i) {
+    var c = cards[i], box = els.cards.children[i];
+    if (!c || !box || c.type !== 'home') return;
+    var on = window.House ? House.state(c.fixture) : c.on;
+    setClass(box, 'lit', on);
+    var st = box.querySelector('.state');
+    if (st) st.textContent = on ? tr('On') : tr('Off');
+  }
+
   function team(box, name, score, ahead) {
     var line = el('div', 'team' + (ahead ? ' ahead' : ''), box);
     el('span', 'name', line, name);
@@ -210,22 +334,50 @@
   // MARK: - Answers
 
   function say(you, reply, newMood, list) {
-    els.hello.style.display = 'none';
-    els.you.textContent = you;
-    els.reply.className = 'reply';
-    els.reply.textContent = reply;
+    thinkingNow = false;
+    think.set(0);
+    userWords = you || userWords;
+    els.you.textContent = userWords;
     if (newMood) { mood = newMood; renderWho(); }
+    // The reply, word by word (OK shows it all); with motion off, at once.
+    words = (reply || '').split(/\s+/);
+    revealAt = seconds;
+    shownWords = Motion.instant ? words.length : 0;
+    els.reply.textContent = Motion.instant ? reply : '';
     setCards(list || []);
+    dock.set(1);
+    lines();
     paint();
   }
 
   function thinking(you) {
-    els.hello.style.display = 'none';
-    els.you.textContent = you;
-    els.reply.className = 'reply thinking';
-    els.reply.innerHTML = '<span></span><span></span><span></span>';
-    setCards([]);
+    thinkingNow = true;
+    userWords = you;
+    think.set(1);
+    dock.set(0);   // the orb comes back centre stage to think
+    lines();
     paint();
+  }
+
+  /** The thinking line follows the tool at work (a pill's tool in the preview). */
+  function status(tool) {
+    els.status = STATUS[TOOL_STATUS[tool] || 'other'];
+    if (thinkingNow) lines();
+  }
+
+  /** The pressed pill flies up to the line under the orb and becomes the question there. */
+  function flyUp(i) {
+    var node = pills[i].node;
+    if (Motion.instant || !node) return;
+    // Where the pill is on the stage: the row's box, its strip, the pill, minus the row's scroll.
+    flyFrom = {x: 352 + 18 + node.offsetLeft - pillScroll.x, y: 832 + 13, w: node.offsetWidth, h: node.offsetHeight};
+    els.flyText.textContent = node.textContent;
+    els.fly.style.width = flyFrom.w + 'px';
+    els.fly.style.height = flyFrom.h + 'px';
+    flying = true;
+    fly.snap(0).set(1);
+    layout();   // in place at once, before it shows
+    setClass(els.fly, 'on', true);
   }
 
   /** What the preview says to a pill (or to typed words that match one). */
@@ -236,9 +388,9 @@
       if ((PROMPTS[p.id] || '').toLowerCase() === t || p.prompt.toLowerCase() === t) best = p;
     }
     if (!best) {
-      var words = {watching: /watch(ing)?\b|playing/, 'movie-mode': /dim|movie|lights?/, scores: /score|game|knicks|jets/,
+      var words2 = {watching: /watch(ing)?\b|playing/, 'movie-mode': /dim|movie|lights?/, scores: /score|game|knicks|jets/,
         weather: /weather|cold|rain|warm/, tonight: /tonight|on tv|schedule/, roast: /roast|watchlist/};
-      for (i = 0; i < P.pills.length; i++) if (words[P.pills[i].id] && words[P.pills[i].id].test(t)) best = P.pills[i];
+      for (i = 0; i < P.pills.length; i++) if (words2[P.pills[i].id] && words2[P.pills[i].id].test(t)) best = P.pills[i];
     }
     return best;
   }
@@ -247,11 +399,13 @@
     text = (text || '').replace(/^\s+|\s+$/g, '');
     if (!text || busy) return;
     busy = true;
+    var guess = preview() ? previewAnswer(text) : null;
+    els.status = STATUS[TOOL_STATUS[guess ? PILL_TOOL[guess.id] : ''] || 'other'];
     thinking(text);
     if (preview() || (!CONFIG.geminiKey && !CONFIG.ollamaUrl)) {
       setTimeout(function () {
         busy = false;
-        var p = preview() ? previewAnswer(text) : null;
+        var p = guess;
         if (!p) {
           say(text, preview() ? tr('In Preview I can only answer the questions below.')
             : tr('I don\'t have a brain yet. Add a free Gemini key (gemini_key) or your Mac\'s Ollama (ollama_url) to config.properties, then build again.'), 'Embarrassed');
@@ -260,20 +414,218 @@
         // The preview acts out what it says: the lights it names change on the Home tab too.
         for (var i = 0; i < p.cards.length; i++) if (p.cards[i].type === 'home' && window.House) House.set(p.cards[i].fixture, p.cards[i].on);
         say(text, p.reply, p.mood, p.cards.slice());
-        rowAfterAnswer();
-      }, 650);
+      }, 1300);
       return;
     }
     converse(text, function (reply, list, ok) {
       busy = false;
       say(text, reply, ok ? (list.length ? 'Smug' : 'Curious') : 'Embarrassed', list);
-      rowAfterAnswer();
     });
   }
 
-  function rowAfterAnswer() {
-    // The focus stays where it was (a pill), so the next question is one press away.
-    paint();
+  // MARK: - Frames (motion.js runs this every frame while anything moves, or while the orb shows)
+
+  function frame(dt, now) {
+    if (!root) return false;
+    var step = Math.min(dt, 1 / 30), moving = false, i;
+    seconds += step;
+    // Targets change here by assignment, not set(): set() kicks the loop, and a kick from inside a tick would start a
+    // second loop (motion.js).
+    if (press.to === 1 && seconds - pressAt > 0.09) press.to = 0;   // the squish, then back (OK has no key-up here)
+    for (i = 0; i < everySpring.length; i++) if (everySpring[i].step(dt)) moving = true;
+    for (i = 0; i < pillFocus.length; i++) if (pillFocus[i].step(dt)) moving = true;
+    for (i = 0; i < cards.length; i++) {
+      if (cardEnter[i].to === 0 && seconds >= enterAt[i]) cardEnter[i].to = 1;
+      if (cardEnter[i].to === 0) moving = true;
+      if (cardFocus[i].step(dt)) moving = true;
+      if (cardTilt[i].step(dt)) moving = true;
+      if (cardEnter[i].step(dt)) moving = true;
+    }
+    if (flying) {
+      fly.step(dt);
+      if (fly.x > 0.995 && fly.settled()) { flying = false; setClass(els.fly, 'on', false); }
+      moving = true;
+    }
+    // The reply, word by word; Welly "speaks" while it shows.
+    if (shownWords < words.length) {
+      var n = Math.min(words.length, Math.floor((seconds - revealAt) * WORDS_PER_SECOND));
+      if (n !== shownWords) { shownWords = n; els.reply.textContent = words.slice(0, n).join(' '); }
+      moving = true;
+    }
+    speak.to = shownWords < words.length ? 1 : 0;
+    // Browsers give no mic level: a speaking cadence stands in for it while listening.
+    level.to = listening ? 0.35 + 0.3 * Math.sin(seconds * 9) * Math.sin(seconds * 2.3) + 0.2 * Math.sin(seconds * 17) : 0;
+    var speed = 1 + 2.5 * think.x + 1.2 * listenS.x;
+    orbPhase += step * speed;
+    ringPhase += step * (0.7 + 1.6 * clamp01(level.x));
+    nodeAngle += step * (2 * Math.PI / 1.6) * think.x;
+    layout();
+    var alive = shown && !Motion.instant;
+    if (alive || !orbDrawn) drawOrb();
+    return moving || alive || listening || thinkingNow;
+  }
+
+  /** Every spring onto the page: the orb's place, the lines, the exchange, the cards, the pills, the capsule. */
+  function layout() {
+    var d = clamp01(dock.x), i;
+    var breath = Motion.instant ? 0 : 0.015 * Math.sin(seconds * 2 * Math.PI / 4);
+    var pulse = Motion.instant ? 0 : 0.045 * Math.sin(seconds * 2 * Math.PI / 0.8) * think.x + 0.05 * Math.abs(Math.sin(seconds * 2 * Math.PI * 3.5)) * speak.x;
+    // The canvas draws the listening growth itself; docking, breath and pulses scale it.
+    var sc = lerp(ORB_R, DOCK_R, d) / ORB_R * (1 + breath + pulse);
+    orbX = lerp(MID, DOCK_X, d);
+    orbY = lerp(ORB_Y, DOCK_Y, d);
+    Motion.transform(els.orb, 'translate(' + (orbX - ORB_SIZE / 2) + 'px,' + (orbY - ORB_SIZE / 2) + 'px) scale(' + sc + ')');
+    // "Welly · mood": centred under the greeting, then beside the small orb.
+    var fx = MID - els.whoW / 2 - WHO_DOCK_LEFT, fy = WHO_FRESH_TOP - WHO_DOCK_TOP;
+    Motion.transform(els.who, 'translate(' + ((1 - d) * fx) + 'px,' + ((1 - d) * fy) + 'px)');
+    opacity(els.lines, 1 - d);
+    opacity(els.exchange, d);
+    els.lines.style.visibility = d > 0.995 ? 'hidden' : '';
+    // While a pill flies up, the line it becomes waits for it.
+    opacity(els.centre[els.centreAt], flying ? Math.pow(clamp01(fly.x), 3) : 1);
+    // Cards: out of the orb's centre (small) to their places, rising the last 28 px.
+    var list = els.cards.children;
+    for (i = 0; i < list.length && i < cards.length; i++) {
+      var box = list[i], p = Math.max(0, cardEnter[i].x), pe = Math.min(1, p), mine = focused && row === 'cards' && index === i;
+      var sx = CARDS_LEFT + box.offsetLeft + box.offsetWidth / 2, sy = CARDS_TOP + CARD_H / 2;
+      var tx = lerp(orbX - sx, 0, pe) + (mine && nudgeX ? Motion.rubber(nudge.x) : 0), ty = lerp(orbY - sy, 0, pe) + 28 * (1 - pe);
+      var s = (lerp(0.35, 0.94, pe) + 0.06 * clamp01((cardEnter[i].x - 0.8) / 0.2) * pe) * (1 + 0.10 * cardFocus[i].x) * (mine ? 1 - 0.065 * press.x : 1);
+      var tilt = cardTilt[i].x;
+      Motion.transform(box, 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')' + (Math.abs(tilt) > 0.01 ? ' perspective(900px) rotateY(' + (-tilt) + 'deg)' : ''));
+      opacity(box, d * clamp01(p * 1.6));
+    }
+    // Pills: focus, the press squish and the dead-end tug; the row's scroll.
+    Motion.transform(els.pills, 'translateX(' + (-pillScroll.x) + 'px)');
+    for (i = 0; i < pills.length; i++) {
+      var on = focused && row === 'pills' && index === i, ps = (1 + 0.06 * pillFocus[i].x) * (on ? 1 - 0.065 * press.x : 1);
+      Motion.transform(pills[i].node, (on && nudgeX ? 'translateX(' + Motion.rubber(nudge.x) + 'px) ' : '') + 'scale(' + ps + ')');
+    }
+    var inRow = focused && row === 'input', as = (1 + 0.02 * askFocus.x) * (inRow ? 1 - 0.03 * press.x : 1);
+    var nx = inRow && nudgeX ? Motion.rubber(nudge.x) : 0, ny = inRow && !nudgeX ? Motion.rubber(nudge.x) : 0;
+    Motion.transform(els.ask, 'translate(' + nx + 'px,' + ny + 'px) scale(' + as + ')');
+    if (flying && flyFrom) {
+      var fp = clamp01(fly.x), w = flyFrom.w, h = flyFrom.h;
+      var cx = lerp(flyFrom.x + w / 2, MID, fp), cy = lerp(flyFrom.y + h / 2, CENTRE_TOP + 35, fp) - 40 * Math.sin(Math.PI * fp);
+      Motion.transform(els.fly, 'translate(' + (cx - w / 2) + 'px,' + (cy - h / 2) + 'px)');
+      opacity(els.flyBg, 1 - clamp01(fp / 0.7));
+      Motion.transform(els.flyText, 'scale(' + lerp(1, 34 / 26, fp) + ')');
+      var ink = Math.round(lerp(28, 255, fp));
+      els.flyText.style.color = 'rgba(' + ink + ',' + ink + ',' + Math.round(lerp(30, 255, fp)) + ',' + (1 - clamp01((fp - 0.85) / 0.15)) + ')';
+    }
+  }
+
+  // MARK: - The orb (a canvas: an aurora in a dark glass sphere, a colour rim, rings, thinking nodes)
+
+  function gradients(c) {
+    var g = {blobs: []}, i;
+    g.halo = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.halo.addColorStop(0, 'rgba(191,90,242,0.6)');
+    g.halo.addColorStop(0.55, 'rgba(10,132,255,0.25)');
+    g.halo.addColorStop(1, 'rgba(10,132,255,0)');
+    for (i = 0; i < BLOB.length; i++) {
+      var b = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+      b.addColorStop(0, 'rgba(' + BLOB[i] + ',0.9)');
+      b.addColorStop(0.5, 'rgba(' + BLOB[i] + ',0.35)');
+      b.addColorStop(1, 'rgba(' + BLOB[i] + ',0)');
+      g.blobs.push(b);
+    }
+    g.spec = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.spec.addColorStop(0, 'rgba(255,255,255,0.55)');
+    g.spec.addColorStop(1, 'rgba(255,255,255,0)');
+    g.node = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+    g.node.addColorStop(0, 'rgba(255,255,255,1)');
+    g.node.addColorStop(0.35, 'rgba(255,255,255,0.5)');
+    g.node.addColorStop(1, 'rgba(255,255,255,0)');
+    return g;
+  }
+
+  function circle(c, x, y, r) { c.beginPath(); c.arc(x, y, r, 0, 2 * Math.PI); }
+
+  /** Drawn at the full centre-stage size (the canvas is scaled down when docked), in its own px. */
+  function drawOrb() {
+    var c = orbCtx;
+    if (!c) return;
+    if (!grads) grads = gradients(c);
+    orbDrawn = true;
+    var lv = listenS.x, tv = think.x, R = ORB_R * (1 + 0.18 * lv), i;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, ORB_SIZE, ORB_SIZE);
+    c.setTransform(1, 0, 0, 1, ORB_SIZE / 2, ORB_SIZE / 2);
+    // The halo, wider while listening.
+    var hr = R * (1.7 + 0.3 * lv);
+    c.save();
+    c.scale(hr, hr);
+    c.globalAlpha = 0.55 + 0.35 * lv;
+    c.fillStyle = grads.halo;
+    circle(c, 0, 0, 1);
+    c.fill();
+    c.restore();
+    c.globalAlpha = 1;
+    // Rings that follow the voice.
+    if (lv > 0.01) {
+      c.lineWidth = 2;
+      for (i = 0; i < 3; i++) {
+        var f = (ringPhase + i / 3) % 1, lvl = clamp01(level.x);
+        c.strokeStyle = 'rgba(' + (i === 1 ? '191,90,242' : '100,210,255') + ',' + ((1 - f) * 0.55 * lv * (0.35 + 0.65 * lvl)) + ')';
+        circle(c, 0, 0, R * (1.05 + f * (0.35 + 0.5 * lvl)));
+        c.stroke();
+      }
+    }
+    // The sphere: dark glass, the aurora inside.
+    c.fillStyle = 'rgba(18,20,32,0.94)';
+    circle(c, 0, 0, R);
+    c.fill();
+    c.save();
+    circle(c, 0, 0, R);
+    c.clip();
+    for (i = 0; i < grads.blobs.length; i++) {
+      var a = orbPhase * (0.9 + 0.25 * i) + i * 1.7;
+      var bx = 0.42 * Math.sin(a), by = 0.42 * Math.cos(a * 0.8 + i), br = 0.78 + 0.12 * Math.sin(a * 1.3 + i);
+      c.save();
+      c.translate(bx * R, by * R);
+      c.scale(br * R, br * R);
+      c.globalAlpha = 0.75 + 0.25 * lv;
+      c.fillStyle = grads.blobs[i];
+      circle(c, 0, 0, 1);
+      c.fill();
+      c.restore();
+    }
+    c.restore();
+    c.globalAlpha = 1;
+    // The glass highlight, top left.
+    c.save();
+    c.translate(-0.34 * R, -0.42 * R);
+    c.scale(0.5 * R, 0.42 * R);
+    c.fillStyle = grads.spec;
+    circle(c, 0, 0, 1);
+    c.fill();
+    c.restore();
+    // The rim: six colour arcs, turning; sharper and brighter while listening.
+    var turn = seconds * (40 + 100 * lv) * Math.PI / 180;
+    c.lineWidth = 1.5 + 2.5 * lv;
+    c.globalAlpha = 0.35 + 0.65 * lv;
+    for (i = 0; i < 6; i++) {
+      c.strokeStyle = RIM[i];
+      c.beginPath();
+      c.arc(0, 0, R, turn + i * Math.PI / 3, turn + (i + 1) * Math.PI / 3 + 0.02);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+    // Thinking: three specular nodes orbiting.
+    if (tv > 0.01) {
+      for (i = 0; i < 3; i++) {
+        var na = nodeAngle + i * 2 * Math.PI / 3, nr = Math.max(4, R * 0.09);
+        c.save();
+        c.translate(R * 1.12 * Math.cos(na), R * 1.12 * Math.sin(na));
+        c.scale(nr, nr);
+        c.globalAlpha = tv;
+        c.fillStyle = grads.node;
+        circle(c, 0, 0, 1);
+        c.fill();
+        c.restore();
+      }
+      c.globalAlpha = 1;
+    }
   }
 
   // MARK: - The brains (OpenAI Chat Completions with tools: Gemini, its lite model, then Ollama)
@@ -365,6 +717,7 @@
       var args = {};
       try { args = JSON.parse(call['function'].arguments || '{}'); } catch (e) {}
       var name = call['function'].name;
+      status(name);
       if (name === 'launch_app') finish(call, {opened: opts.launch(args.name || '')});
       else if (name === 'weather') finish(call, weatherNow(list));
       else if (name === 'scores') scores(args.league || 'nfl', list, function (r) { finish(call, r); });
@@ -458,20 +811,34 @@
         var text = '', final = false;
         for (var i = e.resultIndex; i < e.results.length; i++) { text += e.results[i][0].transcript; if (e.results[i].isFinal) final = true; }
         els.field.value = text;
-        if (final) { stopListening(); ask(text); els.field.value = ''; }
+        placeholders();
+        lines();
+        if (final) { stopListening(); ask(text); els.field.value = ''; placeholders(); }
       };
       recognizer.onerror = recognizer.onend = function () { stopListening(); };
       recognizer.start();
-      listening = true;
-      els.ask.className += ' listening';
-      els.field.setAttribute('placeholder', tr('Listening…'));
+      startListening();
     } catch (e) { stopListening(); }
   }
 
+  /** The orb comes back centre stage, grows and listens; the capsule's rim lights. */
+  function startListening() {
+    listening = true;
+    listenS.set(1);
+    dock.set(0);
+    setClass(els.ask, 'listening', true);
+    placeholders();
+    lines();
+  }
+
   function stopListening() {
+    if (!listening) return;
     listening = false;
-    els.ask.className = els.ask.className.replace(/\s*listening/g, '');
-    els.field.setAttribute('placeholder', tr('Ask Welly…'));
+    listenS.set(0);
+    if (userWords && !thinkingNow && !busy) dock.set(1);   // back beside the name over the last answer
+    setClass(els.ask, 'listening', false);
+    placeholders();
+    lines();
   }
 
   // MARK: - API for home.js
@@ -479,46 +846,66 @@
   var Welly = window.Welly = {
     /** opts: name() (the profile's name), appNames(), launch(name) → bool, openPick(pick). */
     init: function (layer, o) { root = layer; opts = o; build(); paint(); },
-    show: function (on) { shown = on; if (!on && listening) { try { recognizer.stop(); } catch (e) {} } },
+    show: function (on) {
+      shown = on;
+      if (!on && listening) { try { recognizer.stop(); } catch (e) {} stopListening(); }
+      Motion.kick();
+    },
     focus: function (on) {
       focused = on;
       if (on) { var r = rows(); if (r.indexOf(row) < 0) row = r[0]; }
       paint();
     },
-    /** false when ↑ leaves the top row: the tab bar takes the focus. */
+    /** false when ↑ leaves the top row: the tab bar takes the focus. Dead ends tug the focused thing. */
     move: function (dx, dy) {
       var r = rows(), k = r.indexOf(row);
       if (dy) {
         if (k + dy < 0) return false;
-        if (k + dy >= r.length) return true;
+        if (k + dy >= r.length) { bump(dy, false); return true; }
         var from = row === 'pills' && pills[index] ? pills[index].node : null;
         row = r[k + dy];
         index = row === 'input' ? 1 : 0;
         if (row === 'pills' && from === null) index = 0;
       } else {
-        index = Math.max(0, Math.min(size(row) - 1, index + dx));
+        var next = index + dx;
+        if (next < 0 || next >= size(row)) { bump(dx, true); return true; }
+        index = next;
+        if (row === 'cards' && cardTilt[index]) cardTilt[index].impulse(dx * TILT_PUSH);   // leans toward where it came from
       }
       paint();
       return true;
     },
     ok: function () {
-      if (row === 'pills' && pills[index]) { ask(PROMPTS[pills[index].data.id] || pills[index].data.prompt); return; }
+      if (shownWords < words.length) {   // OK while a reply is being revealed: all of it, now
+        shownWords = words.length;
+        els.reply.textContent = words.join(' ');
+        return;
+      }
+      press.set(1);
+      pressAt = seconds;
+      if (row === 'pills' && pills[index]) {
+        flyUp(index);
+        ask(PROMPTS[pills[index].data.id] || pills[index].data.prompt);
+        return;
+      }
       if (row === 'input' && index === 0) { listen(); return; }
       if (row === 'input') { els.field.focus(); return; }
       var c = cards[index];
       if (!c) return;
       if (c.type === 'media' && c.pickData) opts.openPick(c.pickData);
-      else if (c.type === 'home' && window.House) { House.set(c.fixture, !House.state(c.fixture)); setCards(cards); paint(); }
+      else if (c.type === 'home' && window.House) { House.set(c.fixture, !House.state(c.fixture)); refreshHomeCard(index); }
     },
     typing: function () { return document.activeElement === els.field; },
     /** A key while the text field has the keyboard: 'native' leaves it to the field, true when Welly took it. */
     typingKey: function (k, keys) {
-      if (k === keys.ok || k === 13) { var t = els.field.value; els.field.value = ''; els.field.blur(); ask(t); return true; }
+      if (k === keys.ok || k === 13) { var t = els.field.value; els.field.value = ''; placeholders(); els.field.blur(); ask(t); return true; }
       if (k === keys.up || k === keys.down || k === keys.back || k === 27) { els.field.blur(); if (k === keys.up) Welly.move(0, -1); return true; }
       return 'native';
     },
     listen: function () { row = 'input'; index = 0; paint(); listen(); },
     ask: ask,
-    reset: function () { history = []; mood = P.mood || 'Curious'; renderWho(); greet(); row = 'pills'; index = 0; paint(); }
+    reset: function () { history = []; mood = P.mood || 'Curious'; renderWho(); greet(); row = 'pills'; index = 0; paint(); },
+    /** For the browser preview and screenshots (no mic there): the listening look on or off. */
+    simulateListening: function (on) { if (on) startListening(); else stopListening(); }
   };
 })();

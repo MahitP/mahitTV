@@ -12,6 +12,7 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.view.Choreographer;
 import android.view.View;
 
 import org.json.JSONArray;
@@ -35,15 +36,25 @@ import java.util.concurrent.Executors;
  * cone. The camera swings to the focused light's room on a spring (outside walls lower themselves when they face it)
  * and the other rooms fade back. Each light has a dot on a stem; the focused one carries a pill with its name and state.
  * Everything is projected again each frame into buffers made once, so drawing allocates nothing.
+ * Motion follows ANIMATIONS-SPEC.md §3: the springs step in this view's own frame callback (not in onDraw), which stops
+ * when everything is at rest; while the house shows, the fans turn, the screens glint, a lit dot breathes and the camera
+ * drifts after a while without keys (not with animations off, nor on Android 8–11, whose GPUs redraw it slowly).
  */
-final class HouseView extends View {
+final class HouseView extends View implements Choreographer.FrameCallback {
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     /** Walls are boxes this thick, cut in pieces of at most 1 m so each sorts by its own depth. */
     private static final float WALL = 0.12f, TALL = 2.6f;
     private static final float SHADE_H = 0.45f, SHADE_RB = 0.24f, SHADE_RT = 0.15f, BASE_R = 0.18f;
     private static final float TUBE_W = 0.11f, TUBE_LIT = 0.08f, TUBE_CORE = 0.035f, TUBE_CAP = 0.09f;
     private static final int BULB = 0, LAMP = 1, TUBE = 2;
-    private static final int STAND = 0, ROUND = 1, PIECE = 2, LIGHT = 3, DISC_X = 4, DISC_Y = 5;
+    private static final int STAND = 0, ROUND = 1, PIECE = 2, LIGHT = 3, DISC_X = 4, DISC_Y = 5, FAN = 6;
+    // The warmth spreads from a light this fast (m/s) out to WAVE_MAX m and pulls back in WAVE_OUT s; the filament's
+    // flash (an IGNITE impulse, peaking ≈ 0.25); a fan turns once in FAN_PERIOD s; the screens glint every GLINT_PERIOD
+    // s; the idle drift starts after IDLE ns. Unfocused rooms keep DIM of their colour over the dark BG, 30% less colour.
+    private static final float WAVE_SPEED = 8.5f, WAVE_MAX = 7, WAVE_OUT = 0.24f, FLASH = 14.2f;
+    private static final float FAN_PERIOD = 4.5f, GLINT_PERIOD = 6, DIM = 0.45f, DESAT = 0.3f;
+    private static final long IDLE = 6_000_000_000L;
+    private static final float[] BG = {24, 22, 28};
     private static final int DISC_POINTS = 20;
     // The pill and the dots, in 1920×1080 units: the tvOS safe area, under the tab bar.
     private static final float SAFE_L = 90, SAFE_R = 1830, SAFE_T = 128, SAFE_B = 1020, DOT_R = 8, FADE_H = 200;
@@ -54,7 +65,7 @@ final class HouseView extends View {
         float width, depth, yaw, pitch;
         final float[] box = new float[4];
         int[] cool, warm;
-        int glow, wall, wallTop, wood, linen, charcoal, white, baseboard;
+        int glow, wall, wallTop, wood, linen, charcoal, white, baseboard, silver;
         // Rooms.
         String[] roomName;
         float[][] roomRect, roomCam;      // roomCam: yaw, pitch, zoom, cx, cy (null: the overview)
@@ -65,8 +76,8 @@ final class HouseView extends View {
         // Things that stand (wall pieces, furniture, lights), and flat things on the floor (rugs, mats).
         float[][] box6;
         int[] type, color, rooms, wallOf, fixtureOf, faceSign;   // faceSign: a disc's side, +1 or -1
-        float[] alpha;
-        boolean[] followsWall;
+        float[] alpha, phase;            // phase: a screen's glint offset
+        boolean[] followsWall, screen;
         int[][] under;
         int[] byZ;
         float[][] flat;
@@ -80,23 +91,31 @@ final class HouseView extends View {
         float[][] at, glowAt;
         float[] shadeBottom, length, mid, top;
         boolean[] alongX;
+        // Fans: centre (x, y, z), the blades' radius, whether they face ±y (else ±x), their room.
+        float[][] fanC;
+        float[] fanR;
+        boolean[] fanAlongY;
+        int[] fanRoom;
     }
 
     private final SmartHome.Bridge bridge;
     private Model m;
     private boolean[] on = new boolean[0];
     private Spring[] lit = new Spring[0], grow = new Spring[0], roomGlow = new Spring[0], emph = new Spring[0];
-    private float[] ignite = new float[0], ripple = new float[0];
-    private final Spring camYaw = new Spring(0.7f, 0.9f, 0), camPitch = new Spring(0.7f, 0.9f, 60);
-    private final Spring camZoom = new Spring(0.7f, 0.9f, 1), camX = new Spring(0.7f, 0.9f, 0), camY = new Spring(0.7f, 0.9f, 0);
-    private final Spring pillX = new Spring(0.35f, 0.86f, 960), pillY = new Spring(0.35f, 0.86f, 540);
+    private Spring[] flash = new Spring[0], nudgeX = new Spring[0], nudgeY = new Spring[0], cut = new Spring[0];
+    private float[] wave = new float[0], ripple = new float[0];
+    private final Spring camYaw = new Spring(Spring.CAMERA_ORBIT, 0).deg(), camPitch = new Spring(Spring.CAMERA_ORBIT, 60).deg();
+    private final Spring camZoom = new Spring(Spring.CAMERA_ORBIT, 1), camX = new Spring(Spring.CAMERA_ORBIT, 0);
+    private final Spring camY = new Spring(Spring.CAMERA_ORBIT, 0);
+    private final Spring pillX = new Spring(Spring.LIQUID_PILL, 960).px(), pillY = new Spring(Spring.LIQUID_PILL, 540).px();
     private final Spring shown = new Spring(0.2f, 1f, 0);   // the pill, while the house has the focus
-    private int index;
-    private boolean focused, pillPlaced;
-    private String pillName = "", pillState = "", pillSub = "";
-    private float pillNameW, pillStateW, pillSubW;
+    private final Spring drift = new Spring(Spring.ROOM_FADE, 0);   // the idle drift's strength, eased in and out
+    private int index, pillIndex = -1;
+    private boolean focused, pillPlaced, running, bumped;
+    private String pillName = "", pillState = "", pillSub = "", oldName = "", oldState = "", oldSub = "";
+    private float pillNameW, pillStateW, pillSubW, oldNameW, oldStateW, oldSubW, pillAge = 1;
     private long lastNanos, lastKey;
-    private float drift;
+    private float clock;   // seconds, from the frame times
 
     // This size's numbers and buffers.
     private int w, h;
@@ -143,7 +162,10 @@ final class HouseView extends View {
         on = new boolean[n];
         lit = new Spring[n];
         grow = new Spring[n];
-        ignite = new float[n];
+        flash = new Spring[n];
+        nudgeX = new Spring[n];
+        nudgeY = new Spring[n];
+        wave = new float[n];
         ripple = new float[n];
         dotX = new float[n];
         dotY = new float[n];
@@ -153,20 +175,30 @@ final class HouseView extends View {
         for (int i = 0; i < n; i++) {
             SmartHome.Device d = bridge.device(model.fixtureId[i]);
             on[i] = d != null && d.known && d.on;
-            lit[i] = new Spring(0.45f, 0.90f, on[i] ? 1 : 0);
-            grow[i] = new Spring(0.30f, 0.80f, 0);
+            lit[i] = new Spring(Spring.ROOM_FADE, on[i] ? 1 : 0);
+            grow[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
+            flash[i] = new Spring(Spring.IGNITE, 0);
+            nudgeX[i] = new Spring(Spring.BOUNDARY_BUMP, 0).px();
+            nudgeY[i] = new Spring(Spring.BOUNDARY_BUMP, 0).px();
+            wave[i] = on[i] ? WAVE_MAX : 0;
             ripple[i] = -1;
         }
         roomGlow = new Spring[rooms];
         emph = new Spring[rooms];
         slab = new int[rooms];
         for (int r = 0; r < rooms; r++) {
-            roomGlow[r] = new Spring(0.45f, 0.90f, 0);
-            emph[r] = new Spring(0.45f, 0.90f, 1);
+            roomGlow[r] = new Spring(Spring.ROOM_FADE, 0);
+            emph[r] = new Spring(Spring.ROOM_FADE, 1);
             slab[r] = r;
         }
         wallNow = new float[model.wallH.length];
         wallTall = new float[model.wallH.length];
+        cut = new Spring[model.wallH.length];
+        for (int i = 0; i < cut.length; i++) {
+            cut[i] = new Spring(Spring.WALL_CUT, 1);
+            wallNow[i] = model.wallH[i];
+            wallTall[i] = 1;
+        }
         int items = model.box6.length;
         depth = new float[items];
         order = new int[items];
@@ -206,12 +238,26 @@ final class HouseView extends View {
                 best = j;
             }
         }
-        if (best < 0) return false;
+        bumped = best < 0;
+        if (bumped) {
+            if (dy < 0) return false;   // ↑ from the top light: the tab bar
+            // A dead end: the dot gets a push the way the arrow pointed and springs back (BOUNDARY_BUMP), with the knock.
+            if (dx != 0) nudgeX[index].impulse(dx * Spring.BUMP_VELOCITY);
+            if (dy != 0) nudgeY[index].impulse(dy * Spring.BUMP_VELOCITY);
+            Click.boundary();
+            kick();
+            return true;
+        }
         index = best;
         cameraTarget(false);
         updatePill();
         kick();
         return true;
+    }
+
+    /** Whether the last move() hit a dead end (it bumped and played the knock: no move click). */
+    boolean bumped() {
+        return bumped;
     }
 
     /** OK: the focused light on or off, at once; back as it was, with the reason, if the device doesn't answer. */
@@ -248,21 +294,45 @@ final class HouseView extends View {
         });
     }
 
+    /** On: the filament flashes (IGNITE) and the warmth starts spreading from the light (off, it pulls back in). */
     private void setOn(int f, boolean value) {
-        if (value && !on[f]) ignite[f] = 1;
+        if (value && !on[f] && !Spring.instant) {
+            flash[f].snap(0);
+            flash[f].impulse(FLASH);
+            wave[f] = 0;
+        }
         on[f] = value;
         lit[f].target = value ? 1 : 0;
         kick();
     }
 
+    /** Something changed: run the frame callback (if it isn't running) and draw. */
     private void kick() {
-        lastNanos = 0;
         invalidate();
+        if (running || m == null) return;
+        running = true;
+        lastNanos = 0;
+        Choreographer.getInstance().postFrameCallback(this);
     }
 
     @Override protected void onVisibilityChanged(View changed, int visibility) {
         super.onVisibilityChanged(changed, visibility);
-        if (visibility == VISIBLE) kick();
+        if (visibility == VISIBLE && m != null && isShown()) {
+            // The tab shows: the camera settles into place from a little higher and further (pitch +4°, zoom 0.94).
+            lastKey = System.nanoTime();
+            cameraTarget(true);
+            if (!Spring.instant) {
+                camPitch.value = camPitch.target + 4;
+                camZoom.value = camZoom.target * 0.94f;
+            }
+            kick();
+        }
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (running) Choreographer.getInstance().removeFrameCallback(this);
+        running = false;
     }
 
     /** The camera on the focused light's room (the overview otherwise), the other rooms faded back. */
@@ -294,6 +364,17 @@ final class HouseView extends View {
         if (m == null) return;
         int f = index;
         SmartHome.Device d = bridge.device(m.fixtureId[f]);
+        if (pillIndex >= 0 && pillIndex != f && shown.value > 0.01f) {
+            // Another light: the old text fades out while the new one fades in (both ride the pill's spring).
+            oldName = pillName;
+            oldState = pillState;
+            oldSub = pillSub;
+            oldNameW = pillNameW;
+            oldStateW = pillStateW;
+            oldSubW = pillSubW;
+            pillAge = Spring.instant ? 1 : 0;
+        }
+        pillIndex = f;
         pillName = name(m.roomName[m.fixtureRoom[f]]) + "  ·  " + name(m.fixtureName[f]);
         pillState = "  ·  " + (on[f] ? Ui.tr("On") : Ui.tr("Off"));
         if (d == null && !Config.PREVIEW) pillSub = Ui.tr("Not connected: add its IP to kasa= in config.properties");
@@ -305,7 +386,7 @@ final class HouseView extends View {
             pillSubW = pillSub.isEmpty() ? 0 : subP.measureText(pillSub);
         }
         shown.target = focused ? 1 : 0;
-        invalidate();
+        kick();
     }
 
     /** house.json's names, translated (spelled out so tools/translate.py finds them). */
@@ -370,6 +451,7 @@ final class HouseView extends View {
         m.linen = color(colors, "linen");
         m.charcoal = color(colors, "charcoal");
         m.white = color(colors, "white");
+        m.silver = color(colors, "silver");
         m.baseboard = colors.containsKey("baseboard") ? colors.get("baseboard") : m.wall;
 
         JSONArray rooms = j.getJSONArray("rooms");
@@ -404,7 +486,7 @@ final class HouseView extends View {
         List<float[]> boxes = new ArrayList<>();
         List<int[]> info = new ArrayList<>();          // type, color, rooms, wall, fixture, face sign
         List<Float> alphas = new ArrayList<>();
-        List<Boolean> follows = new ArrayList<>();
+        List<Boolean> follows = new ArrayList<>(), screens = new ArrayList<>();
         List<float[]> strips = new ArrayList<>();
         List<Integer> stripRooms = new ArrayList<>();
         for (int i = 0; i < nw; i++) {
@@ -436,6 +518,7 @@ final class HouseView extends View {
                 info.add(new int[] {PIECE, m.wall, roomsAt(m, b[0] + b[3] / 2, b[1] + b[4] / 2), i, -1, 0});
                 alphas.add(1f);
                 follows.add(false);
+                screens.add(false);
                 // Two darker bands on the floor where the wall meets it, on each side that's indoors.
                 for (int side = -1; side <= 1; side += 2) {
                     float sx = along ? 0 : side, sy = along ? side : 0;
@@ -493,6 +576,7 @@ final class HouseView extends View {
             info.add(new int[] {type, col, mask, wall == null ? -1 : wall, -1, side.startsWith("-") ? -1 : 1});
             alphas.add((float) f.optDouble("alpha", 1));
             follows.add("door".equals(kind) || "door-glass".equals(kind) || "door-frame".equals(kind));
+            screens.add("screen".equals(f.optString("color")) && Math.max(b[3], b[4]) > 0.3f);
         }
         // Flat things in the order they lie (a rug's border, then its pattern).
         int nf = flats.size();
@@ -542,6 +626,26 @@ final class HouseView extends View {
             info.add(new int[] {LIGHT, 0, 1 << m.fixtureRoom[i], -1, i, 0});
             alphas.add(1f);
             follows.add(false);
+            screens.add(false);
+        }
+        JSONArray fans = j.optJSONArray("fans");
+        int nfan = fans == null ? 0 : fans.length();
+        m.fanC = new float[nfan][];
+        m.fanR = new float[nfan];
+        m.fanAlongY = new boolean[nfan];
+        m.fanRoom = new int[nfan];
+        for (int i = 0; i < nfan; i++) {
+            JSONObject f = fans.getJSONObject(i);
+            m.fanC[i] = floats(f.getJSONArray("center"));
+            m.fanR[i] = (float) f.optDouble("r", 0.17);
+            m.fanAlongY[i] = f.optString("face", "+y").endsWith("y");
+            Integer room = roomIndex.get(f.optString("room"));
+            m.fanRoom[i] = room == null ? 0 : room;
+            boxes.add(new float[] {m.fanC[i][0], m.fanC[i][1], 0, 0, 0, 0});
+            info.add(new int[] {FAN, 0, 1 << m.fanRoom[i], -1, i, 0});
+            alphas.add(1f);
+            follows.add(false);
+            screens.add(false);
         }
 
         int items = boxes.size();
@@ -553,7 +657,9 @@ final class HouseView extends View {
         m.fixtureOf = new int[items];
         m.faceSign = new int[items];
         m.alpha = new float[items];
+        m.phase = new float[items];
         m.followsWall = new boolean[items];
+        m.screen = new boolean[items];
         for (int i = 0; i < items; i++) {
             int[] f = info.get(i);
             m.type[i] = f[0];
@@ -564,16 +670,18 @@ final class HouseView extends View {
             m.faceSign[i] = f[5];
             m.alpha[i] = alphas.get(i);
             m.followsWall[i] = follows.get(i);
+            m.screen[i] = screens.get(i);
+            m.phase[i] = (m.box6[i][0] * 0.37f + m.box6[i][1] * 0.11f) % 1;
         }
         // What rests on what (a duvet on a bed, a monitor on its stand): drawn after it, at any camera.
         m.under = new int[items][];
         for (int i = 0; i < items; i++) {
             float[] t = m.box6[i];
-            if (m.type[i] == LIGHT || t[2] <= 0) continue;
+            if (m.type[i] == LIGHT || m.type[i] == FAN || t[2] <= 0) continue;
             List<Integer> below = new ArrayList<>();
             for (int u = 0; u < items; u++) {
                 float[] b = m.box6[u];
-                if (u == i || m.type[u] == LIGHT || Math.abs(b[2] + b[5] - t[2]) > 0.03f) continue;
+                if (u == i || m.type[u] == LIGHT || m.type[u] == FAN || Math.abs(b[2] + b[5] - t[2]) > 0.03f) continue;
                 if (t[0] < b[0] + b[3] && b[0] < t[0] + t[3] && t[1] < b[1] + b[4] && b[1] < t[1] + t[4]) below.add(u);
             }
             if (!below.isEmpty()) {
@@ -705,25 +813,52 @@ final class HouseView extends View {
 
     // MARK: - Drawing
 
-    @Override protected void onDraw(Canvas c) {
-        if (m == null || w == 0) return;
-        long now = System.nanoTime();
-        float dt = lastNanos == 0 ? 1 / 60f : Math.min(0.05f, (now - lastNanos) / 1e9f);
-        lastNanos = now;
-        boolean moving = step(dt, now);
-        aim(camYaw.value + drift, camPitch.value, camZoom.value, camX.value, camY.value);
-        // Outside walls stand tall when the camera sees their inside, and lower themselves when they face it.
+    /** One frame: every spring a step, the camera and the walls; draws, and asks for the next frame while moving. */
+    @Override public void doFrame(long nanos) {
+        running = false;
+        if (m == null || w == 0 || !isShown()) return;
+        float dt = lastNanos == 0 ? 1 / 60f : Math.min(0.1f, (nanos - lastNanos) / 1e9f);
+        lastNanos = nanos;
+        clock = (nanos % 3_600_000_000_000L) / 1e9f;
+        boolean moving = step(dt, nanos);
+        aimNow();
+        // Outside walls stand tall when the camera sees their inside, and lower themselves (WALL_CUT) when they face it.
         for (int i = 0; i < wallNow.length; i++) {
-            if (!m.hasOut[i]) {
-                wallNow[i] = m.wallH[i];
-                wallTall[i] = 1;
-                continue;
-            }
+            if (!m.hasOut[i]) continue;
             float v = -m.outX[i] * sinT - m.outY[i] * cosT, t = Ui.clamp((v + 0.12f) / 0.24f);
-            wallTall[i] = t * t * (3 - 2 * t);
+            cut[i].target = t * t * (3 - 2 * t);
+            moving |= cut[i].step(dt);
+            wallTall[i] = Ui.clamp(cut[i].value);
             wallNow[i] = m.wallLow[i] + (m.wallH[i] - m.wallLow[i]) * wallTall[i];
         }
+        moving |= pillX.step(dt) | pillY.step(dt);
+        if (pillAge < 1) {
+            pillAge = Math.min(1, pillAge + dt / 0.26f);
+            moving = true;
+        }
+        invalidate();
+        // The fans, the glints and a lit dot's breath keep frames coming while the house shows.
+        if (moving || ambient()) {
+            running = true;
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    }
 
+    /** The always-on touches (fans, glints, breath, drift): not with animations off, nor on Android 8–11's GPUs. */
+    private boolean ambient() {
+        return !Spring.instant && !Ui.LEGACY;
+    }
+
+    /** The camera as it is now, with the idle figure eight (±1.5° of yaw, 36 s) when it's drifting. */
+    private void aimNow() {
+        float phase = (float) (clock * 2 * Math.PI / 36), d = drift.value;
+        aim(camYaw.value + 1.5f * (float) Math.sin(phase) * d, camPitch.value + 0.6f * (float) Math.sin(2 * phase) * d,
+                camZoom.value, camX.value, camY.value);
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        if (m == null || w == 0) return;
+        aimNow();
         // Android 12 and newer fade the model under the tab bar in a layer; older GPUs get a plain cut.
         int save = Ui.LEGACY ? c.save() : c.saveLayer(0, 0, w, h, null);
         if (Ui.LEGACY) c.clipRect(0, FADE_H * 0.6f * k, w, h);
@@ -732,11 +867,8 @@ final class HouseView extends View {
         if (!Ui.LEGACY) c.drawRect(0, 0, w, FADE_H * k, fade);
         c.restoreToCount(save);
         drawOverlay(c);
-        drawPill(c, dt);
-        if (moving || pillMoving) postInvalidateOnAnimation();
+        drawPill(c);
     }
-
-    private boolean pillMoving;
 
     /** Every spring a step; true while anything still moves. */
     private boolean step(float dt, long now) {
@@ -744,15 +876,17 @@ final class HouseView extends View {
         moving |= shown.step(dt);
         for (int i = 0; i < lit.length; i++) {
             grow[i].target = focused && i == index ? 1 : 0;
-            moving |= grow[i].step(dt) | lit[i].step(dt);
-            if (ignite[i] > 0.005f) {
-                ignite[i] *= (float) Math.exp(-3.5 * dt);
+            moving |= grow[i].step(dt) | lit[i].step(dt) | flash[i].step(dt) | nudgeX[i].step(dt) | nudgeY[i].step(dt);
+            // The warmth's reach: out at WAVE_SPEED when on, back into the light in WAVE_OUT s when off.
+            if (on[i] && wave[i] < WAVE_MAX) {
+                wave[i] = Spring.instant ? WAVE_MAX : Math.min(WAVE_MAX, wave[i] + WAVE_SPEED * dt);
                 moving = true;
-            } else {
-                ignite[i] = 0;
+            } else if (!on[i] && wave[i] > 0) {
+                wave[i] = Spring.instant ? 0 : Math.max(0, wave[i] - WAVE_MAX / WAVE_OUT * dt);
+                moving = true;
             }
             if (ripple[i] >= 0) {
-                ripple[i] += dt / 0.55f;
+                ripple[i] += dt / 0.45f;
                 moving = true;
                 if (ripple[i] >= 1) ripple[i] = -1;
             }
@@ -763,10 +897,10 @@ final class HouseView extends View {
             roomGlow[r].target = glow;
             moving |= roomGlow[r].step(dt) | emph[r].step(dt);
         }
-        // A slow breathing drift once the remote has been still for a while: never with animations off or on old GPUs.
-        boolean idle = !Spring.instant && !Ui.LEGACY && now - lastKey > 8_000_000_000L;
-        drift = idle ? 1.5f * (float) Math.sin(now / 1e9 * 2 * Math.PI / 40) : drift * 0.9f;
-        return moving || idle || Math.abs(drift) > 0.01f;
+        // A slow figure eight once the remote has been still for IDLE (eased in and out).
+        drift.target = ambient() && now - lastKey > IDLE ? 1 : 0;
+        moving |= drift.step(dt);
+        return moving;
     }
 
     private void drawGround(Canvas c) {
@@ -852,6 +986,9 @@ final class HouseView extends View {
                 int f = m.fixtureOf[i];
                 float[] at = m.at[f];
                 depth[i] = m.kind[f] == TUBE ? depthOf(at[0] + 0.12f, at[1], at[2]) : depthOf(at[0], at[1], 0.4f);
+            } else if (m.type[i] == FAN) {
+                float[] fc = m.fanC[m.fixtureOf[i]];
+                depth[i] = depthOf(fc[0], fc[1], 0.3f);
             } else {
                 depth[i] = depthOf(b[0] + b[3] / 2, b[1] + b[4] / 2, b[2]);
             }
@@ -879,6 +1016,9 @@ final class HouseView extends View {
                 case LIGHT:
                     drawLight(c, m.fixtureOf[i]);
                     break;
+                case FAN:
+                    drawFan(c, m.fixtureOf[i], e);
+                    break;
                 case PIECE: {
                     float g = 0.4f * maxGlow(rooms), wh = wallNow[m.wallOf[i]];
                     box(c, b[0], b[1], 0, b[3], b[4], wh, m.wall, m.wallTop, g, e, 1, true);
@@ -904,6 +1044,7 @@ final class HouseView extends View {
                     float g = warmth(rooms, b[0] + b[3] / 2, b[1] + b[4] / 2);
                     if (m.type[i] == ROUND) round(c, b, z, hh, m.color[i], g, e, a);
                     else box(c, b[0], b[1], z, b[3], b[4], hh, m.color[i], -1, g, e, a, true);
+                    if (m.screen[i] && ambient()) glint(c, i, b, e);
                 }
             }
         }
@@ -1018,8 +1159,8 @@ final class HouseView extends View {
 
     /** Each lit light's warm pool on its room's floor (added light), a circle flattened by the pitch. */
     private void floorPool(Canvas c, int i) {
-        float g = Ui.clamp(lit[i].value) * (1 + 0.5f * ignite[i]);
-        if (g < 0.01f) return;
+        float g = Ui.clamp(lit[i].value) * (1 + Math.max(0, flash[i].value));
+        if (g < 0.01f || wave[i] < 0.05f) return;
         float[] rr = m.roomRect[m.fixtureRoom[i]];
         project(rr[0], rr[1], 0);
         clip.rewind();
@@ -1032,7 +1173,7 @@ final class HouseView extends View {
         clip.lineTo(pt[0], pt[1]);
         clip.close();
         project(m.glowAt[i][0], m.glowAt[i][1], 0);
-        float r = 3 * scale;
+        float r = Math.min(3, wave[i] + 0.4f) * scale;   // the pool spreads with the warmth
         c.save();
         c.clipPath(clip);
         c.translate(pt[0], pt[1]);
@@ -1058,7 +1199,7 @@ final class HouseView extends View {
     }
 
     private void drawLight(Canvas c, int i) {
-        float g = Ui.clamp(lit[i].value), boost = 1 + 0.6f * ignite[i], s = 1 + 0.25f * grow[i].value;
+        float g = Ui.clamp(lit[i].value), boost = 1 + Math.max(0, flash[i].value), s = 1 + 0.12f * grow[i].value;
         float e = emphOf(1 << m.fixtureRoom[i]);
         float[] at = m.at[i];
         project(at[0], at[1], m.mid[i]);
@@ -1145,8 +1286,11 @@ final class HouseView extends View {
             project(at[0], at[1], m.top[i]);
             float bx = pt[0], by = pt[1];
             project(at[0], at[1], m.top[i] + 0.42f);
-            float x = pt[0], y = pt[1], g = Ui.clamp(lit[i].value), f = Ui.clamp(grow[i].value);
-            float r = DOT_R * k * (1 + 0.45f * grow[i].value);
+            float g = Ui.clamp(lit[i].value), f = Ui.clamp(grow[i].value);
+            // The focused dot grows 1.35× and rides 8 px higher on a longer stem; a dead end nudges it (rubber band).
+            float x = pt[0] + Spring.rubber(nudgeX[i].value) * k, y = pt[1] - 8 * k * grow[i].value + Spring.rubber(nudgeY[i].value) * k;
+            float breath = g > 0.5f && ambient() ? 1 + 0.04f * g * (float) Math.sin(clock * 2 * Math.PI / 4) : 1;
+            float r = DOT_R * k * (1 + 0.35f * grow[i].value) * breath;
             // The hairline stem from the light up to its dot.
             line.setStrokeCap(Paint.Cap.BUTT);
             line.setStrokeWidth(Math.max(1, k));
@@ -1175,9 +1319,10 @@ final class HouseView extends View {
                 c.drawCircle(x, y, r + 6 * k, edge);
             }
             if (ripple[i] >= 0) {
+                // OK: a ring leaves the dot, 1 → 2.8× its size, fading from 0.8.
                 edge.setStrokeWidth(2 * k);
                 edge.setColor(Ui.alpha(0xFFFFFFFF, 0.8f * (1 - ripple[i])));
-                c.drawCircle(x, y, r + (6 + 46 * ripple[i]) * k, edge);
+                c.drawCircle(x, y, r * (1 + 1.8f * ripple[i]), edge);
             }
             edge.setStrokeWidth(Math.max(1, k));
             dotX[i] = x;
@@ -1186,25 +1331,41 @@ final class HouseView extends View {
         }
     }
 
-    /** The pill above the focused light's dot, on its own spring, kept inside the safe area. */
-    private void drawPill(Canvas c, float dt) {
+    /**
+     * The pill above the focused light's dot, on its own spring (stepped in doFrame), kept inside the safe area. Moving
+     * to another light, the old text leaves in 0.12 s and the new one comes in just after, both on the same capsule.
+     */
+    private void drawPill(Canvas c) {
         float a = Ui.clamp(shown.value);
-        pillMoving = false;
         if (nameP == null || pillName.isEmpty() || dotX.length == 0) return;
         float padX = 24 * k, lineH = 52 * k, subH = pillSub.isEmpty() ? 0 : 30 * k;
         float pw = Math.max(pillNameW + pillStateW, pillSubW) + 2 * padX, ph = lineH + subH;
         float tx = Math.max(SAFE_L * k + pw / 2, Math.min(SAFE_R * k - pw / 2, dotX[index]));
         float ty = Math.max(SAFE_T * k, Math.min(SAFE_B * k - ph, dotY[index] - dotR[index] - 16 * k - ph));
-        pillX.target = tx;
-        pillY.target = ty;
+        if (Math.abs(pillX.target - tx) > 0.5f || Math.abs(pillY.target - ty) > 0.5f) {
+            pillX.target = tx;
+            pillY.target = ty;
+            kick();
+        }
         if (!pillPlaced || a < 0.01f) {
             pillX.snap(tx);
             pillY.snap(ty);
             pillPlaced = true;
         }
-        pillMoving = pillX.step(dt) | pillY.step(dt);
         if (a < 0.01f) return;
-        float left = pillX.value - pw / 2, top = pillY.value;
+        float t = pillAge, outA = a * Ui.clamp(1 - t * 0.26f / 0.12f), inA = a * Ui.clamp((t * 0.26f - 0.06f) / 0.2f);
+        if (outA > 0.01f && !oldName.isEmpty()) {
+            float ow = Math.max(oldNameW + oldStateW, oldSubW) + 2 * padX, oh = lineH + (oldSub.isEmpty() ? 0 : 30 * k);
+            capsule(c, pillX.value - ow / 2, pillY.value, ow, oh, outA, oldName, oldState, oldSub, oldNameW, false);
+        }
+        capsule(c, pillX.value - pw / 2, pillY.value, pw, ph, t >= 1 ? a : inA, pillName, pillState, pillSub, pillNameW,
+                on[index]);
+    }
+
+    private void capsule(Canvas c, float left, float top, float pw, float ph, float a, String name, String state,
+            String sub, float nameW, boolean lit) {
+        if (a < 0.01f) return;
+        float padX = 24 * k, lineH = 52 * k;
         pillRect.set(left, top, left + pw, top + ph);
         fill.setColor(Ui.alpha(PILL, a));
         c.drawRoundRect(pillRect, 26 * k, 26 * k, fill);
@@ -1213,13 +1374,94 @@ final class HouseView extends View {
         c.drawRoundRect(pillRect, 26 * k, 26 * k, edge);
         float base = top + lineH / 2 + nameCap;
         nameP.setAlpha(Math.round(255 * a));
-        c.drawText(pillName, left + padX, base, nameP);
-        stateP.setColor(Ui.alpha(on[index] ? AMBER : 0xB3FFFFFF, a));
-        c.drawText(pillState, left + padX + pillNameW, base, stateP);
-        if (subH > 0) {
+        c.drawText(name, left + padX, base, nameP);
+        stateP.setColor(Ui.alpha(lit ? AMBER : 0xB3FFFFFF, a));
+        c.drawText(state, left + padX + nameW, base, stateP);
+        if (!sub.isEmpty()) {
             subP.setAlpha(Math.round(0xB3 * a));
-            c.drawText(pillSub, left + padX, top + lineH + subH / 2 - 6 * k + subCap, subP);
+            c.drawText(sub, left + padX, top + lineH + 15 * k - 6 * k + subCap, subP);
         }
+    }
+
+    // MARK: - Fans and screens
+
+    /** A standing fan's cage and its three blades, turning in the plane it faces (the motor behind is a box). */
+    private void drawFan(Canvas c, int f, float e) {
+        float[] fc = m.fanC[f];
+        float r = m.fanR[f], turn = ambient() ? (clock / FAN_PERIOD % 1) * 2 * (float) Math.PI : 0.3f;
+        boolean alongY = m.fanAlongY[f];
+        fill.setColor(tone(m.silver, 0, 0.95f, e, 0.85f));
+        for (int b = 0; b < 3; b++) {
+            float a = turn + b * 2 * (float) Math.PI / 3;
+            tmp.rewind();
+            fanPoint(fc, alongY, 0.035f, a + 0.32f);
+            tmp.moveTo(pt[0], pt[1]);
+            fanPoint(fc, alongY, r * 0.92f, a + 0.22f);
+            tmp.lineTo(pt[0], pt[1]);
+            fanPoint(fc, alongY, r * 0.92f, a - 0.22f);
+            tmp.lineTo(pt[0], pt[1]);
+            fanPoint(fc, alongY, 0.035f, a - 0.32f);
+            tmp.lineTo(pt[0], pt[1]);
+            tmp.close();
+            c.drawPath(tmp, fill);
+        }
+        tmp.rewind();
+        for (int p = 0; p < 12; p++) {
+            fanPoint(fc, alongY, 0.04f, p * (float) Math.PI / 6);
+            if (p == 0) tmp.moveTo(pt[0], pt[1]);
+            else tmp.lineTo(pt[0], pt[1]);
+        }
+        tmp.close();
+        fill.setColor(tone(m.charcoal, 0, 1, e, 1));
+        c.drawPath(tmp, fill);
+        // The cage: a thin ring.
+        tmp.rewind();
+        for (int p = 0; p < 24; p++) {
+            fanPoint(fc, alongY, r, p * (float) Math.PI / 12);
+            if (p == 0) tmp.moveTo(pt[0], pt[1]);
+            else tmp.lineTo(pt[0], pt[1]);
+        }
+        tmp.close();
+        edge.setStrokeWidth(Math.max(1, 0.012f * scale));
+        edge.setColor(tone(m.charcoal, 0, 1.1f, e, 1));
+        c.drawPath(tmp, edge);
+        edge.setStrokeWidth(Math.max(1, k));
+    }
+
+    /** A point on a fan's face plane, at radius r and angle a around its centre, projected into pt. */
+    private void fanPoint(float[] fc, boolean alongY, float r, float a) {
+        float u = r * (float) Math.cos(a), v = r * (float) Math.sin(a);
+        if (alongY) project(fc[0] + u, fc[1], fc[2] + v);
+        else project(fc[0], fc[1] + u, fc[2] + v);
+    }
+
+    /** A screen's standby glint: a faint diagonal band sweeping its face once every GLINT_PERIOD s. */
+    private void glint(Canvas c, int i, float[] o, float e) {
+        float q = ((clock / GLINT_PERIOD + m.phase[i]) % 1) * 5;
+        if (q >= 1) return;
+        boolean alongY = o[3] >= o[4];
+        float x = o[0], y = o[1], z = o[2], sw = alongY ? o[3] : o[4], sh = o[5];
+        float front = alongY ? (cosT > 0 ? y + o[4] + 0.002f : y - 0.002f) : (sinT > 0 ? x + o[3] + 0.002f : x - 0.002f);
+        float mid = -0.3f * sw + q * 1.6f * sw, band = 0.12f * sw, lean = 0.35f * sh;
+        float u0 = Math.max(0, mid - lean), u1 = Math.min(sw, mid + band - lean), u2 = Math.min(sw, mid + band), u3 = Math.max(0, mid);
+        if (u2 <= 0 || u0 >= sw) return;
+        tmp.rewind();
+        screenPoint(alongY, x, y, front, z, u0, 0);
+        tmp.moveTo(pt[0], pt[1]);
+        screenPoint(alongY, x, y, front, z, u1, 0);
+        tmp.lineTo(pt[0], pt[1]);
+        screenPoint(alongY, x, y, front, z, u2, sh);
+        tmp.lineTo(pt[0], pt[1]);
+        screenPoint(alongY, x, y, front, z, u3, sh);
+        tmp.lineTo(pt[0], pt[1]);
+        tmp.close();
+        fill.setColor(Ui.alpha(0xFFFFFFFF, 0.16f * (float) Math.sin(q * Math.PI) * (0.4f + 0.6f * e)));
+        c.drawPath(tmp, fill);
+    }
+
+    private void screenPoint(boolean alongY, float x, float y, float front, float z, float u, float v) {
+        if (alongY) project(x + u, front, z + v);
+        else project(front, y + u, z + v);
     }
 
     // MARK: - Colour
@@ -1231,10 +1473,11 @@ final class HouseView extends View {
         float gr = (((cool >> 8) & 255) + ((((warm >> 8) & 255) - ((cool >> 8) & 255)) * g)) * shade;
         float b = ((cool & 255) + (((warm & 255) - (cool & 255)) * g)) * shade;
         if (e < 0.999f) {
-            float lum = 0.3f * r + 0.59f * gr + 0.11f * b, keep = 0.35f + 0.65f * e, dim = 0.6f + 0.4f * e;
-            r = (lum + (r - lum) * keep) * dim;
-            gr = (lum + (gr - lum) * keep) * dim;
-            b = (lum + (b - lum) * keep) * dim;
+            // Another room than the focused one: 30% less colour, and 45% of it left over the dark background.
+            float lum = 0.3f * r + 0.59f * gr + 0.11f * b, keep = 1 - DESAT * (1 - e), left = DIM + (1 - DIM) * e;
+            r = BG[0] + (lum + (r - lum) * keep - BG[0]) * left;
+            gr = BG[1] + (lum + (gr - lum) * keep - BG[1]) * left;
+            b = BG[2] + (lum + (b - lum) * keep - BG[2]) * left;
         }
         int alpha = Math.round(255 * Ui.clamp(a));
         return (alpha << 24) | (clamp255(r) << 16) | (clamp255(gr) << 8) | clamp255(b);
@@ -1257,14 +1500,16 @@ final class HouseView extends View {
         return g;
     }
 
-    /** How warm a thing is: its room's light, more the nearer it is to a lit light in that room. */
+    /** How warm a thing is: more the nearer it is to a lit light in its room, once that light's warmth reached it. */
     private float warmth(int rooms, float x, float y) {
-        float g = 0.4f * maxGlow(rooms);
+        float g = 0;
         for (int i = 0; i < on.length; i++) {
             float l = lit[i].value;
             if (l < 0.01f || (rooms & (1 << m.fixtureRoom[i])) == 0) continue;
-            float dx = x - m.glowAt[i][0], dy = y - m.glowAt[i][1];
-            g += l * Math.max(0, 1 - (float) Math.sqrt(dx * dx + dy * dy) / 4.2f) * 0.8f;
+            float dx = x - m.glowAt[i][0], dy = y - m.glowAt[i][1], d = (float) Math.sqrt(dx * dx + dy * dy);
+            // The wave front, softened over 0.8 m.
+            float t = Ui.clamp((wave[i] - d) / 0.8f + 0.5f), reach = t * t * (3 - 2 * t);
+            g += l * reach * (0.4f + Math.max(0, 1 - d / 4.2f) * 0.8f);
         }
         return Math.min(1, g);
     }

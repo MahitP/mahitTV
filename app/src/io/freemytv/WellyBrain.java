@@ -36,6 +36,8 @@ final class WellyBrain {
         void onReply(Reply r);
     }
 
+    private volatile String running = "";
+
     static final class Reply {
         String text = "", mood = "Curious";
         final List<WellyCards.Card> cards = new ArrayList<>();
@@ -92,7 +94,13 @@ final class WellyBrain {
         return !Config.GEMINI_KEY.trim().isEmpty() || !Config.OLLAMA_URL.trim().isEmpty();
     }
 
+    /** The tool the brain is running right now ("" between tools): Welly's thinking line follows it. */
+    String running() {
+        return running;
+    }
+
     void ask(String words, Listener listener) {
+        running = "";
         worker.execute(() -> {
             Reply r;
             try {
@@ -261,6 +269,7 @@ final class WellyBrain {
                 } catch (JSONException e) {
                     args = new JSONObject();
                 }
+                running = name;
                 WellyTools.Result res = tools.run(name, args);
                 for (WellyCards.Card c : res.cards) if (r.cards.size() < 6) r.cards.add(c);
                 msgs.put(new JSONObject().put("role", "tool").put("tool_call_id", call.optString("id", name))

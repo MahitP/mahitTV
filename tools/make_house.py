@@ -18,6 +18,7 @@ Schema (read by HouseView.java and web/rooms.js):
            doors, art, the sliding door), shadow? false}
   walls get a baseboard on each side that faces the camera
   fixtures {id, room, kind bulb|lamp|tube, name, at, glow, height (lamp), along/length (tube)}
+  fans     {room, center [x, y, z], face +y|-y|+x|-x, r}: a fan's cage and three blades, turned by the renderers
   palette  cool (lights off) and warm (lights on) for every colour, and the glow
 
 Usage: python3 tools/make_house.py
@@ -79,10 +80,27 @@ WALLS = [
 ]
 
 F = []
+FANS = []
 
 
 def box(room, kind, x, y, z, w, d, h, color, **extra):
     F.append(dict(room=room, kind=kind, box=[round(v, 3) for v in (x, y, z, w, d, h)], color=color, **extra))
+
+
+def fan(room, x, y, face='+y', h=0.9):
+    """A standing fan: a round base, a pole, the motor behind, and the cage with its three blades (in FANS: the
+    renderers turn the blades, 360° every 4.5 s)."""
+    box(room, 'fan-base', x - 0.15, y - 0.15, 0, 0.3, 0.3, 0.03, 'charcoal', shape='round')
+    box(room, 'fan-pole', x - 0.02, y - 0.02, 0.03, 0.04, 0.04, h, 'charcoal', shadow=False)
+    cz = h + 0.03 + 0.17
+    back = -1 if face[0] == '+' else 1
+    if face[1] == 'y':
+        box(room, 'fan-motor', x - 0.07, y + back * 0.06 - 0.06, cz - 0.07, 0.14, 0.12, 0.14, 'charcoal', shape='round',
+            shadow=False)
+    else:
+        box(room, 'fan-motor', x + back * 0.06 - 0.06, y - 0.07, cz - 0.07, 0.12, 0.14, 0.14, 'charcoal', shape='round',
+            shadow=False)
+    FANS.append(dict(room=room, center=[x, y, round(cz, 3)], face=face, r=0.17))
 
 
 def legs(room, x, y, w, d, h, color, inset=0.05, size=0.05):
@@ -397,9 +415,7 @@ box('mine', 'bookshelf', 5.44, 10.95, 0, 0.36, 0.95, 1.85, 'white')
 for i, c in enumerate(('bin-1', 'pillow-terracotta', 'bin-2', 'pillow-slate')):
     box('mine', 'books', 5.42, 11.0 + (i % 2) * 0.45, 0.25 + (i // 2) * 0.6, 0.02, 0.4, 0.26, c, shadow=False)
 box('mine', 'side-table', 5.38, 12.75, 0, 0.42, 0.5, 0.55, 'oak')
-box('mine', 'fan-base', 3.62, 12.0, 0, 0.3, 0.3, 0.03, 'charcoal', shape='round')
-box('mine', 'fan-pole', 3.75, 12.13, 0.03, 0.04, 0.04, 0.9, 'charcoal', shadow=False)
-box('mine', 'fan-head', 3.6, 12.08, 0.93, 0.34, 0.14, 0.34, 'charcoal', shape='round', shadow=False)
+fan('mine', 3.77, 12.15, '+y')
 
 # --- Parents' room: the closet, the black cart and the tube light on the west wall by the door, the wall TV, the bed
 # (terracotta duvet) on a sage rug against the window wall, the desk and chair under the window, the silver armoire
@@ -415,9 +431,7 @@ monitor('parents', 6.0, 13.68, 0.55, '+x')
 chair('parents', 6.62, 13.72, back='east', color='chair')
 box('parents', 'armoire', 8.78, 11.0, 0, 0.47, 1.2, 1.45, 'silver')
 box('parents', 'mirror', 8.765, 11.62, 0.25, 0.015, 0.5, 1.0, 'glass', shadow=False)
-box('parents', 'fan-base', 7.05, 11.3, 0, 0.3, 0.3, 0.03, 'charcoal', shape='round')
-box('parents', 'fan-pole', 7.18, 11.43, 0.03, 0.04, 0.04, 0.9, 'charcoal', shadow=False)
-box('parents', 'fan-head', 7.03, 11.38, 0.93, 0.34, 0.14, 0.34, 'charcoal', shape='round', shadow=False)
+fan('parents', 7.2, 11.45, '+y')
 
 FIXTURES = [
     # The tube lights hang on cut walls, just under the cut, so the whole house stays in view.
@@ -478,6 +492,7 @@ def main():
         'walls': [],
         'furniture': F,
         'fixtures': FIXTURES,
+        'fans': FANS,
         'palette': palette(),
     }
     for rid, name, (x0, y0, x1, y1), floor, camera in ROOMS:

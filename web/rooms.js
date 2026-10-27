@@ -4,6 +4,9 @@
  * The arrows move between the four lights (the TVs are scenery), OK switches the focused one. The camera swings to
  * the focused light's room on a spring; outside walls lower themselves when they'd stand between the camera and the
  * room. Each light has a dot above it; the focused one carries a pill with its name and state.
+ * Motion follows ANIMATIONS-SPEC.md §3 on motion.js's springs: the camera orbit, the walls, the rooms fading back, the
+ * warmth spreading from a light at 8.5 m/s, the filament's flash, dead-end bumps, the fans, the screens' standby glint,
+ * the idle drift and a lit dot's breath (the last five off with reduce motion).
  * The web app can't reach Kasa plugs (TVs block raw sockets), so here the switches only show.
  */
 (function () {
@@ -22,33 +25,28 @@
   // tvOS safe area for the pill: 90 px at the sides, under the tab bar at the top, 60 px at the bottom.
   var SAFE = {left: 90, right: 1830, top: 128, bottom: 1020};
 
-  var canvas, ctx, pill, pillName, pillState;
-  var shown = false, focused = false, focus = 0, frame = 0, last = 0, lastKey = 0, lite = false, reduced = false;
+  // The warmth spreads from a light this fast (m/s) and pulls back in this long (s); the filament's flash; a fan turns
+  // once in FAN_PERIOD s; the screens glint every GLINT_PERIOD s; the idle drift starts after IDLE ms.
+  var WAVE_SPEED = 8.5, WAVE_MAX = 7, WAVE_OUT = 0.24, FLASH = 14.2, FAN_PERIOD = 4.5, GLINT_PERIOD = 6, IDLE = 6000;
+  // Unfocused rooms: toward the dark background (45% left) and 30% less colour.
+  var DIM = 0.45, DESAT = 0.3, BG = [24, 22, 28];
+  var M = window.Motion, PR = M.P;
 
-  /** A spring (response in seconds, damping fraction), stepped by the frame's time. */
-  function Spring(response, damping, value) {
-    this.k = Math.pow(2 * Math.PI / response, 2);
-    this.c = 4 * Math.PI * damping / response;
-    this.x = value; this.v = 0; this.to = value;
-  }
-  Spring.prototype.step = function (dt) {
-    // Small steps keep a stiff spring stable on a slow frame.
-    for (var t = 0; t < dt; t += 1 / 240) {
-      var h = Math.min(1 / 240, dt - t), a = -this.k * (this.x - this.to) - this.c * this.v;
-      this.v += a * h; this.x += this.v * h;
-    }
-    var near = Math.abs(this.x - this.to) < 0.0005 * Math.max(1, Math.abs(this.to)) && Math.abs(this.v) < 0.001;
-    if (near) { this.x = this.to; this.v = 0; return false; }
-    return true;
-  };
+  var canvas, ctx, pills = [], pillAt = 0, pillText = '';
+  var shown = false, focused = false, focus = 0, lastKey = 0, clock = 0, ticking = false;
+
+  function Spring(preset, value) { return new M.Spring(preset, value); }
+  function still() { return M.instant; }
 
   // MARK: - The camera
 
-  // The camera swings on Apple's large-move spring; the overview keeps the blueprint's orientation.
-  var cam = {yaw: new Spring(0.7, 0.9, H.camera.yaw), pitch: new Spring(0.7, 0.9, H.camera.pitch),
-    zoom: new Spring(0.7, 0.9, 1), cx: new Spring(0.7, 0.9, W / 2), cy: new Spring(0.7, 0.9, D / 2)};
+  // The camera swings on CAMERA_ORBIT; the overview keeps the blueprint's orientation.
+  var cam = {yaw: Spring(PR.CAMERA_ORBIT, H.camera.yaw).deg(), pitch: Spring(PR.CAMERA_ORBIT, H.camera.pitch).deg(),
+    zoom: Spring(PR.CAMERA_ORBIT, 1), cx: Spring(PR.CAMERA_ORBIT, W / 2), cy: Spring(PR.CAMERA_ORBIT, D / 2)};
+  // The idle drift's strength (0 to 1), eased in and out.
+  var drift = Spring(PR.ROOM_FADE, 0);
   var P = {cos: 1, sin: 0, sp: 1, cp: 0, s: 1, ox: 0, oy: 0};
-  var S0 = 1, OVER = null, drift = 0;
+  var S0 = 1, OVER = null;
 
   function setAngles(yaw, pitch) {
     P.cos = Math.cos(yaw * DEG); P.sin = Math.sin(yaw * DEG); P.sp = Math.sin(pitch * DEG); P.cp = Math.cos(pitch * DEG);
@@ -100,11 +98,12 @@
     var y = cam.yaw.to, d = ((c.yaw - y) % 360 + 540) % 360 - 180;
     cam.yaw.to = y + d;
     cam.pitch.to = c.pitch; cam.zoom.to = c.zoom; cam.cx.to = c.cx; cam.cy.to = c.cy;
+    M.kick();
   }
 
   // MARK: - The model
 
-  var rooms = {}, roomList = [], walls = {}, wallList = [], items = [], flats = [], fixtures = [];
+  var rooms = {}, roomList = [], walls = {}, wallList = [], items = [], flats = [], fixtures = [], fans = [];
   var strips = [], shadows = [];
 
   function setup() {
@@ -112,13 +111,14 @@
     var i, k;
     for (i = 0; i < H.rooms.length; i++) {
       var r = H.rooms[i], c = r.camera;
-      rooms[r.id] = {def: r, glow: new Spring(0.45, 0.9, 0), emph: new Spring(0.45, 0.9, 1),
+      rooms[r.id] = {def: r, glow: Spring(PR.ROOM_FADE, 0), emph: Spring(PR.ROOM_FADE, 1),
         camera: c ? {yaw: c.yaw, pitch: c.pitch, zoom: c.zoom, cx: c.center[0], cy: c.center[1]} : null};
       roomList.push(rooms[r.id]);
     }
     // Walls: thin boxes cut into 1 m pieces (each sorts by its own depth), overlapping 2 cm so no seam shows.
     for (i = 0; i < H.walls.length; i++) {
-      var w = H.walls[i], wall = {def: w, h: w.h, tall: 1};
+      // An outside wall's height follows a WALL_CUT spring: 1 standing, 0 lowered toward the camera.
+      var w = H.walls[i], wall = {def: w, h: w.h, tall: 1, cut: Spring(PR.WALL_CUT, 1)};
       if (w.id) walls[w.id] = wall;
       wallList.push(wall);
       var x0 = w.from[0], y0 = w.from[1], x1 = w.to[0], y1 = w.to[1], along = y0 === y1;
@@ -140,7 +140,8 @@
       var f = H.furniture[i], o = f.box;
       var it = {box: o, color: f.color, rooms: [f.room], kind: f.kind, round: f.shape === 'round', alpha: f.alpha || 1,
         disc: f.shape === 'disc' ? f.face : null,
-        wall: f.wall ? walls[f.wall] : null, cx: o[0] + o[3] / 2, cy: o[1] + o[4] / 2};
+        wall: f.wall ? walls[f.wall] : null, cx: o[0] + o[3] / 2, cy: o[1] + o[4] / 2,
+        screen: f.color === 'screen' && Math.max(o[3], o[4]) > 0.3, phase: (o[0] * 0.37 + o[1] * 0.11) % 1};
       if (o[5] <= 0.02 && o[2] <= 0.03) { flats.push(it); continue; }
       items.push(it);
       if (f.shadow !== false && o[2] < 0.3) shadows.push(it);
@@ -160,11 +161,17 @@
     }
     for (i = 0; i < H.fixtures.length; i++) {
       var d = H.fixtures[i], at = d.at, lampH = d.height || 1.3;
-      var fx = {def: d, kind: d.kind, on: false, grow: new Spring(0.3, 0.8, 0), lit: new Spring(0.45, 0.9, 0),
-        ignite: 0, ripple: -1, glowAt: d.glow || at, rooms: [d.room], fixture: true,
+      var fx = {def: d, kind: d.kind, on: false, grow: Spring(PR.SNAPPY_FOCUS, 0), lit: Spring(PR.ROOM_FADE, 0),
+        flash: Spring(PR.IGNITE, 0), wave: 0, ripple: -1, glowAt: d.glow || at, rooms: [d.room], fixture: true,
+        nudgeX: Spring(PR.BOUNDARY_BUMP, 0).px(), nudgeY: Spring(PR.BOUNDARY_BUMP, 0).px(),
         mid: d.kind === 'lamp' ? lampH + 0.22 : at[2], top: d.kind === 'lamp' ? lampH + 0.45 : at[2] + 0.06};
       fixtures.push(fx);
       items.push(fx);
+    }
+    for (i = 0; i < (H.fans || []).length; i++) {
+      var fan = {def: H.fans[i], fan: true, rooms: [H.fans[i].room]};
+      fans.push(fan);
+      items.push(fan);
     }
     // The overview's screen positions steer the arrows, so they stay predictable while the camera moves.
     aim(OVER.yaw, OVER.pitch, 1, OVER.cx, OVER.cy);
@@ -198,8 +205,9 @@
     var a = PAL.cool[role] || [150, 150, 160], b = PAL.warm[role] || a, c = [0, 0, 0], i;
     for (i = 0; i < 3; i++) c[i] = (a[i] + (b[i] - a[i]) * g) * shade;
     if (emph < 0.999) {
-      var lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2], keep = 0.35 + 0.65 * emph, dim = 0.6 + 0.4 * emph;
-      for (i = 0; i < 3; i++) c[i] = (lum + (c[i] - lum) * keep) * dim;
+      // Another room than the focused one: 30% less colour, and 45% of it left over the dark background.
+      var lum = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2], keep = 1 - DESAT * (1 - emph), left = DIM + (1 - DIM) * emph;
+      for (i = 0; i < 3; i++) c[i] = BG[i] + (lum + (c[i] - lum) * keep - BG[i]) * left;
     }
     var s = Math.round(Math.max(0, Math.min(255, c[0]))) + ',' + Math.round(Math.max(0, Math.min(255, c[1]))) + ',' + Math.round(Math.max(0, Math.min(255, c[2])));
     return alpha !== undefined && alpha < 1 ? 'rgba(' + s + ',' + alpha + ')' : 'rgb(' + s + ')';
@@ -217,15 +225,21 @@
     return g;
   }
 
-  /** How warm a thing is: its room's light, more the nearer it is to a lit light in that room. */
+  /** How far a light's warmth has reached (0 to 1) at a distance d: the wave front softened over 0.8 m. */
+  function reach(f, d) {
+    var t = Math.max(0, Math.min(1, (f.wave - d) / 0.8 + 0.5));
+    return t * t * (3 - 2 * t);
+  }
+
+  /** How warm a thing is: its room's light, more the nearer it is to a lit light, once the light's wave reached it. */
   function warmth(it) {
-    var g = 0.4 * maxGlow(it.rooms), i;
+    var g = 0, i;
     var cx = it.cx !== undefined ? it.cx : it.box[0] + it.box[3] / 2, cy = it.cy !== undefined ? it.cy : it.box[1] + it.box[4] / 2;
     for (i = 0; i < fixtures.length; i++) {
       var f = fixtures[i];
       if (f.lit.x < 0.01 || it.rooms.indexOf(f.def.room) < 0) continue;
-      var dx = cx - f.glowAt[0], dy = cy - f.glowAt[1], d = Math.sqrt(dx * dx + dy * dy);
-      g += f.lit.x * Math.max(0, 1 - d / 4.2) * 0.8;
+      var dx = cx - f.glowAt[0], dy = cy - f.glowAt[1], d = Math.sqrt(dx * dx + dy * dy), r = reach(f, d);
+      g += f.lit.x * r * (0.4 + Math.max(0, 1 - d / 4.2) * 0.8);
     }
     return Math.min(1, g);
   }
@@ -248,7 +262,7 @@
     sides(x, y, z, w, d, h, role, g, e, a);
     var top = [pt(x, y, z + h), pt(x + w, y, z + h), pt(x + w, y + d, z + h), pt(x, y + d, z + h)];
     poly(top, color(topRole || role, g, topRole ? 1 : 1.05, e, a));
-    if (!lite && h > 0.03 && w > 0.08 && d > 0.08) {
+    if (!M.lite && h > 0.03 && w > 0.08 && d > 0.08) {
       ctx.strokeStyle = 'rgba(255,255,255,' + (0.3 * a * (0.4 + 0.6 * e)) + ')';
       ctx.lineWidth = 1;
       ctx.stroke();
@@ -339,8 +353,8 @@
   }
 
   function floorGlow(f) {
-    var g = f.lit.x * (1 + 0.5 * f.ignite);
-    if (g < 0.01) return;
+    var g = f.lit.x * (1 + Math.max(0, f.flash.x));
+    if (g < 0.01 || f.wave < 0.05) return;
     var r = rooms[f.def.room].def.rect, c = pt(f.glowAt[0], f.glowAt[1], 0);
     ctx.save();
     var q = quadAt(r[0], r[1], r[2], r[3], 0);
@@ -352,7 +366,7 @@
     // An ellipse on the floor: 3 m across, squashed by the pitch.
     ctx.translate(c[0], c[1]);
     ctx.scale(1, P.sp);
-    var R = 3 * P.s, grad = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    var R = Math.min(3, f.wave + 0.4) * P.s, grad = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
     grad.addColorStop(0, 'rgba(' + GLOW[0] + ',' + GLOW[1] + ',' + GLOW[2] + ',' + Math.min(0.6, 0.32 * g) + ')');
     grad.addColorStop(1, 'rgba(' + GLOW[0] + ',' + GLOW[1] + ',' + GLOW[2] + ',0)');
     ctx.globalCompositeOperation = 'lighter';
@@ -377,7 +391,7 @@
   }
 
   function drawFixture(f) {
-    var d = f.def, at = d.at, g = f.lit.x, boost = 1 + 0.6 * f.ignite, grow = 1 + 0.25 * f.grow.x, s = P.s, e = emphOf(f.rooms);
+    var d = f.def, at = d.at, g = f.lit.x, boost = 1 + Math.max(0, f.flash.x), grow = 1 + 0.12 * f.grow.x, s = P.s, e = emphOf(f.rooms);
     var c = pt(at[0], at[1], f.mid);
     ctx.save();
     ctx.translate(c[0], c[1]);
@@ -461,6 +475,45 @@
     ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
   }
 
+  /** A standing fan's cage and its three blades, turning in the plane it faces (the motor behind is a box). */
+  function drawFan(fan) {
+    var d = fan.def, c = d.center, r = d.r, e = emphOf(fan.rooms), alongY = d.face.charAt(1) === 'y';
+    var turn = still() ? 0.3 : (clock / 1000 / FAN_PERIOD) % 1 * 2 * Math.PI, i, k;
+    function at(u, v) { return alongY ? pt(c[0] + u, c[1], c[2] + v) : pt(c[0], c[1] + u, c[2] + v); }
+    for (i = 0; i < 3; i++) {
+      var a = turn + i * 2 * Math.PI / 3, pts = [], radii = [0.035, r * 0.92, r * 0.92, 0.035], spread = [0.32, 0.22, -0.22, -0.32];
+      for (k = 0; k < 4; k++) pts.push(at(radii[k] * Math.cos(a + spread[k]), radii[k] * Math.sin(a + spread[k])));
+      poly(pts, color('silver', 0, 0.95, e, 0.85));
+    }
+    var hub = [];
+    for (i = 0; i < 12; i++) hub.push(at(0.04 * Math.cos(i * Math.PI / 6), 0.04 * Math.sin(i * Math.PI / 6)));
+    poly(hub, color('charcoal', 0, 1, e));
+    // The cage: a thin ring.
+    ctx.beginPath();
+    for (i = 0; i <= 24; i++) {
+      var p = at(r * Math.cos(i * Math.PI / 12), r * Math.sin(i * Math.PI / 12));
+      if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]);
+    }
+    ctx.strokeStyle = color('charcoal', 0, 1.1, e);
+    ctx.lineWidth = Math.max(1, 0.012 * P.s);
+    ctx.stroke();
+  }
+
+  /** A screen's standby glint: a faint diagonal band sweeping its face once every GLINT_PERIOD s. */
+  function glint(t, e) {
+    var o = t.box, p = (clock / 1000 / GLINT_PERIOD + t.phase) % 1, q = p * 5;
+    if (q >= 1) return;
+    var alongY = o[3] >= o[4], x = o[0], y = o[1], z = o[2], w = alongY ? o[3] : o[4], h = o[5];
+    // The face toward the camera.
+    var front = alongY ? (P.cos > 0 ? y + o[4] + 0.002 : y - 0.002) : (P.sin > 0 ? x + o[3] + 0.002 : x - 0.002);
+    function at(u, v) { return alongY ? pt(x + u, front, z + v) : pt(front, y + u, z + v); }
+    var c = -0.3 * w + q * 1.6 * w, band = 0.12 * w, lean = 0.35 * h;
+    var a = 0.16 * Math.sin(q * Math.PI) * (0.4 + 0.6 * e);
+    var u0 = Math.max(0, c - lean), u1 = Math.min(w, c + band - lean), u2 = Math.min(w, c + band), u3 = Math.max(0, c);
+    if (u2 <= 0 || u0 >= w) return;
+    poly([at(u0, 0), at(u1, 0), at(u2, h), at(u3, h)], 'rgba(255,255,255,' + a + ')');
+  }
+
   function followsWall(k) { return k === 'door-glass' || k === 'door-frame' || k === 'door'; }
 
   /** A thing's box this frame: doors on an outside wall follow that wall down when it lowers. */
@@ -502,9 +555,9 @@
       var room = roomList[i], r = room.def.rect;
       poly(quadAt(r[0], r[1], r[2], r[3], 0), color('floor-' + room.def.floor, 0.35 * room.glow.x, 1, room.emph.x));
     }
-    if (!lite) drawStrips();
+    if (!M.lite) drawStrips();
     for (i = 0; i < flats.length; i++) drawBox(flats[i].box, flats[i].color, warmth(flats[i]), emphOf(flats[i].rooms));
-    if (!lite) drawShadows();
+    if (!M.lite) drawShadows();
     for (i = 0; i < fixtures.length; i++) floorGlow(fixtures[i]);
     // Everything that stands, back to front.
     for (i = 0; i < items.length; i++) {
@@ -512,6 +565,9 @@
       if (it.fixture) {
         var at = it.def.at;
         it.depth = depth(at[0] + (it.kind === 'tube' ? 0.12 : 0), at[1], it.kind === 'tube' ? at[2] : 0.4);
+      } else if (it.fan) {
+        var fc = it.def.center;
+        it.depth = depth(fc[0], fc[1], 0.3);
       } else {
         var o = it.box;
         it.depth = depth(o[0] + o[3] / 2, o[1] + o[4] / 2, o[2]);
@@ -525,6 +581,7 @@
     for (i = 0; i < items.length; i++) {
       var t = items[i];
       if (t.fixture) { drawFixture(t); continue; }
+      if (t.fan) { drawFan(t); continue; }
       if (t.kind === 'wall') {
         var b = t.box;
         var wg = 0.4 * maxGlow(t.rooms), we = emphOf(t.rooms);
@@ -536,6 +593,7 @@
       if (t.disc) drawDisc(box, t.disc, t.color, g, e, a);
       else if (t.round) drawRound(box, t.color, g, e, a);
       else drawBox(box, t.color, g, e, undefined, a);
+      if (t.screen && !still()) glint(t, e);
     }
     // The model fades out under the tab bar and the status pill, as content does under a tvOS bar.
     ctx.save();
@@ -554,8 +612,11 @@
 
   function overlay() {
     for (var i = 0; i < fixtures.length; i++) {
-      var f = fixtures[i], at = f.def.at, base = pt(at[0], at[1], f.top), p = pt(at[0], at[1], f.top + 0.42);
-      var g = f.lit.x, fo = f.grow.x, r = 8 * (1 + 0.45 * fo), x = p[0], y = p[1];
+      var f = fixtures[i], at = f.def.at, fo = f.grow.x, g = f.lit.x, base = pt(at[0], at[1], f.top), p = pt(at[0], at[1], f.top + 0.42);
+      // The focused dot grows 1.35× and rides 8 px higher on a longer stem; a dead end nudges it (the rubber band).
+      var x = p[0] + M.rubber(f.nudgeX.x), y = p[1] - 8 * fo + M.rubber(f.nudgeY.x);
+      var breath = g > 0.5 && !still() ? 1 + 0.04 * Math.sin(clock / 1000 * 2 * Math.PI / 4) * g : 1;
+      var r = 8 * (1 + 0.35 * fo) * breath;
       // The hairline stem from the light up to its dot.
       ctx.strokeStyle = 'rgba(255,255,255,' + (0.45 + 0.4 * fo) + ')';
       ctx.lineWidth = 1;
@@ -576,11 +637,12 @@
       if (fo > 0.01) {
         ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 2 * Math.PI);
         ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(255,255,255,' + fo + ')';
+        ctx.strokeStyle = 'rgba(255,255,255,' + Math.min(1, fo) + ')';
         ctx.stroke();
       }
       if (f.ripple >= 0) {
-        ctx.beginPath(); ctx.arc(x, y, r + 6 + 46 * f.ripple, 0, 2 * Math.PI);
+        // OK: a ring leaves the dot, 1 → 2.8× its size, fading from 0.8.
+        ctx.beginPath(); ctx.arc(x, y, r * (1 + 1.8 * f.ripple), 0, 2 * Math.PI);
         ctx.lineWidth = 2;
         ctx.strokeStyle = 'rgba(255,255,255,' + (0.8 * (1 - f.ripple)) + ')';
         ctx.stroke();
@@ -589,28 +651,48 @@
     }
   }
 
-  // The pill follows the focused dot on its own spring and stays inside the safe area.
-  var pillX = new Spring(0.35, 0.86, 960), pillY = new Spring(0.35, 0.86, 540), pillShown = false;
+  // The pill follows the focused dot on its own spring and stays inside the safe area. Two copies: moving to another
+  // light, the old text fades out in one while the new fades in in the other, both riding the same spring.
+  var pillX = Spring(PR.LIQUID_PILL, 960).px(), pillY = Spring(PR.LIQUID_PILL, 540).px(), pillShown = false;
 
   function placePill(snap) {
     var f = fixtures[focus];
-    if (!f || f.dotX === undefined) return;
-    var w = pill.offsetWidth || 300, h = pill.offsetHeight || 52;
+    if (!f || f.dotX === undefined) return false;
+    var cur = pills[pillAt], w = cur.offsetWidth || 300, h = cur.offsetHeight || 52;
     var x = Math.max(SAFE.left + w / 2, Math.min(SAFE.right - w / 2, f.dotX));
     var y = Math.max(SAFE.top, Math.min(SAFE.bottom - h, f.dotY - f.dotR - 16 - h));
     pillX.to = x; pillY.to = y;
-    if (snap) { pillX.x = x; pillY.x = y; pillX.v = pillY.v = 0; }
-    pill.style.webkitTransform = pill.style.transform = 'translate(' + Math.round(pillX.x - w / 2) + 'px,' + Math.round(pillY.x) + 'px)';
+    if (snap) { pillX.snap(x); pillY.snap(y); }
+    for (var i = 0; i < pills.length; i++) {
+      var pw = pills[i].offsetWidth || w;
+      M.transform(pills[i], 'translate(' + Math.round(pillX.x - pw / 2) + 'px,' + Math.round(pillY.x) + 'px)');
+    }
+    return true;
   }
 
   function showCaption() {
     var f = fixtures[focus];
-    if (!focused || !f) { pill.className = 'pill'; pillShown = false; return; }
-    pillName.textContent = roomName(f.def.room) + '  ·  ' + name(f.def.name);
-    pillState.textContent = '  ·  ' + (f.on ? tr('On') : tr('Off'));
-    pill.className = 'pill on' + (f.on ? ' lit' : '');
+    if (!focused || !f) {
+      for (var i = 0; i < pills.length; i++) pills[i].className = 'pill';
+      pillShown = false;
+      pillText = '';
+      return;
+    }
+    var nameText = roomName(f.def.room) + '  ·  ' + name(f.def.name), stateText = '  ·  ' + (f.on ? tr('On') : tr('Off'));
+    // The same light (its state changed): the text changes in place; another light: crossfade to the other copy.
+    var same = pillText.split('|')[0] === nameText;
+    if (pillText && !same) {
+      pills[pillAt].className = 'pill';
+      pillAt = 1 - pillAt;
+    }
+    var cur = pills[pillAt];
+    cur.querySelector('.n').textContent = nameText;
+    cur.querySelector('.s').textContent = stateText;
+    cur.className = 'pill on' + (f.on ? ' lit' : '');
+    pillText = nameText + '|' + stateText;
     if (!pillShown) placePill(true);
     pillShown = true;
+    M.kick();
   }
 
   // MARK: - Animation
@@ -621,10 +703,12 @@
     for (var i = 0; i < roomList.length; i++) roomList[i].emph.to = !focused || !room || roomList[i] === room ? 1 : 0;
   }
 
-  function tick(now) {
-    frame = 0;
-    var dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60, moving = false, i, k;
-    last = now;
+  /** One frame (motion.js's loop): every spring a step, then the drawing. True while anything still moves. */
+  function tick(dt, now) {
+    if (!shown || !canvas) return false;
+    if (dt > 0.1) dt = 0.1;
+    clock = now;
+    var moving = false, i, k;
     for (k in cam) if (cam.hasOwnProperty(k) && cam[k].step(dt)) moving = true;
     for (i = 0; i < fixtures.length; i++) {
       var f = fixtures[i];
@@ -632,8 +716,13 @@
       f.lit.to = f.on ? 1 : 0;
       if (f.grow.step(dt)) moving = true;
       if (f.lit.step(dt)) moving = true;
-      if (f.ignite > 0.005) { f.ignite *= Math.exp(-3.5 * dt); moving = true; } else f.ignite = 0;
-      if (f.ripple >= 0) { f.ripple += dt / 0.55; moving = true; if (f.ripple >= 1) f.ripple = -1; }
+      if (f.flash.step(dt)) moving = true;
+      if (f.nudgeX.step(dt)) moving = true;
+      if (f.nudgeY.step(dt)) moving = true;
+      // The warmth's reach: out at WAVE_SPEED when on, back into the light in WAVE_OUT s when off.
+      if (f.on && f.wave < WAVE_MAX) { f.wave = still() ? WAVE_MAX : Math.min(WAVE_MAX, f.wave + WAVE_SPEED * dt); moving = true; }
+      if (!f.on && f.wave > 0) { f.wave = still() ? 0 : Math.max(0, f.wave - WAVE_MAX / WAVE_OUT * dt); moving = true; }
+      if (f.ripple >= 0) { f.ripple += dt / 0.45; moving = true; if (f.ripple >= 1) f.ripple = -1; }
     }
     for (i = 0; i < roomList.length; i++) {
       var room = roomList[i], on = 0;
@@ -642,31 +731,35 @@
       if (room.glow.step(dt)) moving = true;
       if (room.emph.step(dt)) moving = true;
     }
-    // A slow breathing drift of the camera once the remote has been still for a while (never with Reduce Motion).
-    var idle = !reduced && !lite && Date.now() - lastKey > 8000;
-    drift = idle ? 1.5 * Math.sin(now / 1000 * 2 * Math.PI / 40) : drift * 0.9;
-    if (idle || Math.abs(drift) > 0.01) moving = true;
-    aim(cam.yaw.x + drift, cam.pitch.x, cam.zoom.x, cam.cx.x, cam.cy.x);
-    // Outside walls stand tall when the camera sees their inside, and lower themselves when they face it.
+    // A slow figure eight once the remote has been still for IDLE ms (never with reduce motion), eased in and out.
+    drift.to = !still() && !M.lite && Date.now() - lastKey > IDLE ? 1 : 0;
+    if (drift.step(dt)) moving = true;
+    var phase = now / 1000 * 2 * Math.PI / 36, dYaw = 1.5 * Math.sin(phase) * drift.x, dPitch = 0.6 * Math.sin(2 * phase) * drift.x;
+    aim(cam.yaw.x + dYaw, cam.pitch.x + dPitch, cam.zoom.x, cam.cx.x, cam.cy.x);
+    // Outside walls stand tall when the camera sees their inside, and lower themselves (WALL_CUT) when they face it.
     for (i = 0; i < wallList.length; i++) {
       var wl = wallList[i], o = wl.def.out;
       if (!o) continue;
       var v = -o[0] * P.sin - o[1] * P.cos, t = Math.max(0, Math.min(1, (v + 0.12) / 0.24));
-      wl.tall = t * t * (3 - 2 * t);
+      wl.cut.to = t * t * (3 - 2 * t);
+      if (wl.cut.step(dt)) moving = true;
+      wl.tall = Math.max(0, Math.min(1, wl.cut.x));
       wl.h = wl.def.low + (wl.def.h - wl.def.low) * wl.tall;
     }
     draw();
-    if (pillShown) {
+    if (pillShown && placePill(false)) {
       if (pillX.step(dt)) moving = true;
       if (pillY.step(dt)) moving = true;
-      placePill(false);
     }
-    if (moving && shown) frame = requestAnimationFrame(tick);
-    else last = 0;
+    // The fans turn, the screens glint, a lit dot breathes, the camera drifts: frames while the house shows.
+    if (!still() && (fans.length || drift.x > 0.001)) moving = true;
+    return moving;
   }
 
-  function kick() {
-    if (!frame && canvas) { last = 0; frame = requestAnimationFrame(tick); }
+  /** A light on or off: on, the filament flashes (IGNITE) and the warmth starts spreading from the light. */
+  function setOn(f, on) {
+    f.on = on;
+    if (on && !still()) { f.flash.snap(0); f.flash.impulse(FLASH); f.wave = 0; }
   }
 
   function roomName(id) {
@@ -687,15 +780,24 @@
     return best;
   }
 
+  /** A dead end: the focused dot gets a push the way the arrow pointed and springs back (BOUNDARY_BUMP). */
+  function bump(dx, dy) {
+    var f = fixtures[focus];
+    if (!f) return;
+    if (dx) f.nudgeX.impulse(dx * M.BUMP_VELOCITY);
+    if (dy) f.nudgeY.impulse(dy * M.BUMP_VELOCITY);
+    M.kick();
+  }
+
+  function keyed() { lastKey = Date.now(); }
+
   window.House = {
     init: function (layer) {
       canvas = layer.querySelector('canvas');
-      pill = layer.querySelector('.pill');
-      pillName = pill.querySelector('.n');
-      pillState = pill.querySelector('.s');
+      var first = layer.querySelector('.pill');
+      pills = [first, first.cloneNode(true)];
+      layer.appendChild(pills[1]);
       ctx = canvas.getContext('2d');
-      lite = (' ' + document.body.className + ' ').indexOf(' lite ') >= 0;
-      try { reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) {}
       setup();
       // The light nearest the middle of the overview gets the focus first.
       var bestD = 1e9;
@@ -705,42 +807,56 @@
       }
       aim(OVER.yaw, OVER.pitch, 1, OVER.cx, OVER.cy);
       draw();
+      M.tick(tick);
     },
-    show: function (on) { shown = on; if (on) kick(); },
-    focus: function (on) { focused = on; lastKey = Date.now(); cameraTarget(); showCaption(); kick(); },
+    /** The tab shows: the camera settles into the overview from a little higher and further (pitch +4°, zoom 0.94). */
+    show: function (on) {
+      if (on && !shown) {
+        keyed();
+        cam.yaw.snap(OVER.yaw); cam.pitch.snap(OVER.pitch + 4); cam.zoom.snap(0.94);
+        cam.cx.snap(OVER.cx); cam.cy.snap(OVER.cy);
+        cameraTarget();
+      }
+      shown = on;
+      if (on) M.kick();
+    },
+    focus: function (on) { focused = on; keyed(); cameraTarget(); showCaption(); M.kick(); },
     /** false when there's no light that way and the press was ↑: the tab bar takes the focus. */
     move: function (dx, dy) {
-      lastKey = Date.now();
+      keyed();
       var n = next(dx, dy);
-      if (n < 0) return !(dy < 0);
+      if (n < 0) {
+        if (dy < 0) return false;
+        bump(dx, dy);
+        return true;
+      }
       focus = n;
       cameraTarget();
       showCaption();
-      kick();
+      M.kick();
       return true;
     },
     toggle: function () {
       var f = fixtures[focus];
       if (!f) return;
-      lastKey = Date.now();
-      f.on = !f.on;
-      if (f.on) f.ignite = 1;
+      keyed();
+      setOn(f, !f.on);
       f.ripple = 0;
       showCaption();
-      kick();
+      M.kick();
     },
     /** For Welly's cards and the preview: a light by id, on or off. */
     set: function (id, on) {
-      for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id && fixtures[i].on !== on) { fixtures[i].on = on; if (on) fixtures[i].ignite = 1; }
+      for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id && fixtures[i].on !== on) setOn(fixtures[i], on);
       showCaption();
-      kick();
+      M.kick();
     },
     /** Moves the focus to a light by id (the screenshots, Welly's home cards). */
     select: function (id) {
       for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id) focus = i;
       cameraTarget();
       showCaption();
-      kick();
+      M.kick();
     },
     state: function (id) {
       for (var i = 0; i < fixtures.length; i++) if (fixtures[i].def.id === id) return fixtures[i].on;

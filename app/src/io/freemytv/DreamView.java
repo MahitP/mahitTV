@@ -43,7 +43,11 @@ import java.util.concurrent.Executors;
  * Without photos (no TMDB key, or before the first fetch): the big clock over the night aurora.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
-    private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
+    // The first photo dissolves in over 1.2 s while the whole screen settles from 1.06× (ANIMATIONS-SPEC.md §2.5).
+    private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_200;
+    private static final float ENTRY_ZOOM = 0.06f;
+    /** Animations off (Settings: animator duration scale 0): the first photo is there at once, without the zoom. */
+    private boolean instant;
     private static final float ZOOM = 0.1f;
     /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
     private static final int PW = 2112, PH = 1188;
@@ -182,6 +186,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (worker.isShutdown()) worker = Executors.newSingleThreadExecutor();
         startedAt = clock();
         lastFrame = 0;
+        instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         failed.clear();
         fallback = photos().isEmpty();
         data.addListener(this);
@@ -452,7 +458,19 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (running) advance(up);
         if (!glassFor.equals(clock)) buildGlass(clock);
 
-        float first = current == null ? 0 : fadeIn(up - firstAt, FIRST_MS);
+        float first = current == null ? 0 : instant ? 1 : fadeIn(up - firstAt, FIRST_MS);
+        // The entry: everything settles from 1.06× as the first photo dissolves in.
+        float zoom = 1 + ENTRY_ZOOM * (1 - first);
+        int saved = -1;
+        if (zoom > 1.0005f) {
+            saved = canvas.save();
+            canvas.scale(zoom, zoom, w / 2f, h / 2f);
+        }
+        drawScene(canvas, up, first);
+        if (saved >= 0) canvas.restoreToCount(saved);
+    }
+
+    private void drawScene(Canvas canvas, long up, float first) {
         if (current == null || first < 1) {
             if (fallback) drawFallback(canvas, up, current == null ? 1 : 1 - first);
             else canvas.drawRect(0, 0, w, h, black);
