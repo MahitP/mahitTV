@@ -64,14 +64,41 @@ var Wallpaper = (function () {
     allowedMedia.push(aerials[i].preview);
   }
 
-  function find(id) {
+  function canonical(id) {
     for (var at = 0; at < aerials.length; at++) if (aerials[at].id === id) return aerials[at];
     return null;
   }
 
+  function copyAerial(aerial) {
+    return {
+      id: aerial.id,
+      asset: aerial.asset,
+      title: aerial.title,
+      video: aerial.video,
+      preview: aerial.preview
+    };
+  }
+
+  function copyAerials() {
+    var copy = [];
+    for (var at = 0; at < aerials.length; at++) copy.push(copyAerial(aerials[at]));
+    return copy;
+  }
+
+  function copySolids() {
+    var copy = [];
+    for (var at = 0; at < solids.length; at++) copy.push({id: solids[at].id, color: solids[at].color});
+    return copy;
+  }
+
+  function find(id) {
+    var aerial = canonical(id);
+    return aerial ? copyAerial(aerial) : null;
+  }
+
   function valid(id) {
     var at;
-    if (id === 'live:aerial' || horizons.indexOf(id) >= 0 || find(id)) return true;
+    if (id === 'live:aerial' || horizons.indexOf(id) >= 0 || canonical(id)) return true;
     for (at = 0; at < solids.length; at++) if (solids[at].id === id) return true;
     return false;
   }
@@ -94,8 +121,8 @@ var Wallpaper = (function () {
   }
 
   return {
-    aerials: aerials,
-    solids: solids,
+    aerials: copyAerials(),
+    solids: copySolids(),
     normalize: normalize,
     find: find,
     allowed: allowed,

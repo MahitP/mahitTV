@@ -64,15 +64,16 @@ public final class WallpaperTest {
                 {"aerial:new-york", "3BA0CFC7-E460-4B59-A817-B97F9EBB9B89", "New York from Above", "https://sylvan.apple.com/itunes-assets/Aerials116/v4/97/e9/06/97e90616-1227-c670-6118-bd5ae991b43b/comp_N008_C009_PS_v01_SDR_PS_20180925_SDR_2K_AVC.mov", "https://sylvan.apple.com/itunes-assets/Aerials221/v4/86/53/43/8653438c-a104-77a0-ce9a-8a370d39795f/N008_C009_900x580.png"},
                 {"aerial:sonoma-coast", "FE876489-CBD5-479B-A8F0-1B67F0741CEA", "Sonoma Horizon", "", "https://sylvan.apple.com/itunes-assets/Aerials126/v4/51/ff/08/51ff0824-8da5-78f0-e218-9e61264965bb/W010_C003_F01@2x.png"}
         };
-        equal(expected.length, Wallpaper.AERIALS.length, "aerial count");
+        Wallpaper.Aerial[] aerials = Wallpaper.aerials();
+        equal(expected.length, aerials.length, "aerial count");
         for (int i = 0; i < expected.length; i++) {
-            Wallpaper.Aerial aerial = Wallpaper.AERIALS[i];
+            Wallpaper.Aerial aerial = aerials[i];
             equal(expected[i][0], aerial.id, "aerial id " + i);
             equal(expected[i][1], aerial.asset, "aerial asset " + i);
             equal(expected[i][2], aerial.title, "aerial title " + i);
             equal(expected[i][3], aerial.video, "aerial video " + i);
             equal(expected[i][4], aerial.preview, "aerial preview " + i);
-            same(aerial, Wallpaper.find(aerial.id), "find " + aerial.id);
+            aerial(expected[i], Wallpaper.find(aerial.id), "find " + aerial.id);
         }
         same(null, Wallpaper.find("horizon:auto"), "find non-aerial");
         same(null, Wallpaper.find("missing"), "find missing");
@@ -80,14 +81,14 @@ public final class WallpaperTest {
     }
 
     private static void urlAllowlistIsExact() {
-        for (Wallpaper.Aerial aerial : Wallpaper.AERIALS) {
+        for (Wallpaper.Aerial aerial : Wallpaper.aerials()) {
             if (!aerial.video.isEmpty()) yes(Wallpaper.allowed(aerial.video), "allowed video " + aerial.id);
             yes(Wallpaper.allowed(aerial.preview), "allowed preview " + aerial.id);
         }
         no(Wallpaper.allowed(null), "reject null");
         no(Wallpaper.allowed(""), "reject empty");
         no(Wallpaper.allowed("not a url"), "reject malformed");
-        String good = Wallpaper.AERIALS[0].preview;
+        String good = Wallpaper.aerials()[0].preview;
         no(Wallpaper.allowed(good.replace("https://", "http://")), "reject http");
         no(Wallpaper.allowed(good.replace("sylvan.apple.com", "example.com")), "reject foreign host");
         no(Wallpaper.allowed(good.replace("sylvan.apple.com", "sylvan.apple.com.example.com")), "reject host suffix");
@@ -100,9 +101,40 @@ public final class WallpaperTest {
     private static void solidsAreExact() {
         String[] ids = {"studio:black", "studio:space-gray", "studio:midnight-blue", "studio:deep-forest", "studio:teal", "studio:warm-stone", "studio:silver-mist"};
         int[] colors = {0xff000000, 0xff1c1c1e, 0xff121a2a, 0xff11221c, 0xff1b3b3a, 0xff8e8e93, 0xffd1d5db};
-        yes(Arrays.equals(ids, Wallpaper.SOLID_IDS), "solid ids");
-        array(colors, Wallpaper.SOLID_COLORS, "solid colors");
-        yes(Arrays.equals(new String[]{"horizon:auto", "horizon:light", "horizon:dark"}, Wallpaper.HORIZON_IDS), "horizon ids");
+        yes(Arrays.equals(ids, Wallpaper.solidIds()), "solid ids");
+        array(colors, Wallpaper.solidColors(), "solid colors");
+        yes(Arrays.equals(new String[]{"horizon:auto", "horizon:light", "horizon:dark"}, Wallpaper.horizonIds()), "horizon ids");
+
+        Wallpaper.Aerial[] aerials = Wallpaper.aerials();
+        String yosemitePreview = aerials[0].preview;
+        aerials[0] = new Wallpaper.Aerial("aerial:changed", "changed", "Changed", "https://sylvan.apple.com/changed.mov", "https://sylvan.apple.com/changed.png");
+        equal("aerial:yosemite", Wallpaper.aerials()[0].id, "aerial array is isolated");
+        equal("aerial:yosemite", Wallpaper.normalize("aerial:yosemite"), "normalize uses canonical aerials");
+        yes(Wallpaper.allowed(yosemitePreview), "allowlist survives exported array mutation");
+        no(Wallpaper.allowed("https://sylvan.apple.com/changed.mov"), "exported record cannot widen allowlist");
+
+        String[] changedIds = Wallpaper.solidIds();
+        changedIds[0] = "studio:changed";
+        int[] changedColors = Wallpaper.solidColors();
+        changedColors[0] = 0;
+        equal("studio:black", Wallpaper.solidIds()[0], "solid ids are isolated");
+        equal(0xff000000, Wallpaper.solidColors()[0], "solid colors are isolated");
+        equal("studio:black", Wallpaper.normalize("studio:black"), "normalize uses canonical solids");
+
+        String[] changedHorizons = Wallpaper.horizonIds();
+        changedHorizons[0] = "horizon:changed";
+        equal("horizon:auto", Wallpaper.horizonIds()[0], "horizon ids are isolated");
+        equal("horizon:auto", Wallpaper.normalize("horizon:auto"), "normalize uses canonical horizons");
+
+        Wallpaper.Aerial found = Wallpaper.find("aerial:yosemite");
+        no(found == Wallpaper.find("aerial:yosemite"), "find returns a defensive record");
+    }
+
+    private static void aerial(String[] expected, Wallpaper.Aerial actual, String message) {
+        checks++;
+        if (actual == null || !Arrays.equals(expected, new String[]{actual.id, actual.asset, actual.title, actual.video, actual.preview})) {
+            fail(message, Arrays.toString(expected), actual == null ? null : actual.id);
+        }
     }
 
     private static void equal(Object expected, Object actual, String message) {

@@ -51,7 +51,8 @@ assert.strictEqual(Wallpaper.aerials.length, expected.length);
 expected.forEach(function (record, i) {
   var aerial = Wallpaper.aerials[i];
   assert.deepStrictEqual([aerial.id, aerial.asset, aerial.title, aerial.video, aerial.preview], record);
-  assert.strictEqual(Wallpaper.find(aerial.id), aerial);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(Wallpaper.find(aerial.id))), JSON.parse(JSON.stringify(aerial)));
+  assert.notStrictEqual(Wallpaper.find(aerial.id), aerial);
 });
 assert.strictEqual(Wallpaper.find('horizon:auto'), null);
 assert.strictEqual(Wallpaper.find('missing'), null);
@@ -82,6 +83,24 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(Wallpaper.solids)), [
   {id: 'studio:warm-stone', color: '#8E8E93'},
   {id: 'studio:silver-mist', color: '#D1D5DB'}
 ]);
+
+var originalPreview = Wallpaper.aerials[0].preview;
+Wallpaper.aerials[0].id = 'aerial:changed';
+Wallpaper.aerials[0].preview = 'https://sylvan.apple.com/changed.png';
+Wallpaper.aerials[1] = {id: 'aerial:injected', preview: 'https://sylvan.apple.com/injected.png'};
+Wallpaper.solids[0].id = 'studio:changed';
+var found = Wallpaper.find('aerial:yosemite');
+found.id = 'aerial:changed-again';
+found.preview = 'https://sylvan.apple.com/changed-again.png';
+assert.strictEqual(Wallpaper.normalize('aerial:yosemite'), 'aerial:yosemite');
+assert.strictEqual(Wallpaper.normalize('aerial:injected'), 'horizon:auto');
+assert.strictEqual(Wallpaper.normalize('studio:black'), 'studio:black');
+assert.strictEqual(Wallpaper.find('aerial:yosemite').id, 'aerial:yosemite');
+assert.strictEqual(Wallpaper.find('aerial:yosemite').preview, originalPreview);
+assert.strictEqual(Wallpaper.allowed(originalPreview), true);
+assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/changed.png'), false);
+assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/injected.png'), false);
+assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/changed-again.png'), false);
 
 assert.strictEqual(/\b(?:const|let)\b|=>|`|\b(?:Promise|Map|Set|URL)\b|Array\.from/.test(source), false, 'source remains ES5');
 console.log('wallpaper-web-test: passed');

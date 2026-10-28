@@ -20,16 +20,16 @@ final class Wallpaper {
         }
     }
 
-    static final String[] HORIZON_IDS = {"horizon:auto", "horizon:light", "horizon:dark"};
-    static final String[] SOLID_IDS = {
+    private static final String[] HORIZON_IDS = {"horizon:auto", "horizon:light", "horizon:dark"};
+    private static final String[] SOLID_IDS = {
             "studio:black", "studio:space-gray", "studio:midnight-blue", "studio:deep-forest",
             "studio:teal", "studio:warm-stone", "studio:silver-mist"
     };
-    static final int[] SOLID_COLORS = {
+    private static final int[] SOLID_COLORS = {
             0xff000000, 0xff1c1c1e, 0xff121a2a, 0xff11221c, 0xff1b3b3a, 0xff8e8e93, 0xffd1d5db
     };
 
-    static final Aerial[] AERIALS = {
+    private static final Aerial[] AERIALS = {
             new Aerial("aerial:yosemite", "4109D42A-D717-46A7-A9A2-FE53A82B25C0", "Yosemite Valley",
                     "https://sylvan.apple.com/itunes-assets/Aerials116/v4/97/e9/06/97e90616-1227-c670-6118-bd5ae991b43b/Y011_C001_SDR_2K_AVC.mov",
                     "https://sylvan.apple.com/itunes-assets/Aerials221/v4/86/53/43/8653438c-a104-77a0-ce9a-8a370d39795f/Y011_C001_900x580.png"),
@@ -51,6 +51,18 @@ final class Wallpaper {
 
     private Wallpaper() {}
 
+    static String[] horizonIds() { return HORIZON_IDS.clone(); }
+
+    static String[] solidIds() { return SOLID_IDS.clone(); }
+
+    static int[] solidColors() { return SOLID_COLORS.clone(); }
+
+    static Aerial[] aerials() {
+        Aerial[] copy = new Aerial[AERIALS.length];
+        for (int i = 0; i < AERIALS.length; i++) copy[i] = copy(AERIALS[i]);
+        return copy;
+    }
+
     static String normalize(String id) {
         if (valid(id)) return id;
         return "horizon:auto";
@@ -60,13 +72,22 @@ final class Wallpaper {
         if ("live:aerial".equals(id)) return true;
         for (String horizon : HORIZON_IDS) if (horizon.equals(id)) return true;
         for (String solid : SOLID_IDS) if (solid.equals(id)) return true;
-        return find(id) != null;
+        return findCanonical(id) != null;
     }
 
     static Aerial find(String id) {
+        Aerial aerial = findCanonical(id);
+        return aerial == null ? null : copy(aerial);
+    }
+
+    private static Aerial findCanonical(String id) {
         if (id == null) return null;
         for (Aerial aerial : AERIALS) if (aerial.id.equals(id)) return aerial;
         return null;
+    }
+
+    private static Aerial copy(Aerial aerial) {
+        return new Aerial(aerial.id, aerial.asset, aerial.title, aerial.video, aerial.preview);
     }
 
     static boolean allowed(String value) {
