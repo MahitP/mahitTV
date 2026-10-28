@@ -2,7 +2,10 @@ package io.freemytv;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageManager;
@@ -155,6 +158,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar;
     private final HouseView house;
     private final WellyView welly;
+    /** "Who's Watching?" over everything, and the golden intro over that (MAHITTV-PROFILES-SPEC.md §2–3). */
+    private final LockView lock;
+    private final Intro intro;
+    /** The intro has played in this process (first creation); the screen came on while we weren't showing. */
+    private static boolean booted, introPending;
+    private long touchedAt;
     private int zone = Z_SHELF;
     // The tabs: tabAway = the TV tab's content hidden and the background frosted and dimmed (Home or Welly); the two
     // contents cross-fade (smooth); lens = where the selected tab's lighter lens is (0 to 2, snappy).
@@ -289,7 +298,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private android.graphics.Path chevron;
     private Shader fullScrim;   // full screen: the soft dark gradient under the details (made once per size)
     // Control Center's profiles row (its top row): avatars, names, focus.
-    private List<Profiles.Profile> profiles = new ArrayList<>();
+    private List<ProfileManager.Profile> profiles = new ArrayList<>();
     private Bitmap[] profileAvatars = new Bitmap[0];
     private String[] profileNames = new String[0];
     private RectF[] profileRects = new RectF[0];
@@ -372,6 +381,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Bitmap pillAvatarFrom;
     private int pillAvatarProfile = -1;
     private final android.graphics.Path pillClip = new android.graphics.Path();
+    private final android.graphics.Path wellyIcon = new android.graphics.Path();
+    private final android.graphics.Path wellyEye = new android.graphics.Path();
+    private final android.graphics.Matrix wellyEyeMatrix = new android.graphics.Matrix();
     private final RectF pillNow = new RectF();
     /** Control Center's rows come in 25 ms apart from this time. */
     private long drawerOpenedAt;
@@ -558,6 +570,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         chevronLayer = new Layer(a, CHEVRON);
         house = new HouseView(a);
         welly = new WellyView(a, scene);
+        lock = new LockView(a, scene, lockListener);
+        intro = new Intro(a, introListener);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
         // frame cost more than drawing straight to the screen (measured: focus on the picks 33 → 12 ms a frame, the
@@ -571,9 +585,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
         }
+        addView(lock);
+        addView(intro);
+        intro.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         house.setVisibility(INVISIBLE);
         welly.setVisibility(INVISIBLE);
-        setContentDescription("Free My TV");
+        setContentDescription("mahitTV");
+        WatchLog.seedPreview(a);   // preview builds: Mahit's and Dhruvin's sample Docks and histories (once)
         drawerLayer.setVisibility(INVISIBLE);
         for (int i = 0; i < topFocus.length; i++) {
             topFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
@@ -661,6 +679,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         spoken.readAgain();
         welly.resume();
         if (tab == TAB_HOME) house.refresh();
+        // The gate (§3): the intro and the lock the first time in this process and when the screen comes on; the lock
+        // alone after more than 10 minutes away; within them, straight back to the same profile.
+        if (!booted || introPending) {
+            booted = true;
+            introPending = false;
+            gate(true);
+        } else if (!lock.showing() && !intro.showing() && ProfileManager.needsLock(getContext())) {
+            gate(false);
+        }
     }
 
     void pause() {
@@ -682,6 +709,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     void destroy() {
         pause();
+        intro.stop();
         if (launcherApps != null) launcherApps.unregisterCallback(packages);
         click.release();
     }
@@ -771,6 +799,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(chevronLayer, Math.round(80 * kk), Math.round(48 * kk));
         measure(house, width, height);
         measure(welly, width, height);
+        measure(lock, width, height);
+        measure(intro, width, height);
         setMeasuredDimension(width, height);
     }
 
@@ -795,6 +825,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         place(chevronLayer, (width - chevronLayer.getMeasuredWidth()) / 2, Math.round(TV_CHEVRON_Y * kk) - chevronLayer.getMeasuredHeight() / 2);
         house.layout(0, 0, width, height);
         welly.layout(0, 0, width, height);
+        lock.layout(0, 0, width, height);
+        intro.layout(0, 0, width, height);
     }
 
     private static void place(View v, int x, int y) {
@@ -1304,7 +1336,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (aerials.length == 0) return null;
-        final int index = (int) (System.currentTimeMillis() / 3600_000L % aerials.length);
+        // The profile's wallpaper (Settings > Appearance) when it names an aerial; else this hour's.
+        int chosen = java.util.Arrays.binarySearch(aerials, Prefs.wallpaper());
+        final int index = chosen >= 0 ? chosen : (int) (System.currentTimeMillis() / 3600_000L % aerials.length);
         if (index == wallpaperIndex) return wallpaper;
         if (!wallpaperLoading) {
             wallpaperLoading = true;
@@ -2291,7 +2325,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Control Center's top row: the profiles' avatars (84 round) and names, cut to fit once. */
     private void layoutProfiles(float left) {
         if (ccName == null) return;
-        profiles = Profiles.all(getContext());
+        profiles = ProfileManager.all(getContext());
         int n = profiles.size();
         if (profileRects.length != n) {
             profileRects = new RectF[n];
@@ -2308,7 +2342,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < n; i++) {
             float x = left + i * (size + gap);
             profileRects[i].set(x, top, x + size, top + size);
-            profileAvatars[i] = Profiles.avatar(getContext(), profiles.get(i), Math.round(size));
+            profileAvatars[i] = ProfileManager.avatar(getContext(), profiles.get(i), Math.round(size));
             profileNames[i] = TextUtils.ellipsize(profiles.get(i).name, new TextPaint(ccName), size + gap - 6 * k, TextUtils.TruncateAt.END).toString();
         }
     }
@@ -2326,7 +2360,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // On the profiles when there is more than one to switch to; else on the first card. The focus grows in as the
         // panel arrives (retarget), not already there.
         ccOnProfiles = profiles.size() > 1;
-        profileIndex = Profiles.current(getContext());
+        profileIndex = ProfileManager.currentIndex(getContext());
         drawerDirty = true;
     }
 
@@ -2411,7 +2445,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The profiles: avatars with names; the current one ringed; the focused one grows and turns its ring white. */
     private void drawProfiles(Canvas c) {
-        int current = Profiles.current(getContext());
+        int current = ProfileManager.currentIndex(getContext());
         ccName.setColor(drawerInk(0.9f));
         for (int i = 0; i < profileRects.length && i < profileAvatars.length; i++) {
             RectF r = profileRects[i];
@@ -2899,10 +2933,124 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (running) reloadSoon();
     }
 
+    // MARK: - Profiles: the intro, the lock, and the home made again for whoever comes in
+
+    /** Locks and shows the gate: the intro first (`withIntro`, when Settings has it on), then "Who's Watching?". */
+    private void gate(boolean withIntro) {
+        ProfileManager.lock(getContext());
+        if (sheetOpen) closeSheet();
+        if (withIntro && Prefs.intro()) {
+            intro.start();
+        } else {
+            intro.stop();
+            lock.show(false, null);
+        }
+    }
+
+    /** Someone is using the TV: the 10-minute grace starts again (written at most every 30 s). */
+    private void touch() {
+        long up = SystemClock.uptimeMillis();
+        if (touchedAt != 0 && up - touchedAt < 30_000) return;
+        touchedAt = up;
+        ProfileManager.touch(getContext());
+    }
+
+    /**
+     * The home for the profile now in: its Dock and top buttons (reload: Prefs.version moved), theme, wallpaper and
+     * avatar, here and now instead of HomeActivity's recreate; then the TV tab unfolds from 0.98.
+     */
+    private void applyProfile() {
+        if (activity instanceof HomeActivity) ((HomeActivity) activity).profileApplied();
+        touchedAt = 0;
+        reload();
+        setLightButtons(HomeApps.topButtons());
+        checkNight(true);
+        updateBackground();
+        layoutPill();
+        reset(false);
+        if (!Spring.instant) {
+            wakeScale.snap(0.98f);
+            wakeScale.target = 1;
+            wakeAlpha.snap(0);
+            wakeAlpha.target = 1;
+        }
+        heroDirty = statusDirty = drawerDirty = tilesDirty = true;
+        motionDirty = true;
+        invalidateAll();
+        wake();
+    }
+
+    private final LockView.Listener lockListener = new LockView.Listener() {
+        @Override public void onUnlock(ProfileManager.Profile p) {
+            applyProfile();
+        }
+
+        @Override public void pillTarget(RectF out) {
+            float d = PILL_AVATAR * k, ax = pillRect.right - 4 * k - d, ay = pillRect.centerY() - d / 2;
+            out.set(ax, ay, ax + d, ay + d);
+        }
+
+        @Override public void onLockGone() {
+            wake();
+            invalidateAll();
+        }
+    };
+
+    private final Intro.Listener introListener = new Intro.Listener() {
+        @Override public void onIntroEnding() {
+            lock.show(true, null);
+            intro.bringToFront();   // the lock comes in under the intro's dissolve
+        }
+
+        @Override public void onIntroDone() {
+            if (!lock.showing() && ProfileManager.needsLock(getContext())) lock.show(false, null);
+        }
+    };
+
+    /** Power: off locks at once (nothing of the home shows when it comes back on), on plays the intro and the lock. */
+    private final BroadcastReceiver screenPower = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) {
+                intro.stop();
+                ProfileManager.lock(c);
+                lock.show(false, null);
+                introPending = true;
+            } else if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) {
+                if (intro.showing()) {   // resume() came first and already started it
+                    introPending = false;
+                    return;
+                }
+                introPending = true;
+                if (running) {
+                    introPending = false;
+                    gate(true);
+                }
+            }
+        }
+    };
+
+    @Override protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        IntentFilter f = new IntentFilter(Intent.ACTION_SCREEN_ON);
+        f.addAction(Intent.ACTION_SCREEN_OFF);
+        getContext().registerReceiver(screenPower, f);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        try {
+            getContext().unregisterReceiver(screenPower);
+        } catch (IllegalArgumentException ignored) {
+        }
+        super.onDetachedFromWindow();
+    }
+
     // MARK: - Keys: only the arrows, OK, Back and Settings (system keys pass through to the system)
 
     boolean onKey(KeyEvent e) {
         wake();
+        if (intro.showing()) return intro.onKey(e);
+        if (lock.showing()) return lock.onKey(e);
+        touch();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
@@ -3197,7 +3345,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_HERO) {
             Recs.Pick p = currentPick();
             if (p == null || p.pkg == null) return;
-            it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
+            it = HomeApps.app(p);
             r = heroButton;
         } else if (zone == Z_STATUS) {
             // The pill: Control Center.
@@ -3206,12 +3354,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
             return;
         } else if (zone == Z_DRAWER && ccOnProfiles) {
-            // A profile: it becomes the current one (its avatar goes to the pill).
+            // A profile: the lock opens on it (its PIN first); in, its avatar flies to the pill.
             if (profileIndex >= profiles.size()) return;
             click.open();
-            Profiles.setCurrent(getContext(), profileIndex);
-            layoutPill();
-            drawerDirty = statusDirty = true;
+            ProfileManager.Profile p = profiles.get(profileIndex);
+            closeDrawer();
+            retarget(false);
+            if (!p.id.equals(ProfileManager.current(getContext()).id)) lock.show(false, p);
             return;
         } else if (zone == Z_DRAWER) {
             if (drawerItems.isEmpty()) return;
@@ -3230,7 +3379,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_CARDS) {
             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
             if (p == null || p.pkg == null) return;
-            it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
+            it = HomeApps.app(p);
             r = cardRects[cardIndex];
         } else {
             if (shelf.isEmpty()) return;
@@ -3240,6 +3389,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         click.open();
         if (it.kind == HomeApps.ALL_APPS) {
             openSheet();
+            return;
+        }
+        if (it.kind == HomeApps.LOCK) {
+            // Control Center's Lock: back to "Who's Watching?".
+            closeDrawer();
+            retarget(true);
+            gate(false);
             return;
         }
         if (it.kind == HomeApps.INPUTS) {
@@ -3311,7 +3467,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 text = Ui.trf("Removed from the shelf: {app}", "app", it.label);
             } else {
                 if (shown >= max) {
-                    handler.post(() -> showToast(Ui.tr("The shelf is full. Make room in Free My TV › Shelf.")));
+                    handler.post(() -> showToast(Ui.tr("The shelf is full. Make room in mahitTV › Shelf.")));
                     return;
                 }
                 list.add(it.pkg);
@@ -3757,10 +3913,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void layoutPill() {
         if (tvPill == null) return;
-        profiles = Profiles.all(getContext());
+        profiles = ProfileManager.all(getContext());
         int size = Math.round(PILL_AVATAR * k);
-        int current = Profiles.current(getContext());
-        Bitmap avatar = Profiles.avatar(getContext(), profiles.get(current), size);
+        int current = ProfileManager.currentIndex(getContext());
+        Bitmap avatar = ProfileManager.avatar(getContext(), profiles.get(current), size);
         if (pillAvatarProfile >= 0 && current != pillAvatarProfile && pillAvatar != null && !Spring.instant) {
             pillAvatarFrom = pillAvatar;   // another profile: the avatars cross-dissolve
             avatarFade.snap(0);
@@ -3790,7 +3946,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         String[] names = tabs();
         float total = 0;
         for (int i = 0; i < 3; i++) {
-            tabTextW[i] = Math.max(tabText.measureText(names[i]) + 2 * TAB_PAD * k, TAB_MIN * k);
+            tabTextW[i] = Math.max(tabText.measureText(names[i]) + 2 * TAB_PAD * k + (i == TAB_WELLY ? 28 * k : 0), TAB_MIN * k);
             total += tabTextW[i];
         }
         float inset = TAB_INSET * k, top = TAB_TOP * k, height = TAB_H * k;
@@ -3856,9 +4012,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawRoundRect(r, pr, pr, fill);
             }
             tabText.setColor(blend(blend(0xB3FFFFFF, 0xFFFFFFFF, selected), INK, f));
-            c.drawText(names[i], r.centerX(), r.centerY() + Ui.halfCap(tabText), tabText);
+            float textX = r.centerX() + (i == TAB_WELLY ? 12 * k : 0);
+            if (i == TAB_WELLY) drawWellyIcon(c, textX - tabText.measureText(names[i]) / 2 - 18 * k, r.centerY(), 10 * k);
+            c.drawText(names[i], textX, r.centerY() + Ui.halfCap(tabText), tabText);
             c.restore();
         }
+    }
+
+    private void drawWellyIcon(Canvas c, float cx, float cy, float radius) {
+        wellyIcon.reset(); wellyIcon.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+        for (int i=0;i<WellyBot.PROFILE_SAMPLES;i++) {
+            double a=i*Math.PI*2/WellyBot.PROFILE_SAMPLES;
+            float x=cx+(float)Math.cos(a)*(float)WellyBot.galet(i)*radius;
+            float y=cy+(float)Math.sin(a)*(float)WellyBot.galet(i)*radius;
+            if(i==0)wellyIcon.moveTo(x,y);else wellyIcon.lineTo(x,y);
+        }
+        wellyIcon.close();
+        wellyEye.reset();wellyEye.addOval(cx-radius*.31f,cy-radius*.31f,cx-radius*.13f,cy+radius*.22f,android.graphics.Path.Direction.CW);
+        wellyEyeMatrix.reset();wellyEyeMatrix.setRotate(-26,cx-radius*.22f,cy-radius*.045f);wellyEye.transform(wellyEyeMatrix);wellyIcon.addPath(wellyEye);
+        wellyEye.reset();wellyEye.addOval(cx+radius*.10f,cy-radius*.34f,cx+radius*.28f,cy+radius*.19f,android.graphics.Path.Direction.CW);
+        wellyEyeMatrix.reset();wellyEyeMatrix.setRotate(-26,cx+radius*.19f,cy-radius*.075f);wellyEye.transform(wellyEyeMatrix);wellyIcon.addPath(wellyEye);
+        fill.setColor(WellyBot.COLOR);c.drawPath(wellyIcon,fill);
+        wellyIcon.reset();wellyIcon.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+        wellyIcon.addCircle(cx+radius*.76f,cy-radius*.68f,radius*.16f,android.graphics.Path.Direction.CW);
+        wellyIcon.addCircle(cx+radius*.65f,cy-radius*.56f,radius*.09f,android.graphics.Path.Direction.CW);
+        fill.setColor(WellyBot.NOTIF_BLUE);c.drawPath(wellyIcon,fill);
     }
 
     /** The focus to the tab bar, on the selected tab. */

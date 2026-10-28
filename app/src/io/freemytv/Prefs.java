@@ -105,6 +105,44 @@ final class Prefs {
         version++;
     }
 
+    // MARK: - Per profile (MAHITTV-PROFILES-SPEC.md §1.3)
+
+    /** Keys each profile keeps for itself (ProfileManager.prefs); everything else is for the whole TV. */
+    private static final String[] PER_PROFILE = {"theme", "sounds", "photos", "shelf", "topButtons", "wallpaper"};
+
+    /** The current profile's own settings. The first time, the manager takes over what the TV had before profiles. */
+    private static SharedPreferences pp() {
+        SharedPreferences own = ProfileManager.prefs(app);
+        if (!own.getBoolean("migrated", false)) {
+            SharedPreferences.Editor e = own.edit().putBoolean("migrated", true);
+            if (ProfileManager.current(app).manager()) {
+                SharedPreferences tv = sp();
+                for (String k : PER_PROFILE) {
+                    Object v = tv.getAll().get(k);
+                    if (v instanceof String) e.putString(k, (String) v);
+                    else if (v instanceof Boolean) e.putBoolean(k, (Boolean) v);
+                }
+            }
+            e.apply();
+        }
+        return own;
+    }
+
+    private static void putOwn(String key, String value) {
+        pp().edit().putString(key, value).apply();
+        version++;
+    }
+
+    private static void putOwn(String key, boolean value) {
+        pp().edit().putBoolean(key, value).apply();
+        version++;
+    }
+
+    /** Another profile is in (or the TV was reset): everything reading Prefs should read again. */
+    static void profileChanged() {
+        version++;
+    }
+
     private static void put(String key, boolean value) {
         sp().edit().putBoolean(key, value).apply();
         version++;
@@ -131,11 +169,11 @@ final class Prefs {
 
     /** "auto" (dark from sunset to sunrise), "light" or "dark". */
     static String theme() {
-        String v = sp().getString("theme", Config.THEME.trim());
+        String v = pp().getString("theme", Config.THEME.trim());
         return v.equals("light") || v.equals("dark") ? v : "auto";
     }
 
-    static void setTheme(String v) { put("theme", v); }
+    static void setTheme(String v) { putOwn("theme", v); }
 
     // MARK: - City
 
@@ -149,8 +187,8 @@ final class Prefs {
     }
 
     /** The home screen's soft click when moving and opening. */
-    static boolean sounds() { return sp().getBoolean("sounds", true); }
-    static void setSounds(boolean on) { put("sounds", on); }
+    static boolean sounds() { return pp().getBoolean("sounds", true); }
+    static void setSounds(boolean on) { putOwn("sounds", on); }
 
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it. Off: any key closes it. */
     static boolean saverWatch() { return sp().getBoolean("saverWatch", false); }
@@ -174,17 +212,33 @@ final class Prefs {
     static void setQuotes(boolean on) { put("quotes", on); }
 
     /** Your photos (Photos, sent from a computer) on the screensaver and behind the home screen, once imported. */
-    static boolean photos() { return sp().getBoolean("photos", true); }
-    static void setPhotos(boolean on) { put("photos", on); }
+    static boolean photos() { return pp().getBoolean("photos", true); }
+    static void setPhotos(boolean on) { putOwn("photos", on); }
+
+    /** The profile's wallpaper: "" (automatic: the picks, then the aerials), or an aerial's file name. */
+    static String wallpaper() { return pp().getString("wallpaper", ""); }
+    static void setWallpaper(String id) { putOwn("wallpaper", id); }
+
+    /** The golden mahitTV intro at power-on (MAHITTV-PROFILES-SPEC.md §2); for the whole TV. */
+    static boolean intro() { return sp().getBoolean("intro", true); }
+    static void setIntro(boolean on) { put("intro", on); }
+
+    /** System apps that only have a phone-style launcher entry, listed in All Apps too (§5). */
+    static boolean systemApps() { return sp().getBoolean("systemApps", false); }
+    static void setSystemApps(boolean on) { put("systemApps", on); }
 
     static boolean coin(int i) { return sp().getBoolean("coin" + i, true); }
     static void setCoin(int i, boolean on) { put("coin" + i, on); }
 
     // MARK: - Shelf
 
-    /** Packages on the home shelf, in order; null until the user edits it (then the built-in list applies). */
+    /**
+     * The current profile's Dock: packages in order; until it edits its own, default_dock_apps from config.properties,
+     * and null without that (the built-in list applies).
+     */
     static List<String> shelf() {
-        String v = sp().getString("shelf", null);
+        String v = pp().getString("shelf", null);
+        if (v == null) v = Config.DEFAULT_DOCK.trim().isEmpty() ? null : Config.DEFAULT_DOCK.trim();
         if (v == null) return null;
         List<String> out = new ArrayList<>();
         for (String p : v.split(",")) if (!p.isEmpty()) out.add(p);
@@ -194,7 +248,7 @@ final class Prefs {
     static void setShelf(List<String> packages) {
         StringBuilder sb = new StringBuilder();
         for (String p : packages) sb.append(sb.length() == 0 ? "" : ",").append(p);
-        put("shelf", sb.toString());
+        putOwn("shelf", sb.toString());
     }
 
     // MARK: - Sleep timer
@@ -227,7 +281,7 @@ final class Prefs {
      * them (then HomeApps.TOP_DEFAULT applies); empty when they took all three off.
      */
     static List<String> topButtons() {
-        String v = sp().getString("topButtons", null);
+        String v = pp().getString("topButtons", null);
         if (v == null) return null;
         List<String> out = new ArrayList<>();
         for (String p : v.split(",")) if (!p.isEmpty()) out.add(p);
@@ -237,7 +291,7 @@ final class Prefs {
     static void setTopButtons(List<String> keys) {
         StringBuilder sb = new StringBuilder();
         for (String p : keys) sb.append(sb.length() == 0 ? "" : ",").append(p);
-        put("topButtons", sb.toString());
+        putOwn("topButtons", sb.toString());
     }
 
     // MARK: - Remote buttons

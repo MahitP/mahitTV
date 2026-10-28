@@ -30,6 +30,7 @@ final class WellyCards {
         int type;
         // media
         Recs.Pick pick;
+        WatchLog.Entry entry;   // Continue Watching: OK opens this title (or its app) instead of the pick
         volatile Bitmap image;
         // media, music, home: the main line and the one under it
         String title = "", meta = "";

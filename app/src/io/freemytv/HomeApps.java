@@ -60,6 +60,8 @@ final class HomeApps {
     static final int INPUTS = 7;
     /** Control Center's Sleep Timer card: Free My TV's Sleep Timer screen. */
     static final int SLEEP = 8;
+    /** Control Center's Lock card: back to "Who's Watching?" (the home screen handles it). */
+    static final int LOCK = 9;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -67,6 +69,9 @@ final class HomeApps {
         int kind;
         String key, label, pkg, inputId, number;
         String uri;         // opens this address in the app instead of the app's home (a title's page)
+        String title;       // the film or show it opens (a pick), for Continue Watching; null for a plain app
+        String mediaKind;   // the pick's "movie" or "tv"
+        long tmdbId;        // the pick's TMDB id, 0 when none
         Intent intent;      // DEVICE: the TV maker's own screen it opens
         String symbol;      // icon for the shortcuts and special cards
         Bitmap tile;        // 16:9 card (apps and specials): set with setTile
@@ -321,6 +326,7 @@ final class HomeApps {
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
         items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
+        items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
         items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
@@ -342,6 +348,15 @@ final class HomeApps {
     static Item app(String pkg, String label, String uri) {
         Item it = app(pkg, label);
         it.uri = uri;
+        return it;
+    }
+
+    /** A pick (Top Shelf, screensaver, Welly): its app, opened on the title, logged by title in Continue Watching. */
+    static Item app(Recs.Pick p) {
+        Item it = app(p.pkg, Recs.serviceName(p), p.link);
+        it.title = p.title;
+        it.mediaKind = p.kind;
+        it.tmdbId = p.id;
         return it;
     }
 
@@ -535,11 +550,11 @@ final class HomeApps {
         synchronized (HomeApps.class) {
             TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
         }
-        items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV", "sparkles"));
+        items.add(special(c, SETTINGS, "freemytv-settings", "mahitTV", "sparkles"));
         return items;
     }
 
-    /** Free My TV's own entry: a white symbol on graphite, like tvOS's Settings icon. */
+    /** mahitTV's own entry: a white symbol on graphite, like tvOS's Settings icon. */
     private static Item special(Context c, int kind, String key, String label, String symbol) {
         Item it = shortcut(kind, key, label, symbol);
         it.setTile(symbolTile(c, key, symbol));
@@ -597,6 +612,7 @@ final class HomeApps {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             a.startActivity(intent, options);
+            opened(a, it);
             return true;
         } catch (ActivityNotFoundException | SecurityException e) {
             AppLog.w("couldn't open " + it.label + ": " + e.getMessage());
@@ -604,11 +620,19 @@ final class HomeApps {
             plain.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 a.startActivity(plain);
+                opened(a, it);
                 return true;
             } catch (ActivityNotFoundException | SecurityException e2) {
                 return false;
             }
         }
+    }
+
+    /** Every launch counts as use (the 10-minute lock), and an app or title goes into the profile's Continue Watching. */
+    private static void opened(Context c, Item it) {
+        ProfileManager.touch(c);
+        if (it.kind != APP || it.pkg == null) return;
+        WatchLog.launched(c, it.title, it.tmdbId, it.mediaKind, it.label, it.pkg, it.uri);
     }
 
     /**
@@ -712,13 +736,24 @@ final class HomeApps {
             String pkg = ri.activityInfo.packageName;
             if (seen.add(pkg)) out.add(new String[] {pkg, String.valueOf(ri.loadLabel(pm))});
         }
+        // Phone-style apps too; the system's own only with Settings > Show system apps (and never ours or HIDDEN).
+        boolean system = Prefs.systemApps();
         Intent phone = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         for (ResolveInfo ri : pm.queryIntentActivities(phone, 0)) {
             String pkg = ri.activityInfo.packageName;
-            if ((ri.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0 || !seen.add(pkg)) continue;
+            boolean sys = (ri.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+            if (sys && (!system || pkg.equals(c.getPackageName()) || HIDDEN.contains(pkg))) continue;
+            if (!seen.add(pkg)) continue;
             out.add(new String[] {pkg, String.valueOf(ri.loadLabel(pm))});
         }
         return out;
+    }
+
+    /** How many apps mahitTV found on the TV (Settings > About): what All Apps lists, without our own entry. */
+    static int count(Context c) {
+        int n = 0;
+        for (String[] app : launchable(c)) if (!app[0].equals(c.getPackageName()) && !HIDDEN.contains(app[0])) n++;
+        return n;
     }
 
     static Intent launchIntent(PackageManager pm, String pkg) {

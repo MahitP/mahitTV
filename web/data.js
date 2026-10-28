@@ -40,7 +40,12 @@ var Prefs = (function () {
   var v = {};
   try { v = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} }
-  function pick(name, fallback) { return v[name] === undefined ? fallback : v[name]; }
+  function pick(name, fallback) {
+    if (OWN.indexOf(name) >= 0 && window.Profiles) return Profiles.store().get(name, fallback);
+    return v[name] === undefined ? fallback : v[name];
+  }
+  // Kept per profile (MAHITTV-PROFILES-SPEC.md §1.3); the rest is for the whole TV.
+  var OWN = ['theme', 'shelf', 'shelfConfig', 'wallpaper', 'sounds'];
   return {
     version: 0,
     language: function () { return pick('language', CONFIG.language || 'auto'); },
@@ -53,12 +58,21 @@ var Prefs = (function () {
     forecast: function () { return pick('forecast', 'hours') === 'days' ? 'days' : 'hours'; },
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
-    shelf: function () { return pick('shelf', null); },
+    /** The current profile's Dock: its own, else default_dock_apps, else null (the built-in list). */
+    shelf: function () { return pick('shelf', null) || ((CONFIG.defaultDock && CONFIG.defaultDock.length) ? CONFIG.defaultDock.slice() : null); },
+    /** The profile's wallpaper: '' (automatic) or an aerial's file name. */
+    wallpaper: function () { return pick('wallpaper', ''); },
+    /** The golden intro at power-on (for the whole TV). */
+    intro: function () { return pick('intro', true) !== false; },
     /** The profile in use (an index into CONFIG.profiles, or the default one). */
     profile: function () { return pick('profile', 0); },
     /** The shelf_apps of the build that last set the shelf, so a new one wins once over the TV's choice. */
     shelfConfig: function () { return pick('shelfConfig', ''); },
-    set: function (name, value) { v[name] = value; save(); this.version++; },
+    set: function (name, value) {
+      if (OWN.indexOf(name) >= 0 && window.Profiles) Profiles.store().set(name, value);
+      else { v[name] = value; save(); }
+      this.version++;
+    },
     setCoin: function (i, on) {
       var c = (pick('coins', null) || [true, true, true, true]).slice();
       c[i] = on;

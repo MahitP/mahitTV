@@ -21,17 +21,40 @@ import java.util.List;
 final class WellyMemory {
     private static final int TURNS = 20, FACTS = 30;
 
-    private final File file;
+    private final File file;   // null for Guest: kept in memory only, gone with the profile
     private final List<String[]> turns = new ArrayList<>();   // {role, text}: "user" or "assistant"
     private final List<String> facts = new ArrayList<>();
 
-    WellyMemory(Context c, String profile) {
+    /** The profile's memory, in files/welly/<id>.json (MAHITTV-PROFILES-SPEC.md §4); Guest's lives only in memory. */
+    WellyMemory(Context c, ProfileManager.Profile p) {
+        if (p.guest()) {
+            file = null;
+            return;
+        }
         File dir = new File(c.getFilesDir(), "welly");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        String name = profile.replaceAll("[^A-Za-z0-9_-]", "_");
-        file = new File(dir, (name.isEmpty() ? "me" : name) + ".json");
+        file = new File(dir, safe(p.id) + ".json");
+        // Before profiles had ids, the memory was named after the person: it becomes theirs once.
+        File old = new File(dir, safe(p.name) + ".json");
+        if (!file.exists() && !old.equals(file) && old.exists() && !old.renameTo(file)) {
+            AppLog.w("Welly memory: couldn't move " + old.getName());
+        }
         load();
+    }
+
+    private static String safe(String name) {
+        String n = name == null ? "" : name.replaceAll("[^A-Za-z0-9_-]", "_");
+        return n.isEmpty() ? "me" : n;
+    }
+
+    /** Forgets everything Welly remembers about `p` (Settings → Welly; MAHITTV-PROFILES-SPEC.md §6). */
+    static void clear(Context c, ProfileManager.Profile p) {
+        File dir = new File(c.getFilesDir(), "welly");
+        for (String name : new String[] {p.id, p.name}) {
+            //noinspection ResultOfMethodCallIgnored
+            new File(dir, safe(name) + ".json").delete();
+        }
     }
 
     synchronized List<String[]> turns() {
@@ -67,7 +90,7 @@ final class WellyMemory {
     }
 
     private void load() {
-        if (!file.exists()) return;
+        if (file == null || !file.exists()) return;
         try (InputStream in = new FileInputStream(file)) {
             byte[] b = new byte[(int) file.length()];
             int n = 0, r;
@@ -86,6 +109,7 @@ final class WellyMemory {
     }
 
     private void save() {
+        if (file == null) return;
         try {
             JSONObject o = new JSONObject();
             JSONArray t = new JSONArray();

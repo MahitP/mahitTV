@@ -3,6 +3,7 @@
 The settings come from config.properties, the same file as the Android build. --generic leaves it out (the GitHub
 release is built that way): no TMDB key, and the TV's time zone picks the city, the currency and the region.
 """
+import hashlib
 import json
 import os
 import re
@@ -15,7 +16,7 @@ import translate  # noqa: E402  (the catalogues and the keys the web app uses)
 
 GENERIC = {'tmdbKey': '', 'tmdbRegion': '', 'latitude': '', 'longitude': '', 'city': '', 'language': 'auto',
            'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': False, 'hideAnimation': False, 'hideApps': [],
-           'shelfApps': [], 'profiles': [], 'geminiKey': '', 'wellyModel': 'gemini-3.8-flash',
+           'shelfApps': [], 'defaultDock': [], 'profiles': [], 'pinSalt': '', 'geminiKey': '', 'wellyModel': 'gemini-3.8-flash',
            'wellyLiteModel': 'gemini-3.5-flash-lite', 'ollamaUrl': '', 'ollamaModel': 'qwen3:8b'}
 
 
@@ -48,6 +49,7 @@ def read_config(path):
             sys.exit('config.properties: %s must be a number (got "%s")' % (key, v))
         return v
 
+    salt = os.urandom(16).hex()   # this build's PIN salt
     return {
         'tmdbKey': values.get('tmdb_key', ''),
         'tmdbRegion': values.get('tmdb_region', 'US') or 'US',
@@ -62,7 +64,11 @@ def read_config(path):
         'hideAnimation': values.get('hide_animation', 'false').lower() == 'true',
         'hideApps': [s.strip() for s in values.get('hide_apps', '').split(',') if s.strip()],
         'shelfApps': [s.strip() for s in values.get('shelf_apps', '').split(',') if s.strip()],
-        'profiles': profiles(values.get('profiles', '')),
+        # default_dock_apps (MAHITTV-PROFILES-SPEC.md §5): each new profile's Dock; shelf_apps is its older name.
+        'defaultDock': [s.strip() for s in (values.get('default_dock_apps', '') or values.get('shelf_apps', '')).split(',')
+                        if s.strip()],
+        'profiles': profiles(values.get('profiles', ''), salt),
+        'pinSalt': salt,
         # Welly (WELLY-HOME-REMOTE-SPEC.md §3.2). The web build can't reach Kasa (no TCP from a page): no kasa key here.
         'geminiKey': values.get('gemini_key', ''),
         'wellyModel': values.get('welly_model', 'gemini-3.8-flash') or 'gemini-3.8-flash',
@@ -72,14 +78,28 @@ def read_config(path):
     }
 
 
-def profiles(text):
-    """profiles=Name:avatar.png,… (avatars in app/assets/avatars) → [{name, avatar}]; empty: the app picks one."""
+def profiles(text, salt):
+    """profiles=id:Name:role:PIN[:avatar],… → [{id, name, role, pin, avatar}] (MAHITTV-PROFILES-SPEC.md §1): the PIN
+    only as sha256(salt + PIN). The old form Name:avatar.png gives a standard profile without a PIN."""
     out = []
     for item in text.split(','):
-        if ':' in item:
-            name, avatar = item.split(':', 1)
-            if name.strip():
-                out.append({'name': name.strip(), 'avatar': avatar.strip()})
+        parts = [p.strip() for p in item.strip().split(':')]
+        if not parts[0]:
+            continue
+        if len(parts) <= 2:
+            name, role, pin, avatar = parts[0], 'standard', '', parts[1] if len(parts) > 1 else ''
+            pid = parts[0]
+        else:
+            pid, name, role = parts[0], parts[1], parts[2]
+            pin = parts[3] if len(parts) > 3 else ''
+            avatar = parts[4] if len(parts) > 4 else ''
+        pid = re.sub(r'[^a-z0-9_-]', '', pid.lower())
+        if role not in ('manager', 'standard', 'guest'):
+            raise SystemExit('config.properties: profiles: role must be manager, standard or guest (got "%s")' % role)
+        if pin and not re.fullmatch(r'[0-9]{4}', pin):
+            raise SystemExit('config.properties: profiles: %s\'s PIN must be 4 digits' % name)
+        out.append({'id': pid, 'name': name, 'role': role, 'avatar': avatar,
+                    'pin': hashlib.sha256((salt + pin).encode('utf-8')).hexdigest() if pin else ''})
     return out
 
 
@@ -104,6 +124,9 @@ def files(config, made_by):
     # Your Memoji, when you dropped app/assets/avatars/memoji.png in: the default profile's avatar.
     memoji = os.path.exists(os.path.join(ROOT, 'app', 'assets', 'avatars', 'memoji.png'))
     config = dict(config, defaultAvatar='memoji.png' if memoji else 'default-1.png')
+    # Your family's avatars by profile id (app/assets/profiles/<id>.png, personal), packed as profiles/<id>.png.
+    own = os.path.join(ROOT, 'app', 'assets', 'profiles')
+    config['profileAvatars'] = sorted(n for n in os.listdir(own) if n.endswith('.png')) if os.path.isdir(own) else []
     web = os.path.join(ROOT, 'web')
     for name in sorted(os.listdir(web)):
         if os.path.isdir(os.path.join(web, name)):
@@ -125,7 +148,7 @@ def files(config, made_by):
             with open(os.path.join(symbols, name), 'rb') as f:
                 out['symbols/' + name] = f.read()
     # The wallpapers (aerials) and the profile avatars (yours too: avatars/memoji.png), shared with the Android app.
-    for folder in ('aerials', 'avatars'):
+    for folder in ('aerials', 'avatars', 'profiles'):
         src = os.path.join(ROOT, 'app', 'assets', folder)
         for name in sorted(os.listdir(src)) if os.path.isdir(src) else []:
             if name.lower().endswith(('.jpg', '.png')):

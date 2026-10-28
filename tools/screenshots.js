@@ -2,7 +2,9 @@
 /*
  * 1920×1080 screenshots of the web home screen (the LG/Samsung build, which follows HomeView) into previews/:
  * light and dark, the Dock focused, the Top Shelf focused, the app grid open, the clock without picks, and the Home and
- * Welly tabs (a light on, an answered prompt).
+ * Welly tabs (a light on, an answered prompt), and mahitTV's profiles: the golden intro, "Who's Watching?", the PIN pad
+ * (mid-entry, a wrong PIN, the unlock), each profile's Dock and Welly's Continue Watching, and Settings' resets.
+ * The home screen shots open index.html?nolock (preview builds only), which skips the intro and the lock.
  * Needs Playwright (npm i playwright; its Chromium). Builds the preview first:
  *     python3 webos/build.py --preview && node tools/screenshots.js
  */
@@ -18,7 +20,7 @@ const SITE = process.env.SITE ? path.resolve(process.env.SITE) : path.join(ROOT,
 const OUT = path.join(ROOT, 'previews');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.json': 'application/json' };
-let PAGE;
+let PAGE, BASE;
 
 /** Served over http, not file://: Chrome won't use file:// images as CSS masks (the symbols). */
 function serve() {
@@ -97,6 +99,99 @@ async function shootHome(browser, shot) {
   return file;
 }
 
+/** mahitTV's profiles in one session, from power-on: web-mahittv-<name>.png. */
+async function shootProfiles(browser) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('shot')) return;
+    try { localStorage.clear(); localStorage.setItem('fmtv.night', 'true'); } catch (e) {}
+    sessionStorage.setItem('shot', '1');
+  });
+  const page = await context.newPage();
+  const files = [];
+  const shot = async (name) => {
+    const file = path.join(OUT, `web-mahittv-${name}.png`);
+    await page.screenshot({ path: file });
+    files.push(file);
+  };
+  const key = async (k, wait) => { await page.keyboard.press(k); await page.waitForTimeout(wait === undefined ? 350 : wait); };
+  const type = async (digits, wait) => { for (const d of digits) await key(d, wait === undefined ? 150 : wait); };
+  await page.goto(BASE);
+  await page.waitForTimeout(1050); await shot('intro');                 // the wordmark mid-sweep, sparks rising
+  await page.waitForTimeout(2200); await shot('whos-watching');         // the manager's card focused
+  await key('ArrowRight', 500); await shot('whos-watching-dhruvin');
+  await key('ArrowLeft', 500);
+  await key('Enter', 700); await type('21', 200); await page.waitForTimeout(250); await shot('pin-entry');
+  await key('9', 80); await key('9', 170); await shot('pin-wrong');      // mid head-shake
+  await page.waitForTimeout(700);
+  await type('212'); await key('3', 640); await shot('unlock');          // the avatar on its way to the pill
+  await page.waitForTimeout(1500); await shot('home-mahit');
+  await page.evaluate('FreeMyTV.lock()'); await page.waitForTimeout(900);
+  await key('ArrowRight', 400); await key('Enter', 700); await type('2013'); await page.waitForTimeout(2200);
+  await shot('home-dhruvin');                                             // Dhruvin's own Dock
+  await page.evaluate('FreeMyTV.lock()'); await page.waitForTimeout(900);
+  await key('ArrowLeft', 400); await key('Enter', 700); await type('2123'); await page.waitForTimeout(2000);
+  await page.evaluate('FreeMyTV.openSettings()'); await page.waitForTimeout(900); await shot('settings');
+  await key('Enter', 700); await shot('settings-profiles');
+  await key('Escape', 500);
+  for (let i = 0; i < 5; i++) await key('ArrowDown', 200);
+  await key('Enter', 700); await shot('settings-reset');
+  await context.close();
+  return files;
+}
+
+/** Welly's Continue Watching for one profile (from the "What am I watching?" pill): web-mahittv-welly-<id>.png. */
+async function shootWelly(browser, id) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(() => {
+    try { localStorage.clear(); localStorage.setItem('fmtv.night', 'true'); } catch (e) {}
+  });
+  const page = await context.newPage();
+  await page.goto(PAGE);
+  await page.waitForTimeout(1500);
+  await page.evaluate((id) => { Profiles.unlock(Profiles.byId(id)); Welly.profileChanged(); }, id);
+  for (const k of [...UP2, 'ArrowRight', 'ArrowRight', 'ArrowDown', 'Enter']) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(450);
+  }
+  await page.waitForTimeout(2500);
+  const file = path.join(OUT, `web-mahittv-welly-${id}.png`);
+  await page.screenshot({ path: file });
+  await context.close();
+  return file;
+}
+
+/** Deterministic canonical bloub poses, then a 1920×1080 2×6 contact sheet. */
+async function shootWellyBloub(browser) {
+  const states = ['idle', 'notify', 'comet', 'orbit', 'wink', 'burst'];
+  const expressions = { idle: 'attentif', notify: 'content', comet: 'concentre', orbit: 'curieux', wink: 'malicieux', burst: 'heureux' };
+  const pose = { idle: 1, notify: .9, comet: 1.15, orbit: 1.2, wink: .8, burst: .45 };
+  const tiles = [];
+  for (const docked of [false, true]) {
+    for (const state of states) {
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+      await context.addInitScript(() => { try { localStorage.clear(); localStorage.setItem('fmtv.night', 'true'); } catch (e) {} });
+      const page = await context.newPage();
+      await page.goto(PAGE); await page.waitForTimeout(1400);
+      for (const key of [...UP2, 'ArrowRight', 'ArrowRight']) { await page.keyboard.press(key); await page.waitForTimeout(280); }
+      if (docked) { await page.evaluate(() => Welly.ask('What am I watching?')); await page.waitForTimeout(1700); }
+      await page.evaluate(({ state, time, docked, expression }) => Welly.previewState(state, time, docked, expression), { state, time: pose[state], docked, expression: expressions[state] });
+      await page.waitForTimeout(40);
+      const file = path.join(OUT, `web-welly-bloub-${state}-${docked ? 'docked' : 'center'}.png`);
+      await page.screenshot({ path: file });
+      tiles.push({ state, expression: expressions[state], docked, file, data: (await page.screenshot()).toString('base64') });
+      await context.close();
+    }
+  }
+  const sheet = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  const cells = tiles.map((t) => `<div class="cell${t.docked ? ' docked' : ''}"><img src="data:image/png;base64,${t.data}"><b>${t.state} · ${t.expression}${t.docked ? ' · docked' : ' · center'}</b></div>`).join('');
+  await sheet.setContent(`<style>*{box-sizing:border-box}html,body{margin:0;background:#090a0c}.grid{display:grid;grid-template-columns:repeat(6,320px);grid-template-rows:repeat(2,540px)}.cell{position:relative;overflow:hidden;border:1px solid #25282d}.cell img{width:960px;height:540px;object-fit:cover;transform:translateX(-320px)}.cell.docked img{transform:translateX(-100px)}b{position:absolute;left:12px;top:12px;padding:7px 11px;border-radius:18px;background:rgba(0,0,0,.68);color:white;font:600 17px -apple-system,sans-serif;text-transform:capitalize}</style><div class="grid">${cells}</div>`);
+  const contact = path.join(OUT, 'web-welly-bloub-states.png');
+  await sheet.screenshot({ path: contact });
+  await sheet.close();
+  return tiles.map((t) => t.file).concat(contact);
+}
+
 async function shoot(browser, theme, [name, keys, noPicks]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await context.addInitScript(({ theme, noPicks }) => {
@@ -125,12 +220,28 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const server = await serve();
-  PAGE = 'http://127.0.0.1:' + server.address().port + '/index.html';
+  BASE = 'http://127.0.0.1:' + server.address().port + '/index.html';
+  PAGE = BASE + '?nolock';
   const browser = await chromium.launch();
+  const only = process.argv[2];   // "profiles" shoots only mahitTV's
+  if (only === 'welly-bloub') {
+    for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
+    await browser.close(); server.close(); return;
+  }
+  if (only === 'profiles') {
+    for (const f of await shootProfiles(browser)) console.log('wrote', path.relative(ROOT, f));
+    for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
+    await browser.close();
+    server.close();
+    return;
+  }
   for (const theme of ['light', 'dark']) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
   for (const shot of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shootHome(browser, shot)));
+  for (const f of await shootProfiles(browser)) console.log('wrote', path.relative(ROOT, f));
+  for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
+  for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
   await browser.close();
   server.close();
 })().catch((e) => { console.error(e); process.exit(1); });

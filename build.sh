@@ -63,6 +63,33 @@ PREVIEW=false; [ "$(prop preview false)" = "true" ] && PREVIEW=true
 # Welly (WELLY-HOME-REMOTE-SPEC.md §3.2) and the Home tab's Kasa devices (§4.2).
 WELLY_MODEL="$(prop welly_model gemini-3.8-flash)"; WELLY_LITE="$(prop welly_lite_model gemini-3.5-flash-lite)"
 OLLAMA_MODEL="$(prop ollama_model qwen3:8b)"
+# Profiles (MAHITTV-PROFILES-SPEC.md §1): id:Name:role:PIN[:avatar],… The PINs never go into the app: each becomes
+# sha256(salt + PIN) with a salt made for this build. The old form Name:avatar.png still works (no PIN).
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then printf '%s' "$1" | sha256sum | cut -d' ' -f1
+  else printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1; fi
+}
+PIN_SALT="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+PROFILES=""
+IFS=',' read -ra ENTRIES <<< "$(prop profiles '')"
+for entry in "${ENTRIES[@]}"; do
+  entry="$(printf '%s' "$entry" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  [ -z "$entry" ] && continue
+  IFS=':' read -r a b c d e <<< "$entry"
+  if [ -z "$c" ]; then   # Name[:avatar.png]
+    id="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"
+    name="$a"; role=standard; pin=""; avatar="$b"
+  else
+    id="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-')"; name="$b"; role="$c"; pin="$d"; avatar="$e"
+  fi
+  case "$role" in manager|standard|guest) ;; *) echo "config.properties: profiles: role must be manager, standard or guest (got \"$role\")" >&2; exit 1 ;; esac
+  if [ -n "$pin" ] && ! [[ "$pin" =~ ^[0-9]{4}$ ]]; then
+    echo "config.properties: profiles: $name's PIN must be 4 digits" >&2; exit 1
+  fi
+  hash=""; [ -n "$pin" ] && hash="$(sha256 "$PIN_SALT$pin")"
+  PROFILES="$PROFILES${PROFILES:+,}$id:$name:$role:$hash:$avatar"
+done
+DEFAULT_DOCK="$(prop default_dock_apps '')"
 
 rm -rf "$OUT" && mkdir -p "$OUT/gen/io/freemytv" "$OUT/classes"
 cat > $OUT/gen/io/freemytv/Config.java <<EOF
@@ -83,7 +110,9 @@ final class Config {
     static final String TEMPERATURE = "$(prop temperature auto)";
     static final String HIDE_SERVICES = "$(prop hide_services '')";
     static final String THEME = "$(prop theme auto)";
-    static final String PROFILES = "$(prop profiles '')";   // Name:avatar.png pairs (assets/avatars), Profiles
+    static final String PROFILES = "$PROFILES";   // id:Name:role:sha256(PIN_SALT+PIN):avatar,… (ProfileManager)
+    static final String PIN_SALT = "$PIN_SALT";
+    static final String DEFAULT_DOCK = "$DEFAULT_DOCK";   // packages: each new profile's Dock, in order
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;

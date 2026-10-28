@@ -786,7 +786,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     boolean watch() {
         Recs.Pick p = watchable();
         if (p == null) return false;
-        boolean opened = HomeApps.open(getContext(), HomeApps.app(p.pkg, Recs.serviceName(p), p.link), null);
+        boolean opened = HomeApps.open(getContext(), HomeApps.app(p), null);
         if (!opened) AppLog.w("screensaver: couldn't open “" + p.title + "” in " + p.pkg);
         return opened;
     }

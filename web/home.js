@@ -811,10 +811,19 @@
     lens.shine = el('span', 'shine', lens);
     for (var i = 0; i < names.length; i++) {
       var tab = el('span', 'tab', bar, names[i]);
+      if (i === 2 && window.WellyBot) drawWellyMini(tab);
       hover(tab, Z.TABS, i);
       fxTabs.push(new Fx(tab, {grow: 0.06}));
     }
     placeLens(true);
+  }
+
+  function drawWellyMini(tab) {
+    tab.textContent='';var canvas=el('canvas','welly-mini',tab),c=canvas.getContext&&canvas.getContext('2d'),p=WellyBot.profiles.galet,i,a,r;el('span','welly-label',tab,'Welly');
+    canvas.width=40;canvas.height=40;if(!c)return;c.translate(20,20);c.scale(16,16);c.beginPath();
+    for(i=0;i<64;i++){a=i*Math.PI*2/64;r=p[i];if(i)c.lineTo(Math.cos(a)*r,Math.sin(a)*r);else c.moveTo(Math.cos(a)*r,Math.sin(a)*r);}c.closePath();c.fillStyle=WellyBot.COLOR;c.fill();
+    c.save();c.globalCompositeOperation='destination-out';c.save();c.translate(-.18,-.05);c.rotate(-.25);c.scale(.09,.22);c.beginPath();c.arc(0,0,1,0,Math.PI*2);c.fill();c.restore();c.save();c.translate(.18,-.08);c.rotate(-.25);c.scale(.09,.22);c.beginPath();c.arc(0,0,1,0,Math.PI*2);c.fill();c.restore();c.restore();
+    c.fillStyle=WellyBot.NOTIF_BLUE;c.beginPath();c.arc(.76,-.68,.16,0,Math.PI*2);c.fill();c.save();c.globalCompositeOperation='destination-out';c.beginPath();c.arc(.65,-.56,.09,0,Math.PI*2);c.fill();c.restore();
   }
 
   /** The lens's target: under the selected tab. */
@@ -898,18 +907,12 @@
     renderPill();
   }
 
-  /** The profiles: profiles= in config.properties (avatars in app/assets/avatars), else one with your memoji.png. */
-  function people() {
-    var list = CONFIG.profiles && CONFIG.profiles.length ? CONFIG.profiles : [{name: tr('Me'), avatar: CONFIG.defaultAvatar || 'default-1.png'}];
-    return list;
-  }
+  /** The profiles (profiles.js): profiles= in config.properties, else a default one and Guest. */
+  function people() { return Profiles.all(); }
 
-  function person() {
-    var list = people();
-    return list[Math.max(0, Math.min(list.length - 1, Prefs.profile()))];
-  }
+  function person() { return Profiles.current(); }
 
-  function avatarUrl(p) { return 'url(avatars/' + p.avatar + ')'; }
+  function avatarUrl(p) { return 'url(' + Profiles.avatarUrl(p) + ')'; }
 
   /** The status pill: the time, then the current profile's avatar; the quotes (or what's playing) left of it. */
   function renderPill() {
@@ -989,10 +992,16 @@
     }
   }
 
-  /** A bundled aerial-style wallpaper (a new one each hour), with nothing over it. */
+  /** The profile's wallpaper (Settings → Appearance), else a bundled aerial, a new one each hour. */
+  function wallpaperUrl() {
+    var own = Prefs.wallpaper();
+    return 'aerials/' + (own || AERIALS[Math.floor(Date.now() / 3600000) % AERIALS.length] + '.jpg');
+  }
+
+  /** The wallpaper, with nothing over it. */
   function showWallpaper() {
     setClass(body, 'wallpaper', true);
-    var url = 'aerials/' + AERIALS[Math.floor(Date.now() / 3600000) % AERIALS.length] + '.jpg';
+    var url = wallpaperUrl();
     photo(url);
     backdrop(url);
   }
@@ -1268,19 +1277,24 @@
     killFx(fxKeys);
     killFx(fxWho);
     drawerItems = [];
-    for (var i = 0; i < inputs.length; i++) {
+    var fixed = [
+      {label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }},
+      {label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }},
+      {label: tr('Lock'), glyph: 'glyph-lock', run: lockNow}
+    ];
+    if (TV.canOpenSettings) fixed.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
+    for (var i = 0; i < inputs.length && drawerItems.length < 8 - fixed.length; i++) {
       var x = inputs[i];
-      drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label)});
+      drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label, null, true)});
     }
     drawerInputs = drawerItems.length;
-    drawerItems.push({label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }});
-    drawerItems.push({label: tr('Home Settings'), symbol: 'settings', run: openSettings});
-    if (TV.canOpenSettings) drawerItems.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
-    // Profiles first, as on tvOS: the avatars, the current one ringed; OK switches.
-    var row = el('div', 'profiles', d), list = people(), P = list.length;
+    drawerItems = drawerItems.concat(fixed);
+    // Profiles first, as on tvOS: the avatars, the current one ringed; OK opens the lock on that profile.
+    var row = el('div', 'profiles' + (people().length > 4 ? ' many' : ''), d), list = people(), P = list.length;
+    var step = P > 4 ? Math.floor((464 - 88) / (P - 1)) : 116;   // five or more: smaller faces, spread over the width
     for (var w = 0; w < P; w++) {
-      var who = el('div', 'who' + (list[w] === person() ? ' on' : ''), row);
-      who.style.left = (w * 116) + 'px';
+      var who = el('div', 'who' + (list[w].id === person().id ? ' on' : ''), row);
+      who.style.left = (w * step) + 'px';
       var faceEl = el('span', 'face', who);
       faceEl.style.backgroundImage = avatarUrl(list[w]);
       el('span', 'name', who, list[w].name);
@@ -1293,7 +1307,8 @@
       var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : ''), d);
       key.style.left = (k % 2) * 240 + 'px';
       key.style.top = (148 + Math.floor(k / 2) * 136) + 'px';
-      sym(item.symbol, key);
+      if (item.glyph) el('span', item.glyph, key);
+      else sym(item.symbol, key);
       el('div', 'label', key, item.label);
       hover(key, Z.DRAWER, P + k);
       fxKeys.push(new Fx(key, {grow: 0.06}));
@@ -1347,7 +1362,7 @@
     if (!drawerItems.length) return;
     drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
-    st.drawer = Math.max(0, Math.min(people().length - 1, Prefs.profile()));
+    st.drawer = Profiles.index();
     renderPill();
     updateFocus();
   }
@@ -1404,20 +1419,89 @@
     updateFocus();
   }
 
-  // MARK: - Home Settings
+  // MARK: - Home Settings: the sections of MAHITTV-PROFILES-SPEC.md §6, each a list of rows
+
+  var settingsSection = null, sectionRow = 0;
+
+  function sections() {
+    return [
+      {id: 'profiles', label: tr('Profiles & PINs'), rows: profileRows},
+      {id: 'look', label: tr('Appearance & Startup'), rows: lookRows},
+      {id: 'place', label: tr('Location & Media'), rows: placeRows},
+      {id: 'welly', label: tr('Welly'), rows: wellyRows},
+      {id: 'system', label: tr('System'), rows: systemRows},
+      {id: 'reset', label: tr('Reset & Restore'), rows: resetRows}
+    ];
+  }
+
+  function section(id) {
+    var list = sections();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
 
   function settingRows() {
-    var unit = Prefs.temperature(), theme = Prefs.theme();
-    var auto = tr('Automatic'), picked = pickedLanguage();
-    var rows = [
-      {label: tr('Language'), value: picked === 'auto' ? auto : I18N.languageName(picked), opens: true, language: true,
-        step: function (d) { if (d >= 0) openLanguages(); }},
-      {label: tr('Temperature'), value: unit === 'C' ? '°C' : unit === 'F' ? '°F' : tr('unit|Automatic'),
-        step: function (d) { cycle('temperature', ['auto', 'C', 'F'], unit, d); renderPanels(); }},
+    var s = section(settingsSection);
+    if (s) return s.rows();
+    return sections().map(function (x, i) {
+      return {label: x.label, value: '›', step: function (d) { if (d >= 0) enterSection(x.id, i); }};
+    });
+  }
+
+  function enterSection(id, i) {
+    settingsSection = id;
+    sectionRow = i;
+    st.row = 0;
+    renderSettings();
+  }
+
+  function leaveSection() {
+    settingsSection = null;
+    st.row = sectionRow;
+    renderSettings();
+  }
+
+  function status(on) { return on ? tr('status|Set') : tr('status|Not set'); }
+
+  function profileRows() {
+    var me = person(), rows = [];
+    rows.push({label: tr('Profile'), value: me.name, opens: true,
+      step: function (d) { if (d >= 0) showLock({from: 'switch', cancel: true}); }});
+    rows.push({label: tr('Lock'), value: '›', step: function (d) { if (d >= 0) lockNow(); }});
+    rows.push({label: tr('Change PIN'), value: '›', dim: me.role === 'guest', step: function (d) { if (d >= 0) changeOwnPin(); }});
+    // The manager sets or removes everyone else's PIN (with the manager's PIN): OK or → sets, ← removes.
+    if (me.role === 'manager') {
+      people().forEach(function (p) {
+        if (p.id === me.id || p.role === 'guest') return;
+        rows.push({label: trf("{name}'s PIN", {name: p.name}), value: status(Profiles.needsPin(p)),
+          step: function (d) { if (d < 0) removePin(p); else setPinFor(p); }});
+      });
+    }
+    return rows;
+  }
+
+  function lookRows() {
+    var theme = Prefs.theme(), auto = tr('Automatic'), wall = Prefs.wallpaper(), name = wall.replace(/\.jpg$/, '');
+    var names = {valley: tr('Valley'), coast: tr('Coast'), earth: tr('Earth'), aurora: tr('Aurora')};
+    return [
       {label: tr('Theme'), value: theme === 'light' ? tr('Light') : theme === 'dark' ? tr('Dark') : auto,
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
-      {label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
-        step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }},
+      {label: tr('Wallpaper'), value: wall ? names[name] || name : auto,
+        step: function (d) {
+          cycle('wallpaper', [''].concat(AERIALS.map(function (a) { return a + '.jpg'; })), wall, d);
+          follow();
+        }},
+      {label: tr('Startup animation & chime'), toggle: Prefs.intro(),
+        step: function () { Prefs.set('intro', !Prefs.intro()); }}
+    ];
+  }
+
+  function placeRows() {
+    var unit = Prefs.temperature();
+    var rows = [
+      {label: tr('City'), value: Data.city || tr('Unavailable'), fixed: true, step: function () {}},
+      {label: tr('Temperature'), value: unit === 'C' ? '°C' : unit === 'F' ? '°F' : tr('unit|Automatic'),
+        step: function (d) { cycle('temperature', ['auto', 'C', 'F'], unit, d); renderPanels(); }},
       {label: tr('Weather widget'), toggle: Prefs.weather(),
         step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
       {label: tr('Forecast'), value: Prefs.forecast() === 'days' ? tr('Next days') : tr('Next hours'),
@@ -1433,10 +1517,96 @@
           step: function () { if (Prefs.quotes()) { Prefs.setCoin(i, !Prefs.coin(i)); Data.settingsChanged(); } }});
       })(i);
     }
-    rows.push({label: tr('Shelf'), value: '›', shelf: true, step: function (d) { if (d >= 0) openShelfEdit(); }});
-    rows.push({label: tr('About this TV'), value: '›', about: true, step: function (d) { if (d >= 0) openAbout(); }});
+    rows.push({label: tr('TMDB key'), value: status(!!CONFIG.tmdbKey), fixed: true, step: function () {}});
+    return rows;
+  }
+
+  function wellyRows() {
+    var me = person(), host = (CONFIG.ollamaUrl || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    return [
+      {label: tr('Gemini key'), value: status(!!CONFIG.geminiKey), fixed: true, step: function () {}},
+      {label: tr('Ollama'), value: host || tr('status|Not set'), fixed: true, step: function () {}},
+      {label: trf("Clear Welly's memory for {name}", {name: me.name}), value: '›', dim: me.role === 'guest',
+        step: function (d) {
+          if (d < 0 || me.role === 'guest') return;
+          Profiles.clearLog();
+          if (window.Welly && Welly.clearMemory) Welly.clearMemory();
+          toast(trf("Cleared Welly's memory for {name}.", {name: me.name}));
+        }}
+    ];
+  }
+
+  function systemRows() {
+    var picked = pickedLanguage();
+    var rows = [
+      {label: tr('Language'), value: picked === 'auto' ? tr('Automatic') : I18N.languageName(picked), opens: true, language: true,
+        step: function (d) { if (d >= 0) openLanguages(); }},
+      {label: tr('Dock'), value: '›', shelf: true, step: function (d) { if (d >= 0) openShelfEdit(); }},
+      {label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
+        step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }},
+      {label: tr('About this TV'), value: '›', about: true, step: function (d) { if (d >= 0) openAbout(); }}
+    ];
     if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }});
     return rows;
+  }
+
+  function resetRows() {
+    return [
+      {label: tr('Reset mahitTV Data'), value: '›', step: function (d) { if (d >= 0) resetData(); }},
+      {label: tr('Restore Original TV'), value: tr('Google TV only'), fixed: true, dim: true,
+        step: function () { toast(tr('Restore Original TV is on Google TV only.')); }}
+    ];
+  }
+
+  // MARK: - PINs from Settings (the PIN pad of lock.js over the sheet)
+
+  /** The manager's PIN first (when the manager has one), then `then`. */
+  function withManager(then) {
+    var m = Profiles.manager();
+    if (!Profiles.needsPin(m)) { then(); return; }
+    Lock.ask({title: trf("Enter {name}'s PIN", {name: m.name}), profile: m,
+      verify: function (d) { return Profiles.checkPin(m, d); }, done: function () { then(); }});
+  }
+
+  /** A new PIN for p, twice; then `done`. */
+  function askNewPin(p, done) {
+    Lock.ask({title: trf('New PIN for {name}', {name: p.name}), profile: p, done: function (first) {
+      Lock.ask({title: tr('Enter the new PIN again'), profile: p,
+        verify: function (again) { return again === first; },
+        done: function () { Profiles.setPin(p, first); Lock.close(); done(); }});
+    }});
+  }
+
+  function changeOwnPin() {
+    var me = person();
+    if (me.role === 'guest') { toast(tr('Guest has no PIN.')); return; }
+    function next() { askNewPin(me, function () { toast(tr('PIN changed.')); renderSettings(); }); }
+    if (!Profiles.needsPin(me)) { next(); return; }
+    Lock.ask({title: tr('Enter your current PIN'), profile: me, verify: function (d) { return Profiles.checkPin(me, d); }, done: next});
+  }
+
+  function setPinFor(p) {
+    withManager(function () { askNewPin(p, function () { toast(trf('PIN set for {name}.', {name: p.name})); renderSettings(); }); });
+  }
+
+  function removePin(p) {
+    if (!Profiles.needsPin(p)) return;
+    withManager(function () {
+      Profiles.setPin(p, '');
+      Lock.close();
+      toast(trf('PIN removed for {name}.', {name: p.name}));
+      renderSettings();
+    });
+  }
+
+  /** Reset mahitTV Data (the manager's PIN): every profile's settings, Dock, PIN, watch log and Welly memory, then the lock. */
+  function resetData() {
+    withManager(function () {
+      Lock.close();
+      if (window.Welly && Welly.resetAll) Welly.resetAll();
+      Profiles.resetAll();
+      location.reload();
+    });
   }
 
   function cycle(name, values, current, d) {
@@ -1447,32 +1617,35 @@
   var rowsNow = [];
 
   function renderSettings() {
-    var box = $('settings').firstChild;
+    var box = $('settings').firstChild, s = section(settingsSection);
     box.innerHTML = '';
     var title = el('div', 'title', box);
     sym('settings', title);
-    title.appendChild(document.createTextNode(tr('Home Settings')));
+    title.appendChild(document.createTextNode(s ? s.label : tr('Home Settings')));
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
     rowsNow = settingRows();
+    st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row));
     list.style.height = Math.min(rowsNow.length, 7) * 78 + 'px';
     for (var i = 0; i < rowsNow.length; i++) {
       var r = rowsNow[i], row = el('div', 'row' + (r.dim ? ' dim' : ''), holder, r.label);
       if (r.toggle !== undefined) setClass(el('div', 'toggle', row), 'on', r.toggle);
       else {
         var v = el('span', 'value', row);
-        if (r.value === '›') v.textContent = '›';
+        if (r.value === '›' || r.fixed) v.textContent = r.value;
         else if (r.opens) { v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
         else { el('span', 'chev', v, '‹'); v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
       }
       hover(row, Z.SETTINGS, i);
     }
-    el('div', 'hint', box, tr('OK or the arrows change the value.'));
+    var manager = settingsSection === 'profiles' && person().role === 'manager';
+    el('div', 'hint', box, manager ? tr('OK sets a PIN. ← removes it.') : s ? tr('OK or the arrows change the value.') : tr('Back closes.'));
     updateFocus();
   }
 
-  function openSettings() {
+  /** From Control Center: the sections. keep: back from Language, About or the Dock, in the same section. */
+  function openSettings(keep) {
     st.zone = Z.SETTINGS;
-    st.row = 0;
+    if (!keep) { settingsSection = null; st.row = 0; }
     renderSettings();
     setClass($('settings'), 'open', true);
     updateFocus();
@@ -1526,7 +1699,7 @@
       renderAll();
       Data.refresh();   // the picks' titles and genres come in the new language
     }
-    openSettings();
+    openSettings(true);
     for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].language) st.row = i;
     updateFocus();
   }
@@ -1540,7 +1713,7 @@
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
     var rows = [
       [tr('Model'), info && info.model], [tr('Firmware'), info && info.firmware], [tr('System'), info && info.system],
-      [tr('IP address'), info && info.ip], [tr('Time zone'), TV.zone()], ['Free My TV', info && info.version]
+      [tr('IP address'), info && info.ip], [tr('Time zone'), TV.zone()], ['mahitTV', info && info.version]
     ];
     for (var i = 0; i < rows.length; i++) {
       var row = el('div', 'row', holder), label = el('span', '', row, rows[i][0]);
@@ -1567,7 +1740,7 @@
 
   function closeAbout() {
     setClass($('about'), 'open', false);
-    openSettings();
+    openSettings(true);
     for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].about) st.row = i;
     updateFocus();
   }
@@ -1588,7 +1761,7 @@
     box.innerHTML = '';
     var title = el('div', 'title', box);
     sym('apps', title);
-    title.appendChild(document.createTextNode(tr('Shelf')));
+    title.appendChild(document.createTextNode(tr('Dock')));
     var list = el('div', 'list', box), holder = el('div', 'rows', list);
     list.style.height = Math.min(e.rows.length, 7) * 78 + 'px';
     for (var i = 0; i < e.rows.length; i++) {
@@ -1633,8 +1806,16 @@
 
   // MARK: - Opening things
 
-  function launcher(id, name) {
+  /**
+   * Opens an app; `pick` (a Top Shelf title) goes into the profile's watch log with it, a plain app with no title.
+   * `quiet`: not logged (an input).
+   */
+  function launcher(id, name, pick, quiet) {
     return function () {
+      if (!quiet) {
+        Profiles.touch();
+        Profiles.launched(pick ? pick.title : '', pick && pick.kind ? pick.id : 0, pick ? pick.kind || '' : '', name || id, id);
+      }
       TV.launch(id, null, function (ok) {
         if (!ok) toast(trf("Couldn't open {app}.", {app: name || id}));
       });
@@ -1691,16 +1872,16 @@
         return;
       case Z.HERO:
         var p = cards[st.page], app = p && Data.appFor(p.app);
-        if (app) { launchMotion(fxWatch); launcher(app.id, app.title)(); }
+        if (app) { launchMotion(fxWatch); launcher(app.id, app.title, p)(); }
         return;
       case Z.SHELF:
         if (shelf[st.shelf]) { launchMotion(fxTiles[st.shelf]); launcher(shelf[st.shelf].id, shelf[st.shelf].title)(); }
         return;
       case Z.DRAWER:
-        if (st.drawer < people().length) {   // a profile: switch to it
-          Prefs.set('profile', st.drawer);
-          renderPill();
-          renderDrawer();
+        if (st.drawer < people().length) {   // a profile: the lock on it (its PIN first, when it has one)
+          var who = people()[st.drawer];
+          closeDrawer();
+          if (who.id !== person().id) showLock({profile: who, pin: true, cancel: true, from: 'switch'});
           return;
         }
         if (drawerItems[st.drawer - people().length]) drawerItems[st.drawer - people().length].run();
@@ -1822,12 +2003,13 @@
   function back() {
     if (st.zone === Z.EDIT) {
       setClass($('shelfedit'), 'open', false);
-      openSettings();
+      openSettings(true);
       for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].shelf) st.row = i;   // back on the Shelf row, whatever follows it
       updateFocus();
       return;
     }
     if (st.zone === Z.LANG) { closeLanguages(false); return; }
+    if (st.zone === Z.SETTINGS && settingsSection) { leaveSection(); return; }
     if (st.zone === Z.ABOUT) { closeAbout(); return; }
     if (sheetOpen()) { closeSheets(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
@@ -1961,8 +2143,59 @@
     if (!saverOn) return false;
     var app = ok && saverPick && Prefs.saverWatch() && Data.appFor(saverPick.app);
     hideSaver(true);
-    if (app) launcher(app.id, app.title)();
+    if (app) launcher(app.id, app.title, saverPick)();
     return true;
+  }
+
+  // MARK: - The lock and the profiles (lock.js, profiles.js)
+
+  /** The lock over everything: o.from ('intro', 'idle', 'lock', 'switch'), o.profile, o.pin, o.cancel (see lock.js). */
+  function showLock(o) {
+    o = o || {};
+    hideSaver();
+    if (o.from !== 'switch') {
+      closeSheets();
+      if (st.zone === Z.DRAWER) closeDrawer();
+    }
+    o.wallpaper = wallpaperUrl();
+    Lock.show(o);
+  }
+
+  /** Control Center's Lock card (and Settings → Profiles & PINs → Lock). */
+  function lockNow() {
+    if (st.zone === Z.DRAWER) closeDrawer();
+    Profiles.lock();
+    showLock({from: 'lock'});
+  }
+
+  /** In, as `p`: the home screen becomes theirs (Dock, theme, wallpaper, Welly) and the TV tab unfolds. */
+  function unlocked(p) {
+    touchedAt = Date.now();
+    idleAt = Date.now();
+    hideSaver();
+    closeSheets();
+    st.zone = Z.SHELF;
+    st.tab = TAB.TV;
+    st.shelf = 0;
+    st.page = 0;
+    pickShelf();
+    renderShelf();
+    renderDrawer();
+    renderPill();
+    checkNight();
+    follow();
+    if (window.Welly && Welly.profileChanged) Welly.profileChanged();
+    if (!Motion.instant) { mv.wake.snap(1); mv.wake.set(0); }   // the page settles from 0.98 as the lock lifts
+    updateFocus();
+  }
+
+  /** The last use, for the 10-minute grace (written at most every 5 s). */
+  var touchedAt = 0;
+  function touch() {
+    var now = Date.now();
+    if (now - touchedAt < 5000) return;
+    touchedAt = now;
+    Profiles.touch();
   }
 
   // MARK: - Keys
@@ -1973,6 +2206,12 @@
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, now = Date.now();
+    // The intro and the lock take every key while they show.
+    if (Intro.showing()) { Intro.key(k); e.preventDefault(); return; }
+    if (Lock.showing()) { idleAt = now; if (Lock.key(e)) e.preventDefault(); return; }
+    // Away longer than the grace: the lock first (the screensaver goes with it).
+    if (Profiles.needsLock()) { e.preventDefault(); showLock({from: 'idle'}); return; }
+    touch();
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
     if (launching) endLaunch(true);
     // Welly's text field has the keyboard: the field keeps the letters and the ← →, Welly takes OK and ↑ ↓ Back.
@@ -2083,6 +2322,7 @@
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
     if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate();
     reset();
+    if (Profiles.needsLock() && !Intro.showing() && !Lock.showing()) showLock({from: 'idle'});
     loadApps(function () { renderShelf(); renderDrawer(); Data.refresh(); });
   }
 
@@ -2093,9 +2333,11 @@
     if (document.hidden) { hideSaver(); return; }
     idleAt = Date.now();
     endLaunch(true);   // back from the app: the page is in place again
+    if (Profiles.needsLock() && !Intro.showing() && !Lock.showing()) showLock({from: 'idle'});
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
   });
 
+  Profiles.seedPreview();   // preview builds: Mahit's and Dhruvin's sample Docks and watch logs, before anything draws
   I18N.set(Prefs.language());
   checkNight();   // now, from the last forecast: not after the TV lists its apps, with the day look until then
   // LG's screensaver waits only when ours will show: not under a sheet (ours waits there), and not without photos.
@@ -2109,7 +2351,7 @@
       name: function () { return person().name; },
       appNames: function () { return apps.map(function (a) { return a.title; }); },
       launch: onApp,
-      openPick: function (p) { var app = Data.appFor(p.app); if (app) launcher(app.id, app.title)(); }
+      openPick: function (p) { var app = Data.appFor(p.app); if (app) launcher(app.id, app.title, p)(); }
     });
   }
   tickClock();
@@ -2117,6 +2359,14 @@
     renderAll();
     Data.refresh();
   });
+  // Power-on: the golden intro, dissolving into "Who's Watching?" (preview builds skip both with ?nolock).
+  Lock.init($('lock'), {onUnlock: unlocked});
+  if (window.PREVIEW_PICKS && /[?&]nolock\b/.test(location.search)) {
+    Intro.skip($('intro'));
+    Profiles.unlock(Profiles.current());
+  } else {
+    Intro.play($('intro'), function () { showLock({from: 'intro'}); });
+  }
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {
     if (!saverOn && st.zone === Z.SHELF && st.tab === TAB.TV) page(1);   // the focused app's picks, when it has several
@@ -2124,12 +2374,13 @@
   setInterval(function () {
     checkNight();
     Data.refresh();
-    if (!saverOn && !sheetOpen() && Date.now() - idleAt > SAVER_AFTER) showSaver();
+    if (!saverOn && !sheetOpen() && !Lock.showing() && !Intro.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
     if (saverOn) tickSaverClock($('saver').querySelector('.clock'));
   }, 30000);
 
   // For the browser preview and tests.
   window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
+    lock: lockNow, showLock: showLock, openSettings: openSettings,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
     nowPlaying: nowPlaying};

@@ -33,7 +33,7 @@
     on: tr('Flipping through the channels…'),
     other: tr('Thinking it over…')
   };
-  var TOOL_STATUS = {weather: 'weather', search_titles: 'titles', open_title: 'titles', recap: 'titles', cast_crossref: 'titles',
+  var TOOL_STATUS = {continue_watching: 'titles', weather: 'weather', search_titles: 'titles', open_title: 'titles', recap: 'titles', cast_crossref: 'titles',
     scores: 'scores', lights: 'lights', scene: 'lights', whats_on: 'on'};
   var PILL_TOOL = {'watching': 'whats_playing', 'movie-mode': 'lights', 'scores': 'scores', 'weather': 'weather', 'tonight': 'whats_on', 'roast': 'search_titles'};
 
@@ -57,6 +57,14 @@
   var nudgeX = true, pressAt = 0, seconds = 0, orbPhase = 0, ringPhase = 0, nodeAngle = 0, orbX = MID, orbY = ORB_Y;
   var words = [], shownWords = 0, revealAt = 0, flying = false, flyFrom = null, orbCtx = null, orbDrawn = false;
   var grads = null, everySpring = [dock, listenS, think, speak, level, press, nudge, pillScroll, askFocus];
+  var bot = new WellyBot.Engine(), botFrame = new WellyBot.Frame(), botStateAt = 0, montageAt = -1, workStep = 0, idleExpression = -1;
+  var montage = [
+    ['idle','attentif'],['notify','content'],['comet','concentre'],['orbit','curieux'],
+    ['burst','heureux'],['wink','malicieux'],['play','love'],['wide','surpris'],
+    ['swirl','sceptique'],['sleep','endormi'],['exclaim','fache'],['egg','triste'],
+    ['hexagon','fier'],['alert','panique'],['thinking','blase'],['wink','clin']
+  ];
+  var workMontage = [['comet','concentre'],['orbit','curieux'],['swirl','sceptique']];
 
   function el(tag, cls, parent, text) {
     var e = document.createElement(tag);
@@ -75,6 +83,75 @@
   }
 
   function preview() { return !!window.PREVIEW_PICKS && !CONFIG.geminiKey && !CONFIG.ollamaUrl; }
+
+  // MARK: - Who's watching (MAHITTV-PROFILES-SPEC.md §4): Welly knows the profile in use and only its own history.
+
+  function profile() {
+    if (window.Profiles) return Profiles.current();
+    return {id: 'me', name: opts ? opts.name() : '', role: 'manager'};
+  }
+  function isGuest() { return profile().role === 'guest'; }
+  function store() { return window.Profiles ? Profiles.store() : null; }
+
+  /** This profile's chat turns (the last 20); Guest's live in memory only (Profiles keeps its store in memory). */
+  function loadHistory() {
+    var st = store(), h = st ? st.get('wellyHistory', []) : [];
+    return h && h.length ? h.slice(-20) : [];
+  }
+  function saveHistory() {
+    var st = store();
+    if (st) st.set('wellyHistory', history.slice(-20));
+  }
+
+  /** The profile's watch log, newest first (empty for Guest). */
+  function watchLog() { return window.Profiles && !isGuest() ? Profiles.log() : []; }
+
+  function minutes(ms) { return Math.max(1, Math.round(ms / 60000)); }
+
+  /** When it was opened, for the card: "12 min ago", "3 h ago", else the weekday. */
+  function since(at) {
+    var d = Date.now() - at;
+    if (d < 3600000) return trf('{n} min ago', {n: minutes(d)});
+    if (d < 86400000) return trf('{n} h ago', {n: Math.max(1, Math.round(d / 3600000))});
+    return window.Data && Data.weekday ? Data.weekday(at) : '';
+  }
+
+  /** A log entry's sample pick (preview art), by TMDB id or title. */
+  function pickOf(e) {
+    var picks = window.PREVIEW_PICKS || [];
+    for (var i = 0; i < picks.length; i++) if ((e.tmdb && picks[i].id === e.tmdb) || picks[i].title === e.title) return picks[i];
+    return null;
+  }
+
+  /** "41 min left", "65% watched", or "Opened 3 h ago". */
+  function progressLine(e) {
+    if (e.dur > 0 && e.pos > 0) {
+      var left = e.dur - e.pos;
+      if (left > 60000 && e.pos / e.dur < 0.95) return trf('{n} min left', {n: minutes(left)});
+      return trf('{p}% watched', {p: Math.round(100 * Math.min(1, e.pos / e.dur))});
+    }
+    return trf('Opened {when}', {when: since(e.at)});
+  }
+
+  /** Continue watching: a line in Welly's voice about the newest entry, and a card for each of the last six. */
+  function continueWatching() {
+    if (isGuest()) return {reply: tr('Guest Mode: no history here, so watch whatever guilty pleasure you want.'), cards: [], titles: []};
+    var log = watchLog(), list = [], titles = [];
+    if (!log.length) return {reply: tr('Nothing yet. Open something and I’ll keep your place.'), cards: [], titles: []};
+    for (var i = 0; i < log.length && i < 6; i++) {
+      var e = log[i];
+      list.push({type: 'watch', entry: e, pickData: pickOf(e)});
+      titles.push({title: e.title, app: e.app, minutesIn: e.pos ? minutes(e.pos) : 0, minutesLeft: e.dur && e.pos ? minutes(e.dur - e.pos) : 0, opened: since(e.at)});
+    }
+    var top = log[0], reply;
+    if (top.dur > 0 && top.pos > 0 && top.pos / top.dur >= 0.9) reply = trf('{title}: {n} minutes left. You’re so close, finish it.', {title: top.title, n: minutes(top.dur - top.pos)});
+    else if (top.pos > 0) reply = trf('You were {n} minutes into {title}. Bold of you to stop there.', {n: minutes(top.pos), title: top.title});
+    else reply = trf('Last thing you opened was {title} on {app}. Want back in?', {title: top.title, app: top.app});
+    return {reply: reply, cards: list, titles: titles};
+  }
+
+  /** Words that mean "continue watching" (and the "What am I watching?" pill). */
+  var CONTINUE = /what am i watching|continue watching|pick up where|where i left off|resume|keep watching/i;
   function lerp(a, b, t) { return a + (b - a) * t; }
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
   function opacity(node, a) { node.style.opacity = a > 0.999 ? '' : String(Math.round(a * 1000) / 1000); }
@@ -87,6 +164,7 @@
     els.orb.width = ORB_SIZE;
     els.orb.height = ORB_SIZE;
     orbCtx = els.orb.getContext && els.orb.getContext('2d');
+    pointer(els.orb, 'bot', 0);
     grads = null;
     // The lines under the orb: each a pair of slots, so a change crossfades.
     els.lines = el('div', 'lines', root);
@@ -137,7 +215,7 @@
   }
 
   function renderWho() {
-    var line = 'Welly  ·  ' + (MOODS[mood] || mood);
+    var line = 'Welly  ·  ' + (isGuest() ? tr('Guest Mode') : (MOODS[mood] || mood));
     if (preview()) line += '  ·  ' + tr('Preview');
     els.who.textContent = line;
     els.whoW = els.who.offsetWidth || 300;
@@ -166,7 +244,11 @@
     var c, b = '', big = false;
     if (listening) c = (els.field.value || '') || tr('Listening…');
     else if (thinkingNow) { c = userWords; b = els.status || STATUS.other; }
-    else if (!userWords) { c = trf('Hey {name}.', {name: opts.name()}); big = true; b = tr('Ask me anything, or pick one below.'); }
+    else if (!userWords) {
+      c = trf('Hey {name}.', {name: profile().name || opts.name()});
+      big = true;
+      b = isGuest() ? tr('Guest Mode · nothing is saved') : tr('Ask me anything, or pick one below.');
+    }
     else c = userWords;
     swap(els.centre, 'centreAt', c, big);
     swap(els.below, 'belowAt', b, false);
@@ -186,13 +268,13 @@
   // MARK: - Focus
 
   function rows() {
-    var out = [];
+    var out = ['bot'];
     if (cards.length) out.push('cards');
     out.push('pills', 'input');
     return out;
   }
 
-  function size(r) { return r === 'cards' ? cards.length : r === 'pills' ? pills.length : 2; }
+  function size(r) { return r === 'bot' ? 1 : r === 'cards' ? cards.length : r === 'pills' ? pills.length : 2; }
 
   function paint() {
     var i;
@@ -207,6 +289,7 @@
     setOn(els.mic, focused && row === 'input' && index === 0);
     setOn(els.ask, focused && row === 'input' && index === 1);
     askFocus.set(focused && row === 'input' && index === 1 ? 1 : 0);
+    setOn(els.orb, focused && row === 'bot');
     // The pills scroll only as far as it takes to show the focused one, as a tvOS row does.
     if (row === 'pills' && pills[index]) {
       var left = pills[index].node.offsetLeft, width = pills[index].node.offsetWidth, x = pillScroll.to;
@@ -267,7 +350,23 @@
     var box = el('div', 'card ' + c.type, els.cards);
     box.style.opacity = '0';
     pointer(box, 'cards', i);
-    if (c.type === 'media') {
+    if (c.type === 'watch') {
+      var e = c.entry, pk = c.pickData;
+      box.className = 'card media watch';
+      if (pk) {
+        box.style.backgroundImage = 'url(' + pk.backdrop + ')';
+      } else {
+        box.className += ' plain';
+        el('div', 'app', box, e.app || '');
+      }
+      el('div', 'scrim', box);
+      el('div', 't', box, e.title || e.app);
+      el('div', 'm', box, [e.app, progressLine(e)].filter(Boolean).join('  ·  '));
+      if (e.dur > 0 && e.pos > 0) {
+        var bar = el('div', 'bar', box), fillBar = el('div', 'fill', bar);
+        fillBar.style.width = Math.round(100 * Math.min(1, e.pos / e.dur)) + '%';
+      }
+    } else if (c.type === 'media') {
       var p = c.pickData || pickFor(c.pick);
       if (!p) return;
       box.style.backgroundImage = 'url(' + p.backdrop + ')';
@@ -346,6 +445,10 @@
     els.reply.textContent = Motion.instant ? reply : '';
     setCards(list || []);
     dock.set(1);
+    if(newMood==='Smug')emote('wink','malicieux');
+    else if(newMood==='Embarrassed')emote('egg','triste');
+    else if(newMood==='Sleepy')emote('sleep','endormi');
+    else emote('notify',newMood==='Curious'?'curieux':'content');
     lines();
     paint();
   }
@@ -355,6 +458,7 @@
     userWords = you;
     think.set(1);
     dock.set(0);   // the orb comes back centre stage to think
+    workStep=0;emote('thinking','concentre');
     lines();
     paint();
   }
@@ -399,6 +503,17 @@
     text = (text || '').replace(/^\s+|\s+$/g, '');
     if (!text || busy) return;
     busy = true;
+    if (CONTINUE.test(text)) {   // the profile's own list, straight from the watch log: no brain needed
+      els.status = STATUS.titles;
+      thinking(text);
+      setTimeout(function () {
+        busy = false;
+        var cw = continueWatching();
+        remember(text, cw.reply);
+        say(text, cw.reply, isGuest() ? 'Curious' : cw.cards.length ? 'Smug' : 'Curious', cw.cards);
+      }, Motion.instant ? 0 : 700);
+      return;
+    }
     var guess = preview() ? previewAnswer(text) : null;
     els.status = STATUS[TOOL_STATUS[guess ? PILL_TOOL[guess.id] : ''] || 'other'];
     thinking(text);
@@ -429,6 +544,19 @@
     if (!root) return false;
     var step = Math.min(dt, 1 / 30), moving = false, i;
     seconds += step;
+    bot.setReducedMotion(Motion.instant);
+    var lookYaw = row === 'cards' ? -18 + index * 7 : row === 'pills' ? -24 + index * 9 : row === 'input' ? (index ? 16 : -12) : 0;
+    var lookPitch = row === 'bot' ? 2 : row === 'cards' ? -5 : 13;
+    bot.setLook(lookYaw, lookPitch, focused ? 1 : 0, 0, seconds);
+    if (thinkingNow && seconds - botStateAt > 0.85) {
+      workStep=(workStep+1)%workMontage.length;emote(workMontage[workStep][0],workMontage[workStep][1]);
+    } else if (montageAt >= 0 && seconds - botStateAt > 1.05) {
+      montageAt = (montageAt + 1) % montage.length;
+      emote(montage[montageAt][0],montage[montageAt][1]);
+    } else if (!thinkingNow && !listening && montageAt < 0 && bot.state === 'idle') {
+      var idleSlot=Math.floor(seconds/7)%3;
+      if(idleSlot!==idleExpression){idleExpression=idleSlot;bot.setExpression(['attentif','curieux','malicieux'][idleSlot],seconds);}
+    }
     // Targets change here by assignment, not set(): set() kicks the loop, and a kick from inside a tick would start a
     // second loop (motion.js).
     if (press.to === 1 && seconds - pressAt > 0.09) press.to = 0;   // the squish, then back (OK has no key-up here)
@@ -461,8 +589,18 @@
     nodeAngle += step * (2 * Math.PI / 1.6) * think.x;
     layout();
     var alive = shown && !Motion.instant;
-    if (alive || !orbDrawn) drawOrb();
+    if (alive || !orbDrawn) drawBot();
     return moving || alive || listening || thinkingNow;
+  }
+
+  function emote(state, expression) {
+    if (WellyBot.STATES.indexOf(state) < 0) return false;
+    bot.setState(state, seconds);
+    if(expression)bot.setExpression(expression,seconds);
+    botStateAt = seconds;
+    orbDrawn = false;
+    Motion.kick();
+    return true;
   }
 
   /** Every spring onto the page: the orb's place, the lines, the exchange, the cards, the pills, the capsule. */
@@ -628,6 +766,48 @@
     }
   }
 
+  function eyeCapsule(c,w,h) {
+    var rr=Math.min(w,h)*.5;
+    c.beginPath();
+    if(h>=w){c.moveTo(-w*.5,-h*.5+rr);c.arc(0,-h*.5+rr,rr,Math.PI,0);c.lineTo(w*.5,h*.5-rr);c.arc(0,h*.5-rr,rr,0,Math.PI);}
+    else{c.moveTo(-w*.5+rr,-h*.5);c.arc(-w*.5+rr,0,rr,-Math.PI*.5,Math.PI*.5);c.lineTo(w*.5-rr,h*.5);c.arc(w*.5-rr,0,rr,Math.PI*.5,-Math.PI*.5);}
+    c.closePath();c.fill();
+  }
+
+  /** Permanent measured pebble silhouette with solid projected eyes clipped to its contour. */
+  function drawBot() {
+    var c=orbCtx,i,a,r,x,y,lv=listenS.x,R=ORB_R*(1+.18*lv),f=bot.sample(seconds,botFrame);
+    if(!c)return;orbDrawn=true;c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,ORB_SIZE,ORB_SIZE);
+    c.setTransform(1,0,0,1,ORB_SIZE/2,ORB_SIZE/2);c.save();c.scale(R,R);c.rotate(f.rotation);c.scale(f.bodyScaleX,f.bodyScaleY);
+    if(f.arcCount){c.lineWidth=.045;c.strokeStyle='rgba(47,191,160,.58)';for(i=0;i<f.arcCount;i++){a=seconds*(1.4+i*.09)+i*Math.PI*2/f.arcCount;c.beginPath();c.arc(0,0,1.18+i*.075,a,a+1.7);c.stroke();}}
+    if(f.dotCount&&f.dotsBehind){c.fillStyle='rgba(47,191,160,.72)';for(i=0;i<f.dotCount;i++){a=i*Math.PI*2/f.dotCount+seconds*.45;r=.08+.03*(i%3);circle(c,Math.cos(a)*(1.05+.18*(i%4)),Math.sin(a)*(1.05+.18*(i%4)),r);c.fill();}}
+    c.beginPath();for(i=0;i<64;i++){a=i/64*Math.PI*2;r=f.radii[i];x=f.centerX+Math.cos(a)*r;y=f.centerY+Math.sin(a)*r;if(i)c.lineTo(x,y);else c.moveTo(x,y);}c.closePath();c.globalAlpha=f.bodyAlpha;c.fillStyle=WellyBot.COLOR;c.fill();c.globalAlpha=1;
+    if(f.eyeAlpha>.001){
+      c.save();c.clip();c.fillStyle='#FFFFFF';c.globalAlpha=f.eyeAlpha;
+      var yaw=f.gazeYaw*Math.PI/180,pitch=f.gazePitch*Math.PI/180,roll=f.gazeRoll*Math.PI/180;
+      var sy=Math.sin(yaw),cy=Math.cos(yaw),sp=Math.sin(pitch),cp=Math.cos(pitch);
+      var fx=sy*cp,fy=-sp,fz=cy*cp,rx=cy,ry=0,rz=-sy;
+      var dx=sy*sp,dy=cp,dz=cy*sp,cr=Math.cos(roll),sr=Math.sin(roll);
+      var rx0=rx,ry0=ry,rz0=rz;
+      rx=rx0*cr+dx*sr;ry=ry0*cr+dy*sr;rz=rz0*cr+dz*sr;
+      dx=dx*cr-rx0*sr;dy=dy*cr-ry0*sr;dz=dz*cr-rz0*sr;
+      for(i=0;i<2;i++){
+        var side=i?1:-1,split=side*f.eyeSplit*Math.PI/180,cs=Math.cos(split),ss=Math.sin(split);
+        var efx=fx*cs+rx*ss,efy=fy*cs+ry*ss;
+        var erx=rx*cs-fx*ss,ery=ry*cs-fy*ss;
+        var tilt=(i?f.eyeTilt1:f.eyeTilt0)*Math.PI/180,ct=Math.cos(tilt),st=Math.sin(tilt);
+        var ma=erx*ct+dx*st,mb=ery*ct+dy*st,mc=-erx*st+dx*ct,md=-ery*st+dy*ct;
+        var blink=.06+.94*f.lid*(i?f.eyeOpen1:f.eyeOpen0);
+        c.save();c.translate(f.centerX+efx,f.centerY+efy);c.scale(1,blink);c.transform(ma,mb,mc,md,0,0);
+        eyeCapsule(c,i?f.eyeW1:f.eyeW0,i?f.eyeH1:f.eyeH0);c.restore();
+      }
+      c.restore();
+    }
+    if(f.dotCount&&!f.dotsBehind){c.fillStyle=WellyBot.COLOR;for(i=0;i<f.dotCount;i++){a=i*Math.PI*2/f.dotCount;r=.13;circle(c,Math.cos(a)*(1.08+i*.04),Math.sin(a)*(1.08+i*.04),r);c.fill();}}
+    if(f.notifScale>0){c.fillStyle=WellyBot.NOTIF_BLUE;circle(c,f.notifX,f.notifY,f.notifR*f.notifScale);c.fill();c.fillStyle=WellyBot.COLOR;circle(c,f.notifX-.11,f.notifY+.12,.095);c.fill();}
+    c.restore();
+  }
+
   // MARK: - The brains (OpenAI Chat Completions with tools: Gemini, its lite model, then Ollama)
 
   function brains() {
@@ -640,13 +820,40 @@
     return out.filter(function (b) { return !(skipUntil[b.id] > Date.now()); });
   }
 
+  /** Who's in front of the TV, for the prompt: this profile only, never anyone else's. */
+  function profileContext() {
+    var p = profile(), log = watchLog(), apps = {}, kinds = {}, recent = [], i;
+    for (i = 0; i < log.length; i++) {
+      if (log[i].app) apps[log[i].app] = (apps[log[i].app] || 0) + 1;
+      if (log[i].kind) kinds[log[i].kind] = (kinds[log[i].kind] || 0) + 1;
+    }
+    for (i = 0; i < log.length && i < 5; i++) {
+      var e = log[i];
+      recent.push(e.title + ' (' + e.app + (e.dur > 0 && e.pos > 0 ? ', ' + Math.round(100 * e.pos / e.dur) + '% watched' : '') + ')');
+    }
+    function top(o) { var k = [], n; for (n in o) if (o.hasOwnProperty(n)) k.push(n); k.sort(function (a, b) { return o[b] - o[a]; }); return k.slice(0, 3).join(', '); }
+    var dock = window.Prefs && Prefs.shelf ? (Prefs.shelf() || []) : [];
+    var persona = p.role === 'manager'
+      ? p.name + ' built mahitTV and runs it: treat him as the creator and admin. Be his best-friend roommate: fun, sharp, ' +
+        'witty, a little sarcastic. You know you live on mahitTV.'
+      : p.role === 'guest'
+        ? 'This is a Guest. You are in Guest Mode: welcoming and witty, nothing is saved, no history; say so when it matters.'
+        : 'This is ' + p.name + ', part of the family. Greet them by name and suit their own taste and history.';
+    return ' Profile: id ' + p.id + ', name ' + p.name + ', role ' + p.role + '. ' + persona +
+      (recent.length ? ' Their recent watches, newest first: ' + recent.join('; ') + '.' : '') +
+      (top(apps) ? ' Favourite apps: ' + top(apps) + '.' : '') + (top(kinds) ? ' They mostly watch: ' + top(kinds) + '.' : '') +
+      (dock.length ? ' Their Dock: ' + dock.join(', ') + '.' : '') +
+      ' For "what am I watching", "continue watching" or "pick up where I left off", call continue_watching.';
+  }
+
   function system() {
     return 'You are Welly, the assistant built into this TV’s home screen. You are a sharp, warm, dry-witted roommate ' +
       'on the couch. Act first, then one short witty line. Never more than two sentences unless asked. Never mean, never ' +
       'about other people in the house, no spoilers unless asked, never "As an AI", never invent facts: say you don’t ' +
       'know, with a quip. If a tool fails, say so plainly with no joke. Answer in the language of the TV: ' +
       (window.I18N && I18N.language ? I18N.language() : 'en') + '. The person is ' + opts.name() + '. Now: ' +
-      new Date().toString() + '. Home: ' + (Data.city || 'South Brunswick, NJ') + '. Apps on this TV: ' + opts.appNames().join(', ') + '.';
+      new Date().toString() + '. Home: ' + (Data.city || 'South Brunswick, NJ') + '. Apps on this TV: ' + opts.appNames().join(', ') + '.' +
+      profileContext();
   }
 
   var TOOLS = [
@@ -654,6 +861,7 @@
     tool('weather', 'The weather now and in the next hours at home.', {}, []),
     tool('scores', 'Live or latest scores for a league.', {league: {type: 'string', 'enum': ['nfl', 'nba', 'mlb', 'nhl', 'mls', 'ncaaf', 'ncaab', 'wnba']}}, ['league']),
     tool('whats_on', 'Tonight’s US TV schedule.', {}, []),
+    tool('continue_watching', 'What this profile was watching, newest first, with progress (Continue Watching).', {}, []),
     tool('lights', 'Turn lights on or off.', {room: {type: 'string', 'enum': ['parents', 'mine', 'living', 'all']}, fixture: {type: 'string', 'enum': ['lamp', 'bulb']}, on: {type: 'boolean'}}, ['room', 'on'])
   ];
 
@@ -678,9 +886,18 @@
     x.send(JSON.stringify(body));
   }
 
+  /** A turn answered without a brain still goes into the profile's history. */
+  function remember(question, reply) {
+    history.push({role: 'user', content: question});
+    history.push({role: 'assistant', content: reply});
+    if (history.length > 20) history = history.slice(history.length - 20);
+    saveHistory();
+  }
+
   function converse(text, done) {
     history.push({role: 'user', content: text});
     if (history.length > 20) history = history.slice(history.length - 20);
+    saveHistory();
     var messages = [{role: 'system', content: system()}].concat(history), list = [], rounds = 0, chain = brains();
 
     function attempt(i) {
@@ -701,6 +918,7 @@
         }
         var reply = (m.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^\s+|\s+$/g, '');
         history.push({role: 'assistant', content: reply});
+        saveHistory();
         done(reply || tr('Done.'), list, true);
       });
     }
@@ -723,6 +941,11 @@
       else if (name === 'scores') scores(args.league || 'nfl', list, function (r) { finish(call, r); });
       else if (name === 'whats_on') whatsOn(list, function (r) { finish(call, r); });
       else if (name === 'lights') finish(call, lights(args, list));
+      else if (name === 'continue_watching') {
+        var cw = continueWatching();
+        for (var c = 0; c < cw.cards.length; c++) list.push(cw.cards[c]);
+        finish(call, isGuest() ? {guest: true, note: 'Guest Mode: no history is kept.'} : {titles: cw.titles});
+      }
       else finish(call, {error: 'unknown tool'});
     })(calls[i]);
   }
@@ -826,6 +1049,7 @@
     listening = true;
     listenS.set(1);
     dock.set(0);
+    emote('wide','surpris');
     setClass(els.ask, 'listening', true);
     placeholders();
     lines();
@@ -835,6 +1059,7 @@
     if (!listening) return;
     listening = false;
     listenS.set(0);
+    if (!thinkingNow) emote(userWords ? 'notify' : 'idle',userWords?'content':'attentif');
     if (userWords && !thinkingNow && !busy) dock.set(1);   // back beside the name over the last answer
     setClass(els.ask, 'listening', false);
     placeholders();
@@ -845,7 +1070,7 @@
 
   var Welly = window.Welly = {
     /** opts: name() (the profile's name), appNames(), launch(name) → bool, openPick(pick). */
-    init: function (layer, o) { root = layer; opts = o; build(); paint(); },
+    init: function (layer, o) { root = layer; opts = o; history = loadHistory(); build(); paint(); },
     show: function (on) {
       shown = on;
       if (!on && listening) { try { recognizer.stop(); } catch (e) {} stopListening(); }
@@ -883,6 +1108,7 @@
       }
       press.set(1);
       pressAt = seconds;
+      if (row === 'bot') { montageAt = montageAt < 0 ? 0 : (montageAt + 1) % montage.length; emote(montage[montageAt][0],montage[montageAt][1]); return; }
       if (row === 'pills' && pills[index]) {
         flyUp(index);
         ask(PROMPTS[pills[index].data.id] || pills[index].data.prompt);
@@ -892,8 +1118,12 @@
       if (row === 'input') { els.field.focus(); return; }
       var c = cards[index];
       if (!c) return;
-      if (c.type === 'media' && c.pickData) opts.openPick(c.pickData);
-      else if (c.type === 'home' && window.House) { House.set(c.fixture, !House.state(c.fixture)); refreshHomeCard(index); }
+      if (c.type === 'watch') {
+        emote('play','love');
+        if (c.pickData) opts.openPick(c.pickData);
+        else opts.launch(c.entry.app || '');
+      } else if (c.type === 'media' && c.pickData) { emote('play','love'); opts.openPick(c.pickData); }
+      else if (c.type === 'home' && window.House) { var turningOn=!House.state(c.fixture); House.set(c.fixture,turningOn); emote(turningOn?'burst':'notify',turningOn?'heureux':'content'); refreshHomeCard(index); }
     },
     typing: function () { return document.activeElement === els.field; },
     /** A key while the text field has the keyboard: 'native' leaves it to the field, true when Welly took it. */
@@ -904,7 +1134,28 @@
     },
     listen: function () { row = 'input'; index = 0; paint(); listen(); },
     ask: ask,
+    emote: function(state,expression){return emote(state,expression);},
+    previewState: function (state, time, docked, expression) { var at=seconds-(time||0);montageAt=-1;bot.setState(state==='idle'?'notify':'idle',at-.7);bot.setState(state,at);bot.setExpression(expression||'attentif',at);botStateAt=at;dock.snap(docked?1:0);layout();drawBot(); },
     reset: function () { history = []; mood = P.mood || 'Curious'; renderWho(); greet(); row = 'pills'; index = 0; paint(); },
+    /** Another profile is in (after the lock or a switch): its own greeting and memory. */
+    profileChanged: function () {
+      busy = false;
+      thinkingNow = false;
+      think.set(0);
+      history = loadHistory();
+      mood = P.mood || 'Curious';
+      renderWho();
+      greet();
+      row = 'pills';
+      index = 0;
+      paint();
+    },
+    /** Forgets this profile's conversation (Settings → Welly). */
+    clearMemory: function () {
+      history = [];
+      var st = store();
+      if (st && st.remove) st.remove('wellyHistory');
+    },
     /** For the browser preview and screenshots (no mic there): the listening look on or off. */
     simulateListening: function (on) { if (on) startListening(); else stopListening(); }
   };

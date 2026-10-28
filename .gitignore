@@ -25,3 +25,6 @@ previews/
 
 # Your own Memoji (personal; the build packs it, git leaves it out)
 app/assets/avatars/memoji.png
+
+# Your family's avatars by profile id (personal; the build packs them, git leaves them out)
+app/assets/profiles/

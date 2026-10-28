@@ -1,5 +1,7 @@
 package io.freemytv;
 
+import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -17,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -69,6 +72,9 @@ final class WellyBrain {
     private static final long BENCH = 10 * 60_000L;
     /** Brain name → when it may be tried again (after a 429). Static: survives the screen being rebuilt. */
     private static final Map<String, Long> BENCHED = new HashMap<>();
+    private static final Pattern WATCHING = Pattern.compile("^\\s*(hey\\s+)?(welly[,!.\\s]*)?(what\\s+(am|was)\\s+i\\s+watching|"
+            + "continue\\s+watching|pick\\s+up\\s+where\\s+i\\s+left\\s+off|where\\s+(did\\s+)?i\\s+(leave|left)\\s+off)\\b.*",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern FORGET = Pattern.compile("^\\s*(hey\\s+)?(welly[,!.\\s]*)?forget\\s+(that|it|this)\\b.*",
             Pattern.CASE_INSENSITIVE);
 
@@ -76,17 +82,54 @@ final class WellyBrain {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile WellyMemory memory;
+    private volatile ProfileManager.Profile profile;
     private volatile String name = "";
 
     WellyBrain(WellyTools tools) {
         this.tools = tools;
     }
 
-    /** Who Welly talks to now (the profile): their memory and name. */
-    void setPerson(WellyMemory memory, String name) {
+    /** Who Welly talks to now (the profile): their memory, name and role. */
+    void setPerson(WellyMemory memory, ProfileManager.Profile p) {
         this.memory = memory;
-        this.name = name;
+        this.profile = p;
+        this.name = p.name;
         tools.memory = memory;
+    }
+
+    /** "What am I watching?", "Continue watching", "Pick up where I left off": straight to the profile's WatchLog. */
+    static boolean watching(String words) {
+        String w = words.trim().replaceAll("[?.!…]+$", "");
+        return WATCHING.matcher(w).matches() || w.equalsIgnoreCase(Ui.tr("Continue watching"))
+                || w.equalsIgnoreCase(Ui.tr("Pick up where I left off"));
+    }
+
+    /**
+     * Continue Watching without the brain (MAHITTV-PROFILES-SPEC.md §4): the current profile's cards and one line about
+     * the newest, the same with or without a brain and in Preview. Never another profile's; nothing for Guest.
+     */
+    void watching(String words, Listener listener) {
+        running = "continue_watching";
+        worker.execute(() -> {
+            Reply r = new Reply();
+            try {
+                WellyTools.Result res = tools.continueWatching();
+                r.text = res.say;
+                r.cards.addAll(res.cards);
+                r.mood = r.cards.isEmpty() ? "Curious" : "Smug";
+                WellyMemory m = memory;
+                if (m != null && words != null) {
+                    m.addTurn("user", words);
+                    m.addTurn("assistant", r.text);
+                }
+            } catch (Exception e) {
+                AppLog.w("Welly continue watching: " + e.getMessage());
+                r = failed(Ui.tr("Nothing to pick up yet. Open something and I'll keep track."));
+            }
+            running = "";
+            Reply out = r;
+            main.post(() -> listener.onReply(out));
+        });
     }
 
     /** A brain is set up: a Gemini key or an Ollama address. */
@@ -215,7 +258,7 @@ final class WellyBrain {
 
     private String system(Brain b) {
         StringBuilder s = new StringBuilder();
-        s.append("You are Welly, the assistant on this TV's home screen (Free My TV). You're an AI, and you never pretend otherwise, ")
+        s.append("You are Welly, the assistant on mahitTV, this TV's home screen. You're an AI, and you never pretend otherwise, ")
                 .append("but you never say \"As an AI\". You're like a sharp, perceptive roommate on the couch: warm, curious, dry. ")
                 .append("You know film and TV deeply, notice things, tease a little, and never lecture.\n")
                 .append("Rules:\n")
@@ -224,13 +267,15 @@ final class WellyBrain {
                 .append("- At most two sentences; the cards on screen show the details, so don't list what they show. Longer only if asked (\"tell me more\").\n")
                 .append("- Honest: if a tool failed, say what failed and why in plain words. Never claim an action worked when it didn't. ")
                 .append("If you don't know, say so, with a light touch. Never make up facts, titles, scores or listings.\n")
-                .append("- No spoilers unless asked. Never comment on other people in the house.\n")
+                .append("- No spoilers unless asked. Never comment on other people in the house, and never mention what anyone else on this TV ")
+                .append("watched, said or likes: you only know this profile.\n")
+                .append("- For what they were watching, Continue Watching or picking up where they left off, call continue_watching.\n")
                 .append("- Use the tools for anything about titles, what's on, scores, weather, lights, apps, inputs, the sleep timer and music. ")
                 .append("When they share a lasting taste or fact about themselves, call remember.\n")
                 .append("- Plain text only: no markdown, no lists, no emoji.\n");
         String lang = Locale.forLanguageTag(Ui.language).getDisplayLanguage(Locale.ENGLISH);
         s.append("Answer in ").append(lang.isEmpty() ? "English" : lang).append(".\n");
-        if (!name.isEmpty()) s.append("You're talking to ").append(name).append(".\n");
+        profile(s);
         s.append("Now: ").append(new SimpleDateFormat("EEEE d MMMM yyyy, h:mm a", Locale.US).format(new Date())).append(".\n");
         String city = Prefs.city();
         if (!city.isEmpty()) s.append("The TV is in ").append(city).append(".\n");
@@ -242,6 +287,71 @@ final class WellyBrain {
         }
         if (b.name.startsWith("ollama:qwen3")) s.append("/no_think\n");   // Qwen3: skip the long reasoning, answer fast
         return s.toString();
+    }
+
+    /** Who's watching (MAHITTV-PROFILES-SPEC.md §4): role and tone, their taste from the WatchLog, recent titles, Dock. */
+    private void profile(StringBuilder s) {
+        ProfileManager.Profile p = profile;
+        if (p == null) {
+            if (!name.isEmpty()) s.append("You're talking to ").append(name).append(".\n");
+            return;
+        }
+        s.append("Profile: id ").append(p.id).append(", name ").append(p.name).append(", role ").append(p.role).append(".\n");
+        if (p.guest()) {
+            s.append("This is Guest Mode: a visitor. Be welcoming and easy-going. Nothing is kept here: no history, no Continue Watching, ")
+                    .append("and nothing you hear is remembered after they leave, so don't call remember. If it comes up, say it's Guest Mode ")
+                    .append("and there's no permanent record: they can watch whatever guilty pleasure they want.\n");
+            return;
+        }
+        if (p.manager()) {
+            s.append("You're talking to ").append(p.name).append(", who created mahitTV and runs it: the admin of this TV. ")
+                    .append("You're their best-friend roommate: witty, sharp, slightly sarcastic, always on their side. ")
+                    .append("You both know you're running on mahitTV, the home screen they built, and you can joke about it.\n");
+        } else {
+            s.append("You're talking to ").append(p.name).append(", family on this TV. Call them by name now and then, ")
+                    .append("and fit your picks and tone to their own taste and history below.\n");
+        }
+        Context c = tools.context;
+        if (ProfileManager.current(c) != p) return;   // switched mid-question: never another profile's log or Dock
+        List<WatchLog.Entry> log = WatchLog.list(c);
+        if (!log.isEmpty()) {
+            int movies = 0, shows = 0;
+            Map<String, Integer> apps = new HashMap<>();
+            for (WatchLog.Entry e : log) {
+                if ("movie".equals(e.kind)) movies++;
+                if ("tv".equals(e.kind)) shows++;
+                if (!e.app.isEmpty()) apps.put(e.app, apps.containsKey(e.app) ? apps.get(e.app) + 1 : 1);
+            }
+            List<Map.Entry<String, Integer>> top = new ArrayList<>(apps.entrySet());
+            Collections.sort(top, (a, b) -> b.getValue() - a.getValue());
+            s.append("Their taste, from what they watched here: ")
+                    .append(shows > movies ? "mostly shows" : movies > shows ? "mostly movies" : "movies and shows alike");
+            for (int i = 0; i < top.size() && i < 3; i++) s.append(i == 0 ? "; mostly on " : ", ").append(top.get(i).getKey());
+            s.append(".\nWhat they watched lately, newest first:\n");
+            for (int i = 0; i < log.size() && i < 5; i++) {
+                WatchLog.Entry e = log.get(i);
+                s.append("- ").append(e.title.isEmpty() ? e.app : e.title);
+                if (!e.title.isEmpty() && !e.app.isEmpty()) s.append(" on ").append(e.app);
+                if (e.duration > 0) {
+                    s.append(", ").append(e.position / 60_000).append(" of ").append(e.duration / 60_000).append(" min");
+                }
+                s.append(" (").append(new SimpleDateFormat("EEE d MMM", Locale.US).format(new Date(e.at))).append(")\n");
+            }
+        }
+        List<String> dock = Prefs.shelf();
+        if (dock != null && !dock.isEmpty()) {
+            s.append("Their Dock apps: ");
+            PackageManager pm = c.getPackageManager();
+            for (int i = 0; i < dock.size(); i++) {
+                String label = dock.get(i);
+                try {
+                    label = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(label, 0)));
+                } catch (Exception ignored) {
+                }
+                s.append(i == 0 ? "" : ", ").append(label);
+            }
+            s.append(".\n");
+        }
     }
 
     /** One conversation with one brain: tool rounds, then the reply text. Cards gather in `r`. */

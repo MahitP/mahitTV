@@ -12,6 +12,7 @@ import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.text.format.DateUtils;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -47,6 +48,7 @@ final class WellyTools {
         final List<WellyCards.Card> cards = new ArrayList<>();
         boolean acted;   // it changed something (lights, an app opened): Welly's mood is "On it"
         boolean failed;
+        String say = "";   // continue_watching: Welly's own line when no brain words it
 
         Result(String json) {
             this.json = json;
@@ -58,7 +60,7 @@ final class WellyTools {
     private static final int TIMEOUT = 6000;
 
     private final Activity activity;
-    private final Context context;
+    final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Map<Integer, Recs.Pick> seen = new ConcurrentHashMap<>();   // titles from searches, by TMDB id
     volatile WellyMemory memory;
@@ -78,6 +80,8 @@ final class WellyTools {
                     "genre:string:e.g. comedy, thriller, sci-fi, drama, horror, family, documentary"));
             tools.put(tool("open_title", "Open a title from search_titles in its app.", "!title_id:integer:TMDB id", "!kind:string:movie or tv"));
             tools.put(tool("whats_playing", "What is playing on the TV right now (title, artist, app)."));
+            tools.put(tool("continue_watching", "This person's own Continue Watching: what they opened or watched lately on this TV, newest first "
+                    + "(title, app, minutes in and left). Use it for \"what am I watching\", \"continue watching\", \"pick up where I left off\"."));
             tools.put(tool("whats_on", "TV listings for tonight in the US (TVmaze): broadcast and cable, or streaming premieres.",
                     "date:string:YYYY-MM-DD, default today", "streaming:boolean:true for streaming services instead of broadcast/cable"));
             tools.put(tool("scores", "Live and recent scores (ESPN).", "!league:string:nfl, nba, mlb, nhl, mls, wnba, ncaaf, ncaab, epl"));
@@ -128,6 +132,7 @@ final class WellyTools {
                 case "search_titles": return searchTitles(a.optString("query"), a.optString("kind"), a.optInt("max_runtime"), a.optString("genre"));
                 case "open_title": return openTitle(a.optInt("title_id"), a.optString("kind", "movie"));
                 case "whats_playing": return whatsPlaying();
+                case "continue_watching": return continueWatching();
                 case "whats_on": return whatsOn(a.optString("date"), a.optBoolean("streaming"));
                 case "scores": return scores(a.optString("league", "nfl"));
                 case "weather": return weather(a.optString("place"));
@@ -277,7 +282,7 @@ final class WellyTools {
             seen.put(id, p);
         }
         if (p.pkg == null) return error(p.title + " isn't on any streaming app on this TV");
-        if (!open(HomeApps.app(p.pkg, Recs.serviceName(p)))) return error("the app didn't open");
+        if (!open(titled(HomeApps.app(p.pkg, Recs.serviceName(p)), p))) return error("the app didn't open");
         WellyMemory m = memory;
         if (m != null) m.addFact("Opened " + p.title + " (" + p.kind + ") on " + new SimpleDateFormat("d MMM yyyy", Locale.US).format(new Date()));
         Result r = new Result(new JSONObject().put("opened", p.title).put("app", Recs.serviceName(p)).toString());
@@ -290,8 +295,119 @@ final class WellyTools {
     boolean openPick(Recs.Pick p) {
         if (p == null || p.pkg == null) return false;
         try {
-            return HomeApps.open(activity, HomeApps.app(p.pkg, Recs.serviceName(p), p.link), null);
+            return HomeApps.open(activity, titled(HomeApps.app(p.pkg, Recs.serviceName(p), p.link), p), null);
         } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The pick goes into this profile's Continue Watching as the title it is, not just its app. */
+    private static HomeApps.Item titled(HomeApps.Item it, Recs.Pick p) {
+        it.title = p.title;
+        it.tmdbId = p.id;
+        it.mediaKind = p.kind;
+        return it;
+    }
+
+    // MARK: - Continue Watching (WatchLog: the current profile's only, nothing for Guest)
+
+    /** Up to six of this profile's latest titles and apps, newest first, as media cards. Off the UI thread. */
+    Result continueWatching() throws JSONException {
+        Result r = new Result("");
+        if (ProfileManager.current(context).guest()) {
+            r.say = Ui.tr("Guest Mode keeps no history, so there's nothing to pick up. Watch whatever guilty pleasure you want.");
+            r.json = new JSONObject().put("entries", new JSONArray())
+                    .put("note", "Guest Mode: nothing is kept, so there's nothing to continue.").toString();
+            return r;
+        }
+        long now = System.currentTimeMillis();
+        SimpleDateFormat day = new SimpleDateFormat("EEE d MMM, h:mm a", Locale.US);
+        JSONArray out = new JSONArray();
+        WatchLog.Entry latest = null;
+        for (WatchLog.Entry e : WatchLog.list(context)) {
+            if (out.length() >= 6) break;
+            String title = e.title.isEmpty() ? e.app : e.title;
+            if (title.isEmpty()) continue;
+            if (latest == null) latest = e;
+            JSONObject o = new JSONObject().put("title", title).put("app", e.app).put("kind", e.kind)
+                    .put("opened", day.format(new Date(e.at)));
+            if (e.duration > 0) {
+                o.put("minutes_in", e.position / 60_000).put("minutes_left", minutesLeft(e))
+                        .put("percent_watched", Math.round(e.progress() * 100));
+            }
+            out.put(o);
+            r.cards.add(watchCard(e, now));
+        }
+        r.say = sayWatching(latest);
+        r.json = new JSONObject().put("entries", out).toString();
+        return r;
+    }
+
+    private static long minutesLeft(WatchLog.Entry e) {
+        return Math.max(0, (e.duration - e.position + 59_999) / 60_000);
+    }
+
+    /** One witty line about the newest entry (Welly's answer without a brain, and in Preview). */
+    private static String sayWatching(WatchLog.Entry e) {
+        if (e == null) return Ui.tr("Nothing to pick up yet. Open something and I'll keep track.");
+        if (e.title.isEmpty()) return Ui.trf("Last time you opened {app}. Back for more?", "app", e.app);
+        if (e.duration > 0 && e.position >= 60_000 && minutesLeft(e) >= 1) {
+            return Ui.trf("You were {n} minutes into {title}. Bold of you to stop there.", "n", e.position / 60_000, "title", e.title);
+        }
+        return Ui.trf("Last time you opened {title} on {app}. Picking up where you left off?", "title", e.title, "app", e.app);
+    }
+
+    private WellyCards.Card watchCard(WatchLog.Entry e, long now) {
+        WellyCards.Card c = new WellyCards.Card();
+        c.type = WellyCards.MEDIA;
+        c.entry = e;
+        c.title = e.title.isEmpty() ? e.app : e.title;
+        long left = minutesLeft(e);
+        String when;
+        if (e.duration > 0 && left >= 1) when = Ui.trf("{n} min left", "n", left);
+        else if (e.duration > 0) when = Ui.trf("{p}% watched", "p", Math.round(e.progress() * 100));
+        else when = Ui.trf("Opened {when}", "when", DateUtils.getRelativeTimeSpanString(e.at, now, DateUtils.MINUTE_IN_MILLIS).toString());
+        c.meta = TextUtils.join(" · ", nonEmpty(e.title.isEmpty() ? "" : e.app, when));
+        c.image = watchImage(e);
+        return c;
+    }
+
+    /** The title's backdrop: the sample photo in Preview, else TMDB's (with a key), else none. */
+    private Bitmap watchImage(WatchLog.Entry e) {
+        if (e.tmdbId <= 0) return null;
+        if (Config.PREVIEW) {
+            List<Recs.Pick> all = new ArrayList<>(Preview.picks("movie"));
+            all.addAll(Preview.picks("tv"));
+            for (Recs.Pick p : all) {
+                if (p.id != e.tmdbId) continue;
+                Bitmap b = Preview.image(context, p);
+                return b == null ? null : Ui.downscale(b, 640, Math.round(640f * b.getHeight() / b.getWidth()));
+            }
+            return null;
+        }
+        if (Config.TMDB_KEY.trim().isEmpty() || !("movie".equals(e.kind) || "tv".equals(e.kind))) return null;
+        try {
+            Recs.Pick seenPick = seen.get((int) e.tmdbId);
+            String path = seenPick != null ? seenPick.backdrop : tmdb("/" + e.kind + "/" + e.tmdbId).optString("backdrop_path");
+            return path == null || path.isEmpty() || "null".equals(path) ? null : image(BACKDROPS + path);
+        } catch (Exception x) {
+            AppLog.w("Welly continue watching: " + x.getMessage());
+            return null;
+        }
+    }
+
+    /** A Continue Watching card's OK: the title's page when the app gave one, else the app. Main thread. */
+    boolean openWatched(WatchLog.Entry e) {
+        if (e == null || e.pkg == null || e.pkg.isEmpty()) return false;
+        try {
+            HomeApps.Item it = e.uri == null || e.uri.isEmpty() ? HomeApps.app(e.pkg, e.app) : HomeApps.app(e.pkg, e.app, e.uri);
+            if (!e.title.isEmpty()) {
+                it.title = e.title;
+                it.tmdbId = e.tmdbId;
+                it.mediaKind = e.kind;
+            }
+            return HomeApps.open(activity, it, null);
+        } catch (Exception x) {
             return false;
         }
     }
@@ -813,6 +929,7 @@ final class WellyTools {
         StringBuilder b = new StringBuilder();
         for (String f : m.facts()) b.append(f).append('\n');
         for (String[] t : m.turns()) b.append(t[1]).append('\n');
+        for (WatchLog.Entry e : WatchLog.list(context)) b.append(e.title).append('\n');
         return b.toString();
     }
 

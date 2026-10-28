@@ -449,6 +449,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #drawer .who .face { display: block; width: 84px; height: 84px; margin: 0 auto; border-radius: 42px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); -webkit-transition: box-shadow 0.2s; transition: box-shadow 0.2s; }
 #drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.25); }
 #drawer .who .name { display: block; margin-top: 10px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#drawer .profiles.many .who { width: 88px; }
+#drawer .profiles.many .who .face { width: 72px; height: 72px; border-radius: 36px; }
+#drawer .profiles.many .who .name { font-size: 19px; }
 #drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.4); }
 #drawer .time { font-size: 57px; font-weight: 300; line-height: 66px; letter-spacing: -0.01em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 #drawer .date { font-size: 25px; font-weight: 500; line-height: 32px; opacity: 0.72; }
@@ -595,6 +598,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 #tabs .tab.sel { color: #FFF; }
 #tabs .tab.focus { background: #FFF; color: #1C1C1E; }
+#tabs .welly-mini { width: 25px; height: 25px; margin: 13px 7px 0 -13px; vertical-align: top; }
 /* The selected tab's lens: it slides between tabs and stretches with its speed (home.js drawLens). */
 #tabs .lens { position: absolute; left: 3px; top: 3px; width: 0; height: 51px; }
 #tabs .lens .box { position: absolute; left: 0; top: 0; height: 51px; will-change: transform; }

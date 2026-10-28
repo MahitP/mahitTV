@@ -5,6 +5,7 @@
   "pills": [
     {
       "id": "watching",
+      "source": "watchlog",
       "prompt": "What am I watching?",
       "mood": "Smug",
       "reply": "Nothing yet. Your TV has been staring at a desert for twenty minutes. Want to fix that?",

@@ -20,16 +20,18 @@ final class Click {
     private static final int RATE = 48_000;
     private static Click current;
     private SoundPool pool;
-    private int move, open, bump;
+    private int move, open, bump, chime, error;
 
     Click(Context c) {
         try {
-            pool = new SoundPool.Builder().setMaxStreams(3).setAudioAttributes(new AudioAttributes.Builder()
+            pool = new SoundPool.Builder().setMaxStreams(4).setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
             move = pool.load(wav(c, "click-move.wav", 1450f, 0.009f, 0.030f), 1);
             open = pool.load(wav(c, "click-open.wav", 880f, 0.022f, 0.090f), 1);
             bump = pool.load(wav(c, "click-bump.wav", 310f, 0.014f, 0.060f), 1);
+            chime = pool.load(chord(c), 1);
+            error = pool.load(wav(c, "click-error.wav", 150f, 0.045f, 0.180f), 1);
             current = this;
         } catch (IOException | RuntimeException e) {
             AppLog.w("click sound unavailable: " + e.getMessage());
@@ -50,6 +52,20 @@ final class Click {
         if (pool != null && Prefs.sounds()) pool.play(bump, 0.12f, 0.12f, 1, 0, 1f);
     }
 
+    /** mahitTV's startup chord (Intro). */
+    void chime() {
+        if (pool != null && Prefs.sounds()) pool.play(chime, 0.32f, 0.32f, 2, 0, 1f);
+    }
+
+    /** A dull thud: a wrong PIN. */
+    void error() {
+        if (pool != null && Prefs.sounds()) pool.play(error, 0.22f, 0.22f, 1, 0, 1f);
+    }
+
+    static Click current() {
+        return current;
+    }
+
     /** The knock, from any view of the home screen. */
     static void boundary() {
         Click c = current;
@@ -62,16 +78,51 @@ final class Click {
         if (current == this) current = null;
     }
 
-    /** Sine wave plus one harmonic, 1.5 ms attack (no pop) and exponential decay. */
-    private static String wav(Context c, String name, float freq, float decay, float seconds) throws IOException {
-        File f = new File(c.getCacheDir(), name);
+    /**
+     * A warm C–E–G major chord (C5, E5, G5 rolled in 40 ms apart), each note a sine with soft 2nd and 3rd harmonics,
+     * a 12 ms attack and a long exponential tail, about 1.2 s.
+     */
+    private static String chord(Context c) throws IOException {
+        File f = new File(c.getCacheDir(), "chime-mahittv.wav");
         if (f.exists() && f.length() > 44) return f.getPath();
+        float seconds = 1.25f;
+        double[] notes = {523.25, 659.25, 783.99, 1046.5};
+        double[] gains = {0.34, 0.28, 0.26, 0.10};
         int n = Math.round(RATE * seconds);
+        ByteBuffer b = header(n);
+        for (int i = 0; i < n; i++) {
+            double t = (double) i / RATE, s = 0;
+            for (int k = 0; k < notes.length; k++) {
+                double tk = t - k * 0.040;
+                if (tk < 0) continue;
+                double env = Math.min(1, tk / 0.012) * Math.exp(-tk / 0.42);
+                double w = 2 * Math.PI * notes[k] * tk;
+                s += gains[k] * env * (Math.sin(w) + 0.22 * Math.sin(2 * w) + 0.07 * Math.sin(3 * w));
+            }
+            double fade = Math.min(1, (seconds - t) / 0.08);
+            b.putShort((short) Math.round(Math.max(-1, Math.min(1, s * 0.8 * fade)) * Short.MAX_VALUE));
+        }
+        try (FileOutputStream out = new FileOutputStream(f)) {
+            out.write(b.array());
+        }
+        return f.getPath();
+    }
+
+    private static ByteBuffer header(int n) throws IOException {
         ByteBuffer b = ByteBuffer.allocate(44 + n * 2).order(ByteOrder.LITTLE_ENDIAN);
         b.put("RIFF".getBytes("US-ASCII")).putInt(36 + n * 2).put("WAVE".getBytes("US-ASCII"));
         b.put("fmt ".getBytes("US-ASCII")).putInt(16).putShort((short) 1).putShort((short) 1)
                 .putInt(RATE).putInt(RATE * 2).putShort((short) 2).putShort((short) 16);
         b.put("data".getBytes("US-ASCII")).putInt(n * 2);
+        return b;
+    }
+
+    /** Sine wave plus one harmonic, 1.5 ms attack (no pop) and exponential decay. */
+    private static String wav(Context c, String name, float freq, float decay, float seconds) throws IOException {
+        File f = new File(c.getCacheDir(), name);
+        if (f.exists() && f.length() > 44) return f.getPath();
+        int n = Math.round(RATE * seconds);
+        ByteBuffer b = header(n);
         for (int i = 0; i < n; i++) {
             double t = (double) i / RATE;
             double env = Math.min(1, t / 0.0015) * Math.exp(-t / decay);

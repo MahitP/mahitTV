@@ -63,13 +63,13 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     // The orb centre stage (and the lines under it), then small beside "Welly · mood".
     private static final float ORB_CY = 296, ORB_R = 104, DOCK_R = 21, DOCK_CY = 232, CAP_DOCK_Y = 240, CAP_DOCK_X = 56;
     private static final float CENTRE_Y = 492, CAP_FRESH_Y = 546, BELOW_Y = 600;
-    private static final int ROW_CARDS = 0, ROW_PILLS = 1, ROW_INPUT = 2, MAX_CARDS = 6;
+    private static final int ROW_BOT = 0, ROW_CARDS = 1, ROW_PILLS = 2, ROW_INPUT = 3, MAX_CARDS = 6;
     private static final int WHITE = 0xFFF5F5F7, INK = 0xFF1C1C1E, SMOKE = 0xFF111113;
     private static final int[] RIM = {0xFFFF9F0A, 0xFFFF375F, 0xFFBF5AF2, 0xFF0A84FF, 0xFF64D2FF, 0xFFFF9F0A};
     private static final int[] BLOB = {0xFF64D2FF, 0xFFBF5AF2, 0xFFFF9F0A, 0xFF0A84FF};
     private static final String[] PILL_IDS = {"watching", "movie-mode", "scores", "weather", "tonight", "roast"};
     // The tool each sample answer stands for, for the thinking line in Preview.
-    private static final String[] PILL_TOOLS = {"whats_playing", "lights", "scores", "weather", "whats_on", "search_titles"};
+    private static final String[] PILL_TOOLS = {"continue_watching", "lights", "scores", "weather", "whats_on", "search_titles"};
     private static final float WORDS_PER_SECOND = 28, CARD_STAGGER = 0.045f, CARD_FOCUS = 0.10f, TILT_PUSH = 90;
     private static final int VOICE_REQUEST = 0x3E11;
 
@@ -84,6 +84,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     private final boolean preview = Config.PREVIEW;
     private JSONObject previewData;
     private WellyMemory memory;
+    private ProfileManager.Profile profile;   // who Welly talks to (MAHITTV-PROFILES-SPEC.md §4)
     private String person = "";
     private int generation = -1;
 
@@ -105,12 +106,12 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     private float centreW, centreOldW, belowW, belowOldW;
     private final Spring centreFade = new Spring(0.30f, 1f, 1), belowFade = new Spring(0.30f, 1f, 1);
     // Thinking lines (one per tool), set in texts().
-    private String statusWeather = "", statusTitles = "", statusScores = "", statusLights = "", statusOn = "", statusDefault = "";
+    private String statusWeather = "", statusTitles = "", statusWatching = "", statusScores = "", statusLights = "", statusOn = "", statusDefault = "";
 
     // Focus.
     private boolean focused, armed;
     private int row = ROW_PILLS;
-    private final int[] col = new int[3];
+    private final int[] col = new int[4];
     private final Spring[] cardFocus = new Spring[MAX_CARDS], pillFocus = new Spring[PILL_IDS.length], inputFocus = new Spring[2];
     private final Spring[] cardTilt = new Spring[MAX_CARDS], cardEnter = new Spring[MAX_CARDS];
     private final float[] enterAt = new float[MAX_CARDS];
@@ -124,6 +125,22 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     private final Spring speak = new Spring(Spring.ORB, 0), level = new Spring(0.12f, 1f, 0);
     private final Spring replyH = new Spring(Spring.SPATIAL_SCROLL, 0).px(), fly = new Spring(Spring.TAB_SWAP, 0);
     private float revealAt, orbPhase, ringPhase, nodeAngle, orbX, orbY, orbR;
+    private final WellyBot bot = new WellyBot();
+    private final WellyBot.Frame botFrame = new WellyBot.Frame();
+    private float botStateAt;
+    private int montage = -1, workStep, idleExpression = -1;
+    private static final WellyBot.State[] MONTAGE = {WellyBot.State.IDLE, WellyBot.State.NOTIFY, WellyBot.State.COMET,
+            WellyBot.State.ORBIT, WellyBot.State.BURST, WellyBot.State.WINK, WellyBot.State.PLAY, WellyBot.State.WIDE,
+            WellyBot.State.SWIRL, WellyBot.State.SLEEP, WellyBot.State.EXCLAIM, WellyBot.State.EGG,
+            WellyBot.State.HEXAGON, WellyBot.State.ALERT, WellyBot.State.THINKING, WellyBot.State.WINK};
+    private static final WellyBot.Expression[] MONTAGE_EXPRESSIONS = {WellyBot.Expression.ATTENTIF, WellyBot.Expression.CONTENT,
+            WellyBot.Expression.CONCENTRE, WellyBot.Expression.CURIEUX, WellyBot.Expression.HEUREUX, WellyBot.Expression.MALICIEUX,
+            WellyBot.Expression.LOVE, WellyBot.Expression.SURPRIS, WellyBot.Expression.SCEPTIQUE, WellyBot.Expression.ENDORMI,
+            WellyBot.Expression.FACHE, WellyBot.Expression.TRISTE, WellyBot.Expression.FIER, WellyBot.Expression.PANIQUE,
+            WellyBot.Expression.BLASE, WellyBot.Expression.CLIN};
+    private static final WellyBot.State[] WORK_MONTAGE = {WellyBot.State.COMET, WellyBot.State.ORBIT, WellyBot.State.SWIRL};
+    private static final WellyBot.Expression[] WORK_EXPRESSIONS = {WellyBot.Expression.CONCENTRE, WellyBot.Expression.CURIEUX,
+            WellyBot.Expression.SCEPTIQUE};
     private int words, shownWords;
     private int[] wordEnd = new int[0], wordLine = new int[0];
     private float[] wordRight = new float[0];
@@ -153,6 +170,11 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     private final Matrix rimMatrix = new Matrix(), tilt3d = new Matrix();
     private final Camera camera = new Camera();
     private final Path unitCircle = new Path();
+    private final Path botPath = new Path(), eyeHole = new Path(), notifPath = new Path();
+    private final RectF botOval = new RectF();
+    private final Matrix eyeMatrix = new Matrix();
+    private final float[] eyeMatrixValues = new float[9];
+    private final Paint botPaint = new Paint(Paint.ANTI_ALIAS_FLAG), eyePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private SweepGradient rimShader;
     private final Shader halo = new RadialGradient(0, 0, 1, new int[] {0x99BF5AF2, 0x400A84FF, 0x000A84FF}, new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP);
     private final Shader specular = new RadialGradient(0, 0, 1, new int[] {0x8CFFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP);
@@ -194,6 +216,8 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         orbRim.setStyle(Paint.Style.STROKE);
         orbRim.setShader(orbSweep);
         ring.setStyle(Paint.Style.STROKE);
+        eyePaint.setStyle(Paint.Style.FILL);
+        eyePaint.setColor(0xFFFFFFFF);
         if (preview) previewData = readPreview(a);
         person();
         texts();
@@ -273,6 +297,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         if (this.focused == focused) return;
         this.focused = focused;
         if (focused) {
+            person();
             row = shown.isEmpty() ? ROW_PILLS : ROW_CARDS;
             col[row] = 0;
         }
@@ -315,6 +340,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         listening = true;
         listen.target = 1;
         dock.target = 0;   // the orb comes back centre stage to listen
+        emote(WellyBot.State.WIDE, WellyBot.Expression.SURPRIS);
         setPartial("");
         kick();
     }
@@ -343,7 +369,10 @@ final class WellyView extends View implements Choreographer.FrameCallback {
 
     private void activate() {
         click.open();
-        if (row == ROW_PILLS) {
+        if (row == ROW_BOT) {
+            montage = (montage + 1) % MONTAGE.length;
+            emote(MONTAGE[montage], MONTAGE_EXPRESSIONS[montage]);
+        } else if (row == ROW_PILLS) {
             int i = col[ROW_PILLS];
             flyUp(i);
             if (preview && !WellyBrain.configured()) answerPreview(PILL_IDS[i], true);
@@ -354,9 +383,11 @@ final class WellyView extends View implements Choreographer.FrameCallback {
             WellyCards.Card c = shown.get(col[ROW_CARDS]);
             switch (c.type) {
                 case WellyCards.MEDIA:
-                    if (!tools.openPick(c.pick)) note(Ui.tr("That app isn't on this TV."));
+                    emote(WellyBot.State.PLAY, WellyBot.Expression.LOVE);
+                    if (!(c.entry != null ? tools.openWatched(c.entry) : tools.openPick(c.pick))) note(Ui.tr("That app isn't on this TV."));
                     break;
                 case WellyCards.HOME:
+                    emote(WellyBot.State.BURST, WellyBot.Expression.HEUREUX);
                     tools.toggle(c, () -> {
                         cardArt.prepare(c);
                         kick();
@@ -381,6 +412,10 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         if (words.isEmpty()) return;
         setUser(words);
         int asked = ++ask;
+        if (pills[0].equalsIgnoreCase(words) || WellyBrain.watching(words)) {
+            watching(asked);
+            return;
+        }
         if (preview && !WellyBrain.configured()) {
             String id = null;
             for (int i = 0; i < pills.length; i++) if (pills[i].equalsIgnoreCase(words)) id = PILL_IDS[i];
@@ -416,6 +451,10 @@ final class WellyView extends View implements Choreographer.FrameCallback {
             }
         }
         int asked = ++ask;
+        if ("watchlog".equals(pill.optString("source"))) {
+            watching(asked);
+            return;
+        }
         JSONObject p = pill;
         thinking(delay);
         long started = System.currentTimeMillis();
@@ -436,6 +475,19 @@ final class WellyView extends View implements Choreographer.FrameCallback {
             }, wait);
         });
         if (!delay) showReply(pill.optString("reply"), pill.optString("mood", "Curious"), new ArrayList<>(), false);
+    }
+
+    /** "What am I watching?": this profile's Continue Watching, as cards (never another profile's, nothing for Guest). */
+    private void watching(int asked) {
+        previewTool = "continue_watching";
+        thinking(true);
+        long started = System.currentTimeMillis();
+        brain.watching(userWords, r -> {
+            long wait = Math.max(0, 700 - (System.currentTimeMillis() - started));   // the thinking line shows a moment
+            main.postDelayed(() -> {
+                if (asked == ask) showReply(r.text, r.mood, r.cards, r.error);
+            }, wait);
+        });
     }
 
     private void showReply(String text, String mood, List<WellyCards.Card> cards, boolean error) {
@@ -461,6 +513,11 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         cardScroll.snap(0);
         if (row == ROW_CARDS && shown.isEmpty()) row = ROW_PILLS;
         dock.target = 1;
+        if (error) emote(WellyBot.State.ALERT, WellyBot.Expression.PANIQUE);
+        else if ("Smug".equals(mood)) emote(WellyBot.State.WINK, WellyBot.Expression.MALICIEUX);
+        else if ("Embarrassed".equals(mood)) emote(WellyBot.State.EGG, WellyBot.Expression.TRISTE);
+        else if ("Sleepy".equals(mood)) emote(WellyBot.State.SLEEP, WellyBot.Expression.ENDORMI);
+        else emote(WellyBot.State.NOTIFY, "Curious".equals(mood) ? WellyBot.Expression.CURIEUX : WellyBot.Expression.CONTENT);
         texts();
         updateLines();
         retarget();
@@ -472,6 +529,8 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         if (on) {
             dock.target = 0;   // the orb comes back centre stage to think
             tool = "";
+            workStep = 0;
+            emote(WellyBot.State.THINKING, WellyBot.Expression.CONCENTRE);
         }
         updateLines();
         kick();
@@ -555,6 +614,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         switch (tool) {
             case "weather": return statusWeather;
             case "search_titles": case "open_title": case "recap": case "cast_crossref": return statusTitles;
+            case "continue_watching": return statusWatching;
             case "scores": return statusScores;
             case "lights": case "scene": return statusLights;
             case "whats_on": return statusOn;
@@ -660,6 +720,8 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         listening = false;
         listen.target = 0;
         level.target = 0;
+        if (!thinking) emote(reply == null ? WellyBot.State.IDLE : WellyBot.State.NOTIFY,
+                reply == null ? WellyBot.Expression.ATTENTIF : WellyBot.Expression.CONTENT);
         if (reply != null && !thinking) dock.target = 1;   // back beside the name over the last answer
         setPartial("");
     }
@@ -672,16 +734,47 @@ final class WellyView extends View implements Choreographer.FrameCallback {
 
     // MARK: - Text and layout (never in onDraw)
 
+    /**
+     * The profile using the TV (checked on resume and focus: one lookup, no work when it's the same). Someone else, or
+     * the TV locked and back as another: their own memory and a fresh greeting, never the last person's conversation.
+     */
     private void person() {
-        List<Profiles.Profile> all = Profiles.all(activity);
-        int i = Profiles.current(activity);
-        String name = all.get(Math.max(0, Math.min(i, all.size() - 1))).name;
-        if (name.equals(person) && memory != null) return;
-        person = name;
-        memory = new WellyMemory(activity, name);
-        brain.setPerson(memory, name);
+        ProfileManager.Profile p = ProfileManager.current(activity);
+        if (p == profile && memory != null) return;
+        boolean changed = profile != null;
+        profile = p;
+        person = p.name;
+        memory = new WellyMemory(activity, p);   // Guest: a new, empty one every time
+        brain.setPerson(memory, p);
+        if (changed) fresh();
+        mood = p.manager() ? "Smug" : "Curious";
         texts();
         updateLines();
+    }
+
+    /** Back to the greeting: no reply, no cards, no question; an answer still on its way is dropped. */
+    private void fresh() {
+        ask++;
+        if (listening) stopListening();
+        thinking = false;
+        think.target = 0;
+        tool = "";
+        previewTool = "";
+        reply = null;
+        replyError = false;
+        words = 0;
+        shownWords = 0;
+        replyH.snap(0);
+        shown.clear();
+        cardArt.prepare(shown);
+        userWords = "";
+        userFit = "";
+        dock.target = 0;
+        row = ROW_PILLS;
+        col[ROW_PILLS] = 0;
+        col[ROW_CARDS] = 0;
+        cardScroll.snap(0);
+        retarget();
     }
 
     private void texts() {
@@ -694,11 +787,13 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         pills[5] = Ui.tr("Roast my watchlist");
         placeholder = Ui.tr("Ask Welly…");
         listeningWord = Ui.tr("Listening…");
-        hint = Ui.tr("Ask me anything, or pick one below.");
-        greeting = Ui.trf("Hey {name}.", "name", person);
+        boolean guest = profile != null && profile.guest();
+        hint = guest ? Ui.tr("Guest Mode · nothing is saved") : Ui.tr("Ask me anything, or pick one below.");
+        greeting = guest ? Ui.tr("Hey there.") : Ui.trf("Hey {name}.", "name", person);
         caption = " · " + moodWord(mood);
         statusWeather = Ui.tr("Checking South Brunswick skies…");
         statusTitles = Ui.tr("Judging your watchlist…");
+        statusWatching = Ui.tr("Checking where you left off…");
         statusScores = Ui.tr("Squinting at the scoreboard…");
         statusLights = Ui.tr("Finding the light switch…");
         statusOn = Ui.tr("Flipping through the channels…");
@@ -813,7 +908,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     // MARK: - Focus
 
     private int count(int r) {
-        return r == ROW_CARDS ? shown.size() : r == ROW_PILLS ? pills.length : 2;
+        return r == ROW_BOT ? 1 : r == ROW_CARDS ? shown.size() : r == ROW_PILLS ? pills.length : 2;
     }
 
     private void moveTo(int r) {
@@ -865,6 +960,18 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         Choreographer.getInstance().postFrameCallback(this);
     }
 
+    /** Public lifecycle entry point for tools, proactive events, and previews. */
+    void emote(WellyBot.State state) {
+        emote(state, WellyBot.Expression.ATTENTIF);
+    }
+
+    void emote(WellyBot.State state, WellyBot.Expression expression) {
+        bot.setState(state, seconds);
+        bot.setExpression(expression, seconds);
+        botStateAt = seconds;
+        kick();
+    }
+
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         kick();
@@ -878,7 +985,9 @@ final class WellyView extends View implements Choreographer.FrameCallback {
 
     @Override protected void onVisibilityChanged(View changed, int visibility) {
         super.onVisibilityChanged(changed, visibility);
-        if (visibility == VISIBLE) kick();
+        if (visibility != VISIBLE) return;
+        if (memory != null) person();   // the tab shows again, maybe for someone else
+        kick();
     }
 
     /** The orb lives (an idle frame every vsync) only while the tab shows and animations are on. */
@@ -896,6 +1005,23 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         lastFrame = nanos;
         float step = Math.min(dt, 1 / 30f);
         seconds += step;
+        bot.setReducedMotion(Spring.instant);
+        double lookYaw = row == ROW_CARDS ? -18 + col[row] * 7 : row == ROW_PILLS ? -24 + col[row] * 9 : row == ROW_INPUT ? (col[row] == 0 ? -12 : 16) : 0;
+        double lookPitch = row == ROW_BOT ? 2 : row == ROW_CARDS ? -5 : 13;
+        bot.setLook(lookYaw, lookPitch, focused ? 1 : 0, 0, seconds);
+        if (thinking && seconds - botStateAt > .85f) {
+            int i = workStep++ % WORK_MONTAGE.length;
+            emote(WORK_MONTAGE[i], WORK_EXPRESSIONS[i]);
+        } else if (montage >= 0 && !thinking && seconds - botStateAt > 1.05f) {
+            montage = (montage + 1) % MONTAGE.length;
+            emote(MONTAGE[montage], MONTAGE_EXPRESSIONS[montage]);
+        } else if (!thinking && !listening && montage < 0 && bot.state() == WellyBot.State.IDLE) {
+            int slot = ((int) (seconds / 7)) % 3;
+            if (slot != idleExpression) {
+                idleExpression = slot;
+                bot.setExpression(slot == 0 ? WellyBot.Expression.ATTENTIF : slot == 1 ? WellyBot.Expression.CURIEUX : WellyBot.Expression.MALICIEUX, seconds);
+            }
+        }
         boolean moving = false;
         for (int i = 0; i < MAX_CARDS; i++) {
             if (cardEnter[i].target == 0 && i < shown.size() && seconds >= enterAt[i]) cardEnter[i].target = 1;
@@ -963,7 +1089,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
     }
 
     /** Welly's orb: a slow aurora inside a dark glass sphere, a colour rim, rings while listening, nodes while thinking. */
-    private void drawOrb(Canvas c, float d) {
+    private void drawLegacyOrb(Canvas c, float d) {
         float cx = lerp(getWidth() / 2f, colLeft + DOCK_R * k, d), cy = lerp(ORB_CY * k, DOCK_CY * k, d);
         float t = seconds, breath = Spring.instant ? 0 : 0.015f * (float) Math.sin(t * 2 * Math.PI / 4);
         float pulse = Spring.instant ? 0 : 0.045f * (float) Math.sin(t * 2 * Math.PI / 0.8f) * think.value
@@ -1055,6 +1181,102 @@ final class WellyView extends View implements Choreographer.FrameCallback {
             orbPaint.setShader(null);
         }
         c.restore();
+    }
+
+    /** Measured bloub silhouette; body, eye holes, paths, paints and matrices are all caller-owned. */
+    private void drawOrb(Canvas c, float d) {
+        float cx = lerp(getWidth() / 2f, colLeft + DOCK_R * k, d), cy = lerp(ORB_CY * k, DOCK_CY * k, d);
+        float pulse = Spring.instant ? 0 : .18f * listen.value * level.value;
+        float r = lerp(ORB_R, DOCK_R, d) * k * (1 + pulse);
+        orbX = cx; orbY = cy; orbR = r;
+        WellyBot.Frame f = bot.sample(seconds, botFrame);
+        c.save();
+        c.translate(cx, cy);
+        c.rotate((float) Math.toDegrees(f.rotation));
+        c.scale((float) f.bodyScaleX, (float) f.bodyScaleY);
+        if (f.arcCount > 0) {
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(Math.max(1, r * .045f));
+            ring.setColor(0x942FBFA0);
+            for (int i = 0; i < f.arcCount; i++) {
+                float a = (float) (seconds * (80 + i * 5) + i * 360f / f.arcCount);
+                botOval.set(-r * (1.18f + i * .075f), -r * (1.18f + i * .075f), r * (1.18f + i * .075f), r * (1.18f + i * .075f));
+                c.drawArc(botOval, a, 97, false, ring);
+            }
+        }
+        if (f.dotCount > 0 && f.dotsBehind) drawBotDots(c, f, r);
+        botPath.reset();
+        botPath.setFillType(Path.FillType.WINDING);
+        for (int i = 0; i < WellyBot.PROFILE_SAMPLES; i++) {
+            double a = i * Math.PI * 2 / WellyBot.PROFILE_SAMPLES;
+            float x = (float) ((f.centerX + Math.cos(a) * f.radii[i]) * r);
+            float y = (float) ((f.centerY + Math.sin(a) * f.radii[i]) * r);
+            if (i == 0) botPath.moveTo(x, y); else botPath.lineTo(x, y);
+        }
+        botPath.close();
+        botPaint.setStyle(Paint.Style.FILL);
+        botPaint.setColor(WellyBot.COLOR);
+        botPaint.setAlpha((int) (255 * f.bodyAlpha));
+        if (focused && row == ROW_BOT) {
+            glow.setStyle(Paint.Style.STROKE); glow.setStrokeWidth(4 * k); glow.setColor(0xAAFFFFFF);
+            c.drawPath(botPath, glow);
+        }
+        c.drawPath(botPath, botPaint);
+        if (f.eyeAlpha > .001) {
+            c.save();
+            c.clipPath(botPath);
+            eyePaint.setAlpha((int) (255 * f.eyeAlpha));
+            drawProjectedEye(c, f, 0, r);
+            drawProjectedEye(c, f, 1, r);
+            c.restore();
+        }
+        if (f.dotCount > 0 && !f.dotsBehind) drawBotDots(c, f, r);
+        if (f.notifScale > 0) {
+            notifPath.reset(); notifPath.setFillType(Path.FillType.EVEN_ODD);
+            float nx=(float)(f.notifX*r), ny=(float)(f.notifY*r), nr=(float)(f.notifR*f.notifScale*r);
+            notifPath.addCircle(nx,ny,nr,Path.Direction.CW);
+            notifPath.addCircle(nx-.11f*r,ny+.12f*r,.095f*r,Path.Direction.CW);
+            botPaint.setColor(WellyBot.NOTIF_BLUE); botPaint.setAlpha(255); c.drawPath(notifPath,botPaint);
+        }
+        c.restore();
+    }
+
+    /** Bloub's spherical tangent frame, projected orthographically; all scratch storage is preallocated. */
+    private void drawProjectedEye(Canvas c, WellyBot.Frame f, int index, float r) {
+        double yaw=Math.toRadians(f.gazeYaw), pitch=Math.toRadians(f.gazePitch), roll=Math.toRadians(f.gazeRoll);
+        double sy=Math.sin(yaw), cy=Math.cos(yaw), sp=Math.sin(pitch), cp=Math.cos(pitch);
+        double fx=sy*cp, fy=-sp, fz=cy*cp, rx=cy, ry=0, rz=-sy;
+        double dx=sy*sp, dy=cp, dz=cy*sp, cr=Math.cos(roll), sr=Math.sin(roll);
+        double rx0=rx, ry0=ry, rz0=rz;
+        rx=rx0*cr+dx*sr; ry=ry0*cr+dy*sr; rz=rz0*cr+dz*sr;
+        dx=dx*cr-rx0*sr; dy=dy*cr-ry0*sr;
+        double split=Math.toRadians((index == 0 ? -1 : 1) * f.eyeSplit), cs=Math.cos(split), ss=Math.sin(split);
+        double ex=(f.centerX+fx*cs+rx*ss)*r, ey=(f.centerY+fy*cs+ry*ss)*r;
+        double erx=rx*cs-fx*ss, ery=ry*cs-fy*ss;
+        double tilt=Math.toRadians(index == 0 ? f.eyeTilt0 : f.eyeTilt1), ct=Math.cos(tilt), st=Math.sin(tilt);
+        double ma=erx*ct+dx*st, mb=ery*ct+dy*st, mc=-erx*st+dx*ct, md=-ery*st+dy*ct;
+        double open=index == 0 ? f.eyeOpen0 : f.eyeOpen1;
+        double blink=.06+.94*f.lid*open;
+        float w=(float)((index == 0 ? f.eyeW0 : f.eyeW1)*r), h=(float)((index == 0 ? f.eyeH0 : f.eyeH1)*r);
+        eyeHole.reset();
+        botOval.set(-w*.5f,-h*.5f,w*.5f,h*.5f);
+        float radius=Math.min(w,h)*.5f;
+        eyeHole.addRoundRect(botOval,radius,radius,Path.Direction.CW);
+        eyeMatrixValues[0]=(float)ma; eyeMatrixValues[1]=(float)mc; eyeMatrixValues[2]=(float)ex;
+        eyeMatrixValues[3]=(float)(mb*blink); eyeMatrixValues[4]=(float)(md*blink); eyeMatrixValues[5]=(float)ey;
+        eyeMatrixValues[6]=0; eyeMatrixValues[7]=0; eyeMatrixValues[8]=1;
+        eyeMatrix.setValues(eyeMatrixValues);
+        eyeHole.transform(eyeMatrix);
+        c.drawPath(eyeHole,eyePaint);
+    }
+
+    private void drawBotDots(Canvas c, WellyBot.Frame f, float r) {
+        botPaint.setColor(WellyBot.COLOR); botPaint.setAlpha(f.dotsBehind ? 184 : 255);
+        for (int i=0;i<f.dotCount;i++) {
+            double a=i*Math.PI*2/f.dotCount+seconds*.45;
+            float distance=r*(1.05f+.18f*(i%4));
+            c.drawCircle((float)Math.cos(a)*distance,(float)Math.sin(a)*distance,r*(.08f+.03f*(i%3)),botPaint);
+        }
     }
 
     /** "Welly · mood" (and the Preview badge): centred under the greeting, then beside the small orb. */

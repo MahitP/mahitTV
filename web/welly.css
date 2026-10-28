@@ -43,6 +43,12 @@
 #welly .media .scrim { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.7)); }
 #welly .media .t { position: absolute; left: 24px; right: 24px; bottom: 50px; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #welly .media .m { position: absolute; left: 24px; right: 24px; bottom: 20px; font-size: 21px; color: rgba(255, 255, 255, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Continue watching (a profile's own watch log): the pick's art, or a plain fill with the app's name; a thin progress bar. */
+#welly .watch.plain { background: -webkit-linear-gradient(top, rgba(58, 58, 64, 0.92), rgba(30, 30, 34, 0.92)); background: linear-gradient(rgba(58, 58, 64, 0.92), rgba(30, 30, 34, 0.92)); }
+#welly .watch .app { position: absolute; left: 24px; top: 22px; font-size: 22px; font-weight: 600; color: rgba(255, 255, 255, 0.55); }
+#welly .watch .bar { position: absolute; left: 24px; right: 24px; bottom: 10px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
+#welly .watch .bar .fill { height: 4px; border-radius: 2px; background: #FFF; }
+#welly .watch .m { bottom: 22px; }
 #welly .card.score { width: 300px; }
 #welly .score .league, #welly .weather .place { position: absolute; left: 26px; top: 22px; font-size: 20px; font-weight: 600; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.6); }
 #welly .score .team { position: relative; height: 48px; margin: 0 26px; font-size: 26px; font-weight: 600; line-height: 48px; color: rgba(255, 255, 255, 0.62); }

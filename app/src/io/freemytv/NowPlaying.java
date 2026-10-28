@@ -22,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * What any app is playing (title, artist or channel, the app), from the media session each app publishes for the remote's
@@ -68,6 +70,9 @@ public class NowPlaying extends NotificationListenerService {
     }
 
     private static boolean asked;
+    /** How often a playing title's position goes into Continue Watching. */
+    private static final long PROGRESS_MS = 30_000;
+    private static final ExecutorService WRITER = Executors.newSingleThreadExecutor();
 
     /** A screen's watch: start() when it shows, stop() when it's hidden. text is null while nothing plays. */
     static final class Watch implements MediaSessionManager.OnActiveSessionsChangedListener {
@@ -83,6 +88,10 @@ public class NowPlaying extends NotificationListenerService {
         };
         private boolean on;
         volatile String text;
+        /** Continue Watching: the app playing and when its position was last written (at most every PROGRESS_MS). */
+        private MediaController progressOf;
+        private long progressAt;
+        private final Runnable progressTick = () -> progress(true);
 
         Watch(Context c, Runnable changed) {
             context = c;
@@ -108,6 +117,9 @@ public class NowPlaying extends NotificationListenerService {
 
         void stop() {
             if (!on) return;
+            if (progressOf != null) report(progressOf);   // where it was when the home screen went away
+            progressOf = null;
+            handler.removeCallbacks(progressTick);
             on = false;
             context.getSystemService(MediaSessionManager.class).removeOnActiveSessionsChangedListener(this);
             onActiveSessionsChanged(null);
@@ -127,6 +139,7 @@ public class NowPlaying extends NotificationListenerService {
 
         private void update() {
             String now = null;
+            MediaController playingNow = null;
             for (MediaController mc : controllers) {   // most recent first
                 PlaybackState s = mc.getPlaybackState();
                 int state = s == null ? PlaybackState.STATE_NONE : s.getState();
@@ -134,12 +147,59 @@ public class NowPlaying extends NotificationListenerService {
                 if (state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
                         || state == PlaybackState.STATE_CONNECTING) {
                     now = describe(mc);
+                    playingNow = mc;
                     break;
                 }
             }
+            playing(playingNow);
             if (Objects.equals(now, text)) return;
             text = now;
             changed.run();
+        }
+
+        /**
+         * Continue Watching (WatchLog.playing): the playing app's title and position, at most every PROGRESS_MS while
+         * it plays and once when it pauses or stops. The work is a small JSON write, off the main thread.
+         */
+        private void playing(MediaController mc) {
+            if (mc == progressOf) {
+                if (mc != null) progress(false);
+                return;
+            }
+            if (progressOf != null) report(progressOf);   // paused, stopped or replaced: its last position
+            progressOf = mc;
+            progressAt = 0;
+            handler.removeCallbacks(progressTick);
+            if (mc != null) progress(false);
+        }
+
+        private void progress(boolean tick) {
+            MediaController mc = progressOf;
+            if (mc == null || !on) return;
+            long now = SystemClock.elapsedRealtime();
+            if (tick || now - progressAt >= PROGRESS_MS) {
+                progressAt = now;
+                report(mc);
+            }
+            handler.removeCallbacks(progressTick);
+            handler.postDelayed(progressTick, PROGRESS_MS);
+        }
+
+        private void report(MediaController mc) {
+            PlaybackState s = mc.getPlaybackState();
+            MediaMetadata m = mc.getMetadata();
+            if (s == null) return;
+            long position = s.getPosition();
+            if (s.getState() == PlaybackState.STATE_PLAYING && s.getLastPositionUpdateTime() > 0 && position >= 0) {
+                position += (long) ((SystemClock.elapsedRealtime() - s.getLastPositionUpdateTime()) * s.getPlaybackSpeed());
+            }
+            long duration = m == null ? 0 : m.getLong(MediaMetadata.METADATA_KEY_DURATION);
+            CharSequence title = m == null ? null : m.getText(MediaMetadata.METADATA_KEY_TITLE);
+            if (title == null && m != null && m.getDescription() != null) title = m.getDescription().getTitle();
+            final String pkg = mc.getPackageName(), name = title == null ? null : title.toString().trim();
+            final long pos = position, dur = duration;
+            final Context c = context.getApplicationContext();
+            WRITER.execute(() -> WatchLog.playing(c, pkg, name, pos, dur));
         }
 
         /** "Title · Artist · App": the parts the app gives, then its name; null when there's none of them. */

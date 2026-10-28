@@ -11,7 +11,7 @@ import android.view.KeyEvent;
 import android.widget.TextView;
 
 /**
- * The Free My TV home screen (Android's "Home" role in Free My TV mode). It runs in the :home process: if it crashes,
+ * The mahitTV home screen (Android's "Home" role in Free My TV mode). It runs in the :home process: if it crashes,
  * the safety net in the main process keeps working. On the 3rd crash within 5 min, the Watchdog gives the home screen
  * back to the TV's original one.
  */
@@ -30,7 +30,7 @@ public class HomeActivity extends Activity {
             // Don't try to draw again: only show a notice while the main process restores the original home screen.
             HomeMode.requestRevertHome(this);
             TextView t = new TextView(this);
-            t.setText(Ui.tr("Free My TV's home screen ran into a problem.\nGoing back to the TV's original home screen…"));
+            t.setText(Ui.tr("mahitTV's home screen ran into a problem.\nGoing back to the TV's original home screen…"));
             t.setTextColor(Color.WHITE);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             t.setGravity(Gravity.CENTER);
@@ -58,6 +58,11 @@ public class HomeActivity extends Activity {
             return;
         }
         if (home != null) home.resume();
+    }
+
+    /** The home already redrew itself for a new profile (HomeView.applyProfile): no recreate for that change. */
+    void profileApplied() {
+        prefsVersion = Prefs.version;
     }
 
     @Override protected void onPause() {

@@ -204,6 +204,11 @@ the user's words above that, right-aligned, dimmer.
 
 ### 3.5 The Welly screen
 
+- **Visual form (`WellyBot` — Bloub character):** rendered by `WellyBot.java` (Android) and `web/welly-bot.js` (Web),
+  a `#2fbfa0` green `galet` pebble silhouette with clipped `#FFFFFF` white eyes, 15 kinetic states (`idle`, `listen`,
+  `think`, `speak`, `notify`, `comet`, `orbit`, `wink`, `burst`, etc.) and 16 expressions (`attentif`, `content`,
+  `concentre`, `curieux`, `malicieux`, `heureux`, etc.). Sits centre stage above the greeting on open and docks beside
+  `Welly · mood` when a reply arrives.
 - Centre column 1180 wide: **"Hey Mahit."** (Title2 57 semibold) on first open, the mood word under Welly's name; the
   last exchange; cards in a row.
 - Bottom: **prompt pills** (glass on the background, the one glass layer here) in a scrolling row — *What am I

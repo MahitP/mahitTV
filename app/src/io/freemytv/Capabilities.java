@@ -28,13 +28,13 @@ final class Capabilities {
     static String missing(Context c, String need) {
         switch (need) {
             case NEED_ADB:
-                return adb(c) ? null : Ui.tr("Needs Free My TV mode: turn it on in Home Screen.");
+                return adb(c) ? null : Ui.tr("Needs mahitTV mode: turn it on in System & Original TV → Home Screen.");
             case NEED_REMOTE_BUTTONS:
-                return remoteButtons() ? null : Ui.tr("This TV's remote has no app buttons that Free My TV knows.");
+                return remoteButtons() ? null : Ui.tr("This TV's remote has no app buttons that mahitTV knows.");
             case NEED_OVERLAY:
                 return overlay(c) ? null : Ui.tr("This TV doesn't let apps show over other apps: the time left shows on the home screen.");
             case NEED_LISTENER:
-                return !adb(c) ? Ui.tr("Needs Free My TV mode: turn it on in Home Screen.")
+                return !adb(c) ? Ui.tr("Needs mahitTV mode: turn it on in System & Original TV → Home Screen.")
                         : refused(c, LISTENER) ? Ui.tr("This TV doesn't let apps see what's playing.") : null;
             case NEED_LIVE_TV:
                 return HomeApps.liveTv(c) != null ? null : Ui.tr("This TV has no live TV (antenna or cable) to open.");
@@ -47,7 +47,7 @@ final class Capabilities {
     private static boolean adbNow;
 
     /**
-     * Keys and settings through the TV's own ADB: the switch has it allowed, so in Free My TV mode. Read again only when
+     * Keys and settings through the TV's own ADB: the switch has it allowed, so in mahitTV mode. Read again only when
      * the state file changes, as the settings ask on every frame.
      */
     static synchronized boolean adb(Context c) {

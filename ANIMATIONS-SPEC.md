@@ -151,14 +151,15 @@ the band, too small to see; 1100 px/s gives the 6–10 px tug the brief asks for
   the camera drifts in a slow figure eight (±1.5°, 36 s), stopped by any key; a lit dot breathes (§5.5).
 
 ## 4. Welly tab
-- **Orb**, centre stage above the greeting, four states blended on ORB:
-  - **Idle:** a slow aurora morphing with low-frequency sines.
-  - **Listening:** grows to 1.18×, a sharper cyan/magenta/amber rim, rings that follow the mic level
-    (SpeechRecognizer `onRmsChanged` on Android; a simulated cadence on the web).
-  - **Thinking:** specular nodes orbit it, a 0.8 s pulse, and a witty status line per tool ("Checking South Brunswick
-    skies…", "Judging your watchlist…").
-  - **Speaking:** pulses in step with the reply being revealed.
-  When a reply arrives the orb shrinks and glides up beside "Welly · mood".
+- **WellyBot (`WellyBot.java` & `web/welly-bot.js`)**, centre stage above the greeting (`#2fbfa0` green `galet` pebble
+  silhouette, clipped `#FFFFFF` white eyes, 15 kinetic states and 16 expressions), blended across Welly's states:
+  - **Idle (`idle` / `attentif`):** organic pebble breathing + natural blink and saccades.
+  - **Listening (`listen`):** attentive wide-eyed posture with voice-level reactive ring (`SpeechRecognizer`
+    `onRmsChanged` on Android; simulated cadence on the web).
+  - **Thinking (`comet` / `orbit` + `concentre` / `curieux`):** orbiting arc / comet trail and a witty status line per
+    tool ("Checking South Brunswick skies…", "Judging your watchlist…").
+  - **Speaking (`speak` / `burst` / `wink`):** expressive eye shapes and speaking bounce in step with the reply.
+  When a reply arrives `WellyBot` shrinks and glides up beside "Welly · mood".
 - **Reply:** its block grows to its height; words appear at a reading pace (OK shows it all).
 - **Cards:** rise out of the orb's position (§5.3), 45 ms apart: 28 px rise, 0.94 → 1.0, fade, CARD_ENTER. Focus uses
   the tile physics (1.10×, tilt, lift).
