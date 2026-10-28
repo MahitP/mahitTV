@@ -60,6 +60,41 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky .grad { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky .day { background: -webkit-linear-gradient(top, #F5F5F7, #E2E2E7); background: linear-gradient(#F5F5F7, #E2E2E7); }
 #sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
+#sky .horizon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
+#sky #horizonDay {
+  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6, transparent 72%),
+    -webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF, transparent 74%),
+    -webkit-radial-gradient(106% 104%, 104% 104%, #7E9BB5, transparent 72%),
+    -webkit-linear-gradient(top, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%);
+  background: radial-gradient(83% 83% at -8% 69%, #F5EBD6, transparent 72%),
+    radial-gradient(78% 78% at 53% 48%, #DCE6EF, transparent 74%),
+    radial-gradient(104% 104% at 106% 104%, #7E9BB5, transparent 72%),
+    linear-gradient(180deg, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%);
+}
+#sky #horizonNight {
+  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #1C2638, transparent 72%),
+    -webkit-radial-gradient(53% 48%, 78% 78%, #151E2D, transparent 74%),
+    -webkit-radial-gradient(106% 104%, 104% 104%, #080B12, transparent 72%),
+    -webkit-linear-gradient(top, #0D131F 0%, #1C2638 56%, #080B12 100%);
+  background: radial-gradient(83% 83% at -8% 69%, #1C2638, transparent 72%),
+    radial-gradient(78% 78% at 53% 48%, #151E2D, transparent 74%),
+    radial-gradient(104% 104% at 106% 104%, #080B12, transparent 72%),
+    linear-gradient(180deg, #0D131F 0%, #1C2638 56%, #080B12 100%);
+}
+/* A fixed two-pixel ordered dither keeps the broad gradients from banding on older TV panels. */
+#sky .horizon::before, #sky .horizon::after { content: ''; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+#sky .horizon::before {
+  background: -webkit-repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px);
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px);
+}
+#sky #horizonDay::after {
+  background: -webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%);
+}
+#sky #horizonNight::after {
+  background: -webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%);
+}
 #sky .photo {
   position: absolute;
   left: 0;

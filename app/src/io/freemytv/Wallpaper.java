@@ -28,6 +28,12 @@ final class Wallpaper {
     private static final int[] SOLID_COLORS = {
             0xff000000, 0xff1c1c1e, 0xff121a2a, 0xff11221c, 0xff1b3b3a, 0xff8e8e93, 0xffd1d5db
     };
+    // x, y and radius as fractions of the whole screen, shared with the web renderer.
+    private static final float[][] HORIZON_GEOMETRY = {
+            {-0.08f, 0.69f, 0.83f},
+            {0.53f, 0.48f, 0.78f},
+            {1.06f, 1.04f, 1.04f}
+    };
 
     private static final Aerial[] AERIALS = {
             new Aerial("aerial:yosemite", "4109D42A-D717-46A7-A9A2-FE53A82B25C0", "Yosemite Valley",
@@ -56,6 +62,14 @@ final class Wallpaper {
     static String[] solidIds() { return SOLID_IDS.clone(); }
 
     static int[] solidColors() { return SOLID_COLORS.clone(); }
+
+    static float[][] horizonGeometry() {
+        float[][] copy = new float[HORIZON_GEOMETRY.length][];
+        for (int i = 0; i < HORIZON_GEOMETRY.length; i++) copy[i] = HORIZON_GEOMETRY[i].clone();
+        return copy;
+    }
+
+    static float horizonVignette(boolean dark) { return dark ? 0.18f : 0.12f; }
 
     static Aerial[] aerials() {
         Aerial[] copy = new Aerial[AERIALS.length];

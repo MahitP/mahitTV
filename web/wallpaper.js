@@ -56,6 +56,11 @@ var Wallpaper = (function () {
     {id: 'studio:warm-stone', color: '#8E8E93'},
     {id: 'studio:silver-mist', color: '#D1D5DB'}
   ];
+  var horizonGeometry = [
+    [-0.08, 0.69, 0.83],
+    [0.53, 0.48, 0.78],
+    [1.06, 1.04, 1.04]
+  ];
   var allowedMedia = [];
   var i;
 
@@ -88,6 +93,12 @@ var Wallpaper = (function () {
   function copySolids() {
     var copy = [];
     for (var at = 0; at < solids.length; at++) copy.push({id: solids[at].id, color: solids[at].color});
+    return copy;
+  }
+
+  function copyHorizonGeometry() {
+    var copy = [];
+    for (var at = 0; at < horizonGeometry.length; at++) copy.push(horizonGeometry[at].slice(0));
     return copy;
   }
 
@@ -129,6 +140,10 @@ var Wallpaper = (function () {
       : ['#B8C7D6', '#F5EBD6', '#DCE6EF', '#7E9BB5'];
   }
 
+  function horizonVignette(dark) {
+    return dark ? 0.18 : 0.12;
+  }
+
   function media(zone, mediaApp) {
     return mediaApp === true && (zone === 'shelf' || zone === 'hero');
   }
@@ -142,6 +157,8 @@ var Wallpaper = (function () {
     find: find,
     allowed: allowed,
     palette: palette,
+    horizonGeometry: copyHorizonGeometry,
+    horizonVignette: horizonVignette,
     media: media
   };
 }());

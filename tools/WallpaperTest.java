@@ -11,6 +11,7 @@ public final class WallpaperTest {
         legacyAssetsAreExact();
         horizonModeSelectsAtmosphere();
         palettesMatchTheContract();
+        horizonGeometryIsExact();
         mediaPolicyOnlyAllowsFocusedMedia();
         aerialCatalogueIsExact();
         urlAllowlistIsExact();
@@ -71,6 +72,26 @@ public final class WallpaperTest {
         int[] changed = Wallpaper.palette(true);
         changed[0] = 0;
         equal(0xff0d131f, Wallpaper.palette(true)[0], "palette is isolated from callers");
+    }
+
+    private static void horizonGeometryIsExact() {
+        float[][] expected = {
+                {-0.08f, 0.69f, 0.83f},
+                {0.53f, 0.48f, 0.78f},
+                {1.06f, 1.04f, 1.04f}
+        };
+        float[][] geometry = Wallpaper.horizonGeometry();
+        equal(expected.length, geometry.length, "Horizon layer count");
+        for (int i = 0; i < expected.length; i++) {
+            floats(expected[i], geometry[i], "Horizon geometry " + i);
+        }
+        equal(0.12f, Wallpaper.horizonVignette(false), "light Horizon vignette");
+        equal(0.18f, Wallpaper.horizonVignette(true), "dark Horizon vignette");
+
+        geometry[0][0] = 42;
+        geometry[1] = new float[] {42, 42, 42};
+        floats(expected[0], Wallpaper.horizonGeometry()[0], "Horizon geometry rows are isolated");
+        floats(expected[1], Wallpaper.horizonGeometry()[1], "Horizon geometry array is isolated");
     }
 
     private static void mediaPolicyOnlyAllowsFocusedMedia() {
@@ -177,6 +198,16 @@ public final class WallpaperTest {
     private static void array(int[] expected, int[] actual, String message) {
         checks++;
         if (!Arrays.equals(expected, actual)) fail(message, Arrays.toString(expected), Arrays.toString(actual));
+    }
+
+    private static void floats(float[] expected, float[] actual, String message) {
+        checks++;
+        if (!Arrays.equals(expected, actual)) fail(message, Arrays.toString(expected), Arrays.toString(actual));
+    }
+
+    private static void equal(float expected, float actual, String message) {
+        checks++;
+        if (Float.compare(expected, actual) != 0) fail(message, expected, actual);
     }
 
     private static void same(Object expected, Object actual, String message) {

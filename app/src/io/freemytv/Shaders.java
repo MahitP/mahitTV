@@ -76,6 +76,40 @@ final class Shaders {
         "}\n";
 
     /**
+     * Apple Frosted Horizon: three very broad, fixed color fields over a vertical sky. Geometry is normalized so the
+     * same composition is used at every resolution. The tiny deterministic dither removes gradient banding without
+     * introducing a clock or any per-frame work.
+     */
+    static final String HORIZON =
+        "uniform float2 res;\n" +
+        "uniform float2 layer;\n" +
+        "uniform half3 c0;\n" +
+        "uniform half3 c1;\n" +
+        "uniform half3 c2;\n" +
+        "uniform half3 c3;\n" +
+        "uniform float dark;\n" +
+        "float hash(float2 p) {\n" +
+        "  p = fract(p * float2(123.34, 456.21));\n" +
+        "  p += dot(p, p + 45.32);\n" +
+        "  return fract(p.x * p.y);\n" +
+        "}\n" +
+        "float field(float2 uv, float2 center, float radius, float fade) {\n" +
+        "  return 1.0 - clamp(length((uv - center) / radius) / fade, 0.0, 1.0);\n" +
+        "}\n" +
+        "half4 main(float2 xy) {\n" +
+        "  float2 uv = (xy * (res / layer)) / res;\n" +
+        "  half3 col = mix(c0, c2, half(clamp(uv.y / 0.56, 0.0, 1.0)));\n" +
+        "  col = mix(col, c3, half(clamp((uv.y - 0.56) / 0.44, 0.0, 1.0)));\n" +
+        "  col = mix(col, c3, half(field(uv, float2(1.06, 1.04), 1.04, 0.72)));\n" +
+        "  col = mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)));\n" +
+        "  col = mix(col, c1, half(field(uv, float2(-0.08, 0.69), 0.83, 0.72)));\n" +
+        "  float edge = clamp((length((uv - 0.5) * 2.0) - 0.45) / 0.55, 0.0, 1.0);\n" +
+        "  col *= half(1.0 - mix(0.12, 0.18, dark) * edge);\n" +
+        "  col += half3((hash(xy) - 0.5) / 255.0);\n" +
+        "  return half4(col, 1.0);\n" +
+        "}\n";
+
+    /**
      * Glass in a rounded-corner shape. The glass background comes from `frost`: the aurora without detail in a 48×27
      * image computed on the CPU (Frost), or the blurred recommendation image (Backdrop), scaled up with linear
      * filtering. That is the frosted glass, at one texture read per pixel (a TV GPU such as the PowerVR BXE-4-32 can't

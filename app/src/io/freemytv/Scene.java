@@ -24,20 +24,23 @@ import android.graphics.Shader;
  */
 final class Scene {
     final Shaders.Palette palette = new Shaders.Palette();
-    private RuntimeShader aurora, glass, liquid;
+    private RuntimeShader aurora, horizon, glass, liquid;
     private final Frost frost = new Frost();
     private final Paint auroraPaint = new Paint();
+    private final Paint horizonPaint = new Paint();
     private final Paint glassPaint = new Paint();
     private final Paint liquidPaint = new Paint();
     private final Paint flatFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint flatRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fallback = new Paint();
     private final Recording auroraNode = Recording.create("aurora");
+    private final Recording horizonNode = Recording.create("horizon");
     // The layer is drawn at a quarter size and scaled up: filtered, its soft shapes stay soft instead of stepping.
     private final Paint layerPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private int w = 1, h = 1, lw = 1, lh = 1;
     private float speed = 1, baseDim, dim, time;
-    private boolean auroraDirty = true, imageFrost, imageGlass;
+    private boolean auroraDirty = true, horizonDirty = true, horizonMode, horizonDark, fallbackReady,
+            imageFrost, imageGlass;
     private Bitmap frostImage, frostImageB, glassA, glassB;
     /** The key light's direction for the Liquid Glass (Shaders.LIQUID), top left unless something turns it. */
     static final float LIGHT_X = -0.4512f, LIGHT_Y = -0.8924f;
@@ -86,7 +89,15 @@ final class Scene {
             glass = null;
             liquid = null;
         }
+        try {
+            horizon = new RuntimeShader(Shaders.HORIZON);
+            horizonPaint.setShader(horizon);
+        } catch (RuntimeException | LinkageError e) {
+            AppLog.w("Horizon shader unavailable, using gradient: " + e.getMessage());
+            horizon = null;
+        }
         auroraNode.setUseCompositingLayer(true, layerPaint);
+        horizonNode.setUseCompositingLayer(true, layerPaint);
         flatRim.setStyle(Paint.Style.STROKE);
         flatRim.setColor(0x33FFFFFF);
         flatRim.setStrokeWidth(1.5f);
@@ -99,11 +110,13 @@ final class Scene {
     }
 
     void setSize(int width, int height) {
+        boolean sizeChanged = w != Math.max(1, width) || h != Math.max(1, height);
         w = Math.max(1, width);
         h = Math.max(1, height);
         lw = Math.max(1, Math.round(w / 4f));
         lh = Math.max(1, Math.round(h / 4f));
         auroraNode.setPosition(0, 0, lw, lh);
+        horizonNode.setPosition(0, 0, lw, lh);
         if (glass == null) {
             // The sheen fades over a fixed height from each glass's top edge, drawn with a translate: a local matrix
             // per glass would rebuild the native gradient on every draw on Android 8 to 12.
@@ -121,6 +134,12 @@ final class Scene {
             setFrostScale();
             if (imageGlass) liquid.setFloatUniform("imageScale", (float) Backdrop.GW / w, (float) Backdrop.GH / h);
         }
+        if (horizon != null) {
+            horizon.setFloatUniform("res", w, h);
+            horizon.setFloatUniform("layer", lw, lh);
+            horizonDirty = true;
+        }
+        if (sizeChanged || !fallbackReady) rebuildFallback();
         push();
     }
 
@@ -134,7 +153,49 @@ final class Scene {
     /** Call after changing `palette`. Bright palettes are dimmed a little so white text stays readable. */
     void applyPalette() {
         push();
-        if (aurora == null) fallback.setShader(Ui.gradient(h, palette.color(1), palette.color(0)));
+        if (!horizonMode) rebuildFallback();
+    }
+
+    /** Uses the fixed Frosted Horizon palette. `dark` selects its night colors. */
+    void setHorizon(boolean dark) {
+        if (horizonMode && horizonDark == dark) return;
+        horizonMode = true;
+        horizonDark = dark;
+        if (horizon != null) {
+            int[] colors = Wallpaper.palette(dark);
+            color(horizon, "c0", colors[0]);
+            color(horizon, "c1", colors[1]);
+            color(horizon, "c2", colors[2]);
+            color(horizon, "c3", colors[3]);
+            horizon.setFloatUniform("dark", dark ? 1 : 0);
+            horizonDirty = true;
+        }
+        rebuildFallback();
+    }
+
+    /** Returns to the existing animated Aurora background without disturbing its glass or animation state. */
+    void setAurora() {
+        if (!horizonMode) return;
+        horizonMode = false;
+        rebuildFallback();
+    }
+
+    boolean isHorizon() { return horizonMode; }
+
+    private static void color(RuntimeShader shader, String name, int color) {
+        shader.setFloatUniform(name, Color.red(color) / 255f, Color.green(color) / 255f, Color.blue(color) / 255f);
+    }
+
+    /** Rebuilt only when setSize or the selected background/theme changes, never from drawBackground. */
+    private void rebuildFallback() {
+        if (horizonMode) {
+            int[] colors = Wallpaper.palette(horizonDark);
+            fallback.setShader(new android.graphics.LinearGradient(0, 0, 0, h,
+                    new int[] {colors[0], colors[2], colors[3]}, new float[] {0, 0.56f, 1}, Shader.TileMode.CLAMP));
+        } else {
+            fallback.setShader(Ui.gradient(h, palette.color(1), palette.color(0)));
+        }
+        fallbackReady = true;
     }
 
     private void push() {
@@ -382,8 +443,24 @@ final class Scene {
     }
 
     void drawBackground(Canvas c) {
+        if (horizonMode) {
+            if (horizon == null) {
+                c.drawRect(0, 0, w, h, fallback);
+                return;
+            }
+            if (horizonDirty) {
+                Canvas rc = horizonNode.beginRecording(lw, lh);
+                try {
+                    rc.drawPaint(horizonPaint);
+                } finally {
+                    horizonNode.endRecording();
+                }
+                horizonDirty = false;
+            }
+            drawLayer(c, horizonNode);
+            return;
+        }
         if (aurora == null) {
-            if (fallback.getShader() == null) applyPalette();
             c.drawRect(0, 0, w, h, fallback);
             return;
         }
@@ -396,9 +473,13 @@ final class Scene {
             }
             auroraDirty = false;
         }
+        drawLayer(c, auroraNode);
+    }
+
+    private void drawLayer(Canvas c, Recording node) {
         c.save();
         c.scale((float) w / lw, (float) h / lh);
-        auroraNode.draw(c);
+        node.draw(c);
         c.restore();
     }
 

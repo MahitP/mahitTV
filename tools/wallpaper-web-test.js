@@ -4,6 +4,9 @@ var assert = require('assert');
 var fs = require('fs');
 var vm = require('vm');
 var source = fs.readFileSync('web/wallpaper.js', 'utf8');
+var css = fs.readFileSync('web/home.css', 'utf8');
+var html = fs.readFileSync('web/index.html', 'utf8');
+var shaders = fs.readFileSync('app/src/io/freemytv/Shaders.java', 'utf8');
 var context = {};
 vm.runInNewContext(source, context, {filename: 'web/wallpaper.js'});
 var Wallpaper = context.Wallpaper;
@@ -50,6 +53,21 @@ assert.deepStrictEqual(Array.prototype.slice.call(Wallpaper.palette(false)), ['#
 var changedPalette = Wallpaper.palette(true);
 changedPalette[0] = '#000000';
 assert.strictEqual(Wallpaper.palette(true)[0], '#0D131F');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(Wallpaper.horizonGeometry())), [
+  [-0.08, 0.69, 0.83],
+  [0.53, 0.48, 0.78],
+  [1.06, 1.04, 1.04]
+]);
+assert.strictEqual(Wallpaper.horizonVignette(false), 0.12);
+assert.strictEqual(Wallpaper.horizonVignette(true), 0.18);
+var changedGeometry = Wallpaper.horizonGeometry();
+changedGeometry[0][0] = 42;
+changedGeometry[1] = [42, 42, 42];
+assert.deepStrictEqual(JSON.parse(JSON.stringify(Wallpaper.horizonGeometry())), [
+  [-0.08, 0.69, 0.83],
+  [0.53, 0.48, 0.78],
+  [1.06, 1.04, 1.04]
+]);
 assert.strictEqual(Wallpaper.media('shelf', true), true);
 assert.strictEqual(Wallpaper.media('hero', true), true);
 assert.strictEqual(Wallpaper.media('shelf', false), false);
@@ -121,4 +139,22 @@ assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/injected.png'), f
 assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/changed-again.png'), false);
 
 assert.strictEqual(/\b(?:const|let)\b|=>|`|\b(?:Promise|Map|Set|URL)\b|Array\.from/.test(source), false, 'source remains ES5');
+
+assert.ok(html.indexOf('id="horizonDay"') < html.indexOf('id="art"'), 'day Horizon sits below photo art');
+assert.ok(html.indexOf('id="horizonNight"') < html.indexOf('id="art"'), 'night Horizon sits below photo art');
+[
+  '83% 83% at -8% 69%', '#F5EBD6',
+  '78% 78% at 53% 48%', '#DCE6EF',
+  '104% 104% at 106% 104%', '#7E9BB5',
+  '#B8C7D6 0%', '#DCE6EF 56%', '#7E9BB5 100%',
+  '#1C2638', '#151E2D', '#080B12', '#0D131F 0%',
+  'rgba(0, 0, 0, 0.12)', 'rgba(0, 0, 0, 0.18)'
+].forEach(function (token) { assert.ok(css.indexOf(token) >= 0, 'Horizon CSS token ' + token); });
+['uniform float2 res;', 'uniform float2 layer;', 'uniform half3 c0;', 'uniform half3 c1;',
+  'uniform half3 c2;', 'uniform half3 c3;', 'uniform float dark;',
+  '(hash(xy) - 0.5) / 255.0'].forEach(function (token) {
+  assert.ok(shaders.indexOf(token) >= 0, 'Horizon AGSL token ' + token);
+});
+var horizonShader = shaders.substring(shaders.indexOf('static final String HORIZON'), shaders.indexOf('static final String GLASS'));
+assert.strictEqual(/uniform float t;|\banimation\b/.test(horizonShader), false, 'Horizon shader has no time or animation');
 console.log('wallpaper-web-test: passed');
