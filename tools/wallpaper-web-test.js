@@ -27,6 +27,15 @@ assert.strictEqual(Wallpaper.normalize('coast.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('aurora.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('earth.jpg'), 'horizon:auto');
 
+assert.strictEqual(Wallpaper.legacyAsset('aerial:yosemite'), 'valley.jpg');
+assert.strictEqual(Wallpaper.legacyAsset('aerial:iceland'), 'coast.jpg');
+assert.strictEqual(Wallpaper.legacyAsset('aerial:north-america-aurora'), 'aurora.jpg');
+assert.strictEqual(Wallpaper.legacyAsset('aerial:new-york'), 'earth.jpg');
+['horizon:auto', 'horizon:light', 'horizon:dark', 'studio:teal', 'live:aerial',
+  'aerial:palau-coral', 'aerial:sonoma-coast', 'missing', null].forEach(function (id) {
+  assert.strictEqual(Wallpaper.legacyAsset(id), '');
+});
+
 assert.strictEqual(Wallpaper.dark('horizon:light', true), false);
 assert.strictEqual(Wallpaper.dark('horizon:dark', false), true);
 assert.strictEqual(Wallpaper.dark('horizon:auto', false), false);

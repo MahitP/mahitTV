@@ -1336,8 +1336,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (aerials.length == 0) return null;
-        // The profile's wallpaper (Settings > Appearance) when it names an aerial; else this hour's.
-        int chosen = java.util.Arrays.binarySearch(aerials, Prefs.wallpaper());
+        // Stable wallpaper IDs with a bundled compatibility asset use it; everything else keeps the hourly fallback.
+        String asset = Wallpaper.legacyAsset(Prefs.wallpaper());
+        int chosen = asset.isEmpty() ? -1 : java.util.Arrays.binarySearch(aerials, asset);
         final int index = chosen >= 0 ? chosen : (int) (System.currentTimeMillis() / 3600_000L % aerials.length);
         if (index == wallpaperIndex) return wallpaper;
         if (!wallpaperLoading) {

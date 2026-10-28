@@ -93,7 +93,7 @@
   // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
   var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 251, TILE_H = 150, TILE_GAP = 49, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
   var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
-  var AERIALS = ['valley', 'coast', 'earth', 'aurora'];
+  var WALLPAPERS = ['horizon:auto', 'aerial:yosemite', 'aerial:iceland', 'aerial:north-america-aurora', 'aerial:new-york'];
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -992,10 +992,10 @@
     }
   }
 
-  /** The profile's wallpaper (Settings → Appearance), else a bundled aerial, a new one each hour. */
+  /** A bundled compatibility asset for the profile's stable wallpaper ID, or the base gradient. */
   function wallpaperUrl() {
-    var own = Prefs.wallpaper();
-    return 'aerials/' + (own || AERIALS[Math.floor(Date.now() / 3600000) % AERIALS.length] + '.jpg');
+    var asset = Wallpaper.legacyAsset(Prefs.wallpaper());
+    return asset ? 'aerials/' + asset : '';
   }
 
   /** The wallpaper, with nothing over it. */
@@ -1481,14 +1481,18 @@
   }
 
   function lookRows() {
-    var theme = Prefs.theme(), auto = tr('Automatic'), wall = Prefs.wallpaper(), name = wall.replace(/\.jpg$/, '');
-    var names = {valley: tr('Valley'), coast: tr('Coast'), earth: tr('Earth'), aurora: tr('Aurora')};
+    var theme = Prefs.theme(), auto = tr('Automatic'), wall = Prefs.wallpaper();
+    var names = {
+      'horizon:auto': auto, 'horizon:light': tr('Light'), 'horizon:dark': tr('Dark'),
+      'aerial:yosemite': tr('Valley'), 'aerial:iceland': tr('Coast'),
+      'aerial:north-america-aurora': tr('Aurora'), 'aerial:new-york': tr('Earth')
+    };
     return [
       {label: tr('Theme'), value: theme === 'light' ? tr('Light') : theme === 'dark' ? tr('Dark') : auto,
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
-      {label: tr('Wallpaper'), value: wall ? names[name] || name : auto,
+      {label: tr('Wallpaper'), value: names[wall] || auto,
         step: function (d) {
-          cycle('wallpaper', [''].concat(AERIALS.map(function (a) { return a + '.jpg'; })), wall, d);
+          cycle('wallpaper', WALLPAPERS, wall, d);
           follow();
         }},
       {label: tr('Startup animation & chime'), toggle: Prefs.intro(),

@@ -112,6 +112,14 @@ var Wallpaper = (function () {
     return id === 'horizon:dark' || (id !== 'horizon:light' && weatherNight === true);
   }
 
+  function legacyAsset(id) {
+    if (id === 'aerial:yosemite') return 'valley.jpg';
+    if (id === 'aerial:iceland') return 'coast.jpg';
+    if (id === 'aerial:north-america-aurora') return 'aurora.jpg';
+    if (id === 'aerial:new-york') return 'earth.jpg';
+    return '';
+  }
+
   function allowed(value) {
     return typeof value === 'string' && value.indexOf('https://sylvan.apple.com/') === 0 && allowedMedia.indexOf(value) >= 0;
   }
@@ -130,6 +138,7 @@ var Wallpaper = (function () {
     solids: copySolids(),
     normalize: normalize,
     dark: dark,
+    legacyAsset: legacyAsset,
     find: find,
     allowed: allowed,
     palette: palette,

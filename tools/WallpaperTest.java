@@ -8,6 +8,7 @@ public final class WallpaperTest {
     public static void main(String[] args) {
         validIdsAreStable();
         legacyValuesMigrate();
+        legacyAssetsAreExact();
         horizonModeSelectsAtmosphere();
         palettesMatchTheContract();
         mediaPolicyOnlyAllowsFocusedMedia();
@@ -37,6 +38,20 @@ public final class WallpaperTest {
         equal("horizon:auto", Wallpaper.normalize("coast.jpg"), "coast migration");
         equal("horizon:auto", Wallpaper.normalize("aurora.jpg"), "aurora migration");
         equal("horizon:auto", Wallpaper.normalize("earth.jpg"), "removed Earth migration");
+    }
+
+    private static void legacyAssetsAreExact() {
+        equal("valley.jpg", Wallpaper.legacyAsset("aerial:yosemite"), "Yosemite legacy asset");
+        equal("coast.jpg", Wallpaper.legacyAsset("aerial:iceland"), "Iceland legacy asset");
+        equal("aurora.jpg", Wallpaper.legacyAsset("aerial:north-america-aurora"), "aurora legacy asset");
+        equal("earth.jpg", Wallpaper.legacyAsset("aerial:new-york"), "New York legacy asset");
+        equal("", Wallpaper.legacyAsset("horizon:auto"), "Horizon has no legacy asset");
+        equal("", Wallpaper.legacyAsset("studio:teal"), "studio has no legacy asset");
+        equal("", Wallpaper.legacyAsset("live:aerial"), "live has no legacy asset");
+        equal("", Wallpaper.legacyAsset("aerial:palau-coral"), "Palau has no bundled asset");
+        equal("", Wallpaper.legacyAsset("aerial:sonoma-coast"), "Sonoma has no bundled asset");
+        equal("", Wallpaper.legacyAsset("missing"), "unknown has no legacy asset");
+        equal("", Wallpaper.legacyAsset(null), "null has no legacy asset");
     }
 
     private static void horizonModeSelectsAtmosphere() {

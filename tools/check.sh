@@ -42,6 +42,7 @@ fi
 if [ "$what" = all ] || [ "$what" = web ]; then
   python3 tools/translate.py --check
   node tools/wallpaper-web-test.js
+  node tools/wallpaper-pref-test.js
 
   # The generic LG and Samsung packages land where your own build leaves yours (with your city and TMDB key):
   # keep yours and put them back afterwards, so the next install isn't the generic one.

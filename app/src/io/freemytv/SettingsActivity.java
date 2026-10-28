@@ -747,7 +747,9 @@ public class SettingsActivity extends Activity {
 
         // MARK: - Sections (MAHITTV-PROFILES-SPEC.md §6)
 
-        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
+        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"},
+                WALLPAPERS = {"horizon:auto", "aerial:yosemite", "aerial:iceland", "aerial:north-america-aurora",
+                        "aerial:new-york"};
         /** The main list, in this order. */
         private static final int S_PROFILES = 0, S_APPEARANCE = 1, S_LOCATION = 2, S_SMART_HOME = 3, S_WELLY = 4,
                 S_SYSTEM = 5, S_RESET = 6, SECTIONS = 7;
@@ -780,7 +782,6 @@ public class SettingsActivity extends Activity {
         private int checking;                    // lights that haven't answered "Check again" yet
         private boolean reduceMotion, highContrast;   // the TV's own accessibility settings, read with the state
         private Bitmap avatar;                   // the current profile's, for its row
-        private String[] aerials;
         private final Set<String> removePin = new HashSet<>();   // others' rows where ← → picked "Remove PIN"
         private StaticLayout hintLayout;
         private String hintShown;
@@ -931,25 +932,13 @@ public class SettingsActivity extends Activity {
             }
         }
 
-        /** The bundled aerials a profile can pick as its wallpaper (Prefs.wallpaper holds the file name). */
-        private String[] aerials() {
-            if (aerials != null) return aerials;
-            List<String> found = new ArrayList<>();
-            try {
-                String[] files = getContext().getAssets().list("aerials");
-                if (files != null) for (String f : files) if (f.matches("(?i).+\\.(jpe?g|png|webp)")) found.add(f);
-            } catch (java.io.IOException e) {
-                AppLog.w("aerials: " + e.getMessage());
-            }
-            Collections.sort(found);
-            return aerials = found.toArray(new String[0]);
-        }
-
-        /** "coast.jpg" → "Coast". */
-        private static String wallpaperName(String file) {
-            int dot = file.lastIndexOf('.');
-            String name = dot > 0 ? file.substring(0, dot) : file;
-            return name.isEmpty() ? file : name.substring(0, 1).toUpperCase(Ui.locale()) + name.substring(1);
+        /** A stable wallpaper ID as the transitional Appearance row presents it. */
+        private static String wallpaperName(String id) {
+            if ("horizon:auto".equals(id)) return Ui.tr("Automatic");
+            if ("horizon:light".equals(id)) return Ui.tr("Light");
+            if ("horizon:dark".equals(id)) return Ui.tr("Dark");
+            Wallpaper.Aerial aerial = Wallpaper.find(id);
+            return aerial == null ? Ui.tr("Automatic") : aerial.title;
         }
 
         private ProfileManager.Profile other(int id) {
@@ -1031,8 +1020,7 @@ public class SettingsActivity extends Activity {
                     return theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
                 }
                 case R_WALLPAPER: {
-                    String file = Prefs.wallpaper();
-                    return file.isEmpty() ? Ui.tr("Automatic") : wallpaperName(file);
+                    return wallpaperName(Prefs.wallpaper());
                 }
                 case R_PHOTOS: {
                     int photos = Photos.files(c).size();
@@ -1812,12 +1800,10 @@ public class SettingsActivity extends Activity {
                     SleepOverlay.update(getContext());   // the pill's glass follows
                     break;
                 }
-                case R_WALLPAPER: {   // "" (Automatic), then each aerial
-                    String[] files = aerials();
-                    int n = files.length + 1;
-                    int at = java.util.Arrays.asList(files).indexOf(Prefs.wallpaper()) + 1;
-                    int next = (at + dir + n) % n;
-                    Prefs.setWallpaper(next == 0 ? "" : files[next - 1]);
+                case R_WALLPAPER: {
+                    int at = java.util.Arrays.asList(WALLPAPERS).indexOf(Prefs.wallpaper());
+                    if (at < 0) at = 0;
+                    Prefs.setWallpaper(WALLPAPERS[(at + dir + WALLPAPERS.length) % WALLPAPERS.length]);
                     break;
                 }
                 case R_PHOTOS:

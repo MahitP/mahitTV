@@ -73,6 +73,14 @@ final class Wallpaper {
         return "horizon:dark".equals(id) || (!"horizon:light".equals(id) && weatherNight);
     }
 
+    static String legacyAsset(String id) {
+        if ("aerial:yosemite".equals(id)) return "valley.jpg";
+        if ("aerial:iceland".equals(id)) return "coast.jpg";
+        if ("aerial:north-america-aurora".equals(id)) return "aurora.jpg";
+        if ("aerial:new-york".equals(id)) return "earth.jpg";
+        return "";
+    }
+
     private static boolean valid(String id) {
         if ("live:aerial".equals(id)) return true;
         for (String horizon : HORIZON_IDS) if (horizon.equals(id)) return true;
