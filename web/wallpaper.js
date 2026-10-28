@@ -107,6 +107,11 @@ var Wallpaper = (function () {
     return valid(id) ? id : 'horizon:auto';
   }
 
+  function dark(id, weatherNight) {
+    id = normalize(id);
+    return id === 'horizon:dark' || (id !== 'horizon:light' && weatherNight === true);
+  }
+
   function allowed(value) {
     return typeof value === 'string' && value.indexOf('https://sylvan.apple.com/') === 0 && allowedMedia.indexOf(value) >= 0;
   }
@@ -124,6 +129,7 @@ var Wallpaper = (function () {
     aerials: copyAerials(),
     solids: copySolids(),
     normalize: normalize,
+    dark: dark,
     find: find,
     allowed: allowed,
     palette: palette,

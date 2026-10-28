@@ -27,6 +27,15 @@ assert.strictEqual(Wallpaper.normalize('coast.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('aurora.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('earth.jpg'), 'horizon:auto');
 
+assert.strictEqual(Wallpaper.dark('horizon:light', true), false);
+assert.strictEqual(Wallpaper.dark('horizon:dark', false), true);
+assert.strictEqual(Wallpaper.dark('horizon:auto', false), false);
+assert.strictEqual(Wallpaper.dark('horizon:auto', true), true);
+assert.strictEqual(Wallpaper.dark('studio:teal', false), false);
+assert.strictEqual(Wallpaper.dark('studio:teal', true), true);
+assert.strictEqual(Wallpaper.dark('valley.jpg', false), false);
+assert.strictEqual(Wallpaper.dark('valley.jpg', true), true);
+
 assert.deepStrictEqual(Array.prototype.slice.call(Wallpaper.palette(true)), ['#0D131F', '#1C2638', '#151E2D', '#080B12']);
 assert.deepStrictEqual(Array.prototype.slice.call(Wallpaper.palette(false)), ['#B8C7D6', '#F5EBD6', '#DCE6EF', '#7E9BB5']);
 var changedPalette = Wallpaper.palette(true);

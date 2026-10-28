@@ -215,9 +215,14 @@ final class Prefs {
     static boolean photos() { return pp().getBoolean("photos", true); }
     static void setPhotos(boolean on) { putOwn("photos", on); }
 
-    /** The profile's wallpaper: "" (automatic: the picks, then the aerials), or an aerial's file name. */
-    static String wallpaper() { return pp().getString("wallpaper", ""); }
-    static void setWallpaper(String id) { putOwn("wallpaper", id); }
+    /** The profile's normalized wallpaper catalogue ID; Horizon Auto is the default. */
+    static String wallpaper() {
+        String raw = pp().getString("wallpaper", "horizon:auto");
+        String clean = Wallpaper.normalize(raw);
+        if (!clean.equals(raw)) putOwn("wallpaper", clean);
+        return clean;
+    }
+    static void setWallpaper(String id) { putOwn("wallpaper", Wallpaper.normalize(id)); }
 
     /** The golden mahitTV intro at power-on (MAHITTV-PROFILES-SPEC.md §2); for the whole TV. */
     static boolean intro() { return sp().getBoolean("intro", true); }

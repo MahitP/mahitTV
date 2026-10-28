@@ -60,8 +60,13 @@ var Prefs = (function () {
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     /** The current profile's Dock: its own, else default_dock_apps, else null (the built-in list). */
     shelf: function () { return pick('shelf', null) || ((CONFIG.defaultDock && CONFIG.defaultDock.length) ? CONFIG.defaultDock.slice() : null); },
-    /** The profile's wallpaper: '' (automatic) or an aerial's file name. */
-    wallpaper: function () { return pick('wallpaper', ''); },
+    /** The profile's normalized wallpaper catalogue ID; Horizon Auto is the default. */
+    wallpaper: function () {
+      var raw = pick('wallpaper', 'horizon:auto');
+      var clean = Wallpaper.normalize(raw);
+      if (window.Profiles && clean !== raw) Profiles.store().set('wallpaper', clean);
+      return clean;
+    },
     /** The golden intro at power-on (for the whole TV). */
     intro: function () { return pick('intro', true) !== false; },
     /** The profile in use (an index into CONFIG.profiles, or the default one). */
@@ -69,6 +74,7 @@ var Prefs = (function () {
     /** The shelf_apps of the build that last set the shelf, so a new one wins once over the TV's choice. */
     shelfConfig: function () { return pick('shelfConfig', ''); },
     set: function (name, value) {
+      if (name === 'wallpaper') value = Wallpaper.normalize(value);
       if (OWN.indexOf(name) >= 0 && window.Profiles) Profiles.store().set(name, value);
       else { v[name] = value; save(); }
       this.version++;

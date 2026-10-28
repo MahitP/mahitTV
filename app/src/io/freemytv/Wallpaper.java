@@ -68,6 +68,11 @@ final class Wallpaper {
         return "horizon:auto";
     }
 
+    static boolean dark(String id, boolean weatherNight) {
+        id = normalize(id);
+        return "horizon:dark".equals(id) || (!"horizon:light".equals(id) && weatherNight);
+    }
+
     private static boolean valid(String id) {
         if ("live:aerial".equals(id)) return true;
         for (String horizon : HORIZON_IDS) if (horizon.equals(id)) return true;

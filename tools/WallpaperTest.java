@@ -8,6 +8,7 @@ public final class WallpaperTest {
     public static void main(String[] args) {
         validIdsAreStable();
         legacyValuesMigrate();
+        horizonModeSelectsAtmosphere();
         palettesMatchTheContract();
         mediaPolicyOnlyAllowsFocusedMedia();
         aerialCatalogueIsExact();
@@ -36,6 +37,17 @@ public final class WallpaperTest {
         equal("horizon:auto", Wallpaper.normalize("coast.jpg"), "coast migration");
         equal("horizon:auto", Wallpaper.normalize("aurora.jpg"), "aurora migration");
         equal("horizon:auto", Wallpaper.normalize("earth.jpg"), "removed Earth migration");
+    }
+
+    private static void horizonModeSelectsAtmosphere() {
+        no(Wallpaper.dark("horizon:light", true), "fixed light ignores night");
+        yes(Wallpaper.dark("horizon:dark", false), "fixed dark ignores day");
+        no(Wallpaper.dark("horizon:auto", false), "auto follows day");
+        yes(Wallpaper.dark("horizon:auto", true), "auto follows night");
+        no(Wallpaper.dark("studio:teal", false), "non-Horizon follows day");
+        yes(Wallpaper.dark("studio:teal", true), "non-Horizon follows night");
+        no(Wallpaper.dark("valley.jpg", false), "legacy normalizes to auto day");
+        yes(Wallpaper.dark("valley.jpg", true), "legacy normalizes to auto night");
     }
 
     private static void palettesMatchTheContract() {
