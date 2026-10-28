@@ -140,21 +140,150 @@ assert.strictEqual(Wallpaper.allowed('https://sylvan.apple.com/changed-again.png
 
 assert.strictEqual(/\b(?:const|let)\b|=>|`|\b(?:Promise|Map|Set|URL)\b|Array\.from/.test(source), false, 'source remains ES5');
 
-assert.ok(html.indexOf('id="horizonDay"') < html.indexOf('id="art"'), 'day Horizon sits below photo art');
-assert.ok(html.indexOf('id="horizonNight"') < html.indexOf('id="art"'), 'night Horizon sits below photo art');
-[
-  '83% 83% at -8% 69%', '#F5EBD6',
-  '78% 78% at 53% 48%', '#DCE6EF',
-  '104% 104% at 106% 104%', '#7E9BB5',
-  '#B8C7D6 0%', '#DCE6EF 56%', '#7E9BB5 100%',
-  '#1C2638', '#151E2D', '#080B12', '#0D131F 0%',
-  'rgba(0, 0, 0, 0.12)', 'rgba(0, 0, 0, 0.18)'
-].forEach(function (token) { assert.ok(css.indexOf(token) >= 0, 'Horizon CSS token ' + token); });
-['uniform float2 res;', 'uniform float2 layer;', 'uniform half3 c0;', 'uniform half3 c1;',
-  'uniform half3 c2;', 'uniform half3 c3;', 'uniform float dark;',
-  '(hash(xy) - 0.5) / 255.0'].forEach(function (token) {
-  assert.ok(shaders.indexOf(token) >= 0, 'Horizon AGSL token ' + token);
-});
-var horizonShader = shaders.substring(shaders.indexOf('static final String HORIZON'), shaders.indexOf('static final String GLASS'));
-assert.strictEqual(/uniform float t;|\banimation\b/.test(horizonShader), false, 'Horizon shader has no time or animation');
+var artAt = html.indexOf('id="art"');
+var dayAt = html.indexOf('id="horizonDay"');
+var nightAt = html.indexOf('id="horizonNight"');
+assert.ok(artAt >= 0 && dayAt >= 0 && dayAt < artAt, 'day Horizon sits below photo art');
+assert.ok(artAt >= 0 && nightAt >= 0 && nightAt < artAt, 'night Horizon sits below photo art');
+
+function cssBlock(text, selector) {
+  var start = text.indexOf(selector);
+  assert.notStrictEqual(start, -1, 'CSS selector exists: ' + selector);
+  var open = text.indexOf('{', start);
+  assert.notStrictEqual(open, -1, 'CSS block opens: ' + selector);
+  var depth = 0;
+  for (var at = open; at < text.length; at++) {
+    if (text.charAt(at) === '{') depth++;
+    if (text.charAt(at) === '}') {
+      depth--;
+      if (depth === 0) return text.substring(open + 1, at);
+    }
+  }
+  assert.fail('CSS block closes: ' + selector);
+}
+
+function javaAssignment(text, marker) {
+  var start = text.indexOf(marker);
+  assert.notStrictEqual(start, -1, 'Java assignment exists: ' + marker);
+  var inString = false;
+  var escaped = false;
+  for (var at = start + marker.length; at < text.length; at++) {
+    var ch = text.charAt(at);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === ';') {
+      return text.substring(start + marker.length, at);
+    }
+  }
+  assert.fail('Java assignment terminates: ' + marker);
+}
+
+function javaStrings(expression) {
+  var strings = expression.match(/"(?:\\.|[^"\\])*"/g);
+  assert.ok(strings && strings.length, 'Java assignment contains strings');
+  return strings.map(function (literal) { return JSON.parse(literal); }).join('');
+}
+
+function normalized(value) {
+  return value.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',').trim();
+}
+
+function backgrounds(block) {
+  var values = [];
+  var pattern = /background\s*:\s*([^;]+);/g;
+  var match;
+  while ((match = pattern.exec(block)) !== null) values.push(normalized(match[1]));
+  return values;
+}
+
+function assertOrdered(text, pieces, message) {
+  var after = -1;
+  pieces.forEach(function (piece) {
+    var foundAt = text.indexOf(piece, after + 1);
+    assert.ok(foundAt > after, message + ': ' + piece);
+    after = foundAt;
+  });
+}
+
+function assertHorizonParity(cssText, shaderText) {
+  var day = cssBlock(cssText, '#horizonDay {');
+  var night = cssBlock(cssText, '#horizonNight {');
+  var dayVignette = cssBlock(cssText, '#horizonDay::after {');
+  var nightVignette = cssBlock(cssText, '#horizonNight::after {');
+  var dither = cssBlock(cssText, '#sky .horizon::before {');
+
+  assert.deepStrictEqual(backgrounds(day), [
+    normalized('-webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6 0%, transparent 72%), ' +
+      '-webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF 0%, transparent 74%), ' +
+      '-webkit-radial-gradient(106% 104%, 104% 104%, #7E9BB5 0%, transparent 72%), ' +
+      '-webkit-linear-gradient(top, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%)'),
+    normalized('radial-gradient(83% 83% at -8% 69%, #F5EBD6 0%, transparent 72%), ' +
+      'radial-gradient(78% 78% at 53% 48%, #DCE6EF 0%, transparent 74%), ' +
+      'radial-gradient(104% 104% at 106% 104%, #7E9BB5 0%, transparent 72%), ' +
+      'linear-gradient(180deg, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%)')
+  ], 'day Horizon has the exact four ordered layers');
+  assert.deepStrictEqual(backgrounds(night), [
+    normalized('-webkit-radial-gradient(-8% 69%, 83% 83%, #1C2638 0%, transparent 72%), ' +
+      '-webkit-radial-gradient(53% 48%, 78% 78%, #151E2D 0%, transparent 74%), ' +
+      '-webkit-radial-gradient(106% 104%, 104% 104%, #080B12 0%, transparent 72%), ' +
+      '-webkit-linear-gradient(top, #0D131F 0%, #1C2638 56%, #080B12 100%)'),
+    normalized('radial-gradient(83% 83% at -8% 69%, #1C2638 0%, transparent 72%), ' +
+      'radial-gradient(78% 78% at 53% 48%, #151E2D 0%, transparent 74%), ' +
+      'radial-gradient(104% 104% at 106% 104%, #080B12 0%, transparent 72%), ' +
+      'linear-gradient(180deg, #0D131F 0%, #1C2638 56%, #080B12 100%)')
+  ], 'night Horizon has the exact four ordered layers');
+
+  assert.deepStrictEqual(backgrounds(dayVignette), [
+    normalized('-webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%)'),
+    normalized('radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%)')
+  ], 'day vignette is scoped and exact');
+  assert.deepStrictEqual(backgrounds(nightVignette), [
+    normalized('-webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%)'),
+    normalized('radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%)')
+  ], 'night vignette is scoped and exact');
+  assert.deepStrictEqual(backgrounds(dither), [
+    normalized('-webkit-repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px)'),
+    normalized('repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px)')
+  ], 'Horizon dither is deterministic and exact');
+  assert.strictEqual(/animation/i.test(dither), false, 'Horizon dither is nonanimated');
+
+  var expression = javaAssignment(shaderText, 'static final String HORIZON =');
+  var horizon = javaStrings(expression);
+  var uniforms = [];
+  var uniformPattern = /uniform\s+(float2|half3|float)\s+([a-zA-Z0-9_]+)\s*;/g;
+  var uniform;
+  while ((uniform = uniformPattern.exec(horizon)) !== null) uniforms.push(uniform[1] + ' ' + uniform[2]);
+  assert.deepStrictEqual(uniforms,
+    ['float2 res', 'float2 layer', 'half3 c0', 'half3 c1', 'half3 c2', 'half3 c3', 'float dark'],
+    'Horizon has only the required uniforms in order');
+  assertOrdered(horizon, [
+    'mix(c0, c2, half(clamp(uv.y / 0.56, 0.0, 1.0)))',
+    'mix(col, c3, half(clamp((uv.y - 0.56) / 0.44, 0.0, 1.0)))',
+    'mix(col, c3, half(field(uv, float2(1.06, 1.04), 1.04, 0.72)))',
+    'mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)))',
+    'mix(col, c1, half(field(uv, float2(-0.08, 0.69), 0.83, 0.72)))'
+  ], 'Horizon palette roles and layers stay ordered');
+  assert.ok(horizon.indexOf('mix(0.12, 0.18, dark)') >= 0, 'Horizon vignette strengths are exact');
+  assert.ok(horizon.indexOf('(hash(xy) - 0.5) / 255.0') >= 0, 'Horizon dither is exact');
+  assert.strictEqual(/uniform\s+(?:float|half)(?:[234])?\s+(?:t|time)\b/.test(horizon), false,
+    'Horizon has no time uniform');
+  assert.strictEqual(/\b(?:t|time|speed|noise|fbm|sin|cos)\b/.test(horizon), false,
+    'Horizon has no animated noise or time expression');
+}
+
+function parityMustReject(label, changedCss, changedShaders) {
+  assert.throws(function () { assertHorizonParity(changedCss, changedShaders); }, label);
+}
+
+assertHorizonParity(css, shaders);
+parityMustReject('rejects a changed center', css.replace('83% 83% at -8% 69%', '83% 83% at -7% 69%'), shaders);
+parityMustReject('rejects a changed color', css.replace('#F5EBD6 0%', '#F5EAD6 0%'), shaders);
+parityMustReject('rejects a changed fade', css.replace('transparent 74%', 'transparent 73%'), shaders);
+parityMustReject('rejects a missing uniform', css, shaders.replace('uniform float dark;', 'uniform float darkMode;'));
+parityMustReject('rejects changed shader geometry', css,
+  shaders.replace('float2(0.53, 0.48), 0.78, 0.74', 'float2(0.54, 0.48), 0.78, 0.74'));
 console.log('wallpaper-web-test: passed');

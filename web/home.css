@@ -62,23 +62,23 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
 #sky .horizon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky #horizonDay {
-  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6, transparent 72%),
-    -webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF, transparent 74%),
-    -webkit-radial-gradient(106% 104%, 104% 104%, #7E9BB5, transparent 72%),
+  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6 0%, transparent 72%),
+    -webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF 0%, transparent 74%),
+    -webkit-radial-gradient(106% 104%, 104% 104%, #7E9BB5 0%, transparent 72%),
     -webkit-linear-gradient(top, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%);
-  background: radial-gradient(83% 83% at -8% 69%, #F5EBD6, transparent 72%),
-    radial-gradient(78% 78% at 53% 48%, #DCE6EF, transparent 74%),
-    radial-gradient(104% 104% at 106% 104%, #7E9BB5, transparent 72%),
+  background: radial-gradient(83% 83% at -8% 69%, #F5EBD6 0%, transparent 72%),
+    radial-gradient(78% 78% at 53% 48%, #DCE6EF 0%, transparent 74%),
+    radial-gradient(104% 104% at 106% 104%, #7E9BB5 0%, transparent 72%),
     linear-gradient(180deg, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%);
 }
 #sky #horizonNight {
-  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #1C2638, transparent 72%),
-    -webkit-radial-gradient(53% 48%, 78% 78%, #151E2D, transparent 74%),
-    -webkit-radial-gradient(106% 104%, 104% 104%, #080B12, transparent 72%),
+  background: -webkit-radial-gradient(-8% 69%, 83% 83%, #1C2638 0%, transparent 72%),
+    -webkit-radial-gradient(53% 48%, 78% 78%, #151E2D 0%, transparent 74%),
+    -webkit-radial-gradient(106% 104%, 104% 104%, #080B12 0%, transparent 72%),
     -webkit-linear-gradient(top, #0D131F 0%, #1C2638 56%, #080B12 100%);
-  background: radial-gradient(83% 83% at -8% 69%, #1C2638, transparent 72%),
-    radial-gradient(78% 78% at 53% 48%, #151E2D, transparent 74%),
-    radial-gradient(104% 104% at 106% 104%, #080B12, transparent 72%),
+  background: radial-gradient(83% 83% at -8% 69%, #1C2638 0%, transparent 72%),
+    radial-gradient(78% 78% at 53% 48%, #151E2D 0%, transparent 74%),
+    radial-gradient(104% 104% at 106% 104%, #080B12 0%, transparent 72%),
     linear-gradient(180deg, #0D131F 0%, #1C2638 56%, #080B12 100%);
 }
 /* A fixed two-pixel ordered dither keeps the broad gradients from banding on older TV panels. */
