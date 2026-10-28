@@ -148,6 +148,56 @@ var Wallpaper = (function () {
     return mediaApp === true && (zone === 'shelf' || zone === 'hero');
   }
 
+  function mediaKind(kind) {
+    return kind === 'movie' || kind === 'tv';
+  }
+
+  function mediaId(item) {
+    var id = item && (item.tmdb !== undefined ? item.tmdb : item.tmdbId !== undefined ? item.tmdbId : item.id);
+    id = Number(id);
+    return isFinite(id) && id > 0 ? id : 0;
+  }
+
+  function sameApp(item, app) {
+    if (app.pkg) return item.pkg === app.pkg;
+    return !!app.appKey && (item.appKey === app.appKey || item.app === app.appKey);
+  }
+
+  /** Pure media-background policy. History is copied into a normalized item; inputs are never changed. */
+  function selectMedia(history, picks, app, nowPlaying) {
+    var best = null, bestAt = -Infinity, at, id, item, pick;
+    if (!app || app.media !== true) return null;
+    if (app.music === true) {
+      if (nowPlaying && nowPlaying.active === true && nowPlaying.title && nowPlaying.artwork
+          && (!app.pkg || !nowPlaying.pkg || nowPlaying.pkg === app.pkg)) {
+        return {source: 'nowPlaying', item: nowPlaying};
+      }
+      return null;
+    }
+    for (at = 0; history && at < history.length; at++) {
+      item = history[at];
+      id = mediaId(item);
+      if (!id || !mediaKind(item.kind) || !sameApp(item, app)) continue;
+      if (best === null || Number(item.at || 0) > bestAt) {
+        bestAt = Number(item.at || 0);
+        best = {
+          kind: item.kind,
+          tmdb: id,
+          title: item.title || '',
+          pkg: item.pkg || '',
+          appKey: item.appKey || item.app || '',
+          service: item.app || ''
+        };
+      }
+    }
+    if (best) return {source: 'history', item: best};
+    for (at = 0; picks && at < picks.length; at++) {
+      pick = picks[at];
+      if (mediaKind(pick.kind) && mediaId(pick) && sameApp(pick, app)) return {source: 'featured', item: pick};
+    }
+    return null;
+  }
+
   return {
     aerials: copyAerials(),
     solids: copySolids(),
@@ -159,6 +209,7 @@ var Wallpaper = (function () {
     palette: palette,
     horizonGeometry: copyHorizonGeometry,
     horizonVignette: horizonVignette,
-    media: media
+    media: media,
+    selectMedia: selectMedia
   };
 }());

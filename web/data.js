@@ -590,6 +590,67 @@ var Data = (function () {
     return out;
   }
 
+  /** The Top Shelf's pages: this hour's picks of the three lists, without repeats. */
+  function shelf() {
+    var out = [], seen = {}, kinds = [null, 'movie', 'tv'];
+    for (var i = 0; i < kinds.length; i++) {
+      var list = now(kinds[i]);
+      for (var j = 0; j < list.length && out.length < 5; j++) {
+        var key = list[j].kind + ':' + list[j].id;
+        if (!seen[key]) { seen[key] = true; out.push(list[j]); }
+      }
+    }
+    return out;
+  }
+
+  /** Resolve the current profile's newest title for one Dock app. done(generation, pickOrNull), exactly once. */
+  function resolveWatch(app, generation, done) {
+    var finished = false;
+    function finish(pick) {
+      if (finished) return;
+      finished = true;
+      done(generation, pick || null);
+    }
+    try {
+      var log = window.Profiles ? Profiles.log() : [];
+      var choice = Wallpaper.selectMedia(log, [], app, app && app.nowPlaying);
+      if (!choice) { finish(null); return; }
+      if (choice.source === 'nowPlaying') {
+        var playing = {}, name;
+        for (name in choice.item) if (choice.item.hasOwnProperty(name)) playing[name] = choice.item[name];
+        playing.mediaSource = 'nowPlaying';
+        finish(playing);
+        return;
+      }
+      var item = choice.item, list = shelf();
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].kind === item.kind && Number(list[i].id) === item.tmdb) {
+          var reused = {}, field;
+          for (field in list[i]) if (list[i].hasOwnProperty(field)) reused[field] = list[i][field];
+          reused.app = app.appKey || reused.app;
+          reused.service = app.service || item.service || '';
+          reused.mediaSource = 'history';
+          finish(reused);
+          return;
+        }
+      }
+      // Generic and preview builds never try TMDB. A matching seeded pick above is the only offline answer.
+      if (!KEY) { finish(null); return; }
+      var pick = {id: item.tmdb, kind: item.kind, title: item.title || '', app: app.appKey || '',
+        service: item.app || '', detailed: false};
+      details(pick, function (err) {
+        if (err) { finish(null); return; }
+        // The history match owns the focused app; TMDB supplies artwork and metadata, not a different destination.
+        pick.app = app.appKey || pick.app;
+        pick.service = app.service || item.service || pick.service;
+        pick.mediaSource = 'history';
+        finish(pick);
+      });
+    } catch (e) {
+      finish(null);
+    }
+  }
+
   // MARK: - Formatting
 
   function fmt(v, digits) {
@@ -619,18 +680,8 @@ var Data = (function () {
     hasKey: function () { return !!KEY || !!window.PREVIEW_PICKS; },
     recsError: function () { return recsError; },
     picks: now,
-    /** The Top Shelf's pages: this hour's picks of the three lists, without repeats (up to 5, as on Android). */
-    shelf: function () {
-      var out = [], seen = {}, kinds = [null, 'movie', 'tv'];
-      for (var i = 0; i < kinds.length; i++) {
-        var list = now(kinds[i]);
-        for (var j = 0; j < list.length && out.length < 5; j++) {
-          var key = list[j].kind + ':' + list[j].id;
-          if (!seen[key]) { seen[key] = true; out.push(list[j]); }
-        }
-      }
-      return out;
-    },
+    shelf: shelf,
+    resolveWatch: resolveWatch,
     showcase: all,
     image: function (path, size) {
       if (path && path.indexOf('preview/') === 0) return path;   // a preview build's sample photo

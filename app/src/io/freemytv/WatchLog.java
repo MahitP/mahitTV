@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * What each profile watched (MAHITTV-PROFILES-SPEC.md §4): every title or app opened from mahitTV, newest first, with
  * the position the app reported (NowPlaying, when its access is on). Private to the profile, in its own preferences;
- * nothing for Guest. Welly's "Continue watching" reads it; the TV tab never shows it.
+ * nothing for Guest. Welly and the focused streaming app's artwork read it.
  */
 final class WatchLog {
     private WatchLog() {}
@@ -157,9 +157,9 @@ final class WatchLog {
         if (!Config.PREVIEW) return;
         long now = System.currentTimeMillis(), h = 60 * 60 * 1000L;
         seed(c, "mahit", now, h, new Object[][] {
+            {"The Long Dunes", 9001L, "tv", "Netflix", "com.netflix.ninja", 12 * 60_000L, 48 * 60_000L},
             {"Orbital", 9003L, "tv", "Disney+", "com.disney.disneyplus", 41 * 60_000L, 52 * 60_000L},
             {"Neon Meridian", 9000L, "movie", "Apple TV", "com.apple.atve.androidtv.appletv", 63 * 60_000L, 124 * 60_000L},
-            {"The Long Dunes", 9001L, "tv", "Netflix", "com.netflix.ninja", 12 * 60_000L, 48 * 60_000L},
         }, "com.netflix.ninja,com.google.android.youtube.tv,com.apple.atve.androidtv.appletv,com.disney.disneyplus,"
                 + "com.amazon.amazonvideo.livingroom,com.apple.android.music");
         seed(c, "dhruvin", now, h, new Object[][] {

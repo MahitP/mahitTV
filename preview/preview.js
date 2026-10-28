@@ -23,4 +23,27 @@
     pick(4, 'tidebreak', 'movie', 'Tidebreak', '2025', 'Thriller · 1h 47m', 'max', 'Max', 7.2,
       'When the storm takes the harbor’s lighthouse dark, its keeper is the only witness to what came ashore.', 'R', ['4K', 'Dolby Atmos', 'CC'])
   ];
+
+  // Keep a resolvable Netflix title newest in the active profile's deterministic preview history.
+  if (window.Profiles && Profiles.seedPreview) {
+    var seedPreview = Profiles.seedPreview;
+    Profiles.seedPreview = function () {
+      seedPreview();
+      var profile = Profiles.current(), store = Profiles.store(profile);
+      if (profile.role === 'guest' || store.get('previewMediaSeeded', false)) return;
+      var log = store.get('watchLog', []), netflix = null;
+      for (var i = 0; i < log.length; i++) {
+        if (log[i].kind === 'tv' && Number(log[i].tmdb) === 9001 && log[i].appKey === 'netflix') {
+          netflix = log.splice(i, 1)[0];
+          break;
+        }
+      }
+      if (!netflix) netflix = {title: 'The Long Dunes', tmdb: 9001, kind: 'tv', app: 'Netflix', appKey: 'netflix', pos: 720000, dur: 2880000};
+      netflix.at = Date.now();
+      log.unshift(netflix);
+      store.set('watchLog', log.slice(0, 30));
+      store.set('previewMediaSeeded', true);
+    };
+  }
+
 })();

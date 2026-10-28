@@ -58,6 +58,21 @@ final class Recs {
 
     interface Listener { void onRecs(); }
 
+    /** Immutable valid watch-log identity, kept separate from the mutable recommendation Pick. */
+    static final class MediaChoice {
+        final String kind, title, pkg;
+        final int id;
+
+        MediaChoice(String kind, int id, String title, String pkg) {
+            this.kind = kind;
+            this.id = id;
+            this.title = title;
+            this.pkg = pkg;
+        }
+    }
+
+    interface WatchResolver { void onWatch(long generation, Pick pick); }
+
     private static final String API = "https://api.themoviedb.org/3";
     /** The backdrops: on a 720p UI, TMDB's 1280-wide copy shows the same and is lighter to download and decode. */
     private static final String IMAGES = "https://image.tmdb.org/t/p/" + (Backdrop.W <= 1280 ? "w1280" : "original");
@@ -231,6 +246,109 @@ final class Recs {
             if (seen.add(franchise(p.title))) out.add(p);
         }
         return out;
+    }
+
+    /** Resolve this profile's newest movie/show opened in one app; the UI owns generation staleness. */
+    void resolveWatch(String pkg, long generation, WatchResolver callback) {
+        if (callback == null) return;
+        try {
+            io.execute(() -> {
+                Pick answer = null;
+                try {
+                    MediaChoice choice = watchChoice(WatchLog.list(context), pkg);
+                    if (choice != null) {
+                        answer = knownPick(choice);
+                        if (answer == null && hasNetworkKey()) {
+                            Pick isolated = new Pick();
+                            isolated.id = choice.id;
+                            isolated.kind = choice.kind;
+                            isolated.title = choice.title;
+                            isolated.pkg = choice.pkg;
+                            isolated.app = serviceKey(choice.pkg);
+                            fetchDetails(isolated);
+                            // The log's exact package remains authoritative when several installed services carry a title.
+                            isolated.pkg = choice.pkg;
+                            isolated.app = serviceKey(choice.pkg);
+                            if (isolated.backdrop != null && !isolated.backdrop.isEmpty()) {
+                                download(isolated);
+                                loadImage(isolated);
+                                if (hasImage(isolated)) answer = isolated;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    AppLog.w("watch artwork: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                }
+                postWatch(callback, generation, answer);
+            });
+        } catch (RuntimeException e) {
+            AppLog.w("watch artwork executor: " + e.getMessage());
+            postWatch(callback, generation, null);
+        }
+    }
+
+    private boolean hasNetworkKey() {
+        return !Config.PREVIEW && !Config.TMDB_KEY.trim().isEmpty();
+    }
+
+    private static MediaChoice watchChoice(List<WatchLog.Entry> history, String pkg) {
+        if (pkg == null || pkg.isEmpty() || "com.apple.android.music".equals(pkg)) return null;
+        for (WatchLog.Entry entry : history) {
+            if (!pkg.equals(entry.pkg) || entry.tmdbId <= 0 || entry.tmdbId > Integer.MAX_VALUE
+                    || !("movie".equals(entry.kind) || "tv".equals(entry.kind))) continue;
+            return new MediaChoice(entry.kind, (int) entry.tmdbId, entry.title == null ? "" : entry.title, pkg);
+        }
+        return null;
+    }
+
+    private Pick knownPick(MediaChoice choice) {
+        if (Config.PREVIEW) {
+            for (Pick pick : Preview.picks(choice.kind)) {
+                if (pick.id == choice.id && choice.pkg.equals(pick.pkg)) return rebound(pick, choice);
+            }
+        }
+        for (Pick pick : picks) {
+            if (pick.id == choice.id && choice.kind.equals(pick.kind)
+                    && (pick.pkg == null || choice.pkg.equals(pick.pkg))) return rebound(pick, choice);
+        }
+        return null;
+    }
+
+    /** A known pick's artwork/details, rebound without changing the recommendation cache's app ownership. */
+    private static Pick rebound(Pick source, MediaChoice choice) {
+        Pick copy = new Pick();
+        copy.id = source.id;
+        copy.kind = source.kind;
+        copy.title = source.title;
+        copy.backdrop = source.backdrop;
+        copy.meta = source.meta;
+        copy.app = serviceKey(choice.pkg);
+        copy.pkg = choice.pkg;
+        copy.year = source.year;
+        copy.overview = source.overview;
+        copy.rating = source.rating;
+        copy.cert = source.cert;
+        copy.logo = source.logo;
+        copy.badges = source.badges;
+        copy.link = source.link;
+        copy.detailed = source.detailed;
+        copy.photo = source.photo;
+        return copy;
+    }
+
+    private static String serviceKey(String pkg) {
+        for (String[] service : SERVICES) if (service[2].equals(pkg)) return service[1];
+        return null;
+    }
+
+    private void postWatch(WatchResolver callback, long generation, Pick pick) {
+        main.post(() -> {
+            try {
+                callback.onWatch(generation, pick);
+            } catch (RuntimeException e) {
+                AppLog.w("watch artwork callback: " + e.getMessage());
+            }
+        });
     }
 
     /** "Law & Order: Special Victims Unit" → "law & order" (what comes before ":" or " - "). */
