@@ -19,6 +19,7 @@ __pycache__/
 .DS_Store
 tools/.i18n-cache.json
 out-config.backup
+.worktrees/
 
 # Screenshots from tools/screenshots.js and tools/apk_screenshots.sh (large; kept local)
 previews/
