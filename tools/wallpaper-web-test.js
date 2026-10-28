@@ -267,6 +267,8 @@ function assertHorizonParity(cssText, shaderText) {
     'mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)))',
     'mix(col, c1, half(field(uv, float2(-0.08, 0.69), 0.83, 0.72)))'
   ], 'Horizon palette roles and layers stay ordered');
+  assert.ok(horizon.indexOf('length((uv - 0.5) * 1.41421356)') >= 0,
+    'Horizon vignette uses the CSS farthest-corner ellipse distance');
   assert.ok(horizon.indexOf('mix(0.12, 0.18, dark)') >= 0, 'Horizon vignette strengths are exact');
   assert.ok(horizon.indexOf('(hash(xy) - 0.5) / 255.0') >= 0, 'Horizon dither is exact');
   assert.strictEqual(/uniform\s+(?:float|half)(?:[234])?\s+(?:t|time)\b/.test(horizon), false,
@@ -286,4 +288,6 @@ parityMustReject('rejects a changed fade', css.replace('transparent 74%', 'trans
 parityMustReject('rejects a missing uniform', css, shaders.replace('uniform float dark;', 'uniform float darkMode;'));
 parityMustReject('rejects changed shader geometry', css,
   shaders.replace('float2(0.53, 0.48), 0.78, 0.74', 'float2(0.54, 0.48), 0.78, 0.74'));
+parityMustReject('rejects changed vignette distance', css,
+  shaders.replace('length((uv - 0.5) * 1.41421356)', 'length((uv - 0.5) * 2.0)'));
 console.log('wallpaper-web-test: passed');

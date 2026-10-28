@@ -103,7 +103,8 @@ final class Shaders {
         "  col = mix(col, c3, half(field(uv, float2(1.06, 1.04), 1.04, 0.72)));\n" +
         "  col = mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)));\n" +
         "  col = mix(col, c1, half(field(uv, float2(-0.08, 0.69), 0.83, 0.72)));\n" +
-        "  float edge = clamp((length((uv - 0.5) * 2.0) - 0.45) / 0.55, 0.0, 1.0);\n" +
+        // CSS's default farthest-corner ellipse reaches 1.0 at a normalized viewport corner: distance × sqrt(2).
+        "  float edge = clamp((length((uv - 0.5) * 1.41421356) - 0.45) / 0.55, 0.0, 1.0);\n" +
         "  col *= half(1.0 - mix(0.12, 0.18, dark) * edge);\n" +
         "  col += half3((hash(xy) - 0.5) / 255.0);\n" +
         "  return half4(col, 1.0);\n" +
