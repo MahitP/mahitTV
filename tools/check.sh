@@ -15,19 +15,39 @@ case "$what" in
   *) echo "Usage: tools/check.sh [all|android|web]" >&2; exit 2 ;;
 esac
 
+packages="FreeMyTV-webos.ipk FreeMyTV-tizen.wgt"
+kept=""
+wallpaper_classes=""
+restore_packages=false
+cleanup() {
+  if [ -n "$kept" ] && [ -d "$kept" ]; then
+    if [ "$restore_packages" = true ]; then
+      for p in $packages; do
+        if [ -f "$kept/$p" ]; then mv "$kept/$p" "$p"; else rm -f "$p"; fi
+      done
+    fi
+    rm -rf "$kept"
+  fi
+  if [ -n "$wallpaper_classes" ] && [ -d "$wallpaper_classes" ]; then rm -rf "$wallpaper_classes"; fi
+}
+trap cleanup EXIT
+
 if [ "$what" = all ] || [ "$what" = android ]; then
+  wallpaper_classes="$(mktemp -d)"
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java tools/WallpaperTest.java
+  java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   ./build.sh
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then
   python3 tools/translate.py --check
+  node tools/wallpaper-web-test.js
 
   # The generic LG and Samsung packages land where your own build leaves yours (with your city and TMDB key):
   # keep yours and put them back afterwards, so the next install isn't the generic one.
-  packages="FreeMyTV-webos.ipk FreeMyTV-tizen.wgt"
   kept="$(mktemp -d)"
   for p in $packages; do if [ -f "$p" ]; then cp "$p" "$kept/"; fi; done
-  trap 'for p in $packages; do if [ -f "$kept/$p" ]; then mv "$kept/$p" "$p"; else rm -f "$p"; fi; done; rm -rf "$kept"' EXIT
+  restore_packages=true
   python3 webos/build.py --generic
   python3 tizen/build.py --generic
 
