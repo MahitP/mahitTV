@@ -60,6 +60,9 @@ function profile(page, zone, app) {
   await page.waitForTimeout(100);
   var appleArt = await page.evaluate(function () { return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
   assert.ok(result.media && appleArt.title && /long-dunes/.test(appleArt.art), 'active Apple Music renders its Now Playing artwork');
+  var previewInput = await page.evaluate(function () { return {backdrop: window.PREVIEW_NOW_PLAYING.backdrop, mediaSource: window.PREVIEW_NOW_PLAYING.mediaSource}; });
+  assert.strictEqual(previewInput.backdrop, undefined, 'preview Now Playing input is not mutated with backdrop');
+  assert.strictEqual(previewInput.mediaSource, undefined, 'preview Now Playing input is not mutated with media metadata');
   await page.evaluate(function () {
     window.PREVIEW_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Spotify Now', artwork: 'preview/neon-meridian.jpg', active: true};
   });
@@ -67,6 +70,21 @@ function profile(page, zone, app) {
   await page.waitForTimeout(100);
   var spotifyArt = await page.evaluate(function () { return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
   assert.ok(result.media && spotifyArt.title === 'Spotify Now' && /neon-meridian/.test(spotifyArt.art), 'active Spotify renders its Now Playing artwork');
+  var allowedArtwork = await page.evaluate(function () { return Wallpaper.aerials[0].preview; });
+  await page.route(allowedArtwork, function (route) { route.fulfill({path: path.join(root, 'preview', 'art', 'long-dunes.jpg'), contentType: 'image/jpeg'}); });
+  await page.evaluate(function (art) { window.FMTV_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Allowed Spotify', artwork: art, active: true}; }, allowedArtwork);
+  result = await profile(page, 'shelf', spotify);
+  await page.waitForTimeout(100);
+  var allowedArt = await page.evaluate(function () {
+    var input = window.FMTV_NOW_PLAYING;
+    return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent,
+      art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage,
+      backdrop: input.backdrop, mediaSource: input.mediaSource};
+  });
+  assert.ok(result.media && allowedArt.title === 'Allowed Spotify' && allowedArt.art.indexOf(allowedArtwork) >= 0,
+    'exact allowlisted catalogue artwork renders through the actual music controller');
+  assert.strictEqual(allowedArt.backdrop, undefined, 'allowlisted Now Playing input is not mutated with backdrop');
+  assert.strictEqual(allowedArt.mediaSource, undefined, 'allowlisted Now Playing input is not mutated with media metadata');
   var invalidMusic = [
     {pkg: 'com.spotify.music', title: 'Foreign', artwork: 'https://example.invalid/art.jpg', active: true},
     {pkg: 'com.spotify.music', title: 'Forged', artwork: 'https://example.invalid/art.jpg', backdrop: 'preview/long-dunes.jpg', active: true},

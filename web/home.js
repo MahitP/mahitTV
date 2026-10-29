@@ -1089,8 +1089,8 @@
     st.page = index;
     setClass(body, 'wallpaper', false);
     var p = mediaPage || cards[index];
-    photo(p ? Data.image(p.backdrop, 'original') : '');
-    backdrop(p ? Data.image(p.backdrop, 'w300') : '');
+    photo(p ? pageImage(p.backdrop, 'original') : '');
+    backdrop(p ? pageImage(p.backdrop, 'w300') : '');
     var dots = $('dots'), own = appPicks(), n = mediaPage && own.length ? own.length : 0;
     // The page dots: the white one slides to the page shown.
     if (dots.querySelectorAll('.dot').length !== n) {
@@ -1117,6 +1117,10 @@
       mv.heroX.set(0);
       mv.heroA.tune(P.TITLE_SETTLE).set(1);
     }, 300);
+  }
+
+  function pageImage(art, size) {
+    return art && (art.indexOf('preview/') === 0 || Wallpaper.allowed(art)) ? art : Data.image(art, size);
   }
 
   function fillHero(p) {
