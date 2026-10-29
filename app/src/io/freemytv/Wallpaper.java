@@ -172,6 +172,9 @@ final class Wallpaper {
         return callbackGeneration == backgroundGeneration;
     }
 
+    /** Profile wallpaper owns a clean Top Shelf: neither the current nor a fading-out media hero may draw. */
+    static boolean topShelf(boolean mediaBackground) { return mediaBackground; }
+
     private static boolean contains(String[] packages, String pkg) {
         if (pkg == null) return false;
         for (String candidate : packages) if (candidate.equals(pkg)) return true;

@@ -1332,7 +1332,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!media) {
             backgroundMode = BACKGROUND_PROFILE;
             if (zone == Z_HERO) zone = Z_SHELF;
-            refreshHero(animate);
+            clearHeroForProfile();
             showProfileBackground(generation);
             return;
         }
@@ -1349,7 +1349,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 backgroundMode = BACKGROUND_PROFILE;
                 backgroundPackage = null;
                 if (zone == Z_HERO) zone = Z_SHELF;
-                refreshHero(animate);
+                clearHeroForProfile();
                 showProfileBackground(callbackGeneration);
                 return;
             }
@@ -1360,6 +1360,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             handler.removeCallbacks(rotate);
             handler.postDelayed(rotate, ROTATE_MS);
         });
+    }
+
+    /** Profile entry is a state boundary, not a hero fade: clear every text/dot source before the next draw. */
+    private void clearHeroForProfile() {
+        hero = null;
+        heroFrom = null;
+        heroFadeAt = 0;
+        titleIn.snap(1);
+        dotAt.snap(0);
+        dotAt.target = 0;
+        heroFocus.snap(0);
+        heroFocus.target = 0;
+        full.snap(0);
+        full.target = 0;
+        heroButton.setEmpty();
+        heroDirty = tilesDirty = true;
     }
 
     /**
@@ -4266,6 +4282,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * wallpaper (no pick) has no text at all.
      */
     private void drawTopShelf(Canvas c) {
+        // A media fade must never leak into the profile wallpaper frame.
+        if (!Wallpaper.topShelf(backgroundMode == BACKGROUND_MEDIA)) return;
         float fs = Ui.clamp(full.value);
         if (fs > 0.004f && hero != null) {
             if (fullScrim == null) {

@@ -14,6 +14,7 @@ public final class WallpaperTest {
         horizonGeometryIsExact();
         mediaPolicyOnlyAllowsFocusedMedia();
         androidFocusPolicyIsExplicit();
+        profileSuppressesCurrentAndOutgoingHeroImmediately();
         aerialCatalogueIsExact();
         urlAllowlistIsExact();
         solidsAreExact();
@@ -124,6 +125,11 @@ public final class WallpaperTest {
         no(Wallpaper.media("shelf", Wallpaper.videoApp("io.freemytv")), "Settings shelf never gets media");
         yes(Wallpaper.current(7, 7), "matching generation is current");
         no(Wallpaper.current(6, 7), "stale generation is rejected");
+    }
+
+    private static void profileSuppressesCurrentAndOutgoingHeroImmediately() {
+        no(Wallpaper.topShelf(false), "profile state suppresses current and outgoing hero in the same frame");
+        yes(Wallpaper.topShelf(true), "media state may draw the hero");
     }
 
     private static void aerialCatalogueIsExact() {
