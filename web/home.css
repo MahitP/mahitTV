@@ -61,6 +61,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky .day { background: -webkit-linear-gradient(top, #F5F5F7, #E2E2E7); background: linear-gradient(#F5F5F7, #E2E2E7); }
 #sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
 #sky .horizon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
+#sky .horizon.night { opacity: 0; }
 #sky #horizonDay {
   background: -webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6 0%, transparent 72%),
     -webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF 0%, transparent 74%),
@@ -108,6 +109,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: opacity 0.7s;
 }
 #sky .photo.on { opacity: 1; }
+/* A profile wallpaper is visual-only.  Media art remains above Horizon, but
+ * profile states never retain a previous Top Shelf title or controls. */
+.profile-background #sky .photo { z-index: 1; }
+.media-background #sky .photo { z-index: 2; }
+.profile-background #hero, .profile-background #details, .profile-background #dots,
+.profile-background #watch, .profile-background #chevron { opacity: 0 !important; visibility: hidden; pointer-events: none; }
+.profile-background #horizonDay { opacity: 1; }
+.profile-background #horizonNight { opacity: 0; }
+.profile-background.night #horizonDay { opacity: 0; }
+.profile-background.night #horizonNight { opacity: 1; }
 /* The art, a little wider than the screen: it drifts ±8 px against the focus moving along the Dock. */
 #art { position: absolute; left: -8px; top: 0; width: 1936px; height: 100%; }
 /* The blurred copy (behind the grid, Home and Welly): home.js sets its opacity from how far the page has gone. */
@@ -146,7 +157,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 }
 .full #sky .scrim::after { opacity: 1; }
 .has-photo #sky .scrim { opacity: 1; }
-#sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.8s; transition: opacity 0.8s; }
+#sky canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.7s cubic-bezier(.2,.8,.2,1); transition: opacity 0.7s cubic-bezier(.2,.8,.2,1); }
 #sky canvas.on { opacity: 1; }
 #sky .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(245, 245, 247, 0.74); -webkit-transition: background-color 2s, opacity 0.8s; transition: background-color 2s, opacity 0.8s; }
 .has-photo #sky .veil { opacity: 0; }

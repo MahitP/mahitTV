@@ -748,7 +748,7 @@
     // The Top Shelf's art drifts ±8 px against the focus moving along the Dock.
     var n = Math.min(shelf.length, SHELF_VISIBLE);
     mv.par.set(st.zone === Z.SHELF && n > 1 ? -8 * (2 * (st.shelf - shelfFirst) / (n - 1) - 1) : 0);
-    mv.heroShow.set(hasClass(body, 'wallpaper') || hasClass(body, 'no-picks') ? 0 : 1);
+    mv.heroShow.set(hasClass(body, 'profile-background') ? 0 : 1);
     // The tab bar: the selected tab is a lighter lens that slides; the focused one a white pill.
     list = $('tabs').querySelectorAll('.tab');
     for (i = 0; i < list.length; i++) {
@@ -762,6 +762,7 @@
     setClass(body, 'tab-welly', st.tab === TAB.WELLY);
     if (window.House) { House.show(st.tab === TAB.HOME); House.focus(st.zone === Z.HOUSE); }
     if (window.Welly) { Welly.show(st.tab === TAB.WELLY); Welly.focus(st.zone === Z.WELLY); }
+    refreshBackground();
     Motion.kick();
   }
 
@@ -960,7 +961,10 @@
 
   // MARK: - Top Shelf: the picks, their photos and text
 
-  var photoFront = 'photoA', photoUrl = null, heroTimer = 0;
+  var photoFront = 'photoA', photoUrl = null, photoGeneration = 0, heroTimer = 0;
+  // Background ownership is independent of the recommendation carousel.  A Dock
+  // app may have a Continue Watching title which is not in this hour's cards.
+  var backgroundGeneration = 0, backgroundMode = 'profile', mediaPage = null, backgroundKey = '';
 
   function renderCards() {
     var list = Data.shelf();
@@ -982,14 +986,70 @@
     return out;
   }
 
-  /** The background for the focused app: its pick, or a wallpaper when it has none. */
+  function mediaDescriptor(app) {
+    var k = app && shelfKey(app), key = k ? k[0] : '';
+    return {id: app && app.id || '', pkg: app && app.id || '', appKey: key, shelfKey: key,
+      title: app && app.title || '', service: app && app.title || '', media: !!key,
+      music: key === 'applemusic', nowPlaying: key === 'applemusic' ? window.PREVIEW_NOW_PLAYING : null};
+  }
+
+  function featuredFor(app) {
+    var own = [];
+    if (app.music) return null;
+    for (var i = 0; i < cards.length; i++) if (Data.appFor(cards[i].app) && cards[i].app === app.appKey) own.push(cards[i]);
+    return own.length ? own[0] : null;
+  }
+
+  function clearHero() {
+    clearTimeout(heroTimer);
+    var hero = $('hero'), details = $('details'), logo = hero.children[0];
+    setClass(hero, 'has-logo', false);
+    logo.onload = null;
+    logo.removeAttribute('src');
+    hero.children[1].textContent = '';
+    details.children[0].innerHTML = '';
+    details.children[1].textContent = '';
+    $('watch').innerHTML = '';
+    $('watch').style.display = 'none';
+    $('dots').innerHTML = '';
+  }
+
+  function applyProfileBackground() {
+    backgroundMode = 'profile';
+    mediaPage = null;
+    setClass(body, 'media-background', false);
+    setClass(body, 'profile-background', true);
+    clearHero();
+    showWallpaper();
+  }
+
+  /** Re-evaluate on every focus/profile/recommendation/settings update. */
+  function refreshBackground() {
+    var app = mediaDescriptor(shelf[st.shelf]);
+    var wantsMedia = st.tab === TAB.TV && Wallpaper.media(st.zone, app.media);
+    var key = wantsMedia ? (st.zone + ':' + app.id + ':' + cards.length + ':' + Prefs.version) : 'profile:' + Prefs.wallpaper() + ':' + Prefs.version;
+    if (key === backgroundKey) return;
+    backgroundKey = key;
+    backgroundGeneration++;
+    var generation = backgroundGeneration;
+    if (!wantsMedia) { applyProfileBackground(); return; }
+    Data.resolveWatch(app, generation, function (resolvedGeneration, pick) {
+      if (resolvedGeneration !== backgroundGeneration || generation !== backgroundGeneration ||
+          !Wallpaper.media(st.zone, mediaDescriptor(shelf[st.shelf]).media) || st.tab !== TAB.TV) return;
+      pick = pick || featuredFor(app);
+      if (!pick) { applyProfileBackground(); return; }
+      backgroundMode = 'media';
+      mediaPage = pick;
+      setClass(body, 'profile-background', false);
+      setClass(body, 'media-background', true);
+      showPage(st.page, 0);
+    });
+  }
+
+  /** The background for the focused app: resolved watch first, then featured or profile art. */
   function follow(dir) {
-    var own = appPicks();
-    if (own.length) {
-      showPage(own.indexOf(st.page) >= 0 ? st.page : own[0], dir || 0);
-    } else {
-      showWallpaper();
-    }
+    backgroundKey = '';
+    refreshBackground(dir);
   }
 
   /** A bundled compatibility asset for the profile's stable wallpaper ID, or the base gradient. */
@@ -1010,10 +1070,10 @@
   function showPage(index, dir) {
     st.page = index;
     setClass(body, 'wallpaper', false);
-    var p = cards[index];
+    var p = mediaPage || cards[index];
     photo(p ? Data.image(p.backdrop, 'original') : '');
     backdrop(p ? Data.image(p.backdrop, 'w300') : '');
-    var dots = $('dots'), own = appPicks(), n = own.length > 1 ? own.length : 0;
+    var dots = $('dots'), own = appPicks(), n = mediaPage && own.length ? own.length : 0;
     // The page dots: the white one slides to the page shown.
     if (dots.querySelectorAll('.dot').length !== n) {
       dots.innerHTML = '';
@@ -1034,7 +1094,7 @@
     mv.heroX.tune([0.22, 1]).set(-14 * dir);
     mv.heroA.tune([0.16, 1]).set(0);
     heroTimer = setTimeout(function () {
-      fillHero(cards[st.page]);
+      fillHero(mediaPage || cards[st.page]);
       mv.heroX.tune(P.TITLE_SETTLE).snap(22 * dir);
       mv.heroX.set(0);
       mv.heroA.tune(P.TITLE_SETTLE).set(1);
@@ -1085,22 +1145,33 @@
   function photo(url) {
     if (url === photoUrl) return;
     photoUrl = url;
+    var generation = ++photoGeneration;
     setClass(body, 'has-photo', !!url);
     Motion.kick();   // the frosted copy and the shades depend on whether there's a photo
     var next = photoFront === 'photoA' ? 'photoB' : 'photoA';
     if (!url) {
       setClass($('photoA'), 'on', false);
       setClass($('photoB'), 'on', false);
+      setClass(body, 'has-photo', false);
       return;
     }
     var img = new Image();
     img.onload = function () {
-      if (photoUrl !== url) return;
+      if (generation !== photoGeneration || photoUrl !== url) return;
       $(next).style.backgroundImage = 'url(' + url + ')';
-      kenBurns($(next), 'opacity 0.7s', 16, 'scale(1.04) translateX(-12px)');
+      kenBurns($(next), Motion.instant ? 'none' : 'opacity 0.7s cubic-bezier(.2,.8,.2,1)', 16, 'scale(1.04) translateX(-12px)');
       setClass($(next), 'on', true);
+      $(photoFront).style.webkitTransition = $(photoFront).style.transition = Motion.instant ? 'none' : 'opacity 0.7s cubic-bezier(.2,.8,.2,1)';
       setClass($(photoFront), 'on', false);
       photoFront = next;
+    };
+    img.onerror = function () {
+      if (generation !== photoGeneration || photoUrl !== url) return;
+      photoUrl = '';
+      setClass($('photoA'), 'on', false);
+      setClass($('photoB'), 'on', false);
+      setClass(body, 'has-photo', false);
+      if (backgroundMode === 'media') applyProfileBackground();
     };
     img.src = url;
   }
@@ -1124,16 +1195,20 @@
   function page(dir) {
     var own = appPicks(), at = own.indexOf(st.page);
     if (own.length < 2) return false;
+    // The resolved Continue Watching title owns the initial shelf context; paging
+    // intentionally returns to this app's ordinary featured carousel.
+    mediaPage = null;
     showPage(own[(at + dir + own.length) % own.length], dir);
     return true;
   }
 
-  var bgUrl = null, bgFront = 'bgA';
+  var bgUrl = null, bgFront = 'bgA', bgGeneration = 0;
 
   /** The pick's photo drawn tiny and stretched (as soft as a heavy blur): behind the grid, and in the Dock's glass. */
   function backdrop(url) {
     if (url === bgUrl) return;
     bgUrl = url;
+    var generation = ++bgGeneration;
     var next = bgFront === 'bgA' ? 'bgB' : 'bgA';
     if (!url) {
       setClass($('bgA'), 'on', false);
@@ -1142,7 +1217,7 @@
     }
     var img = new Image();
     img.onload = function () {
-      if (bgUrl !== url) return;
+      if (generation !== bgGeneration || bgUrl !== url) return;
       var canvas = $(next), ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       setClass(canvas, 'on', true);
@@ -1155,6 +1230,12 @@
         gc.drawImage(img, 0, 0, glasses[gi].width, glasses[gi].height);
         vivid(gc, glasses[gi].width, glasses[gi].height);
       }
+    };
+    img.onerror = function () {
+      if (generation !== bgGeneration || bgUrl !== url) return;
+      bgUrl = '';
+      setClass($('bgA'), 'on', false);
+      setClass($('bgB'), 'on', false);
     };
     img.src = url;
   }
@@ -2063,8 +2144,9 @@
   var lastNight = null;
 
   function checkNight() {
-    var night = Data.isNight(Date.now());
+    var night = Wallpaper.dark(Prefs.wallpaper(), Data.isNight(Date.now()));
     setClass(body, 'night', night);
+    refreshBackground();
     Motion.kick();   // the page's shades are darker at night
     if (night === lastNight) return;
     lastNight = night;
