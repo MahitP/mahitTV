@@ -172,8 +172,28 @@ final class Wallpaper {
         return callbackGeneration == backgroundGeneration;
     }
 
-    /** Profile wallpaper owns a clean Top Shelf: neither the current nor a fading-out media hero may draw. */
-    static boolean topShelf(boolean mediaBackground) { return mediaBackground; }
+    /**
+     * The small state boundary shared by focus transitions and Top Shelf rendering. Profile entry clears it before
+     * the next frame, so a previous title cannot survive a background change.
+     */
+    static final class HeroVisibility {
+        private boolean media, current, outgoing, fading;
+
+        void media() { media = true; }
+
+        void profile() { media = current = outgoing = fading = false; }
+
+        void track(boolean current, boolean outgoing, boolean fading) {
+            this.current = current;
+            this.outgoing = outgoing;
+            this.fading = fading;
+        }
+
+        boolean draw() { return media; }
+        boolean current() { return current; }
+        boolean outgoing() { return outgoing; }
+        boolean fading() { return fading; }
+    }
 
     private static boolean contains(String[] packages, String pkg) {
         if (pkg == null) return false;

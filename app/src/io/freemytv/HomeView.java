@@ -290,6 +290,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int backgroundMode = -1;
     private String backgroundPackage;
     private Recs.Pick resolvedPick;
+    private final Wallpaper.HeroVisibility heroVisibility = new Wallpaper.HeroVisibility();
     /** Every asynchronous watch/art callback is owned by this generation. */
     private long backgroundGeneration;
     /** Full screen (↑ on a pick): 0 = the Dock, 1 = the details at the bottom and the Dock away. */
@@ -1337,6 +1338,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         backgroundMode = BACKGROUND_MEDIA;
+        heroVisibility.media();
         refreshHero(animate);       // no stale title while the profile log resolves
         recs.resolveWatch(pkg, generation, (callbackGeneration, watched) -> {
             if (!Wallpaper.current(callbackGeneration, backgroundGeneration)
@@ -1364,6 +1366,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Profile entry is a state boundary, not a hero fade: clear every text/dot source before the next draw. */
     private void clearHeroForProfile() {
+        heroVisibility.profile();
         hero = null;
         heroFrom = null;
         heroFadeAt = 0;
@@ -1512,6 +1515,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (next.pick != null && (hero == null || hero.dots != next.dots)) dotAt.snap(next.dot);
         dotAt.target = next.dot;
         hero = next.pick == null ? null : next;
+        heroVisibility.track(hero != null, heroFrom != null, heroFadeAt != 0);
         heroDirty = tilesDirty = true;   // the tiles layer holds the chevron
     }
 
@@ -1770,6 +1774,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (Spring.instant || (up - heroFadeAt >= 220 && titleIn.target >= 1 && titleIn.settled())) {
             heroFadeAt = 0;
             heroFrom = null;
+            heroVisibility.track(hero != null, false, false);
             titleIn.snap(1);
         }
         return true;
@@ -4283,7 +4288,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawTopShelf(Canvas c) {
         // A media fade must never leak into the profile wallpaper frame.
-        if (!Wallpaper.topShelf(backgroundMode == BACKGROUND_MEDIA)) return;
+        if (!heroVisibility.draw()) return;
         float fs = Ui.clamp(full.value);
         if (fs > 0.004f && hero != null) {
             if (fullScrim == null) {

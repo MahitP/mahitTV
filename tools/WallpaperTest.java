@@ -128,8 +128,20 @@ public final class WallpaperTest {
     }
 
     private static void profileSuppressesCurrentAndOutgoingHeroImmediately() {
-        no(Wallpaper.topShelf(false), "profile state suppresses current and outgoing hero in the same frame");
-        yes(Wallpaper.topShelf(true), "media state may draw the hero");
+        Wallpaper.HeroVisibility hero = new Wallpaper.HeroVisibility();
+        hero.media();
+        hero.track(true, true, true);
+        yes(hero.current(), "media has a current hero before profile entry");
+        yes(hero.outgoing(), "media has an outgoing hero before profile entry");
+        yes(hero.fading(), "media has an active hero fade before profile entry");
+        yes(hero.draw(), "media may draw the hero");
+        hero.profile();
+        no(hero.current(), "profile clears current hero in the same frame");
+        no(hero.outgoing(), "profile clears outgoing hero in the same frame");
+        no(hero.fading(), "profile clears hero fade in the same frame");
+        no(hero.draw(), "profile state renders neither current nor outgoing hero");
+        hero.media();
+        yes(hero.draw(), "returning to media restores hero drawing permission");
     }
 
     private static void aerialCatalogueIsExact() {
