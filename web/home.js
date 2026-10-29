@@ -2479,4 +2479,22 @@
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
     nowPlaying: nowPlaying};
+  // Preview-only controller seam for deterministic browser tests.  It calls the
+  // same focus/background path as a remote key; production packages have no
+  // PREVIEW_PICKS and never expose it.
+  if (window.PREVIEW_PICKS) {
+    window.Home = window.Home || {};
+    window.Home.testBackground = function (o) {
+      o = o || {};
+      if (o.app) shelf[st.shelf] = o.app;
+      if (o.zone) st.zone = o.zone;
+      if (o.tab !== undefined) st.tab = o.tab;
+      backgroundKey = '';
+      updateFocus();
+      return {mode: backgroundMode, generation: backgroundGeneration, zone: st.zone,
+        media: hasClass(body, 'media-background'), profile: hasClass(body, 'profile-background'),
+        title: $('hero').children[1].textContent, transition: $('photoA').style.transition || $('photoB').style.transition,
+        backdropTransition: $('bgA').style.transition || $('bgB').style.transition};
+    };
+  }
 })();
