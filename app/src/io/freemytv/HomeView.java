@@ -37,6 +37,7 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,6 +62,8 @@ import java.util.function.Consumer;
  * redraws what changed.
  */
 final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
+    /** Narrow activity-owned seam for optional ambient video. */
+    interface AerialPlayback { void show(String url); void hide(); }
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -290,6 +293,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int wallpaperIndex = -1;
     private boolean wallpaperLoading;
     private String[] aerials;
+    private final AerialCache aerialCache;
+    private String officialStill;
+    private String officialStillLoaded;
+    private final AerialPlayback aerialPlayback;
     // The status pill: its focus, and the current profile's avatar at its size.
     private final Spring pillFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
     private Bitmap pillAvatar;
@@ -539,9 +546,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     };
 
-    HomeView(Activity a) {
+    HomeView(Activity a, AerialPlayback aerialPlayback) {
         super(a);
         activity = a;
+        this.aerialPlayback = aerialPlayback;
+        aerialCache = new AerialCache(new java.io.File(a.getCacheDir(), "aerials"));
         data = HomeData.get(a);
         recs = Recs.get(a);
         playing = new NowPlaying.Watch(a, () -> {
@@ -1315,17 +1324,29 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Recs.Pick p = currentPick();
         Backdrop b;
         if (p != null) {
+            aerialPlayback.hide();
             b = recs.backdrop(p);
         } else if (Photos.on(getContext())) {
+            aerialPlayback.hide();
             b = Photos.backdrop(getContext(), ownReady);
         } else {
+            updateAerialVideo();
             b = aerial();
         }
         if (b != null) showBackdrop(b);
     }
 
+    private void updateAerialVideo() {
+        if (!"live:aerial".equals(Prefs.wallpaper())) { aerialPlayback.hide(); return; }
+        Wallpaper.Aerial aerial = Wallpaper.liveAerial(System.currentTimeMillis() / 86_400_000L);
+        if (aerial == null || aerial.video.isEmpty()) aerialPlayback.hide(); else aerialPlayback.show(aerial.video);
+    }
+
     /** This hour's aerial (assets/aerials, one per hour in turn), or null while it's built in the background. */
     private Backdrop aerial() {
+        Wallpaper.Aerial official = Wallpaper.find(Prefs.wallpaper());
+        if (official != null && Wallpaper.allowed(official.preview)) return officialStill(official.preview);
+        officialStill = null;
         if (aerials == null) {
             try {
                 String[] list = getContext().getAssets().list("aerials");
@@ -1364,6 +1385,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             });
         }
         return wallpaper;   // the previous hour's until the new one is ready
+    }
+
+    /** Apple preview frames use the same validated cache as video; an unavailable frame leaves Frosted Horizon visible. */
+    private Backdrop officialStill(String url) {
+        if (!url.equals(officialStill)) { officialStill = url; officialStillLoaded = null; wallpaper = null; wallpaperIndex = -1; }
+        if (url.equals(officialStillLoaded)) return wallpaper;
+        File cached = aerialCache.get(url);
+        if (cached != null) loadOfficialStill(cached, url);
+        else aerialCache.fetch(url, file -> { if (file != null) loadOfficialStill(file, url); });
+        return wallpaper;
+    }
+
+    private void loadOfficialStill(File file, String url) {
+        if (wallpaperLoading) return;
+        wallpaperLoading = true;
+        LOADER.execute(() -> {
+            Backdrop built = null;
+            try { Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath()); if (bitmap != null) built = Backdrop.make(bitmap, false); }
+            catch (Exception | OutOfMemoryError e) { AppLog.w("aerial preview: " + e.getMessage()); }
+            final Backdrop ready = built;
+            handler.post(() -> {
+                wallpaperLoading = false;
+                if (ready == null || !url.equals(officialStill)) return;
+                wallpaper = ready;
+                officialStillLoaded = url;
+                if (running) updateBackground();
+            });
+        });
     }
 
     private static boolean samePicks(List<Recs.Pick> a, List<Recs.Pick> b) {

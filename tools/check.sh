@@ -36,8 +36,9 @@ trap cleanup EXIT
 
 if [ "$what" = all ] || [ "$what" = android ]; then
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java tools/WallpaperTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/AerialCache.java tools/WallpaperTest.java tools/AerialCacheTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
+  java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
   ./build.sh
   watch_classes="$(mktemp -d)"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -57,6 +58,7 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/wallpaper-web-test.js
   node tools/wallpaper-pref-test.js
   node tools/wallpaper-policy-test.js
+  node tools/aerial-video-web-test.js
   node tools/home-background-test.js
   node tools/home-background-dom-test.js
 

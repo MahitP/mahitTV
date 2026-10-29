@@ -109,6 +109,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   transition: none;
 }
 #sky .photo.on { opacity: 1; }
+#wallpaperVideo { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; display: none; pointer-events: none; z-index: 1; }
 /* A profile wallpaper is visual-only.  Media art remains above Horizon, but
  * profile states never retain a previous Top Shelf title or controls. */
 .profile-background #sky .photo { z-index: 1; }
@@ -120,7 +121,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .profile-background.night #horizonDay { opacity: 0; }
 .profile-background.night #horizonNight { opacity: 1; }
 /* The art, a little wider than the screen: it drifts ±8 px against the focus moving along the Dock. */
-#art { position: absolute; left: -8px; top: 0; width: 1936px; height: 100%; }
+#art { position: absolute; left: -8px; top: 0; width: 1936px; height: 100%; z-index: 2; }
 /* The blurred copy (behind the grid, Home and Welly): home.js sets its opacity from how far the page has gone. */
 #blur { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 /* Darker only where text sits: the title at the bottom left, the Dock's names, the pill at the top. */

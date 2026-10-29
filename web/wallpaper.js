@@ -107,6 +107,41 @@ var Wallpaper = (function () {
     return aerial ? copyAerial(aerial) : null;
   }
 
+  function liveAerial(day) {
+    var playable = [], at;
+    for (at = 0; at < aerials.length; at++) if (aerials[at].video) playable.push(aerials[at]);
+    if (!playable.length) return null;
+    day = Number(day) || 0;
+    return copyAerial(playable[((day % playable.length) + playable.length) % playable.length]);
+  }
+
+  /** ES5-safe video owner: browser cache is sufficient; errors always return to Horizon. */
+  function videoController(video, fallback) {
+    var current = '';
+    function hide() {
+      if (!video) return;
+      video.pause();
+      video.removeAttribute('src');
+      if (video.load) video.load();
+      video.style.display = 'none';
+      current = '';
+    }
+    function show(url) {
+      var found = null, at;
+      for (at = 0; at < aerials.length; at++) if (aerials[at].video === url) found = aerials[at];
+      if (!video || !found || !allowed(url)) return false;
+      if (current === url) return true;
+      video.muted = true; video.loop = true;
+      video.setAttribute('playsinline', 'playsinline'); video.setAttribute('webkit-playsinline', 'webkit-playsinline');
+      video.setAttribute('tabindex', '-1'); video.style.display = 'block'; video.src = url; current = url;
+      var result = video.play();
+      if (result && result.catch) result.catch(function () { if (current === url) { hide(); fallback(); } });
+      return true;
+    }
+    if (video) video.addEventListener('error', function () { if (current) { hide(); fallback(); } });
+    return {show: show, hide: hide};
+  }
+
   function valid(id) {
     var at;
     if (id === 'live:aerial' || horizons.indexOf(id) >= 0 || canonical(id)) return true;
@@ -243,6 +278,9 @@ var Wallpaper = (function () {
     dark: dark,
     legacyAsset: legacyAsset,
     find: find,
+    aerial: find,
+    liveAerial: liveAerial,
+    videoController: videoController,
     allowed: allowed,
     palette: palette,
     horizonGeometry: copyHorizonGeometry,

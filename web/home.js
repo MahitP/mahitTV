@@ -766,6 +766,7 @@
     if (window.House) { House.show(st.tab === TAB.HOME); House.focus(st.zone === Z.HOUSE); }
     if (window.Welly) { Welly.show(st.tab === TAB.WELLY); Welly.focus(st.zone === Z.WELLY); }
     refreshBackground();
+    syncAerialVideo();
     Motion.kick();
   }
 
@@ -968,6 +969,17 @@
   // Background ownership is independent of the recommendation carousel.  A Dock
   // app may have a Continue Watching title which is not in this hour's cards.
   var backgroundGeneration = 0, backgroundMode = 'profile', mediaPage = null, backgroundKey = '';
+  var videoFailed = false;
+  var aerialVideo = Wallpaper.videoController($('wallpaperVideo'), function () { videoFailed = true; applyProfileBackground(); });
+
+  function syncAerialVideo() {
+    var live = Prefs.wallpaper() === 'live:aerial';
+    var visible = live && !videoFailed && backgroundMode === 'profile' && st.tab === TAB.TV && !sheetOpen() &&
+      !saverOn && !Lock.showing() && !Intro.showing();
+    if (!visible) { aerialVideo.hide(); return; }
+    var aerial = Wallpaper.liveAerial(Math.floor(Date.now() / 86400000));
+    if (!aerial || !aerialVideo.show(aerial.video)) { videoFailed = true; applyProfileBackground(); }
+  }
 
   function renderCards() {
     var list = Data.shelf();
@@ -1039,6 +1051,7 @@
     setClass(body, 'profile-background', true);
     clearHero();
     showWallpaper();
+    syncAerialVideo();
   }
 
   /** Re-evaluate on every focus/profile/recommendation/settings update. */
@@ -1064,6 +1077,7 @@
       setClass(body, 'profile-background', false);
       setClass(body, 'media-background', true);
       showPage(st.page, 0);
+      aerialVideo.hide();
     });
   }
 
@@ -1075,6 +1089,8 @@
 
   /** A bundled compatibility asset for the profile's stable wallpaper ID, or the base gradient. */
   function wallpaperUrl() {
+    var official = Wallpaper.aerial(Prefs.wallpaper());
+    if (official) return Wallpaper.allowed(official.preview) ? official.preview : '';
     var asset = Wallpaper.legacyAsset(Prefs.wallpaper());
     return asset ? 'aerials/' + asset : '';
   }
@@ -2190,6 +2206,7 @@
   }
 
   function showSaver() {
+    aerialVideo.hide();
     var photos = saverPhotos();
     saverOn = true;
     saverPick = null;
@@ -2252,6 +2269,7 @@
     saverOn = false;
     clearTimeout(saverTimer);
     setClass(s, 'on', false);
+    syncAerialVideo();
   }
 
   function poke(ok) {
@@ -2269,6 +2287,7 @@
   function showLock(o) {
     o = o || {};
     hideSaver();
+    aerialVideo.hide();
     if (o.from !== 'switch') {
       closeSheets();
       if (st.zone === Z.DRAWER) closeDrawer();

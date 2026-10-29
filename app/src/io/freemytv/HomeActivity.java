@@ -8,7 +8,9 @@ import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.widget.FrameLayout;
 import android.widget.TextView;
+import java.io.File;
 
 /**
  * The mahitTV home screen (Android's "Home" role in Free My TV mode). It runs in the :home process: if it crashes,
@@ -19,6 +21,8 @@ public class HomeActivity extends Activity {
     /** Opens All Apps (a remote's All Apps button, RemoteKeys). */
     static final String EXTRA_ALL_APPS = "io.freemytv.ALL_APPS";
     private HomeView home;
+    private WallpaperVideoView wallpaperVideo;
+    private AerialCache aerialCache;
     private int prefsVersion = Prefs.version;   // settings changed while we were away: start over
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -39,8 +43,20 @@ public class HomeActivity extends Activity {
             return;
         }
         Ui.init(this);
-        home = new HomeView(this);
-        setContentView(home);
+        aerialCache = new AerialCache(new File(getCacheDir(), "aerials"));
+        wallpaperVideo = new WallpaperVideoView(this);
+        home = new HomeView(this, new HomeView.AerialPlayback() {
+            @Override public void show(String url) {
+                aerialCache.fetch(url, file -> runOnUiThread(() -> {
+                    if (file == null) wallpaperVideo.hide(); else wallpaperVideo.show(file, wallpaperVideo::hide);
+                }));
+            }
+            @Override public void hide() { wallpaperVideo.hide(); }
+        });
+        FrameLayout root = new FrameLayout(this);
+        root.addView(wallpaperVideo, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(home, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
         getWindow().setBackgroundDrawable(null);
         if (getIntent().getBooleanExtra(EXTRA_ALL_APPS, false)) home.showAllApps();
     }
@@ -66,6 +82,7 @@ public class HomeActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        if (wallpaperVideo != null) wallpaperVideo.hide();
         if (home != null) home.pause();
         super.onPause();
     }
@@ -80,6 +97,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (home != null) home.destroy();
+        if (wallpaperVideo != null) wallpaperVideo.release();
         super.onDestroy();
     }
 

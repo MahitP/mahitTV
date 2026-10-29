@@ -107,6 +107,16 @@ final class Wallpaper {
         return aerial == null ? null : copy(aerial);
     }
 
+    /** A stable daily choice among playable AVC aerials; Sonoma intentionally remains a still. */
+    static Aerial liveAerial(long day) {
+        int playable = 0;
+        for (Aerial aerial : AERIALS) if (!aerial.video.isEmpty()) playable++;
+        if (playable == 0) return null;
+        int target = (int) Math.floorMod(day, playable);
+        for (Aerial aerial : AERIALS) if (!aerial.video.isEmpty() && target-- == 0) return copy(aerial);
+        return null;
+    }
+
     private static Aerial findCanonical(String id) {
         if (id == null) return null;
         for (Aerial aerial : AERIALS) if (aerial.id.equals(id)) return aerial;
