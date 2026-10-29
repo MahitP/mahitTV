@@ -291,6 +291,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String backgroundPackage;
     private Recs.Pick resolvedPick;
     private final Wallpaper.HeroVisibility heroVisibility = new Wallpaper.HeroVisibility();
+    private final Wallpaper.BackgroundFocus backgroundFocus = new Wallpaper.BackgroundFocus();
     /** Every asynchronous watch/art callback is owned by this generation. */
     private long backgroundGeneration;
     /** Full screen (↑ on a pick): 0 = the Dock, 1 = the details at the bottom and the Dock away. */
@@ -1324,7 +1325,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean media = tab == TAB_TV && !sheetOpen && Wallpaper.media(zone == Z_HERO ? "hero" : zone == Z_SHELF ? "shelf" : "", Wallpaper.videoApp(pkg));
         if (media && backgroundMode == BACKGROUND_MEDIA && pkg.equals(backgroundPackage)) return;
         if (!media && backgroundMode == BACKGROUND_PROFILE) return;
-        final long generation = ++backgroundGeneration;
+        final String profileId = ProfileManager.current(getContext()).id;
+        final long generation = backgroundGeneration = backgroundFocus.start(profileId);
         backgroundPackage = media ? pkg : null;
         resolvedPick = null;
         appPicks = new ArrayList<>();
@@ -1341,7 +1343,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroVisibility.media();
         refreshHero(animate);       // no stale title while the profile log resolves
         recs.resolveWatch(pkg, generation, (callbackGeneration, watched) -> {
-            if (!Wallpaper.current(callbackGeneration, backgroundGeneration)
+            if (!backgroundFocus.current(callbackGeneration, profileId)
+                    || !Wallpaper.current(callbackGeneration, backgroundGeneration)
                     || backgroundMode != BACKGROUND_MEDIA || !pkg.equals(backgroundPackage)) return;
             resolvedPick = watched;
             List<Recs.Pick> mediaPicks = new ArrayList<>();
@@ -1379,6 +1382,29 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         full.target = 0;
         heroButton.setEmpty();
         heroDirty = tilesDirty = true;
+    }
+
+    /** A profile switch is a hard ownership boundary, even when both people focus the same streaming package. */
+    private void invalidateProfileBackground() {
+        String profileId = ProfileManager.current(getContext()).id;
+        backgroundGeneration = backgroundFocus.start(profileId);
+        backgroundMode = BACKGROUND_PROFILE;
+        backgroundPackage = null;
+        resolvedPick = null;
+        appPicks = new ArrayList<>();
+        pickIndex = 0;
+        ++aerialGeneration;
+        liveUrl = null;
+        aerialPlayback.hide(aerialGeneration);
+        setLiveVideoVisible(false);
+        clearHeroForProfile();
+        scene.setHorizon(Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis())));
+        // Do not cross-fade an outgoing person's art into the new profile's first frame.
+        bgFrom = null;
+        bgTo = null;
+        bgFadeAt = 0;
+        nightPair = false;
+        neutralGlass();
     }
 
     /**
@@ -3086,9 +3112,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (activity instanceof HomeActivity) ((HomeActivity) activity).profileApplied();
         touchedAt = 0;
         reload();
+        invalidateProfileBackground();
         setLightButtons(HomeApps.topButtons());
         checkNight(true);
-        updateBackground();
         layoutPill();
         reset(false);
         if (!Spring.instant) {

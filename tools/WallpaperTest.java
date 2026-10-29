@@ -15,6 +15,7 @@ public final class WallpaperTest {
         mediaPolicyOnlyAllowsFocusedMedia();
         androidFocusPolicyIsExplicit();
         profileSuppressesCurrentAndOutgoingHeroImmediately();
+        profileIdentityInvalidatesPendingBackground();
         aerialCatalogueIsExact();
         urlAllowlistIsExact();
         solidsAreExact();
@@ -142,6 +143,25 @@ public final class WallpaperTest {
         no(hero.draw(), "profile state renders neither current nor outgoing hero");
         hero.media();
         yes(hero.draw(), "returning to media restores hero drawing permission");
+    }
+
+    private static void profileIdentityInvalidatesPendingBackground() {
+        Wallpaper.BackgroundFocus focus = new Wallpaper.BackgroundFocus();
+        Wallpaper.HeroVisibility hero = new Wallpaper.HeroVisibility();
+        long alice = focus.start("alice");
+        hero.media();
+        hero.track(true, true, true);
+        yes(focus.current(alice, "alice"), "Alice may accept her own pending art");
+        long ben = focus.start("ben");
+        hero.profile();
+        no(hero.current(), "Ben entry clears Alice's resolved hero immediately");
+        no(hero.outgoing(), "Ben entry clears Alice's outgoing hero immediately");
+        no(hero.draw(), "Ben entry draws no Alice art while Ben resolves");
+        no(focus.current(alice, "alice"), "late Alice art is rejected after Ben switches in on the same app");
+        no(focus.current(alice, "ben"), "generation and profile must both match");
+        yes(focus.current(ben, "ben"), "Ben may accept only Ben's art");
+        hero.media();
+        yes(hero.draw(), "Ben's accepted media resolution restores drawing");
     }
 
     private static void aerialCatalogueIsExact() {

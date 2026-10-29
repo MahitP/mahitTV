@@ -195,6 +195,21 @@ final class Wallpaper {
         boolean fading() { return fading; }
     }
 
+    /** Profile identity belongs in the background callback key: an app package is shared by every profile. */
+    static final class BackgroundFocus {
+        private long generation;
+        private String profile;
+
+        long start(String profile) {
+            this.profile = profile;
+            return ++generation;
+        }
+
+        boolean current(long generation, String profile) {
+            return this.generation == generation && (this.profile == null ? profile == null : this.profile.equals(profile));
+        }
+    }
+
     private static boolean contains(String[] packages, String pkg) {
         if (pkg == null) return false;
         for (String candidate : packages) if (candidate.equals(pkg)) return true;
