@@ -58,10 +58,15 @@ final class AerialCache {
             }
             if (code < 200 || code >= 300) return null;
             String type = connection.getContentType();
+            long declared = connection.getContentLengthLong();
+            if (declared > MAX_BYTES) return null;
             try (InputStream in = new BufferedInputStream(connection.getInputStream());
                  FileOutputStream out = new FileOutputStream(part)) {
-                int n;
-                while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
+                int n; long written = 0;
+                while ((n = in.read(buffer)) >= 0) {
+                    if (written > MAX_BYTES - n) { part.delete(); return null; }
+                    out.write(buffer, 0, n); written += n;
+                }
                 out.getFD().sync();
             }
             if (!valid(type, part.length())) { part.delete(); return null; }
@@ -87,6 +92,24 @@ final class AerialCache {
         File done = file(url);
         if (!part.renameTo(done)) { part.delete(); return false; }
         touch(done); cleanup(done); return done.exists();
+    }
+
+    /** Host-only stream seam verifies the same bounded-write policy without allocating a gigabyte. */
+    boolean acceptStream(String url, String type, InputStream input, long declared, long limit) {
+        if (!Wallpaper.allowed(url) || declared > limit || !directory.exists() && !directory.mkdirs()) return false;
+        File part = new File(file(url).getPath() + ".part");
+        try (InputStream in = input; FileOutputStream out = new FileOutputStream(part)) {
+            long written = 0; int n;
+            while ((n = in.read(buffer)) >= 0) {
+                if (written > limit - n) { part.delete(); return false; }
+                out.write(buffer, 0, n); written += n;
+            }
+            out.getFD().sync();
+            if (!valid(type, written)) { part.delete(); return false; }
+        } catch (Exception e) { part.delete(); return false; }
+        File done = file(url);
+        if (!part.renameTo(done)) { part.delete(); return false; }
+        return true;
     }
 
     File file(String url) { return new File(directory, asset(url)); }

@@ -5,8 +5,12 @@ public final class AerialRequestTest {
     public static void main(String[] args) {
         AerialRequest state = new AerialRequest();
         long live = state.show(Wallpaper.liveAerial(0).video);
+        no(state.videoVisible(), "new live request keeps opaque Horizon until cache validation");
         yes(state.matches(live, Wallpaper.liveAerial(0).video), "current live callback accepted");
+        yes(state.videoReady(live, Wallpaper.liveAerial(0).video), "validated live enables video-visible canvas state");
+        yes(state.videoVisible(), "valid live exposes the video behind HomeView");
         state.hide();
+        no(state.videoVisible(), "hide/failure restores opaque canvas state");
         no(state.matches(live, Wallpaper.liveAerial(0).video), "late completion after hide is discarded");
         long next = state.show(Wallpaper.liveAerial(1).video);
         no(state.matches(live, Wallpaper.liveAerial(0).video), "media precedence invalidates previous live request");

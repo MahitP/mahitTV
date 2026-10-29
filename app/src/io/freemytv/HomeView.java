@@ -296,6 +296,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final AerialCache aerialCache;
     private long aerialGeneration;
     private String liveUrl;
+    private boolean liveVideoVisible;
     private String officialStill;
     private String officialStillLoaded;
     private final AerialPlayback aerialPlayback;
@@ -705,6 +706,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!running) return;
         aerialPlayback.hide(++aerialGeneration);
         liveUrl = null;
+        setLiveVideoVisible(false);
         running = false;
         welly.pause();
         cancelReorder(true);
@@ -1326,6 +1328,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void updateBackground() {
         long generation = ++aerialGeneration;
+        setLiveVideoVisible(false);
         Recs.Pick p = currentPick();
         Backdrop b;
         if (p != null) {
@@ -1430,8 +1433,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void aerialFailed(long generation, String url) {
         if (generation != aerialGeneration || url == null || !url.equals(liveUrl)) return;
         liveUrl = null;
+        setLiveVideoVisible(false);
         showBackdrop(null);
     }
+
+    void aerialReady(long generation, String url) {
+        if (generation != aerialGeneration || url == null || !url.equals(liveUrl)) return;
+        setLiveVideoVisible(true);
+    }
+
+    private void setLiveVideoVisible(boolean visible) { if (liveVideoVisible != visible) { liveVideoVisible = visible; sky.invalidate(); } }
 
     private void failOfficialStill(String url) {
         if (!url.equals(officialStill)) return;
@@ -4170,6 +4181,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * same photo almost black (or a dark gradient), drawn on top during the transition.
      */
     private void drawLightSky(Canvas c) {
+        if (liveVideoVisible) return;   // video sits below this View; glass layers still draw above it.
         long up = SystemClock.uptimeMillis();
         float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
         boolean fading = bgFadeAt != 0;

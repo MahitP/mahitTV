@@ -52,7 +52,7 @@ public class HomeActivity extends Activity {
                 aerialCache.fetch(url, file -> runOnUiThread(() -> {
                     if (!aerialRequest.matches(token, url)) return;
                     if (file == null) { wallpaperVideo.hide(); home.aerialFailed(generation, url); }
-                    else wallpaperVideo.show(file, () -> home.aerialFailed(generation, url));
+                    else if (aerialRequest.videoReady(token, url)) { home.aerialReady(generation, url); wallpaperVideo.show(file, () -> home.aerialFailed(generation, url)); }
                 }));
             }
             @Override public void hide(long generation) { aerialRequest.hide(); wallpaperVideo.hide(); }

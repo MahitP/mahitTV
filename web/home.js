@@ -2465,12 +2465,14 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { hideSaver(); return; }
+    if (document.hidden) { aerialVideo.hide(); hideSaver(); return; }
     idleAt = Date.now();
     endLaunch(true);   // back from the app: the page is in place again
     if (Profiles.needsLock() && !Intro.showing() && !Lock.showing()) showLock({from: 'idle'});
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
   });
+  window.addEventListener('pagehide', function () { aerialVideo.hide(); });
+  window.addEventListener('unload', function () { aerialVideo.hide(); });
 
   Profiles.seedPreview();   // preview builds: Mahit's and Dhruvin's sample Docks and watch logs, before anything draws
   I18N.set(Prefs.language());

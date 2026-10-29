@@ -1,5 +1,6 @@
 var assert = require('assert'), fs = require('fs'), vm = require('vm');
 var source = fs.readFileSync('web/wallpaper.js', 'utf8');
+var home = fs.readFileSync('web/home.js', 'utf8');
 var context = {}; vm.runInNewContext(source, context, {filename: 'web/wallpaper.js'});
 var W = context.Wallpaper, events = {}, calls = [];
 var video = {style: {}, muted: false, loop: false, setAttribute: function (k, v) { this[k] = v; },
@@ -13,4 +14,6 @@ assert.strictEqual(video.muted, true); assert.strictEqual(video.loop, true); ass
 events.error(); assert.strictEqual(fallback, 1, 'video error falls back'); assert.ok(calls.indexOf('pause') >= 0 && calls.indexOf('remove:src') >= 0, 'failure clears video');
 var sonoma = W.liveAerial(12); assert.ok(sonoma && sonoma.id !== 'aerial:sonoma-coast' && sonoma.video, 'live selection excludes Sonoma');
 c.show(W.aerials[1].video); c.hide(); assert.ok(calls.indexOf('load') >= 0, 'hide pauses and unloads');
+assert.ok(/document\.hidden\) \{ aerialVideo\.hide\(\)/.test(home), 'hidden document explicitly stops video');
+assert.ok(/pagehide[\s\S]*aerialVideo\.hide\(\)/.test(home) && /unload[\s\S]*aerialVideo\.hide\(\)/.test(home), 'leaving page stops mocked video controller');
 console.log('aerial-video-web-test: passed');

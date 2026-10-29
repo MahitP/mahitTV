@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import java.io.File;
+import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 
 /** Host-side cache contract: no network is needed to exercise its safety rules. */
@@ -14,6 +15,10 @@ public final class AerialCacheTest {
             no(cache.accept("https://sylvan.apple.com/not-in-the-catalogue.mov", "video/mp4", new byte[]{1}), "rejects non-exact URL");
             no(cache.accept(one, "text/html", new byte[]{1}), "rejects invalid content type");
             no(cache.accept(one, "video/mp4", new byte[0]), "rejects empty content");
+            no(cache.acceptStream(one, "video/mp4", new ByteArrayInputStream(new byte[]{1}), 10, 9), "rejects known oversized content length");
+            no(cache.file(one).exists(), "oversized header leaves no completed file");
+            no(cache.acceptStream(one, "video/mp4", new ByteArrayInputStream(new byte[]{1,2,3,4,5,6,7,8,9,10}), -1, 9), "caps streamed bytes");
+            no(new File(cache.file(one).getPath() + ".part").exists(), "oversized stream deletes partial");
             yes(cache.accept(one, "video/mp4", new byte[]{1, 2, 3, 4}), "accepts video");
             File first = cache.file(one);
             yes(first.isFile(), "complete file is atomically named");
