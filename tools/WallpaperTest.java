@@ -13,6 +13,7 @@ public final class WallpaperTest {
         palettesMatchTheContract();
         horizonGeometryIsExact();
         mediaPolicyOnlyAllowsFocusedMedia();
+        androidFocusPolicyIsExplicit();
         aerialCatalogueIsExact();
         urlAllowlistIsExact();
         solidsAreExact();
@@ -101,6 +102,28 @@ public final class WallpaperTest {
         no(Wallpaper.media("hero", false), "non-media hero");
         no(Wallpaper.media("dock", true), "other zone");
         no(Wallpaper.media(null, true), "null zone");
+    }
+
+    private static void androidFocusPolicyIsExplicit() {
+        yes(Wallpaper.videoApp("com.netflix.ninja"), "Netflix is video");
+        yes(Wallpaper.videoApp("com.disney.disneyplus"), "Disney+ is video");
+        yes(Wallpaper.videoApp("com.wbd.stream"), "Max is video");
+        yes(Wallpaper.videoApp("com.amazon.amazonvideo.livingroom"), "Prime Video is video");
+        yes(Wallpaper.videoApp("com.google.android.youtube.tv"), "YouTube is video");
+        yes(Wallpaper.videoApp("com.apple.atve.androidtv.appletv"), "Apple TV is video");
+        no(Wallpaper.videoApp("com.apple.android.music"), "Apple Music is not TMDB video");
+        no(Wallpaper.videoApp("com.spotify.tv.android"), "Spotify is not TMDB video");
+        no(Wallpaper.videoApp("io.freemytv"), "Settings is not video");
+        no(Wallpaper.videoApp(null), "null package is not video");
+        yes(Wallpaper.musicApp("com.apple.android.music"), "Apple Music is music");
+        yes(Wallpaper.musicApp("com.spotify.tv.android"), "Spotify is music");
+        no(Wallpaper.musicApp("com.netflix.ninja"), "Netflix is not music");
+        yes(Wallpaper.media("shelf", Wallpaper.videoApp("com.netflix.ninja")), "video shelf gets media");
+        yes(Wallpaper.media("hero", Wallpaper.videoApp("com.netflix.ninja")), "video hero gets media");
+        no(Wallpaper.media("grid", Wallpaper.videoApp("com.netflix.ninja")), "grid never gets media");
+        no(Wallpaper.media("shelf", Wallpaper.videoApp("io.freemytv")), "Settings shelf never gets media");
+        yes(Wallpaper.current(7, 7), "matching generation is current");
+        no(Wallpaper.current(6, 7), "stale generation is rejected");
     }
 
     private static void aerialCatalogueIsExact() {

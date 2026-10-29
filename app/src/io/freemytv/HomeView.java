@@ -284,15 +284,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float capsuleInfoW;
     private int statusIndex;
 
-    // Hero and background: all of this hour's picks, and those of the focused Dock app (the Top Shelf shows these)
+    // Hero and background: picks are only promoted after an explicit, focused media resolution.
     private List<Recs.Pick> picks = new ArrayList<>(), appPicks = new ArrayList<>();
+    private static final int BACKGROUND_PROFILE = 0, BACKGROUND_MEDIA = 1;
+    private int backgroundMode = -1;
+    private String backgroundPackage;
+    private Recs.Pick resolvedPick;
+    /** Every asynchronous watch/art callback is owned by this generation. */
+    private long backgroundGeneration;
     /** Full screen (↑ on a pick): 0 = the Dock, 1 = the details at the bottom and the Dock away. */
     private final Spring full = new Spring(Spring.SPATIAL_SCROLL, 0);   // smooth (apple-design-motion: push-like transitions)
-    // The wallpaper when the focused app has no pick: a bundled aerial (one per hour), built like a pick's backdrop.
+    // Explicit profile wallpaper still, if one is being decoded from the validated Aerial cache.
     private Backdrop wallpaper;
-    private int wallpaperIndex = -1;
     private boolean wallpaperLoading;
-    private String[] aerials;
     private final AerialCache aerialCache;
     private long aerialGeneration;
     private String liveUrl;
@@ -1280,6 +1284,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The pick the Top Shelf shows: one of the focused Dock app's, or null (then a wallpaper shows). */
     private Recs.Pick currentPick() {
+        if (backgroundMode != BACKGROUND_MEDIA) return null;
+        if (resolvedPick != null) return resolvedPick;
         return appPicks.isEmpty() ? null : appPicks.get(Math.min(pickIndex, appPicks.size() - 1));
     }
 
@@ -1297,8 +1303,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         List<Recs.Pick> list = recs.shelf();
         if (!samePicks(list, picks)) picks = list;
         for (Recs.Pick p : list) recs.backdrop(p);   // every pick's photo ready: moving along the Dock is instant
-        followShelf(false);
-        updateBackground();
+        syncBackgroundFocus(false);
         refreshHero(false);
         spoken.focusMoved();
     }
@@ -1307,19 +1312,54 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The focused Dock app's picks (tvOS shows the focused app's Top Shelf): when they change, the Top Shelf shows its
      * first one, or the wallpaper when it has none.
      */
-    private void followShelf(boolean animate) {
+    private void followShelf(boolean animate) { syncBackgroundFocus(animate); }
+
+    /**
+     * Android has no implicit "current app art": only a video app focused in TV's Shelf/Hero may own it.
+     * Tabs, the app grid, Settings and music all return to the profile background immediately.
+     */
+    private void syncBackgroundFocus(boolean animate) {
         String pkg = shelf.isEmpty() || shelfIndex >= shelf.size() ? null : shelf.get(shelfIndex).pkg;
-        List<Recs.Pick> mine = new ArrayList<>();
-        for (Recs.Pick p : picks) if (pkg != null && pkg.equals(p.pkg)) mine.add(p);
-        if (samePicks(mine, appPicks)) return;
-        appPicks = mine;
+        boolean media = tab == TAB_TV && !sheetOpen && Wallpaper.media(zone == Z_HERO ? "hero" : zone == Z_SHELF ? "shelf" : "", Wallpaper.videoApp(pkg));
+        if (media && backgroundMode == BACKGROUND_MEDIA && pkg.equals(backgroundPackage)) return;
+        if (!media && backgroundMode == BACKGROUND_PROFILE) return;
+        final long generation = ++backgroundGeneration;
+        backgroundPackage = media ? pkg : null;
+        resolvedPick = null;
+        appPicks = new ArrayList<>();
         pickIndex = 0;
         heroSlide = 1;
-        if (zone == Z_HERO && mine.isEmpty()) zone = Z_SHELF;
-        refreshHero(animate);
-        updateBackground();
-        handler.removeCallbacks(rotate);
-        handler.postDelayed(rotate, ROTATE_MS);
+        if (!media) {
+            backgroundMode = BACKGROUND_PROFILE;
+            if (zone == Z_HERO) zone = Z_SHELF;
+            refreshHero(animate);
+            showProfileBackground(generation);
+            return;
+        }
+        backgroundMode = BACKGROUND_MEDIA;
+        refreshHero(animate);       // no stale title while the profile log resolves
+        recs.resolveWatch(pkg, generation, (callbackGeneration, watched) -> {
+            if (!Wallpaper.current(callbackGeneration, backgroundGeneration)
+                    || backgroundMode != BACKGROUND_MEDIA || !pkg.equals(backgroundPackage)) return;
+            resolvedPick = watched;
+            List<Recs.Pick> mediaPicks = new ArrayList<>();
+            if (watched != null) mediaPicks.add(watched);
+            else for (Recs.Pick p : picks) if (pkg.equals(p.pkg)) mediaPicks.add(p);
+            if (mediaPicks.isEmpty()) {
+                backgroundMode = BACKGROUND_PROFILE;
+                backgroundPackage = null;
+                if (zone == Z_HERO) zone = Z_SHELF;
+                refreshHero(animate);
+                showProfileBackground(callbackGeneration);
+                return;
+            }
+            appPicks = mediaPicks;
+            pickIndex = 0;
+            refreshHero(animate);
+            updateBackground();
+            handler.removeCallbacks(rotate);
+            handler.postDelayed(rotate, ROTATE_MS);
+        });
     }
 
     /**
@@ -1332,18 +1372,43 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Recs.Pick p = currentPick();
         Backdrop b;
         if (p != null) {
+            scene.setAurora();
             clearOfficialStill();
             aerialPlayback.hide(generation);
             b = recs.backdrop(p);
-        } else if (Photos.on(getContext())) {
-            clearOfficialStill();
-            aerialPlayback.hide(generation);
-            b = Photos.backdrop(getContext(), ownReady);
         } else {
-            updateAerialVideo(generation);
-            b = aerial();
+            showProfileBackground(generation);
+            return;
         }
-        if (b != null) showBackdrop(b); else if ("live:aerial".equals(Prefs.wallpaper()) || Wallpaper.find(Prefs.wallpaper()) != null) showBackdrop(null);
+        if (b != null) showBackdrop(b); else showProfileBackground(generation);
+    }
+
+    /** The default profile surface is Frosted Horizon; aerial/video/photos are opt-in wallpaper choices only. */
+    private void showProfileBackground(long generation) {
+        setLiveVideoVisible(false);
+        clearOfficialStill();
+        String choice = Prefs.wallpaper();
+        if (Photos.on(getContext()) && "photos".equals(choice)) {
+            aerialPlayback.hide(generation);
+            Backdrop photo = Photos.backdrop(getContext(), ownReady);
+            if (photo != null) { scene.setAurora(); showBackdrop(photo); return; }
+        }
+        if ("live:aerial".equals(choice)) {
+            scene.setAurora();
+            updateAerialVideo(generation);
+            showBackdrop(null);
+            return;
+        }
+        Wallpaper.Aerial aerial = Wallpaper.find(choice);
+        if (aerial != null && Wallpaper.allowed(aerial.preview)) {
+            scene.setAurora();
+            aerialPlayback.hide(generation);
+            Backdrop still = officialStill(aerial.preview);
+            if (still != null) { showBackdrop(still); return; }
+        } else aerialPlayback.hide(generation);
+        scene.setHorizon(Wallpaper.dark(choice, data.isNight(System.currentTimeMillis())));
+        showBackdrop(null);
+        neutralGlass();
     }
 
     private void updateAerialVideo(long generation) {
@@ -1353,55 +1418,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (liveUrl == null || liveUrl.isEmpty()) aerialPlayback.hide(generation); else aerialPlayback.show(generation, liveUrl);
     }
 
-    /** This hour's aerial (assets/aerials, one per hour in turn), or null while it's built in the background. */
-    private Backdrop aerial() {
-        if ("live:aerial".equals(Prefs.wallpaper())) return null;
-        Wallpaper.Aerial official = Wallpaper.find(Prefs.wallpaper());
-        if (official != null && Wallpaper.allowed(official.preview)) return officialStill(official.preview);
-        officialStill = null;
-        if (aerials == null) {
-            try {
-                String[] list = getContext().getAssets().list("aerials");
-                aerials = list == null ? new String[0] : list;
-                java.util.Arrays.sort(aerials);
-            } catch (java.io.IOException e) {
-                aerials = new String[0];
-            }
-        }
-        if (aerials.length == 0) return null;
-        // Stable wallpaper IDs with a bundled compatibility asset use it; everything else keeps the hourly fallback.
-        String asset = Wallpaper.legacyAsset(Prefs.wallpaper());
-        int chosen = asset.isEmpty() ? -1 : java.util.Arrays.binarySearch(aerials, asset);
-        final int index = chosen >= 0 ? chosen : (int) (System.currentTimeMillis() / 3600_000L % aerials.length);
-        if (index == wallpaperIndex) return wallpaper;
-        if (!wallpaperLoading) {
-            wallpaperLoading = true;
-            final String name = aerials[index];
-            final Context c = getContext().getApplicationContext();
-            LOADER.execute(() -> {
-                Backdrop built = null;
-                try (java.io.InputStream in = c.getAssets().open("aerials/" + name)) {
-                    Bitmap b = android.graphics.BitmapFactory.decodeStream(in);
-                    if (b != null) built = Backdrop.make(b, false);
-                } catch (Exception | OutOfMemoryError e) {
-                    AppLog.w("aerial " + name + ": " + e.getMessage());
-                }
-                final Backdrop ready = built;
-                handler.post(() -> {
-                    wallpaperLoading = false;
-                    if (ready == null) return;
-                    wallpaper = ready;
-                    wallpaperIndex = index;
-                    if (running) updateBackground();
-                });
-            });
-        }
-        return wallpaper;   // the previous hour's until the new one is ready
-    }
-
     /** Apple preview frames use the same validated cache as video; an unavailable frame leaves Frosted Horizon visible. */
     private Backdrop officialStill(String url) {
-        if (!url.equals(officialStill)) { officialStill = url; officialStillLoaded = null; wallpaper = null; wallpaperIndex = -1; }
+        if (!url.equals(officialStill)) { officialStill = url; officialStillLoaded = null; wallpaper = null; }
         if (url.equals(officialStillLoaded)) return wallpaper;
         File cached = aerialCache.get(url);
         if (cached != null) loadOfficialStill(cached, url);
@@ -1483,11 +1502,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Hero makeHero() {
         Hero h = new Hero();
         Recs.Pick p = currentPick();
-        if (p == null) {
-            h.clock = true;
-            h.label = Ui.date(System.currentTimeMillis()).toUpperCase(Ui.locale());
-            return h;
-        }
+        if (p == null) return h;
         h.pick = p;
         h.title = p.title == null ? "" : p.title;
         // "Sci-Fi · 2026 · 2h 4m · Netflix": the year after the genre (after "Series · Drama" for a show).
@@ -2727,6 +2742,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             parallax.target = shelf.size() < 2 || Spring.instant ? 0 : -8 * (2f * shelfIndex / n - 1);
             if (snap) parallax.snap(parallax.target);
         }
+        syncBackgroundFocus(!snap);
         float fullWas = full.target;
         full.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
         if (full.target != fullWas) motionDirty = true;
@@ -4193,22 +4209,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, 0xFF000000)
                 : dd > ds ? veil(dd, 0xFF000000) : veil(ds, blend(0xFFFFFFFF, 0xFF000000, night));
         if (bgTo == null || (fading && bgFrom == null)) {
-            if (lightGradient == null) lightGradient = Ui.gradient(h, 0xFFF5F5F7, 0xFFE2E2E7);
-            if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1E, 0xFF0B0B0D);
-            fill.setColorFilter(v);
-            fill.setColor(0xFF000000);
-            if (night < 0.999f) {
-                fill.setShader(lightGradient);
-                c.drawRect(screen, fill);
+            if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon()) {
+                scene.drawBackground(c);
+                if (v != null) { fill.setColorFilter(v); fill.setColor(0xFF000000); c.drawRect(screen, fill); fill.setColorFilter(null); }
+            } else {
+                if (lightGradient == null) lightGradient = Ui.gradient(h, 0xFFF5F5F7, 0xFFE2E2E7);
+                if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1E, 0xFF0B0B0D);
+                fill.setColorFilter(v);
+                fill.setColor(0xFF000000);
+                if (night < 0.999f) {
+                    fill.setShader(lightGradient);
+                    c.drawRect(screen, fill);
+                }
+                if (night > 0.001f) {
+                    fill.setShader(nightGradient);
+                    fill.setAlpha(Math.round(255 * night));
+                    c.drawRect(screen, fill);
+                    fill.setAlpha(255);
+                }
+                fill.setShader(null);
+                fill.setColorFilter(null);
             }
-            if (night > 0.001f) {
-                fill.setShader(nightGradient);
-                fill.setAlpha(Math.round(255 * night));
-                c.drawRect(screen, fill);
-                fill.setAlpha(255);
-            }
-            fill.setShader(null);
-            fill.setColorFilter(null);
         }
         imagePaint.setColorFilter(v);
         if (fading && bgFrom != null) drawLightImage(c, bgFrom, bgTo == null ? 1 - e : 1);

@@ -34,6 +34,19 @@ final class Wallpaper {
             {0.53f, 0.48f, 0.78f},
             {1.06f, 1.04f, 1.04f}
     };
+    /** Packages allowed to turn the Android Top Shelf into TV/movie artwork.  Keep this a deliberate allow-list. */
+    private static final String[] VIDEO_APPS = {
+            "com.netflix.ninja",
+            "com.disney.disneyplus", "com.disney.starplus",
+            "com.wbd.stream", "com.hbo.hbonow",
+            "com.amazon.amazonvideo.livingroom", "com.amazon.firebat", "com.amazon.avod",
+            "com.google.android.youtube.tv", "com.amazon.firetv.youtube",
+            "com.apple.atve.androidtv.appletv", "com.apple.atve.sony.appletv", "com.apple.atve.amazon.appletv"
+    };
+    /** Music sessions have their own Now Playing surface and must never request TMDB artwork. */
+    private static final String[] MUSIC_APPS = {
+            "com.apple.android.music", "com.spotify.tv.android", "com.spotify.music"
+    };
 
     private static final Aerial[] AERIALS = {
             new Aerial("aerial:yosemite", "4109D42A-D717-46A7-A9A2-FE53A82B25C0", "Yosemite Valley",
@@ -148,5 +161,20 @@ final class Wallpaper {
 
     static boolean media(String zone, boolean mediaApp) {
         return mediaApp && ("shelf".equals(zone) || "hero".equals(zone));
+    }
+
+    static boolean videoApp(String pkg) { return contains(VIDEO_APPS, pkg); }
+
+    static boolean musicApp(String pkg) { return contains(MUSIC_APPS, pkg); }
+
+    /** A callback may mutate Top Shelf state only for the resolution it was started for. */
+    static boolean current(long callbackGeneration, long backgroundGeneration) {
+        return callbackGeneration == backgroundGeneration;
+    }
+
+    private static boolean contains(String[] packages, String pkg) {
+        if (pkg == null) return false;
+        for (String candidate : packages) if (candidate.equals(pkg)) return true;
+        return false;
     }
 }
