@@ -198,11 +198,21 @@ var Wallpaper = (function () {
     return !!app.appKey && (item.appKey === app.appKey || item.app === app.appKey);
   }
 
-  function rebindService(meta, service) {
-    if (!meta) return meta || '';
-    var cut = meta.lastIndexOf(' · ');
-    if (cut < 0) return service || '';
-    return service ? meta.slice(0, cut + 3) + service : meta.slice(0, cut);
+  function rebindService(meta, priorService, focusedService) {
+    meta = meta || '';
+    priorService = priorService || '';
+    focusedService = focusedService || '';
+    var parts = meta ? meta.split(' · ') : [];
+    var last = parts.length ? parts[parts.length - 1] : '';
+    if (focusedService && last === focusedService) return meta;
+    if (priorService && last === priorService) {
+      parts.pop();
+      if (focusedService) parts.push(focusedService);
+      return parts.join(' · ');
+    }
+    if (!focusedService) return meta;
+    parts.push(focusedService);
+    return parts.join(' · ');
   }
 
   /** Pure media-background policy. History is copied into a normalized item; inputs are never changed. */

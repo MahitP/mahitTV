@@ -80,10 +80,18 @@ var unordered = [
 assert.strictEqual(choice(unordered, picks, netflix, null).item.tmdb, 202, 'newest is deterministic even if input is unsorted');
 assert.strictEqual(choice(unordered, picks, netflix, null).item.tmdb, 202, 'selection is stable across calls');
 assert.strictEqual(unordered[0].tmdb, 101, 'selection does not mutate history');
-assert.strictEqual(Wallpaper.rebindService('Drama · 2 seasons · Disney+', 'Netflix'), 'Drama · 2 seasons · Netflix',
+assert.strictEqual(Wallpaper.rebindService('Drama · 2 seasons · Disney+', 'Disney+', 'Netflix'), 'Drama · 2 seasons · Netflix',
   'focused service replaces one metadata suffix');
-assert.strictEqual(Wallpaper.rebindService('Drama · Netflix', 'Netflix'), 'Drama · Netflix',
+assert.strictEqual(Wallpaper.rebindService('Drama · Netflix', 'Netflix', 'Netflix'), 'Drama · Netflix',
   'focused service is not duplicated');
+assert.strictEqual(Wallpaper.rebindService('Series · Drama · 2 seasons', 'Disney+', 'Netflix'),
+  'Series · Drama · 2 seasons · Netflix', 'metadata without the prior provider keeps its final detail');
+assert.strictEqual(Wallpaper.rebindService('Drama', 'Disney+', 'Netflix'), 'Drama · Netflix', 'one segment is preserved');
+assert.strictEqual(Wallpaper.rebindService('', 'Disney+', 'Netflix'), 'Netflix', 'empty metadata becomes focused service');
+assert.strictEqual(Wallpaper.rebindService('Drama · Disney+', 'Disney+', ''), 'Drama', 'empty focus removes exact prior suffix');
+assert.strictEqual(Wallpaper.rebindService('Drama · 2 seasons', 'Disney+', ''), 'Drama · 2 seasons',
+  'empty focus preserves a non-provider final segment');
+assert.strictEqual(Wallpaper.rebindService('Drama', '', 'Netflix'), 'Drama · Netflix', 'missing prior service appends focus');
 
 var dataContext = {
   console: console,

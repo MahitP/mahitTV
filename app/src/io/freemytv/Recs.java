@@ -45,7 +45,7 @@ final class Recs {
     static final class Pick {
         int id;
         String kind;            // "movie" or "tv"
-        String title, backdrop, meta = "", app, pkg;
+        String title, backdrop, meta = "", app, pkg, service;
         String year = "", overview = "";   // the Top Shelf's details: release year and synopsis
         double rating;                     // TMDB's vote average (0 = none)
         String cert = "";                  // the age rating in the region ("PG-13", "TV-MA"), or ""
@@ -253,45 +253,43 @@ final class Recs {
     /** Resolve this profile's newest movie/show opened in one app; the UI owns generation staleness. */
     void resolveWatch(String pkg, long generation, WatchResolver callback) {
         if (callback == null) return;
-        final ProfileManager.Profile requestedProfile = ProfileManager.current(context);
-        try {
-            io.execute(() -> {
-                Pick answer = null;
-                try {
-                    List<WatchLog.Entry> requestedLog = WatchArtworkPolicy.captured(requestedProfile,
-                            profile -> WatchLog.list(context, profile));
-                    MediaChoice choice = watchChoice(requestedLog, pkg);
-                    if (choice != null) {
-                        answer = knownPick(choice);
-                        if (answer == null && hasNetworkKey()) {
-                            Pick isolated = new Pick();
-                            isolated.id = choice.id;
-                            isolated.kind = choice.kind;
-                            isolated.title = choice.title;
-                            isolated.pkg = choice.pkg;
-                            isolated.app = serviceKey(choice.pkg);
-                            fetchDetails(isolated);
-                            // The log's exact package remains authoritative when several installed services carry a title.
-                            isolated.pkg = choice.pkg;
-                            isolated.app = choice.app;
-                            isolated.meta = WatchArtworkPolicy.rebindMeta(isolated.meta, choice.service);
-                            isolated.link = null;
-                            if (isolated.backdrop != null && !isolated.backdrop.isEmpty()) {
-                                download(isolated);
-                                loadImage(isolated);
-                                if (hasImage(isolated)) answer = isolated;
-                            }
-                        }
+        WatchResolveCoordinator<ProfileManager.Profile, List<WatchLog.Entry>, Pick> coordinator =
+                new WatchResolveCoordinator<>(() -> ProfileManager.current(context), command -> io.execute(command),
+                        command -> main.post(command), profile -> WatchLog.list(context, profile), requestedLog -> {
+                    try {
+                        return resolveWatchLog(requestedLog, pkg);
+                    } catch (Exception e) {
+                        AppLog.w("watch artwork: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+                        throw e;
                     }
-                } catch (Exception e) {
-                    AppLog.w("watch artwork: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
-                }
-                postWatch(callback, generation, answer);
-            });
-        } catch (RuntimeException e) {
-            AppLog.w("watch artwork executor: " + e.getMessage());
-            postWatch(callback, generation, null);
+                });
+        coordinator.start(generation, callback::onWatch);
+    }
+
+    private Pick resolveWatchLog(List<WatchLog.Entry> requestedLog, String pkg) throws Exception {
+        MediaChoice choice = watchChoice(requestedLog, pkg);
+        if (choice == null) return null;
+        Pick answer = knownPick(choice);
+        if (answer == null && hasNetworkKey()) {
+            Pick isolated = new Pick();
+            isolated.id = choice.id;
+            isolated.kind = choice.kind;
+            isolated.title = choice.title;
+            fetchDetails(isolated);
+            String priorService = isolated.service;
+            // The log's exact package remains authoritative when several installed services carry a title.
+            isolated.pkg = choice.pkg;
+            isolated.app = choice.app;
+            isolated.service = choice.service;
+            isolated.meta = WatchArtworkPolicy.rebindMeta(isolated.meta, priorService, choice.service);
+            isolated.link = null;
+            if (isolated.backdrop != null && !isolated.backdrop.isEmpty()) {
+                download(isolated);
+                loadImage(isolated);
+                if (hasImage(isolated)) answer = isolated;
+            }
         }
+        return answer;
     }
 
     private boolean hasNetworkKey() {
@@ -321,16 +319,6 @@ final class Recs {
     private static String serviceKey(String pkg) {
         for (String[] service : SERVICES) if (service[2].equals(pkg)) return service[1];
         return null;
-    }
-
-    private void postWatch(WatchResolver callback, long generation, Pick pick) {
-        main.post(() -> {
-            try {
-                callback.onWatch(generation, pick);
-            } catch (RuntimeException e) {
-                AppLog.w("watch artwork callback: " + e.getMessage());
-            }
-        });
     }
 
     /** "Law & Order: Special Victims Unit" → "law & order" (what comes before ":" or " - "). */
@@ -647,7 +635,10 @@ final class Recs {
                 p.pkg = s[2];
             }
         }
-        if (p.app != null) parts.add(SERVICE_NAME.get(p.app));
+        if (p.app != null) {
+            p.service = SERVICE_NAME.get(p.app);
+            parts.add(p.service);
+        }
         p.meta = String.join(" · ", parts);
         String date = o.optString(p.kind.equals("movie") ? "release_date" : "first_air_date");
         p.year = date.length() >= 4 ? date.substring(0, 4) : "";
@@ -1047,6 +1038,7 @@ final class Recs {
             for (Pick p : picks) {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
+                        .put("service", p.service == null ? "" : p.service)
                         .put("year", p.year).put("overview", p.overview).put("rating", p.rating)
                         .put("cert", p.cert).put("logo", p.logo == null ? "" : p.logo).put("badges", p.badges)
                         .put("detailed", p.detailed));
@@ -1083,6 +1075,7 @@ final class Recs {
             p.badges = o.optString("badges");
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
+            p.service = o.optString("service").isEmpty() ? SERVICE_NAME.get(p.app) : o.optString("service");
             p.detailed = o.optBoolean("detailed");
             out.add(p);
         }
@@ -1098,15 +1091,60 @@ final class Recs {
     }
 }
 
+/** Captures request identity before queueing and delivers one result through the supplied main-thread poster. */
+final class WatchResolveCoordinator<P, L, R> {
+    interface Current<P> { P get(); }
+    interface Submitter { void submit(Runnable command); }
+    interface Poster { void post(Runnable command); }
+    interface LogReader<P, L> { L read(P profile) throws Exception; }
+    interface Resolver<L, R> { R resolve(L log) throws Exception; }
+    interface Callback<R> { void done(long generation, R result); }
+
+    private final Current<P> current;
+    private final Submitter submitter;
+    private final Poster poster;
+    private final LogReader<P, L> logs;
+    private final Resolver<L, R> resolver;
+
+    WatchResolveCoordinator(Current<P> current, Submitter submitter, Poster poster, LogReader<P, L> logs,
+            Resolver<L, R> resolver) {
+        this.current = current;
+        this.submitter = submitter;
+        this.poster = poster;
+        this.logs = logs;
+        this.resolver = resolver;
+    }
+
+    void start(long generation, Callback<R> callback) {
+        final P captured = current.get();
+        final java.util.concurrent.atomic.AtomicBoolean delivered = new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.function.Consumer<R> complete = result -> {
+            if (!delivered.compareAndSet(false, true)) return;
+            poster.post(() -> {
+                try {
+                    callback.done(generation, result);
+                } catch (RuntimeException ignored) {
+                }
+            });
+        };
+        try {
+            submitter.submit(() -> {
+                R result = null;
+                try {
+                    result = resolver.resolve(logs.read(captured));
+                } catch (Exception ignored) {
+                }
+                complete.accept(result);
+            });
+        } catch (RuntimeException rejected) {
+            complete.accept(null);
+        }
+    }
+}
+
 /** Pure known-artwork reuse, outside Recs initialization so its package binding can be tested on the JVM. */
 final class WatchArtworkPolicy {
     private WatchArtworkPolicy() {}
-
-    interface ProfileValues<T> { T get(ProfileManager.Profile profile); }
-
-    static <T> T captured(ProfileManager.Profile profile, ProfileValues<T> values) {
-        return values.get(profile);
-    }
 
     static Recs.Pick knownPick(List<Recs.Pick> known, Recs.MediaChoice choice) {
         for (Recs.Pick pick : known) {
@@ -1123,9 +1161,10 @@ final class WatchArtworkPolicy {
         copy.kind = source.kind;
         copy.title = source.title;
         copy.backdrop = source.backdrop;
-        copy.meta = crossService ? rebindMeta(source.meta, choice.service) : source.meta;
+        copy.meta = rebindMeta(source.meta, source.service, choice.service);
         copy.app = choice.app;
         copy.pkg = choice.pkg;
+        copy.service = choice.service;
         copy.year = source.year;
         copy.overview = source.overview;
         copy.rating = source.rating;
@@ -1138,10 +1177,20 @@ final class WatchArtworkPolicy {
         return copy;
     }
 
-    static String rebindMeta(String meta, String service) {
-        if (meta == null || meta.isEmpty()) return meta;
-        int cut = meta.lastIndexOf(" · ");
-        if (cut < 0) return service == null ? "" : service;
-        return service == null ? meta.substring(0, cut) : meta.substring(0, cut + 3) + service;
+    static String rebindMeta(String meta, String priorService, String focusedService) {
+        String value = meta == null ? "" : meta;
+        String prior = priorService == null ? "" : priorService;
+        String focused = focusedService == null ? "" : focusedService;
+        List<String> parts = new ArrayList<>(Arrays.asList(value.isEmpty() ? new String[0] : value.split(" · ", -1)));
+        String last = parts.isEmpty() ? "" : parts.get(parts.size() - 1);
+        if (!focused.isEmpty() && focused.equals(last)) return value;
+        if (!prior.isEmpty() && prior.equals(last)) {
+            parts.remove(parts.size() - 1);
+            if (!focused.isEmpty()) parts.add(focused);
+            return String.join(" · ", parts);
+        }
+        if (focused.isEmpty()) return value;
+        parts.add(focused);
+        return String.join(" · ", parts);
     }
 }

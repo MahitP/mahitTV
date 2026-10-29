@@ -628,9 +628,10 @@ var Data = (function () {
         if (list[i].kind === item.kind && Number(list[i].id) === item.tmdb) {
           var reused = {}, field;
           for (field in list[i]) if (list[i].hasOwnProperty(field)) reused[field] = list[i][field];
+          var priorService = reused.service || '';
           reused.app = app.appKey || reused.app;
           reused.service = app.service || item.service || '';
-          reused.meta = Wallpaper.rebindService(reused.meta, reused.service);
+          reused.meta = Wallpaper.rebindService(reused.meta, priorService, reused.service);
           reused.link = null;
           reused.mediaSource = 'history';
           finish(reused);
@@ -644,9 +645,10 @@ var Data = (function () {
       loadDetails(pick, function (err) {
         if (err) { finish(null); return; }
         // The history match owns the focused app; TMDB supplies artwork and metadata, not a different destination.
+        var priorService = pick.service || '';
         pick.app = app.appKey || pick.app;
         pick.service = app.service || item.service || pick.service;
-        pick.meta = Wallpaper.rebindService(pick.meta, pick.service);
+        pick.meta = Wallpaper.rebindService(pick.meta, priorService, pick.service);
         pick.link = null;
         pick.mediaSource = 'history';
         finish(pick);

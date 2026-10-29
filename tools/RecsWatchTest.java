@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Pure resolver-policy checks; no Android objects are constructed. */
@@ -20,6 +21,7 @@ public final class RecsWatchTest {
         shared.backdrop = "/shared.jpg";
         shared.app = "disney";
         shared.pkg = "com.disney.disneyplus";
+        shared.service = "Disney+";
         shared.meta = "Drama · 2h 4m · Disney+";
         shared.link = "disney://title/22";
         shared.detailed = true;
@@ -34,6 +36,7 @@ public final class RecsWatchTest {
         check("netflix".equals(resolved.app), "focused history app remains authoritative");
         check(resolved.link == null, "a cross-service deep link is never reused");
         check("Drama · 2h 4m · Netflix".equals(resolved.meta), "service metadata is rebound to the focused app");
+        check("Netflix".equals(resolved.service), "focused service field is rebound");
         check("com.disney.disneyplus".equals(shared.pkg), "shared package is unchanged");
         check("disney".equals(shared.app), "shared app is unchanged");
         check("disney://title/22".equals(shared.link), "shared deep link is unchanged");
@@ -41,22 +44,73 @@ public final class RecsWatchTest {
                 new Recs.MediaChoice("tv", 22, "Other kind", "com.netflix.ninja", "netflix", "Netflix")) == null,
                 "TMDB ids do not cross media kinds");
         check("Drama · 2 seasons · Netflix".equals(
-                WatchArtworkPolicy.rebindMeta("Drama · 2 seasons · Disney+", "Netflix")),
+                WatchArtworkPolicy.rebindMeta("Drama · 2 seasons · Disney+", "Disney+", "Netflix")),
                 "network metadata is rebound to the focused service once");
+        check("Drama · Netflix".equals(WatchArtworkPolicy.rebindMeta("Drama · Netflix", "Netflix", "Netflix")),
+                "same focused suffix is not duplicated");
+        check("Series · Drama · 2 seasons · Netflix".equals(
+                WatchArtworkPolicy.rebindMeta("Series · Drama · 2 seasons", "Disney+", "Netflix")),
+                "a non-provider final segment is preserved before appending focus");
+        check("Drama · Netflix".equals(WatchArtworkPolicy.rebindMeta("Drama", "Disney+", "Netflix")),
+                "one metadata segment is preserved");
+        check("Netflix".equals(WatchArtworkPolicy.rebindMeta("", "Disney+", "Netflix")),
+                "empty metadata becomes the focused service");
+        check("Drama".equals(WatchArtworkPolicy.rebindMeta("Drama · Disney+", "Disney+", "")),
+                "empty focus removes an exact prior suffix");
+        check("Drama · 2 seasons".equals(WatchArtworkPolicy.rebindMeta("Drama · 2 seasons", "Disney+", "")),
+                "empty focus preserves a non-provider suffix");
+        check("Drama · Netflix".equals(WatchArtworkPolicy.rebindMeta("Drama", "", "Netflix")),
+                "missing prior service appends focus");
 
-        ProfileManager.Profile mahit = new ProfileManager.Profile("mahit", "Mahit", "manager", "", "");
-        ProfileManager.Profile dhruvin = new ProfileManager.Profile("dhruvin", "Dhruvin", "standard", "", "");
-        final ProfileManager.Profile[] active = {mahit};
-        final Recs.MediaChoice mahitChoice = focused;
-        final Recs.MediaChoice dhruvinChoice = new Recs.MediaChoice("tv", 44, "Other profile", "com.disney.disneyplus", "disney", "Disney+");
-        ProfileManager.Profile captured = active[0];
-        active[0] = dhruvin;
-        List<Recs.MediaChoice> capturedChoices = WatchArtworkPolicy.captured(captured, new WatchArtworkPolicy.ProfileValues<List<Recs.MediaChoice>>() {
-            @Override public List<Recs.MediaChoice> get(ProfileManager.Profile profile) {
-                return profile.id.equals("mahit") ? Arrays.asList(mahitChoice) : Arrays.asList(dhruvinChoice);
-            }
+        final String[] activeProfile = {"mahit"};
+        final List<Runnable> queued = new ArrayList<>(), posted = new ArrayList<>();
+        final String[] readProfile = {null}, delivered = {null};
+        final long[] deliveredGeneration = {-1};
+        final int[] callbackCount = {0};
+        WatchResolveCoordinator<String, String, String> coordinator = new WatchResolveCoordinator<>(
+                () -> activeProfile[0], queued::add, posted::add,
+                profile -> { readProfile[0] = profile; return profile + "-log"; },
+                log -> log + "-result");
+        coordinator.start(73, (generation, result) -> {
+            callbackCount[0]++;
+            deliveredGeneration[0] = generation;
+            delivered[0] = result;
         });
-        check(capturedChoices.get(0) == mahitChoice, "queued work reads the requesting profile after the active profile switches");
+        activeProfile[0] = "dhruvin";
+        check(queued.size() == 1 && callbackCount[0] == 0, "resolution queues without delivering on the worker");
+        queued.get(0).run();
+        check("mahit".equals(readProfile[0]), "coordinator reads the synchronously captured requester");
+        check(posted.size() == 1 && callbackCount[0] == 0, "worker completion is posted to main");
+        posted.get(0).run();
+        check(callbackCount[0] == 1 && deliveredGeneration[0] == 73 && "mahit-log-result".equals(delivered[0]),
+                "main delivery is exactly once with unchanged generation");
+
+        final List<Runnable> failedQueue = new ArrayList<>(), failedPosts = new ArrayList<>();
+        final int[] failedCount = {0};
+        WatchResolveCoordinator<String, String, String> failing = new WatchResolveCoordinator<>(
+                () -> "mahit", failedQueue::add, failedPosts::add, profile -> profile + "-log",
+                log -> { throw new Exception("details failed"); });
+        failing.start(74, (generation, result) -> {
+            failedCount[0]++;
+            check(generation == 74 && result == null, "thrown detail failure preserves generation and returns null");
+        });
+        failedQueue.get(0).run();
+        check(failedCount[0] == 0 && failedPosts.size() == 1, "failure is posted rather than delivered on worker");
+        failedPosts.get(0).run();
+        check(failedCount[0] == 1, "thrown failure delivers exactly once");
+
+        final List<Runnable> rejectedPosts = new ArrayList<>();
+        final int[] rejectedCount = {0};
+        WatchResolveCoordinator<String, String, String> rejected = new WatchResolveCoordinator<>(
+                () -> "mahit", command -> { throw new IllegalStateException("rejected"); }, rejectedPosts::add,
+                profile -> profile + "-log", log -> log + "-result");
+        rejected.start(75, (generation, result) -> {
+            rejectedCount[0]++;
+            check(generation == 75 && result == null, "executor rejection preserves generation and returns null");
+        });
+        check(rejectedCount[0] == 0 && rejectedPosts.size() == 1, "executor rejection still posts to main");
+        rejectedPosts.get(0).run();
+        check(rejectedCount[0] == 1, "executor rejection delivers exactly once");
 
         System.out.println("RecsWatchTest: " + checks + " checks passed");
     }
