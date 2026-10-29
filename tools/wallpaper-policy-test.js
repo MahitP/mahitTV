@@ -22,6 +22,7 @@ var picks = [
 var netflix = {pkg: 'com.netflix.ninja', appKey: 'netflix', media: true};
 var disney = {pkg: 'com.disney.disneyplus', appKey: 'disney', media: true};
 var music = {pkg: 'com.apple.music', appKey: 'applemusic', media: true, music: true};
+var spotify = {pkg: 'com.spotify.music', appKey: 'spotify', media: true, music: true};
 
 function choice(log, featured, app, nowPlaying) {
   return Wallpaper.selectMedia(log, featured, app, nowPlaying);
@@ -61,9 +62,12 @@ assert.strictEqual(skipped.item, picks[0], 'first focused-app featured pick is t
 assert.strictEqual(choice(history, picks, {pkg: 'settings', appKey: 'settings', media: false}, null), null,
   'Settings and non-media apps have no media choice');
 assert.strictEqual(choice([], picks, music, null), null, 'Apple Music never receives a TMDB featured pick');
+assert.strictEqual(choice(history, picks, spotify, null), null, 'Spotify never receives history or TMDB art while inactive');
 var playing = {pkg: 'com.apple.music', title: 'Midnight City', artwork: 'album.jpg', active: true};
 assert.strictEqual(choice([], picks, music, playing).source, 'nowPlaying', 'active Apple Music Now Playing wins');
 assert.strictEqual(choice([], picks, music, playing).item, playing);
+assert.strictEqual(choice([], picks, spotify, {pkg: 'com.spotify.music', title: 'Track', artwork: 'cover.jpg', active: true}).source,
+  'nowPlaying', 'Spotify accepts active matching Now Playing');
 assert.strictEqual(choice([], picks, music, {title: 'No art', active: true}), null, 'Now Playing needs artwork and title');
 assert.strictEqual(choice([], picks, music, {title: 'Paused', artwork: 'album.jpg', active: false}), null,
   'Now Playing must be active');

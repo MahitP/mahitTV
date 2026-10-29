@@ -86,6 +86,9 @@
     ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']],
     ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']]
   ];
+  // These apps are media for Dock policy but their album art must only come
+  // from active Now Playing; they never borrow a film/TV recommendation.
+  var MUSIC_KEYS = {applemusic: true, spotify: true};
   // Apps shown at once, as on Android: 8 (today's smallest tiles, 178 wide); the shelf scrolls for the rest. The
   // built-in list keeps 8 too.
   // The Dock shows 5 at once (tvOS's 5:3 tiles, 300 × 180) and scrolls for the rest.
@@ -988,9 +991,10 @@
 
   function mediaDescriptor(app) {
     var k = app && shelfKey(app), key = k ? k[0] : '';
+    var playing = window.FMTV_NOW_PLAYING || window.PREVIEW_NOW_PLAYING || null;
     return {id: app && app.id || '', pkg: app && app.id || '', appKey: key, shelfKey: key,
       title: app && app.title || '', service: app && app.title || '', media: !!key,
-      music: key === 'applemusic', nowPlaying: key === 'applemusic' ? window.PREVIEW_NOW_PLAYING : null};
+      music: MUSIC_KEYS[key] === true, nowPlaying: MUSIC_KEYS[key] === true ? playing : null};
   }
 
   function featuredFor(app) {
@@ -1210,6 +1214,9 @@
     bgUrl = url;
     var generation = ++bgGeneration;
     var next = bgFront === 'bgA' ? 'bgB' : 'bgA';
+    var fade = Motion.instant ? 'none' : 'opacity 0.7s cubic-bezier(.2,.8,.2,1)';
+    $('bgA').style.webkitTransition = $('bgA').style.transition = fade;
+    $('bgB').style.webkitTransition = $('bgB').style.transition = fade;
     if (!url) {
       setClass($('bgA'), 'on', false);
       setClass($('bgB'), 'on', false);
@@ -2018,7 +2025,7 @@
           return;
         } else if (dy < 0) {
           // ↑ on a pick: full screen; on a wallpaper: the tab bar.
-          if (appPicks().length) st.zone = Z.HERO;
+          if (appPicks().length || mediaPage || hasClass(body, 'media-background')) st.zone = Z.HERO;
           else st.zone = Z.TABS;
         }
         break;

@@ -105,8 +105,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   background-size: cover;
   background-position: center;
   opacity: 0;
-  -webkit-transition: opacity 0.7s;
-  transition: opacity 0.7s;
+  -webkit-transition: none;
+  transition: none;
 }
 #sky .photo.on { opacity: 1; }
 /* A profile wallpaper is visual-only.  Media art remains above Horizon, but

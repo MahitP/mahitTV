@@ -5,8 +5,38 @@
  * without a browser harness. */
 var assert = require('assert');
 var fs = require('fs');
+var vm = require('vm');
 var source = fs.readFileSync('web/home.js', 'utf8');
 var css = fs.readFileSync('web/home.css', 'utf8');
+var wallpaperSource = fs.readFileSync('web/wallpaper.js', 'utf8');
+var context = {};
+vm.runInNewContext(wallpaperSource, context, {filename: 'web/wallpaper.js'});
+var Wallpaper = context.Wallpaper;
+
+/* Deterministic controller contract: this mirrors the small, externally
+ * observable decision boundary used by refreshBackground, without a browser. */
+function decide(zone, app, history, featured, nowPlaying) {
+  if (!Wallpaper.media(zone, app.media)) return {mode: 'profile', hero: false};
+  var choice = Wallpaper.selectMedia(history, [], app, nowPlaying);
+  if (!choice && !app.music) choice = Wallpaper.selectMedia([], featured, app, null);
+  return choice ? {mode: 'media', hero: true, pick: choice.item} : {mode: 'profile', hero: false};
+}
+var netflix = {pkg: 'netflix', appKey: 'netflix', media: true};
+var apple = {pkg: 'com.apple.music', appKey: 'applemusic', media: true, music: true};
+var spotify = {pkg: 'com.spotify.music', appKey: 'spotify', media: true, music: true};
+var historyOnly = [{kind: 'movie', tmdb: 91, pkg: 'netflix', appKey: 'netflix', title: 'History'}];
+var featured = [{kind: 'movie', id: 12, pkg: 'netflix', app: 'netflix', title: 'Featured'}];
+assert.strictEqual(decide('shelf', netflix, historyOnly, featured, null).pick.title, 'History', 'history-only Shelf remains Hero-capable');
+assert.strictEqual(decide('hero', netflix, historyOnly, featured, null).pick.title, 'History', 'Hero preserves resolved history art');
+assert.strictEqual(decide('tabs', netflix, historyOnly, featured, null).mode, 'profile', 'tabs use profile background');
+assert.strictEqual(decide('apps', netflix, historyOnly, featured, null).mode, 'profile', 'grid uses profile background');
+assert.strictEqual(decide('settings', netflix, historyOnly, featured, null).mode, 'profile', 'settings use profile background');
+assert.strictEqual(decide('shelf', {media: false}, historyOnly, featured, null).mode, 'profile', 'non-media tiles use profile background');
+assert.strictEqual(decide('shelf', netflix, [], featured, null).pick.title, 'Featured', 'no history falls back to focused featured art');
+assert.strictEqual(decide('shelf', apple, [], featured, null).mode, 'profile', 'inactive Apple Music has no featured art');
+assert.strictEqual(decide('shelf', spotify, historyOnly, featured, null).mode, 'profile', 'inactive Spotify has no history or featured art');
+assert.strictEqual(decide('shelf', spotify, [], featured, {pkg: 'com.spotify.music', title: 'Track', artwork: 'art.jpg', active: true}).mode,
+  'media', 'active Spotify Now Playing is media art');
 
 assert.ok(/backgroundGeneration/.test(source), 'background controller has a generation token');
 assert.ok(/Wallpaper\.media\(st\.zone,/.test(source), 'only Shelf and Hero may request media art');
@@ -14,9 +44,15 @@ assert.ok(/Data\.resolveWatch\(app, generation/.test(source), 'watch resolver re
 assert.ok(/generation !== backgroundGeneration/.test(source), 'late watch results are rejected');
 assert.ok(/backgroundMode/.test(source), 'profile and media states are explicit');
 assert.ok(/mediaPage/.test(source), 'resolved media state is independent of shelf picks');
+assert.ok(/MUSIC_KEYS/.test(source) && /applemusic/.test(source) && /spotify/.test(source), 'Apple Music and Spotify are explicit music services');
+assert.ok(/mediaPage \|\| hasClass\(body, 'media-background'\)/.test(source), 'resolved Shelf art can enter Hero without a featured card');
 assert.ok(/media-background/.test(source) && /profile-background/.test(source), 'background state classes are set');
 assert.ok(/cubic-bezier\(\.2,\.8,\.2,1\)/.test(source), 'photo fade has the specified curve');
 assert.ok(/0\.7s/.test(source), 'photo fade is 700ms');
+assert.ok(/Motion\.instant \? 'none' : 'opacity 0\.7s cubic-bezier\(\.2,\.8,.2,1\)'/.test(source), 'instant mode clears photo transition');
+assert.ok(/\$\('bgA'\)\.style\.webkitTransition/.test(source), 'backdrop transition is explicitly controlled');
+assert.ok(/#sky \.photo[\s\S]*transition: none/.test(css), 'CSS does not override the controlled photo transition');
+assert.ok(/img\.onerror[\s\S]*applyProfileBackground\(\)/.test(source), 'failed media images fall back silently to Horizon');
 assert.ok(/\.media-background/.test(css) && /\.profile-background/.test(css), 'CSS gates shelf chrome by background mode');
 assert.ok(/\.profile-background #hero/.test(css), 'profile wallpaper clears Top Shelf hero');
 assert.ok(/\.profile-background #details/.test(css), 'profile wallpaper clears details');
