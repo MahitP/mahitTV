@@ -18,6 +18,7 @@ esac
 packages="FreeMyTV-webos.ipk FreeMyTV-tizen.wgt"
 kept=""
 wallpaper_classes=""
+watch_classes=""
 restore_packages=false
 cleanup() {
   if [ -n "$kept" ] && [ -d "$kept" ]; then
@@ -29,6 +30,7 @@ cleanup() {
     rm -rf "$kept"
   fi
   if [ -n "$wallpaper_classes" ] && [ -d "$wallpaper_classes" ]; then rm -rf "$wallpaper_classes"; fi
+  if [ -n "$watch_classes" ] && [ -d "$watch_classes" ]; then rm -rf "$watch_classes"; fi
 }
 trap cleanup EXIT
 
@@ -37,6 +39,17 @@ if [ "$what" = all ] || [ "$what" = android ]; then
   javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java tools/WallpaperTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   ./build.sh
+  watch_classes="$(mktemp -d)"
+  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  if [ -z "$sdk" ]; then
+    for d in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" /opt/homebrew/share/android-commandlinetools \
+             /usr/local/share/android-commandlinetools /usr/lib/android-sdk; do
+      if [ -d "$d/platforms" ]; then sdk="$d"; break; fi
+    done
+  fi
+  android_jar="$(ls -d "$sdk"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)"
+  javac -cp "out/classes:$android_jar" -d "$watch_classes" tools/RecsWatchTest.java
+  java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.RecsWatchTest
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then

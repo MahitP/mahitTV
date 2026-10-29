@@ -123,5 +123,14 @@ vm.runInNewContext(previewSource, previewContext, {filename: 'preview/preview.js
 previewContext.Profiles.seedPreview();
 assert.strictEqual(previewValues.watchLog[0].appKey, 'netflix', 'preview active profile starts with Netflix history');
 assert.strictEqual(previewValues.watchLog[0].tmdb, 9001, 'preview history maps exactly to a seeded pick');
+var previewPlaying = previewContext.PREVIEW_NOW_PLAYING;
+assert.strictEqual(previewPlaying.active, true, 'preview Apple Music fixture is active');
+assert.ok(previewPlaying.title, 'preview Apple Music fixture has a title');
+assert.ok(previewPlaying.artwork, 'preview Apple Music fixture has artwork');
+assert.ok(fs.existsSync('preview/art/' + previewPlaying.artwork.replace(/^preview\//, '')), 'preview artwork is bundled');
+var previewMusic = Wallpaper.selectMedia([], picks, music, previewPlaying);
+assert.strictEqual(previewMusic.source, 'nowPlaying', 'preview Apple Music uses active Now Playing');
+assert.strictEqual(previewMusic.item, previewPlaying);
+assert.strictEqual(Wallpaper.selectMedia([], picks, music, null), null, 'Apple Music never falls back to TMDB featured art');
 
 console.log('wallpaper-policy-test: passed');

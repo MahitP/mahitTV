@@ -60,14 +60,16 @@ final class Recs {
 
     /** Immutable valid watch-log identity, kept separate from the mutable recommendation Pick. */
     static final class MediaChoice {
-        final String kind, title, pkg;
+        final String kind, title, pkg, app, service;
         final int id;
 
-        MediaChoice(String kind, int id, String title, String pkg) {
+        MediaChoice(String kind, int id, String title, String pkg, String app, String service) {
             this.kind = kind;
             this.id = id;
             this.title = title;
             this.pkg = pkg;
+            this.app = app;
+            this.service = service;
         }
     }
 
@@ -296,44 +298,19 @@ final class Recs {
         for (WatchLog.Entry entry : history) {
             if (!pkg.equals(entry.pkg) || entry.tmdbId <= 0 || entry.tmdbId > Integer.MAX_VALUE
                     || !("movie".equals(entry.kind) || "tv".equals(entry.kind))) continue;
-            return new MediaChoice(entry.kind, (int) entry.tmdbId, entry.title == null ? "" : entry.title, pkg);
+            String app = serviceKey(pkg);
+            return new MediaChoice(entry.kind, (int) entry.tmdbId, entry.title == null ? "" : entry.title, pkg, app,
+                    SERVICE_NAME.get(app));
         }
         return null;
     }
 
     private Pick knownPick(MediaChoice choice) {
         if (Config.PREVIEW) {
-            for (Pick pick : Preview.picks(choice.kind)) {
-                if (pick.id == choice.id && choice.pkg.equals(pick.pkg)) return rebound(pick, choice);
-            }
+            Pick preview = WatchArtworkPolicy.knownPick(Preview.picks(choice.kind), choice);
+            if (preview != null) return preview;
         }
-        for (Pick pick : picks) {
-            if (pick.id == choice.id && choice.kind.equals(pick.kind)
-                    && (pick.pkg == null || choice.pkg.equals(pick.pkg))) return rebound(pick, choice);
-        }
-        return null;
-    }
-
-    /** A known pick's artwork/details, rebound without changing the recommendation cache's app ownership. */
-    private static Pick rebound(Pick source, MediaChoice choice) {
-        Pick copy = new Pick();
-        copy.id = source.id;
-        copy.kind = source.kind;
-        copy.title = source.title;
-        copy.backdrop = source.backdrop;
-        copy.meta = source.meta;
-        copy.app = serviceKey(choice.pkg);
-        copy.pkg = choice.pkg;
-        copy.year = source.year;
-        copy.overview = source.overview;
-        copy.rating = source.rating;
-        copy.cert = source.cert;
-        copy.logo = source.logo;
-        copy.badges = source.badges;
-        copy.link = source.link;
-        copy.detailed = source.detailed;
-        copy.photo = source.photo;
-        return copy;
+        return WatchArtworkPolicy.knownPick(picks, choice);
     }
 
     private static String serviceKey(String pkg) {
@@ -1113,5 +1090,47 @@ final class Recs {
         int n;
         while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
         return out.toString(StandardCharsets.UTF_8.name());
+    }
+}
+
+/** Pure known-artwork reuse, outside Recs initialization so its package binding can be tested on the JVM. */
+final class WatchArtworkPolicy {
+    private WatchArtworkPolicy() {}
+
+    static Recs.Pick knownPick(List<Recs.Pick> known, Recs.MediaChoice choice) {
+        for (Recs.Pick pick : known) {
+            if (pick.id == choice.id && choice.kind.equals(pick.kind)) return rebound(pick, choice);
+        }
+        return null;
+    }
+
+    private static Recs.Pick rebound(Recs.Pick source, Recs.MediaChoice choice) {
+        Recs.Pick copy = new Recs.Pick();
+        boolean crossService = (source.pkg != null && !source.pkg.equals(choice.pkg))
+                || (source.app != null && !source.app.equals(choice.app));
+        copy.id = source.id;
+        copy.kind = source.kind;
+        copy.title = source.title;
+        copy.backdrop = source.backdrop;
+        copy.meta = crossService ? rebindMeta(source.meta, choice.service) : source.meta;
+        copy.app = choice.app;
+        copy.pkg = choice.pkg;
+        copy.year = source.year;
+        copy.overview = source.overview;
+        copy.rating = source.rating;
+        copy.cert = source.cert;
+        copy.logo = source.logo;
+        copy.badges = source.badges;
+        copy.link = crossService ? null : source.link;
+        copy.detailed = source.detailed;
+        copy.photo = source.photo;
+        return copy;
+    }
+
+    private static String rebindMeta(String meta, String service) {
+        if (meta == null || meta.isEmpty()) return meta;
+        int cut = meta.lastIndexOf(" · ");
+        if (cut < 0) return service == null ? "" : service;
+        return service == null ? meta.substring(0, cut) : meta.substring(0, cut + 3) + service;
     }
 }

@@ -23,6 +23,12 @@
     pick(4, 'tidebreak', 'movie', 'Tidebreak', '2025', 'Thriller · 1h 47m', 'max', 'Max', 7.2,
       'When the storm takes the harbor’s lighthouse dark, its keeper is the only witness to what came ashore.', 'R', ['4K', 'Dolby Atmos', 'CC'])
   ];
+  window.PREVIEW_NOW_PLAYING = {
+    active: true,
+    pkg: 'com.apple.music',
+    title: 'Midnight City · M83',
+    artwork: 'preview/long-dunes.jpg'
+  };
 
   // Keep a resolvable Netflix title newest in the active profile's deterministic preview history.
   if (window.Profiles && Profiles.seedPreview) {
