@@ -40,6 +40,16 @@ function profile(page, zone, app) {
   await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'History only', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); }; });
   result = await profile(page, 'shelf', netflix);
   assert.ok(result.media && result.title === 'History only', 'media Shelf renders actual resolved history hero');
+  await page.evaluate(function () {
+    Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Track A', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); };
+    Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
+    Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Track B', backdrop: 'preview/neon-meridian.jpg', app: 'netflix'}); };
+    Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0, keepKey: true});
+  });
+  await page.waitForTimeout(100);
+  var changedMedia = await page.evaluate(function () { return {title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
+  assert.ok(changedMedia.title === 'Track B' && /neon-meridian/.test(changedMedia.art), 'same focused app refreshes changed media artwork without card-count changes');
+  await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'History only', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); }; });
   result = await profile(page, 'hero', netflix);
   assert.ok(result.media && result.zone === 'hero' && result.title === 'History only', 'history-only Shelf remains Hero');
   for (var i = 0; i < 3; i++) {

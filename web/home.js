@@ -1046,7 +1046,10 @@
     var app = mediaDescriptor(shelf[st.shelf]);
     var wantsMedia = st.tab === TAB.TV && Wallpaper.media(st.zone, app.media);
     var key = wantsMedia ? (st.zone + ':' + app.id + ':' + cards.length + ':' + Prefs.version) : 'profile:' + Prefs.wallpaper() + ':' + Prefs.version;
-    if (key === backgroundKey) return;
+    // A media resolver can change Continue Watching/Now Playing without
+    // changing the app, zone, recommendation count, or preference revision.
+    // Re-resolve media focus; generations still reject older async answers.
+    if (key === backgroundKey && !wantsMedia) return;
     backgroundKey = key;
     backgroundGeneration++;
     var generation = backgroundGeneration;
@@ -2507,7 +2510,7 @@
       if (o.app) shelf[st.shelf] = o.app;
       if (o.zone) st.zone = o.zone;
       if (o.tab !== undefined) st.tab = o.tab;
-      backgroundKey = '';
+      if (!o.keepKey) backgroundKey = '';
       updateFocus();
       return {mode: backgroundMode, generation: backgroundGeneration, zone: st.zone,
         media: hasClass(body, 'media-background'), profile: hasClass(body, 'profile-background'),
