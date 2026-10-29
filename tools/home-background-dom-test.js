@@ -31,6 +31,7 @@ function profile(page, zone, app) {
   await page.addInitScript(function () { localStorage.clear(); });
   await page.goto('http://127.0.0.1:' + server.address().port + '/index.html?nolock');
   await page.waitForTimeout(900);
+  await page.evaluate(function () { window.__resolveWatch = Data.resolveWatch; });
   var netflix = {id: 'netflix', title: 'Netflix'};
   var plain = {id: 'com.example.notes', title: 'Notes'};
   var apple = {id: 'com.apple.music', title: 'Apple Music'};
@@ -54,10 +55,18 @@ function profile(page, zone, app) {
   assert.ok(result.profile, 'inactive Apple Music has no featured art');
   result = await profile(page, 'shelf', spotify);
   assert.ok(result.profile, 'inactive Spotify has no featured art');
-  await page.evaluate(function () { window.FMTV_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Now', artwork: 'preview/long-dunes.jpg', active: true, backdrop: 'preview/long-dunes.jpg'}; });
-  await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Now', backdrop: 'preview/long-dunes.jpg'}); }; });
+  await page.evaluate(function () { Data.resolveWatch = window.__resolveWatch; });
+  result = await profile(page, 'shelf', apple);
+  await page.waitForTimeout(100);
+  var appleArt = await page.evaluate(function () { return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
+  assert.ok(result.media && appleArt.title && /long-dunes/.test(appleArt.art), 'active Apple Music renders its Now Playing artwork');
+  await page.evaluate(function () {
+    window.PREVIEW_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Spotify Now', artwork: 'preview/neon-meridian.jpg', active: true};
+  });
   result = await profile(page, 'shelf', spotify);
-  assert.ok(result.media && result.title === 'Now', 'active Spotify Now Playing is media art');
+  await page.waitForTimeout(100);
+  var spotifyArt = await page.evaluate(function () { return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
+  assert.ok(result.media && spotifyArt.title === 'Spotify Now' && /neon-meridian/.test(spotifyArt.art), 'active Spotify renders its Now Playing artwork');
   var stale = await page.evaluate(function () {
     var callbacks = [];
     Data.resolveWatch = function (app, generation, done) { callbacks.push({generation: generation, done: done}); };
@@ -75,12 +84,14 @@ function profile(page, zone, app) {
   await page.waitForTimeout(120);
   result = await page.evaluate(function () { return {profile: document.body.className.indexOf('profile-background') >= 0, title: document.querySelector('#hero h1').textContent}; });
   assert.ok(result.profile && !result.title, 'actual image error falls back to Horizon profile state');
-  var transitions = await page.evaluate(function () {
+  await page.evaluate(function () {
     Motion.instant = false;
-    Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Fade', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); };
-    return Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
+    Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Fade', backdrop: 'preview/orbital.jpg', app: 'netflix'}); };
+    Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
   });
-  assert.ok(/0\.7s cubic-bezier/.test(transitions.transition) && /0\.7s cubic-bezier/.test(transitions.backdropTransition),
+  await page.waitForTimeout(100);
+  var transitions = await page.evaluate(function () { return {photo: document.querySelector('#photoA').style.transition || document.querySelector('#photoB').style.transition, backdrop: document.querySelector('#bgA').style.transition, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
+  assert.ok(/orbital/.test(transitions.art) && /0\.7s cubic-bezier/.test(transitions.photo) && /0\.7s cubic-bezier/.test(transitions.backdrop),
     'normal photo and backdrop use 700ms cubic fades: ' + JSON.stringify(transitions));
   await page.evaluate(function () {
     Motion.instant = true;
@@ -88,9 +99,10 @@ function profile(page, zone, app) {
     Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
   });
   await page.waitForTimeout(100);
-  var instant = await page.evaluate(function () { return Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0}); });
-  assert.strictEqual(instant.transition, 'none', 'instant clears photo transition');
-  assert.strictEqual(instant.backdropTransition, 'none', 'instant clears backdrop transition');
+  var instant = await page.evaluate(function () { return {photo: document.querySelector('#photoA').style.transition || document.querySelector('#photoB').style.transition, backdrop: document.querySelector('#bgA').style.transition, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
+  assert.ok(/neon-meridian/.test(instant.art), 'instant applies the distinct target art');
+  assert.strictEqual(instant.photo, 'none', 'instant clears photo transition');
+  assert.strictEqual(instant.backdrop, 'none', 'instant clears backdrop transition');
   await browser.close(); server.close();
   console.log('home-background-dom-test: passed');
 })().catch(function (err) { server.close(); console.error(err.stack || err); process.exitCode = 1; });

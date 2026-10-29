@@ -1004,6 +1004,17 @@
     return own.length ? own[0] : null;
   }
 
+  /** Now Playing uses `artwork`; the Top Shelf page renderer uses `backdrop`.
+   * Keep the source item intact and accept only preview-local or catalogue URLs. */
+  function pageForMedia(pick) {
+    var art = pick && pick.artwork;
+    if (!pick || pick.backdrop || !art || !(art.indexOf('preview/') === 0 || Wallpaper.allowed(art))) return pick;
+    var page = {}, name;
+    for (name in pick) if (pick.hasOwnProperty(name)) page[name] = pick[name];
+    page.backdrop = art;
+    return page;
+  }
+
   function clearHero() {
     clearTimeout(heroTimer);
     var hero = $('hero'), details = $('details'), logo = hero.children[0];
@@ -1040,7 +1051,7 @@
     Data.resolveWatch(app, generation, function (resolvedGeneration, pick) {
       if (resolvedGeneration !== backgroundGeneration || generation !== backgroundGeneration ||
           !Wallpaper.media(st.zone, mediaDescriptor(shelf[st.shelf]).media) || st.tab !== TAB.TV) return;
-      pick = pick || featuredFor(app);
+      pick = pageForMedia(pick || featuredFor(app));
       if (!pick) { applyProfileBackground(); return; }
       backgroundMode = 'media';
       mediaPage = pick;
