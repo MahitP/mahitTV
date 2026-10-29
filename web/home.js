@@ -1008,7 +1008,10 @@
    * Keep the source item intact and accept only preview-local or catalogue URLs. */
   function pageForMedia(pick) {
     var art = pick && pick.artwork;
-    if (!pick || pick.backdrop || !art || !(art.indexOf('preview/') === 0 || Wallpaper.allowed(art))) return pick;
+    // A Now Playing result is intentionally stricter than a TMDB pick: callers
+    // cannot smuggle arbitrary artwork through a pre-filled backdrop field.
+    if (!pick || !pick.mediaSource || pick.mediaSource !== 'nowPlaying') return pick;
+    if (!art || !(art.indexOf('preview/') === 0 || Wallpaper.allowed(art))) return null;
     var page = {}, name;
     for (name in pick) if (pick.hasOwnProperty(name)) page[name] = pick[name];
     page.backdrop = art;

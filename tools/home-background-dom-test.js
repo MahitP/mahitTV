@@ -67,6 +67,17 @@ function profile(page, zone, app) {
   await page.waitForTimeout(100);
   var spotifyArt = await page.evaluate(function () { return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
   assert.ok(result.media && spotifyArt.title === 'Spotify Now' && /neon-meridian/.test(spotifyArt.art), 'active Spotify renders its Now Playing artwork');
+  var invalidMusic = [
+    {pkg: 'com.spotify.music', title: 'Foreign', artwork: 'https://example.invalid/art.jpg', active: true},
+    {pkg: 'com.spotify.music', title: 'Forged', artwork: 'https://example.invalid/art.jpg', backdrop: 'preview/long-dunes.jpg', active: true},
+    {pkg: 'com.spotify.music', title: 'Missing', active: true}
+  ];
+  for (i = 0; i < invalidMusic.length; i++) {
+    await page.evaluate(function (playing) { window.FMTV_NOW_PLAYING = playing; Data.resolveWatch = window.__resolveWatch; }, invalidMusic[i]);
+    result = await profile(page, 'shelf', spotify);
+    assert.ok(result.profile && !result.title, 'untrusted Now Playing artwork falls back to profile: ' + invalidMusic[i].title);
+  }
+  await page.evaluate(function () { window.FMTV_NOW_PLAYING = null; window.PREVIEW_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Spotify Now', artwork: 'preview/neon-meridian.jpg', active: true}; });
   var stale = await page.evaluate(function () {
     var callbacks = [];
     Data.resolveWatch = function (app, generation, done) { callbacks.push({generation: generation, done: done}); };
