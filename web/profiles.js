@@ -227,7 +227,7 @@ var Profiles = (function () {
     },
     log: log,
     /** Opened from mahitTV: a title (a pick) or an app. The same title again moves to the top. */
-    launched: function (title, tmdb, kind, app, appKey) {
+    launched: function (title, tmdb, kind, app, appKey, pkg) {
       if (current().role === 'guest') return;
       var l = log(), e = null;
       for (var i = 0; i < l.length; i++) {
@@ -239,6 +239,7 @@ var Profiles = (function () {
       e.kind = kind || '';
       e.app = app || '';
       e.appKey = appKey || '';
+      e.pkg = pkg || e.pkg || '';
       e.at = Date.now();
       l.unshift(e);
       saveLog(l);

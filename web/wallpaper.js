@@ -158,14 +158,57 @@ var Wallpaper = (function () {
     return isFinite(id) && id > 0 ? id : 0;
   }
 
-  function sameApp(item, app) {
-    if (app.pkg) return item.pkg === app.pkg;
+  function normalizeMediaApp(app) {
+    app = app || {};
+    var shelf = app.shelfKey;
+    if (shelf && typeof shelf !== 'string') shelf = shelf[0];
+    return {
+      pkg: app.pkg || app.id || app.package || '',
+      appKey: app.appKey || shelf || app.key || '',
+      service: app.service || app.title || '',
+      media: app.media === true,
+      music: app.music === true,
+      nowPlaying: app.nowPlaying || null
+    };
+  }
+
+  function historyChoice(history, app, exact) {
+    var best = null, bestAt = -Infinity;
+    for (var at = 0; history && at < history.length; at++) {
+      var item = history[at], id = mediaId(item), matches;
+      if (!id || !mediaKind(item.kind)) continue;
+      if (exact) matches = !!app.pkg && !!item.pkg && item.pkg === app.pkg;
+      else matches = !!app.appKey && (item.appKey === app.appKey || item.app === app.appKey);
+      if (!matches || (best !== null && Number(item.at || 0) <= bestAt)) continue;
+      bestAt = Number(item.at || 0);
+      best = {
+        kind: item.kind,
+        tmdb: id,
+        title: item.title || '',
+        pkg: item.pkg || '',
+        appKey: item.appKey || item.app || '',
+        service: item.app || ''
+      };
+    }
+    return best;
+  }
+
+  function featuredApp(item, app) {
+    if (app.pkg && item.pkg === app.pkg) return true;
     return !!app.appKey && (item.appKey === app.appKey || item.app === app.appKey);
+  }
+
+  function rebindService(meta, service) {
+    if (!meta) return meta || '';
+    var cut = meta.lastIndexOf(' · ');
+    if (cut < 0) return service || '';
+    return service ? meta.slice(0, cut + 3) + service : meta.slice(0, cut);
   }
 
   /** Pure media-background policy. History is copied into a normalized item; inputs are never changed. */
   function selectMedia(history, picks, app, nowPlaying) {
-    var best = null, bestAt = -Infinity, at, id, item, pick;
+    app = normalizeMediaApp(app);
+    var best, at, pick;
     if (!app || app.media !== true) return null;
     if (app.music === true) {
       if (nowPlaying && nowPlaying.active === true && nowPlaying.title && nowPlaying.artwork
@@ -174,26 +217,11 @@ var Wallpaper = (function () {
       }
       return null;
     }
-    for (at = 0; history && at < history.length; at++) {
-      item = history[at];
-      id = mediaId(item);
-      if (!id || !mediaKind(item.kind) || !sameApp(item, app)) continue;
-      if (best === null || Number(item.at || 0) > bestAt) {
-        bestAt = Number(item.at || 0);
-        best = {
-          kind: item.kind,
-          tmdb: id,
-          title: item.title || '',
-          pkg: item.pkg || '',
-          appKey: item.appKey || item.app || '',
-          service: item.app || ''
-        };
-      }
-    }
+    best = historyChoice(history, app, true) || historyChoice(history, app, false);
     if (best) return {source: 'history', item: best};
     for (at = 0; picks && at < picks.length; at++) {
       pick = picks[at];
-      if (mediaKind(pick.kind) && mediaId(pick) && sameApp(pick, app)) return {source: 'featured', item: pick};
+      if (mediaKind(pick.kind) && mediaId(pick) && featuredApp(pick, app)) return {source: 'featured', item: pick};
     }
     return null;
   }
@@ -210,6 +238,8 @@ var Wallpaper = (function () {
     horizonGeometry: copyHorizonGeometry,
     horizonVignette: horizonVignette,
     media: media,
-    selectMedia: selectMedia
+    selectMedia: selectMedia,
+    normalizeMediaApp: normalizeMediaApp,
+    rebindService: rebindService
   };
 }());

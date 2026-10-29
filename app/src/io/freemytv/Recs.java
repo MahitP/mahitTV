@@ -253,11 +253,14 @@ final class Recs {
     /** Resolve this profile's newest movie/show opened in one app; the UI owns generation staleness. */
     void resolveWatch(String pkg, long generation, WatchResolver callback) {
         if (callback == null) return;
+        final ProfileManager.Profile requestedProfile = ProfileManager.current(context);
         try {
             io.execute(() -> {
                 Pick answer = null;
                 try {
-                    MediaChoice choice = watchChoice(WatchLog.list(context), pkg);
+                    List<WatchLog.Entry> requestedLog = WatchArtworkPolicy.captured(requestedProfile,
+                            profile -> WatchLog.list(context, profile));
+                    MediaChoice choice = watchChoice(requestedLog, pkg);
                     if (choice != null) {
                         answer = knownPick(choice);
                         if (answer == null && hasNetworkKey()) {
@@ -270,7 +273,9 @@ final class Recs {
                             fetchDetails(isolated);
                             // The log's exact package remains authoritative when several installed services carry a title.
                             isolated.pkg = choice.pkg;
-                            isolated.app = serviceKey(choice.pkg);
+                            isolated.app = choice.app;
+                            isolated.meta = WatchArtworkPolicy.rebindMeta(isolated.meta, choice.service);
+                            isolated.link = null;
                             if (isolated.backdrop != null && !isolated.backdrop.isEmpty()) {
                                 download(isolated);
                                 loadImage(isolated);
@@ -1097,6 +1102,12 @@ final class Recs {
 final class WatchArtworkPolicy {
     private WatchArtworkPolicy() {}
 
+    interface ProfileValues<T> { T get(ProfileManager.Profile profile); }
+
+    static <T> T captured(ProfileManager.Profile profile, ProfileValues<T> values) {
+        return values.get(profile);
+    }
+
     static Recs.Pick knownPick(List<Recs.Pick> known, Recs.MediaChoice choice) {
         for (Recs.Pick pick : known) {
             if (pick.id == choice.id && choice.kind.equals(pick.kind)) return rebound(pick, choice);
@@ -1127,7 +1138,7 @@ final class WatchArtworkPolicy {
         return copy;
     }
 
-    private static String rebindMeta(String meta, String service) {
+    static String rebindMeta(String meta, String service) {
         if (meta == null || meta.isEmpty()) return meta;
         int cut = meta.lastIndexOf(" · ");
         if (cut < 0) return service == null ? "" : service;

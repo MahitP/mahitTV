@@ -52,10 +52,15 @@ final class WatchLog {
 
     /** The current profile's log, newest first (empty for Guest). */
     static synchronized List<Entry> list(Context c) {
+        return list(c, ProfileManager.current(c));
+    }
+
+    /** One captured profile's log, even if another profile becomes active before a queued read runs. */
+    static synchronized List<Entry> list(Context c, ProfileManager.Profile profile) {
         List<Entry> out = new ArrayList<>();
-        if (ProfileManager.current(c).guest()) return out;
+        if (profile.guest()) return out;
         try {
-            JSONArray a = new JSONArray(prefs(c).getString("watchLog", "[]"));
+            JSONArray a = new JSONArray(ProfileManager.prefs(c, profile).getString("watchLog", "[]"));
             for (int i = 0; i < a.length(); i++) out.add(Entry.from(a.getJSONObject(i)));
         } catch (Exception e) {
             AppLog.w("watch log: " + e.getMessage());

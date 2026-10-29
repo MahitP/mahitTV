@@ -603,8 +603,8 @@ var Data = (function () {
     return out;
   }
 
-  /** Resolve the current profile's newest title for one Dock app. done(generation, pickOrNull), exactly once. */
-  function resolveWatch(app, generation, done) {
+  /** Resolve with an injectable detail loader; the public path passes the existing TMDB details function. */
+  function resolveWatchUsing(app, generation, loadDetails, done) {
     var finished = false;
     function finish(pick) {
       if (finished) return;
@@ -612,6 +612,7 @@ var Data = (function () {
       done(generation, pick || null);
     }
     try {
+      app = Wallpaper.normalizeMediaApp(app);
       var log = window.Profiles ? Profiles.log() : [];
       var choice = Wallpaper.selectMedia(log, [], app, app && app.nowPlaying);
       if (!choice) { finish(null); return; }
@@ -629,6 +630,8 @@ var Data = (function () {
           for (field in list[i]) if (list[i].hasOwnProperty(field)) reused[field] = list[i][field];
           reused.app = app.appKey || reused.app;
           reused.service = app.service || item.service || '';
+          reused.meta = Wallpaper.rebindService(reused.meta, reused.service);
+          reused.link = null;
           reused.mediaSource = 'history';
           finish(reused);
           return;
@@ -638,17 +641,24 @@ var Data = (function () {
       if (!KEY) { finish(null); return; }
       var pick = {id: item.tmdb, kind: item.kind, title: item.title || '', app: app.appKey || '',
         service: item.app || '', detailed: false};
-      details(pick, function (err) {
+      loadDetails(pick, function (err) {
         if (err) { finish(null); return; }
         // The history match owns the focused app; TMDB supplies artwork and metadata, not a different destination.
         pick.app = app.appKey || pick.app;
         pick.service = app.service || item.service || pick.service;
+        pick.meta = Wallpaper.rebindService(pick.meta, pick.service);
+        pick.link = null;
         pick.mediaSource = 'history';
         finish(pick);
       });
     } catch (e) {
       finish(null);
     }
+  }
+
+  /** Resolve the current profile's newest title for one Dock app. done(generation, pickOrNull), exactly once. */
+  function resolveWatch(app, generation, done) {
+    resolveWatchUsing(app, generation, details, done);
   }
 
   // MARK: - Formatting
@@ -682,6 +692,7 @@ var Data = (function () {
     picks: now,
     shelf: shelf,
     resolveWatch: resolveWatch,
+    resolveWatchUsing: resolveWatchUsing,
     showcase: all,
     image: function (path, size) {
       if (path && path.indexOf('preview/') === 0) return path;   // a preview build's sample photo

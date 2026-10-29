@@ -6,6 +6,7 @@ var vm = require('vm');
 var source = fs.readFileSync('web/wallpaper.js', 'utf8');
 var dataSource = fs.readFileSync('web/data.js', 'utf8');
 var previewSource = fs.readFileSync('preview/preview.js', 'utf8');
+var profilesSource = fs.readFileSync('web/profiles.js', 'utf8');
 var context = {};
 vm.runInNewContext(source, context, {filename: 'web/wallpaper.js'});
 var Wallpaper = context.Wallpaper;
@@ -35,6 +36,14 @@ var exact = choice([
   {kind: 'movie', tmdb: 92, pkg: netflix.pkg, appKey: 'other', at: 800}
 ], picks, netflix, null);
 assert.strictEqual(exact.item.tmdb, 92, 'an exact package match wins over app-key fallback');
+var packageFirst = choice([
+  {kind: 'movie', tmdb: 301, pkg: 'netflix-alt', appKey: 'netflix', at: 900},
+  {kind: 'movie', tmdb: 302, pkg: 'netflix', appKey: 'netflix', at: 800}
+], picks, {id: 'netflix', shelfKey: 'netflix', media: true}, null);
+assert.strictEqual(packageFirst.item.tmdb, 302, 'the exact raw app id phase wins before a newer service-key fallback');
+var legacyFallback = choice([{kind: 'movie', tmdb: 303, appKey: 'netflix', at: 700}], picks,
+  {id: 'netflix', shelfKey: 'netflix', media: true}, null);
+assert.strictEqual(legacyFallback.item.tmdb, 303, 'legacy history without pkg falls back through the service key');
 
 var webFallback = choice([{kind: 'tv', tmdb: 77, appKey: 'netflix', at: 1}], picks,
   {pkg: '', appKey: 'netflix', media: true}, null);
@@ -71,6 +80,10 @@ var unordered = [
 assert.strictEqual(choice(unordered, picks, netflix, null).item.tmdb, 202, 'newest is deterministic even if input is unsorted');
 assert.strictEqual(choice(unordered, picks, netflix, null).item.tmdb, 202, 'selection is stable across calls');
 assert.strictEqual(unordered[0].tmdb, 101, 'selection does not mutate history');
+assert.strictEqual(Wallpaper.rebindService('Drama · 2 seasons · Disney+', 'Netflix'), 'Drama · 2 seasons · Netflix',
+  'focused service replaces one metadata suffix');
+assert.strictEqual(Wallpaper.rebindService('Drama · Netflix', 'Netflix'), 'Drama · Netflix',
+  'focused service is not duplicated');
 
 var dataContext = {
   console: console,
@@ -102,6 +115,74 @@ assert.strictEqual(resolvedGeneration, 73, 'Data preserves the caller generation
 assert.notStrictEqual(resolvedPick, dataContext.PREVIEW_PICKS[0], 'Data isolates a reused shelf pick');
 assert.strictEqual(resolvedPick.app, 'netflix', 'Data keeps the focused app authoritative when reusing artwork');
 assert.strictEqual(dataContext.PREVIEW_PICKS[0].app, 'disney', 'Data does not mutate the shared shelf pick');
+
+function networkDataContext() {
+  var c = {
+    console: console,
+    Date: Date,
+    Math: Math,
+    JSON: JSON,
+    navigator: {language: 'en-US'},
+    TV: {zone: function () { return ''; }},
+    ZONES: {},
+    CONFIG: {latitude: '', longitude: '', tmdbKey: 'test-key'},
+    Profiles: {log: function () { return [{kind: 'tv', tmdb: 515, pkg: 'netflix', appKey: 'netflix', app: 'Netflix', at: 10}]; }},
+    localStorage: {getItem: function () { return null; }, setItem: function () {}},
+    XMLHttpRequest: function () {},
+    setTimeout: function () { return 0; },
+    clearTimeout: function () {}
+  };
+  c.window = c;
+  vm.runInNewContext(source, c, {filename: 'web/wallpaper.js'});
+  vm.runInNewContext(dataSource, c, {filename: 'web/data.js'});
+  return c;
+}
+
+var networkContext = networkDataContext(), networkCalls = 0, networkGeneration, networkPick;
+networkContext.Data.resolveWatchUsing({id: 'netflix', shelfKey: 'netflix', service: 'Netflix', media: true}, 88,
+  function (pick, loaded) {
+    pick.meta = 'Drama · 2 seasons · Disney+';
+    pick.app = 'disney';
+    pick.service = 'Disney+';
+    pick.link = 'disney://title/515';
+    loaded(null);
+    loaded(null);
+  }, function (generation, pick) {
+    networkCalls++;
+    networkGeneration = generation;
+    networkPick = pick;
+  });
+assert.strictEqual(networkCalls, 1, 'async detail success completes once');
+assert.strictEqual(networkGeneration, 88, 'async detail success preserves generation');
+assert.strictEqual(networkPick.meta, 'Drama · 2 seasons · Netflix', 'network metadata is rebound to focused service');
+assert.strictEqual(networkPick.app, 'netflix', 'network result is rebound to focused app key');
+assert.strictEqual(networkPick.link, null, 'foreign network deep link is cleared');
+
+var failedContext = networkDataContext(), failedCalls = 0, failedGeneration, failedPick = 'unset';
+failedContext.Data.resolveWatchUsing({id: 'netflix', shelfKey: 'netflix', service: 'Netflix', media: true}, 89,
+  function (pick, loaded) { loaded(new Error('failed')); loaded(new Error('failed twice')); },
+  function (generation, pick) { failedCalls++; failedGeneration = generation; failedPick = pick; });
+assert.strictEqual(failedCalls, 1, 'async detail failure completes once');
+assert.strictEqual(failedGeneration, 89, 'async detail failure preserves generation');
+assert.strictEqual(failedPick, null, 'async detail failure returns null');
+
+var profileStorage = {};
+var profileContext = {
+  CONFIG: {profiles: [{id: 'me', name: 'Me', role: 'manager'}]},
+  Date: Date,
+  Math: Math,
+  JSON: JSON,
+  tr: function (s) { return s; },
+  localStorage: {
+    getItem: function (key) { return profileStorage[key] === undefined ? null : profileStorage[key]; },
+    setItem: function (key, value) { profileStorage[key] = value; },
+    removeItem: function (key) { delete profileStorage[key]; }
+  }
+};
+profileContext.window = profileContext;
+vm.runInNewContext(profilesSource, profileContext, {filename: 'web/profiles.js'});
+profileContext.Profiles.launched('Exact record', 404, 'movie', 'Netflix', 'netflix', 'netflix');
+assert.strictEqual(profileContext.Profiles.log()[0].pkg, 'netflix', 'Profiles.launched persists the exact raw app id');
 
 var previewValues = {watchLog: [{kind: 'tv', tmdb: 9003, appKey: 'disney', at: 1}]};
 var previewStore = {

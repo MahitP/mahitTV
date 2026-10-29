@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import java.util.Arrays;
+import java.util.List;
 
 /** Pure resolver-policy checks; no Android objects are constructed. */
 public final class RecsWatchTest {
@@ -39,6 +40,23 @@ public final class RecsWatchTest {
         check(WatchArtworkPolicy.knownPick(Arrays.asList(shared),
                 new Recs.MediaChoice("tv", 22, "Other kind", "com.netflix.ninja", "netflix", "Netflix")) == null,
                 "TMDB ids do not cross media kinds");
+        check("Drama · 2 seasons · Netflix".equals(
+                WatchArtworkPolicy.rebindMeta("Drama · 2 seasons · Disney+", "Netflix")),
+                "network metadata is rebound to the focused service once");
+
+        ProfileManager.Profile mahit = new ProfileManager.Profile("mahit", "Mahit", "manager", "", "");
+        ProfileManager.Profile dhruvin = new ProfileManager.Profile("dhruvin", "Dhruvin", "standard", "", "");
+        final ProfileManager.Profile[] active = {mahit};
+        final Recs.MediaChoice mahitChoice = focused;
+        final Recs.MediaChoice dhruvinChoice = new Recs.MediaChoice("tv", 44, "Other profile", "com.disney.disneyplus", "disney", "Disney+");
+        ProfileManager.Profile captured = active[0];
+        active[0] = dhruvin;
+        List<Recs.MediaChoice> capturedChoices = WatchArtworkPolicy.captured(captured, new WatchArtworkPolicy.ProfileValues<List<Recs.MediaChoice>>() {
+            @Override public List<Recs.MediaChoice> get(ProfileManager.Profile profile) {
+                return profile.id.equals("mahit") ? Arrays.asList(mahitChoice) : Arrays.asList(dhruvinChoice);
+            }
+        });
+        check(capturedChoices.get(0) == mahitChoice, "queued work reads the requesting profile after the active profile switches");
 
         System.out.println("RecsWatchTest: " + checks + " checks passed");
     }

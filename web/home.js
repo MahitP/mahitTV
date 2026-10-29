@@ -1818,7 +1818,9 @@
     return function () {
       if (!quiet) {
         Profiles.touch();
-        Profiles.launched(pick ? pick.title : '', pick && pick.kind ? pick.id : 0, pick ? pick.kind || '' : '', name || id, id);
+        var service = shelfKey({id: id, title: name || id});
+        Profiles.launched(pick ? pick.title : '', pick && pick.kind ? pick.id : 0, pick ? pick.kind || '' : '',
+          name || id, service ? service[0] : '', id);
       }
       TV.launch(id, null, function (ok) {
         if (!ok) toast(trf("Couldn't open {app}.", {app: name || id}));
