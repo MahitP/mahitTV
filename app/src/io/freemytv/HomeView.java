@@ -63,7 +63,7 @@ import java.util.function.Consumer;
  */
 final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
     /** Narrow activity-owned seam for optional ambient video. */
-    interface AerialPlayback { void show(String url); void hide(); }
+    interface AerialPlayback { void show(long generation, String url); void hide(long generation); }
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -294,6 +294,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean wallpaperLoading;
     private String[] aerials;
     private final AerialCache aerialCache;
+    private long aerialGeneration;
+    private String liveUrl;
     private String officialStill;
     private String officialStillLoaded;
     private final AerialPlayback aerialPlayback;
@@ -546,11 +548,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     };
 
-    HomeView(Activity a, AerialPlayback aerialPlayback) {
+    HomeView(Activity a, AerialCache aerialCache, AerialPlayback aerialPlayback) {
         super(a);
         activity = a;
         this.aerialPlayback = aerialPlayback;
-        aerialCache = new AerialCache(new java.io.File(a.getCacheDir(), "aerials"));
+        this.aerialCache = aerialCache;
         data = HomeData.get(a);
         recs = Recs.get(a);
         playing = new NowPlaying.Watch(a, () -> {
@@ -701,6 +703,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     void pause() {
         if (!running) return;
+        aerialPlayback.hide(++aerialGeneration);
+        liveUrl = null;
         running = false;
         welly.pause();
         cancelReorder(true);
@@ -1321,29 +1325,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * aerial. One still loading keeps the current background until it's ready (Recs and the loader call back).
      */
     private void updateBackground() {
+        long generation = ++aerialGeneration;
         Recs.Pick p = currentPick();
         Backdrop b;
         if (p != null) {
-            aerialPlayback.hide();
+            clearOfficialStill();
+            aerialPlayback.hide(generation);
             b = recs.backdrop(p);
         } else if (Photos.on(getContext())) {
-            aerialPlayback.hide();
+            clearOfficialStill();
+            aerialPlayback.hide(generation);
             b = Photos.backdrop(getContext(), ownReady);
         } else {
-            updateAerialVideo();
+            updateAerialVideo(generation);
             b = aerial();
         }
-        if (b != null) showBackdrop(b);
+        if (b != null) showBackdrop(b); else if ("live:aerial".equals(Prefs.wallpaper()) || Wallpaper.find(Prefs.wallpaper()) != null) showBackdrop(null);
     }
 
-    private void updateAerialVideo() {
-        if (!"live:aerial".equals(Prefs.wallpaper())) { aerialPlayback.hide(); return; }
+    private void updateAerialVideo(long generation) {
+        if (!"live:aerial".equals(Prefs.wallpaper())) { aerialPlayback.hide(generation); return; }
         Wallpaper.Aerial aerial = Wallpaper.liveAerial(System.currentTimeMillis() / 86_400_000L);
-        if (aerial == null || aerial.video.isEmpty()) aerialPlayback.hide(); else aerialPlayback.show(aerial.video);
+        liveUrl = aerial == null ? null : aerial.video;
+        if (liveUrl == null || liveUrl.isEmpty()) aerialPlayback.hide(generation); else aerialPlayback.show(generation, liveUrl);
     }
 
     /** This hour's aerial (assets/aerials, one per hour in turn), or null while it's built in the background. */
     private Backdrop aerial() {
+        if ("live:aerial".equals(Prefs.wallpaper())) return null;
         Wallpaper.Aerial official = Wallpaper.find(Prefs.wallpaper());
         if (official != null && Wallpaper.allowed(official.preview)) return officialStill(official.preview);
         officialStill = null;
@@ -1393,9 +1402,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (url.equals(officialStillLoaded)) return wallpaper;
         File cached = aerialCache.get(url);
         if (cached != null) loadOfficialStill(cached, url);
-        else aerialCache.fetch(url, file -> { if (file != null) loadOfficialStill(file, url); });
+        else aerialCache.fetch(url, file -> { if (file != null) loadOfficialStill(file, url); else handler.post(() -> failOfficialStill(url)); });
         return wallpaper;
     }
+
+    private void clearOfficialStill() { officialStill = null; officialStillLoaded = null; }
 
     private void loadOfficialStill(File file, String url) {
         if (wallpaperLoading) return;
@@ -1407,12 +1418,26 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             final Backdrop ready = built;
             handler.post(() -> {
                 wallpaperLoading = false;
-                if (ready == null || !url.equals(officialStill)) return;
+                if (ready == null) { failOfficialStill(url); return; }
+                if (!url.equals(officialStill)) return;
                 wallpaper = ready;
                 officialStillLoaded = url;
                 if (running) updateBackground();
             });
         });
+    }
+
+    void aerialFailed(long generation, String url) {
+        if (generation != aerialGeneration || url == null || !url.equals(liveUrl)) return;
+        liveUrl = null;
+        showBackdrop(null);
+    }
+
+    private void failOfficialStill(String url) {
+        if (!url.equals(officialStill)) return;
+        wallpaper = null;
+        officialStillLoaded = null;
+        showBackdrop(null);
     }
 
     private static boolean samePicks(List<Recs.Pick> a, List<Recs.Pick> b) {

@@ -16,6 +16,7 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
     private Surface surface;
     private File source;
     private Runnable failed;
+    private long generation;
 
     WallpaperVideoView(Context context) {
         super(context);
@@ -25,32 +26,40 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
     }
 
     void show(File next, Runnable onFailed) {
+        generation++;
         source = next; failed = onFailed;
-        if (next == null || !next.isFile()) { fail(); return; }
+        if (next == null || !next.isFile()) { fail(generation); return; }
         setVisibility(VISIBLE);
-        if (isAvailable()) start();
+        if (isAvailable()) start(generation, next);
     }
 
-    void hide() { if (player != null) player.pause(); setVisibility(INVISIBLE); }
+    void hide() {
+        generation++; source = null; failed = null;
+        if (player != null) { try { player.reset(); } catch (IllegalStateException ignored) { } }
+        setVisibility(INVISIBLE);
+    }
 
     void release() {
-        source = null; failed = null;
+        generation++; source = null; failed = null;
         if (player != null) { player.reset(); player.release(); player = null; }
         if (surface != null) { surface.release(); surface = null; }
         setVisibility(INVISIBLE);
     }
 
-    private void start() {
-        if (source == null || surface == null) return;
+    private void start(final long token, final File requested) {
+        if (requested == null || surface == null || token != generation || requested != source) return;
         try {
             if (player != null) { player.reset(); player.release(); }
             player = new MediaPlayer();
             player.setSurface(surface); player.setVolume(0f, 0f); player.setLooping(true);
             player.setOnVideoSizeChangedListener((p, width, height) -> crop(width, height));
-            player.setOnPreparedListener(p -> { crop(p.getVideoWidth(), p.getVideoHeight()); p.start(); });
-            player.setOnErrorListener((p, what, extra) -> { fail(); return true; });
+            player.setOnPreparedListener(p -> {
+                if (token != generation || requested != source || getVisibility() != VISIBLE) return;
+                crop(p.getVideoWidth(), p.getVideoHeight()); p.start();
+            });
+            player.setOnErrorListener((p, what, extra) -> { fail(token); return true; });
             player.setDataSource(source.getAbsolutePath()); player.prepareAsync();
-        } catch (Exception e) { fail(); }
+        } catch (Exception e) { fail(token); }
     }
 
     private void crop(int videoWidth, int videoHeight) {
@@ -62,9 +71,14 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
         matrix.postTranslate((width - videoWidth * scale) / 2f, (height - videoHeight * scale) / 2f);
         setTransform(matrix);
     }
-    private void fail() { hide(); Runnable r = failed; failed = null; if (r != null) r.run(); }
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) { surface = new Surface(texture); start(); }
+    private void fail(long token) {
+        if (token != generation) return;
+        Runnable r = failed;
+        hide();
+        if (r != null) r.run();
+    }
+    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) { surface = new Surface(texture); start(generation, source); }
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) { if (player != null) crop(player.getVideoWidth(), player.getVideoHeight()); }
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) { if (surface != null) { surface.release(); surface = null; } if (player != null) player.pause(); return true; }
+    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) { hide(); if (surface != null) { surface.release(); surface = null; } return true; }
     @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) { }
 }

@@ -23,6 +23,7 @@ public class HomeActivity extends Activity {
     private HomeView home;
     private WallpaperVideoView wallpaperVideo;
     private AerialCache aerialCache;
+    private final AerialRequest aerialRequest = new AerialRequest();
     private int prefsVersion = Prefs.version;   // settings changed while we were away: start over
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -45,13 +46,16 @@ public class HomeActivity extends Activity {
         Ui.init(this);
         aerialCache = new AerialCache(new File(getCacheDir(), "aerials"));
         wallpaperVideo = new WallpaperVideoView(this);
-        home = new HomeView(this, new HomeView.AerialPlayback() {
-            @Override public void show(String url) {
+        home = new HomeView(this, aerialCache, new HomeView.AerialPlayback() {
+            @Override public void show(long generation, String url) {
+                final long token = aerialRequest.show(url);
                 aerialCache.fetch(url, file -> runOnUiThread(() -> {
-                    if (file == null) wallpaperVideo.hide(); else wallpaperVideo.show(file, wallpaperVideo::hide);
+                    if (!aerialRequest.matches(token, url)) return;
+                    if (file == null) { wallpaperVideo.hide(); home.aerialFailed(generation, url); }
+                    else wallpaperVideo.show(file, () -> home.aerialFailed(generation, url));
                 }));
             }
-            @Override public void hide() { wallpaperVideo.hide(); }
+            @Override public void hide(long generation) { aerialRequest.hide(); wallpaperVideo.hide(); }
         });
         FrameLayout root = new FrameLayout(this);
         root.addView(wallpaperVideo, new FrameLayout.LayoutParams(-1, -1));
@@ -82,6 +86,7 @@ public class HomeActivity extends Activity {
     }
 
     @Override protected void onPause() {
+        aerialRequest.hide();
         if (wallpaperVideo != null) wallpaperVideo.hide();
         if (home != null) home.pause();
         super.onPause();
@@ -98,6 +103,7 @@ public class HomeActivity extends Activity {
     @Override protected void onDestroy() {
         if (home != null) home.destroy();
         if (wallpaperVideo != null) wallpaperVideo.release();
+        if (aerialCache != null) aerialCache.close();
         super.onDestroy();
     }
 

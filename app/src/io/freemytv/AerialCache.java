@@ -97,6 +97,7 @@ final class AerialCache {
         lastTouch = next;
     }
     void cleanup() { cleanup(null); }
+    void close() { worker.shutdownNow(); }
     int completeCount() { return complete().length; }
     long completeBytes() { long total = 0; for (File f : complete()) total += f.length(); return total; }
 
