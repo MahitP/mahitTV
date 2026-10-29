@@ -148,7 +148,7 @@ public class SettingsActivity extends Activity {
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, SECTION = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5,
-                POWER = 6, PIN_PAD = 7;
+                POWER = 6, PIN_PAD = 7, WALLPAPER_PICKER = 8;
         private static final float LIST_ROW_H = 68, LIST_ROW_GAP = 6;
         private static final int PICK_VISIBLE = 9;
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_GAP = 8, CHOICE_H = 104;
@@ -180,6 +180,11 @@ public class SettingsActivity extends Activity {
         private JSONObject state = new JSONObject(), recs = new JSONObject();
         private boolean hasKey;
         private int screen = MAIN, focus;
+        // Dedicated two-pane wallpaper picker; unlike the generic PICKER it never shares a scroll or selection state.
+        private int wallpaperCategory, wallpaperOption;
+        private boolean wallpaperOptionsPane;
+        private final String[] wallpaperCategories = Wallpaper.categories();
+        private String[] wallpaperOptions = new String[0];
         private boolean running, okDown, backDown, wasBusy;
         private StaticLayout errorLayout;   // the last error, wrapped (rebuilt only when it changes)
         private Toast whyToast;   // why the focused option is unavailable
@@ -434,6 +439,7 @@ public class SettingsActivity extends Activity {
                 case SECTION: return Math.min(SETTINGS_VISIBLE, rows.length);
                 case PIN_PAD: return 10;
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
+                case WALLPAPER_PICKER: return wallpaperOptionsPane ? wallpaperOptions.length : 4;
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
                 default: return Prefs.KEYS.length;
@@ -464,7 +470,7 @@ public class SettingsActivity extends Activity {
             c.drawText(Ui.tr("Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
-            if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c);
+            if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == WALLPAPER_PICKER) drawWallpaperPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c);
             else if (screen == PIN_PAD) drawPinPad(c, dt);
             else drawList(c);
         }
@@ -667,6 +673,7 @@ public class SettingsActivity extends Activity {
             if (screen == PIN_PAD && pinKey(e, down)) return true;
             switch (e.getKeyCode()) {
                 case KeyEvent.KEYCODE_DPAD_UP:
+                    if (down && screen == WALLPAPER_PICKER) { moveWallpaper(-1); return true; }
                     if (down && focus > 0) focus--;
                     else if (down && scrolling() && pickScroll > 0) pickScroll--;
                     if (down) armed = 0;   // a second OK must be on the same row, right after the first
@@ -674,6 +681,7 @@ public class SettingsActivity extends Activity {
                     spoken.focusMoved();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
+                    if (down && screen == WALLPAPER_PICKER) { moveWallpaper(1); return true; }
                     if (down && focus < rowCount() - 1) focus++;
                     else if (down && scrolling() && pickScroll + rowCount() < listSize()) pickScroll++;
                     if (down) armed = 0;
@@ -682,6 +690,7 @@ public class SettingsActivity extends Activity {
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (down && screen == WALLPAPER_PICKER) { wallpaperOptionsPane = e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT; invalidate(); return true; }
                     if (down && screen == SHELF_EDIT) {
                         moveShelfApp(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
                     } else if (down && (screen == SECTION || screen == REMOTE_KEYS || screen == POWER)) {
@@ -710,7 +719,9 @@ public class SettingsActivity extends Activity {
                     } else {
                         if (backDown && !e.isCanceled()) {
                             armed = 0;
-                            if (screen == PICKER && pickFor <= PICK_SLEEP) {
+                            if (screen == WALLPAPER_PICKER) {
+                                openSection(S_APPEARANCE, R_WALLPAPER);
+                            } else if (screen == PICKER && pickFor <= PICK_SLEEP) {
                                 focus = powerFocus(pickFor == PICK_SLEEP ? P_SLEEP : P_WHERE);
                                 pickScroll = 0;   // the picker's scroll isn't this short list's
                                 screen = POWER;
@@ -747,9 +758,7 @@ public class SettingsActivity extends Activity {
 
         // MARK: - Sections (MAHITTV-PROFILES-SPEC.md §6)
 
-        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"},
-                WALLPAPERS = {"horizon:auto", "aerial:yosemite", "aerial:iceland", "aerial:north-america-aurora",
-                        "aerial:new-york"};
+        private static final String[] UNITS = {"auto", "C", "F"}, THEMES = {"auto", "light", "dark"};
         /** The main list, in this order. */
         private static final int S_PROFILES = 0, S_APPEARANCE = 1, S_LOCATION = 2, S_SMART_HOME = 3, S_WELLY = 4,
                 S_SYSTEM = 5, S_RESET = 6, SECTIONS = 7;
@@ -937,6 +946,8 @@ public class SettingsActivity extends Activity {
             if ("horizon:auto".equals(id)) return Ui.tr("Automatic");
             if ("horizon:light".equals(id)) return Ui.tr("Light");
             if ("horizon:dark".equals(id)) return Ui.tr("Dark");
+            if ("live:aerial".equals(id)) return "Live Aerial Screensaver";
+            if (id.startsWith("studio:")) return id.substring("studio:".length()).replace('-', ' ');
             Wallpaper.Aerial aerial = Wallpaper.find(id);
             return aerial == null ? Ui.tr("Automatic") : aerial.title;
         }
@@ -1070,7 +1081,7 @@ public class SettingsActivity extends Activity {
         /** Rows that open something (a screen, a list, the PIN pad): they show a chevron. */
         private static boolean opens(int id) {
             switch (id) {
-                case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP:
+                case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
                     return true;
                 default:
@@ -1153,6 +1164,9 @@ public class SettingsActivity extends Activity {
                 case R_DOCK:
                     shelfSection = section;
                     openShelfEditor(false);
+                    return true;
+                case R_WALLPAPER:
+                    openWallpaperPicker();
                     return true;
                 case R_TOP_BUTTONS:
                     openShelfEditor(true);
@@ -1800,12 +1814,7 @@ public class SettingsActivity extends Activity {
                     SleepOverlay.update(getContext());   // the pill's glass follows
                     break;
                 }
-                case R_WALLPAPER: {
-                    int at = java.util.Arrays.asList(WALLPAPERS).indexOf(Prefs.wallpaper());
-                    if (at < 0) at = 0;
-                    Prefs.setWallpaper(WALLPAPERS[(at + dir + WALLPAPERS.length) % WALLPAPERS.length]);
-                    break;
-                }
+                case R_WALLPAPER: return;
                 case R_PHOTOS:
                     if (Photos.files(getContext()).isEmpty()) return;
                     Prefs.setPhotos(!Prefs.photos());
@@ -2065,6 +2074,76 @@ public class SettingsActivity extends Activity {
                     LIST_X * k + 30 * k, hy, hint);
         }
 
+        private void openWallpaperPicker() {
+            String category = Wallpaper.categoryOf(Prefs.wallpaper());
+            wallpaperCategory = 0;
+            for (int i = 0; i < wallpaperCategories.length; i++) if (wallpaperCategories[i].equals(category)) wallpaperCategory = i;
+            wallpaperOptions = Wallpaper.options(wallpaperCategories[wallpaperCategory]);
+            wallpaperOption = 0;
+            for (int i = 0; i < wallpaperOptions.length; i++) if (wallpaperOptions[i].equals(Prefs.wallpaper())) wallpaperOption = i;
+            wallpaperOptionsPane = false;
+            screen = WALLPAPER_PICKER;
+            focus = wallpaperCategory;
+        }
+
+        private void moveWallpaper(int direction) {
+            if (wallpaperOptionsPane) {
+                wallpaperOption = Math.max(0, Math.min(wallpaperOptions.length - 1, wallpaperOption + direction));
+                focus = wallpaperOption;
+            } else {
+                wallpaperCategory = Math.max(0, Math.min(3, wallpaperCategory + direction));
+                wallpaperOptions = Wallpaper.options(wallpaperCategories[wallpaperCategory]);
+                wallpaperOption = 0;
+                focus = wallpaperCategory;
+            }
+            invalidate();
+            spoken.focusMoved();
+        }
+
+        private static String wallpaperCategoryName(String category) {
+            if ("horizon".equals(category)) return "Apple Frosted Horizon";
+            if ("aerial".equals(category)) return "Apple 4K Aerials";
+            if ("studio".equals(category)) return "Apple Studio Solids";
+            return "Live Aerial Screensaver";
+        }
+
+        private String wallpaperOptionName(String id) {
+            if ("horizon:auto".equals(id)) return Ui.tr("Automatic");
+            if ("horizon:light".equals(id)) return Ui.tr("Light");
+            if ("horizon:dark".equals(id)) return Ui.tr("Dark");
+            Wallpaper.Aerial aerial = Wallpaper.find(id);
+            if (aerial != null) return aerial.title;
+            if ("live:aerial".equals(id)) return "Live Aerial Screensaver";
+            return id.substring("studio:".length()).replace('-', ' ');
+        }
+
+        private void drawWallpaperPicker(Canvas c) {
+            c.drawText(Ui.tr("Wallpaper"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            float left = LIST_X * k, middle = 1335 * k, right = LIST_R * k, top = (LIST_TOP + 20) * k, pitch = 74 * k;
+            for (int i = 0; i < wallpaperCategories.length; i++) {
+                rowRect.set(left, top + i * pitch, middle - 16 * k, top + i * pitch + 66 * k);
+                boolean selected = !wallpaperOptionsPane && i == wallpaperCategory;
+                c.drawRoundRect(rowRect, 18 * k, 18 * k, selected ? white : glass);
+                rowLabel.setColor(selected ? INK : 0xF2FFFFFF);
+                c.drawText(wallpaperCategoryName(wallpaperCategories[i]), rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
+            }
+            for (int i = 0; i < wallpaperOptions.length && i < 7; i++) {
+                rowRect.set(middle, top + i * pitch, right, top + i * pitch + 66 * k);
+                boolean selected = wallpaperOptionsPane && i == wallpaperOption;
+                c.drawRoundRect(rowRect, 18 * k, 18 * k, selected ? white : glass);
+                rowLabel.setColor(selected ? INK : 0xF2FFFFFF);
+                c.drawText(wallpaperOptionName(wallpaperOptions[i]), rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
+            }
+            tmp.set(590 * k, 585 * k, 1230 * k, 945 * k);
+            String chosen = wallpaperOptions[wallpaperOption];
+            if (chosen.startsWith("studio:")) {
+                int at = java.util.Arrays.asList(Wallpaper.solidIds()).indexOf(chosen);
+                white.setColor(Wallpaper.solidColors()[Math.max(0, at)]);
+            } else white.setColor(Wallpaper.palette(Wallpaper.dark(chosen, false))[0]);
+            c.drawRoundRect(tmp, 22 * k, 22 * k, white);
+            c.drawText("OK applies immediately · Back returns to Appearance", LIST_X * k + 30 * k, 1000 * k, hint);
+        }
+
         private void drawList(Canvas c) {
             boolean keys = screen == REMOTE_KEYS, sec = screen == SECTION;
             String[] labels = listLabels();
@@ -2156,6 +2235,9 @@ public class SettingsActivity extends Activity {
                 Prefs.setCity(city[1], city[2], city[3]);
                 HomeData.get(c).settingsChanged();
                 openSection(S_LOCATION, R_CITY);
+            } else if (screen == WALLPAPER_PICKER) {
+                Prefs.setWallpaper(wallpaperOptions[wallpaperOption]);
+                HomeData.get(c).settingsChanged();
             } else if (screen == PICKER && pickFor <= PICK_SLEEP) {
                 pickPower();
             } else if (screen == PICKER && pickFor == PICK_LANGUAGE) {

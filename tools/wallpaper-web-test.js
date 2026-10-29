@@ -30,6 +30,23 @@ assert.strictEqual(Wallpaper.normalize('coast.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('aurora.jpg'), 'horizon:auto');
 assert.strictEqual(Wallpaper.normalize('earth.jpg'), 'horizon:auto');
 
+var pickerCategories = ['horizon', 'aerial', 'studio', 'live'];
+var pickerOptions = [
+  ['horizon:auto', 'horizon:light', 'horizon:dark'],
+  ['aerial:yosemite', 'aerial:iceland', 'aerial:north-america-aurora', 'aerial:palau-coral', 'aerial:new-york', 'aerial:sonoma-coast'],
+  ['studio:black', 'studio:space-gray', 'studio:midnight-blue', 'studio:deep-forest', 'studio:teal', 'studio:warm-stone', 'studio:silver-mist'],
+  ['live:aerial']
+];
+pickerCategories.forEach(function (category, index) {
+  assert.deepStrictEqual(Array.prototype.slice.call(Wallpaper.options(category)), pickerOptions[index]);
+  pickerOptions[index].forEach(function (id) { assert.strictEqual(Wallpaper.categoryOf(id), category); });
+});
+assert.strictEqual(Wallpaper.categoryOf('missing'), null);
+assert.deepStrictEqual(Array.prototype.slice.call(Wallpaper.options('missing')), []);
+var changedPickerOptions = Wallpaper.options('aerial');
+changedPickerOptions[0] = 'changed';
+assert.strictEqual(Wallpaper.options('aerial')[0], 'aerial:yosemite');
+
 assert.strictEqual(Wallpaper.legacyAsset('aerial:yosemite'), 'valley.jpg');
 assert.strictEqual(Wallpaper.legacyAsset('aerial:iceland'), 'coast.jpg');
 assert.strictEqual(Wallpaper.legacyAsset('aerial:north-america-aurora'), 'aurora.jpg');

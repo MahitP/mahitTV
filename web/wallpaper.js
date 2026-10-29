@@ -153,6 +153,23 @@ var Wallpaper = (function () {
     return valid(id) ? id : 'horizon:auto';
   }
 
+  function categoryOf(id) {
+    var at;
+    for (at = 0; at < horizons.length; at++) if (horizons[at] === id) return 'horizon';
+    if (canonical(id)) return 'aerial';
+    for (at = 0; at < solids.length; at++) if (solids[at].id === id) return 'studio';
+    return id === 'live:aerial' ? 'live' : null;
+  }
+
+  function options(category) {
+    var result = [], at;
+    if (category === 'horizon') return horizons.slice(0);
+    if (category === 'aerial') { for (at = 0; at < aerials.length; at++) result.push(aerials[at].id); }
+    else if (category === 'studio') { for (at = 0; at < solids.length; at++) result.push(solids[at].id); }
+    else if (category === 'live') result.push('live:aerial');
+    return result;
+  }
+
   function dark(id, weatherNight) {
     id = normalize(id);
     return id === 'horizon:dark' || (id !== 'horizon:light' && weatherNight === true);
@@ -274,6 +291,9 @@ var Wallpaper = (function () {
   return {
     aerials: copyAerials(),
     solids: copySolids(),
+    categories: function () { return ['horizon', 'aerial', 'studio', 'live']; },
+    categoryOf: categoryOf,
+    options: options,
     normalize: normalize,
     dark: dark,
     legacyAsset: legacyAsset,

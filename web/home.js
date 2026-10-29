@@ -96,7 +96,6 @@
   // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
   var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 251, TILE_H = 150, TILE_GAP = 49, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
   var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
-  var WALLPAPERS = ['horizon:auto', 'aerial:yosemite', 'aerial:iceland', 'aerial:north-america-aurora', 'aerial:new-york'];
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -675,14 +674,14 @@
 
   // MARK: - Focus
 
-  var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', ABOUT: 'about',
+  var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', WALLPAPER: 'wallpaper', ABOUT: 'about',
     TABS: 'tabs', HOUSE: 'house', WELLY: 'welly'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
-  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0};
+  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0};
   var cards = [];
   var was = {drawer: false, full: false, row: null};
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.ABOUT; }
+  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT; }
 
   function focusList(list, on, index) {
     for (var i = 0; i < list.length; i++) {
@@ -717,6 +716,7 @@
     focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     focusRows($('langpick'), st.lang, st.zone === Z.LANG);
+    focusRows($('wallpaperpick'), st.wallpaperPane ? st.wallpaperOption : st.wallpaperCategory, st.zone === Z.WALLPAPER);
     if (langHint) langHint.textContent = (st.lang + 1) + ' / ' + languageChoices().length + '  ·  ' + tr('OK picks, Back cancels.');
     var row = document.querySelector('.sheet.open .row.focus');
     if (row !== was.row) {
@@ -1538,6 +1538,7 @@
     setClass($('settings'), 'open', false);
     setClass($('shelfedit'), 'open', false);
     setClass($('langpick'), 'open', false);
+    setClass($('wallpaperpick'), 'open', false);
     setClass($('about'), 'open', false);
     langHint = null;
     st.zone = Z.SHELF;
@@ -1615,14 +1616,51 @@
     return [
       {label: tr('Theme'), value: theme === 'light' ? tr('Light') : theme === 'dark' ? tr('Dark') : auto,
         step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
-      {label: tr('Wallpaper'), value: names[wall] || auto,
-        step: function (d) {
-          cycle('wallpaper', WALLPAPERS, wall, d);
-          follow();
-        }},
+      {label: tr('Wallpaper'), value: names[wall] || wallpaperName(wall), valueId: 'wallpaper',
+        step: function (d) { if (d >= 0) openWallpaperPicker(); }},
       {label: tr('Startup animation & chime'), toggle: Prefs.intro(),
         step: function () { Prefs.set('intro', !Prefs.intro()); }}
     ];
+  }
+
+  function wallpaperName(id) {
+    var aerial = Wallpaper['find'](id);
+    if (aerial) return aerial.title;
+    if (id === 'live:aerial') return 'Live Aerial Screensaver';
+    if (id.indexOf('studio:') === 0) return id.substring(7).replace(/-/g, ' ');
+    return tr('Automatic');
+  }
+
+  function wallpaperCategoryName(id) {
+    return id === 'horizon' ? 'Apple Frosted Horizon' : id === 'aerial' ? 'Apple 4K Aerials' : id === 'studio' ? 'Apple Studio Solids' : 'Live Aerial Screensaver';
+  }
+
+  function renderWallpaperPicker() {
+    var box = $('wallpaperpick').firstChild, categories = Wallpaper.categories(), category = categories[st.wallpaperCategory], options = Wallpaper.options(category);
+    box.innerHTML = '';
+    el('div', 'title', box, tr('Wallpaper'));
+    var panes = el('div', 'panes', box), left = el('div', 'categories', panes), right = el('div', 'options', panes);
+    for (var i = 0; i < categories.length; i++) el('div', 'row', left, wallpaperCategoryName(categories[i]));
+    for (i = 0; i < options.length; i++) el('div', 'row', right, wallpaperName(options[i]));
+    var preview = el('div', 'preview', panes), chosen = options[st.wallpaperOption], aerial = Wallpaper['find'](chosen), solid;
+    if (aerial) { preview.style.backgroundImage = 'url(' + aerial.preview + ')'; el('div', 'status', preview, 'Apple preview loads when available'); }
+    else if (chosen.indexOf('studio:') === 0) { for (i = 0; i < Wallpaper.solids.length; i++) if (Wallpaper.solids[i].id === chosen) solid = Wallpaper.solids[i]; preview.style.background = solid ? solid.color : '#B8C7D6'; }
+    else { preview.className += ' horizon'; el('div', 'status', preview, chosen === 'live:aerial' ? 'Live aerial when available' : 'Frosted Horizon'); }
+    el('div', 'hint', box, '← → change pane · OK applies immediately · Back returns to Wallpaper');
+  }
+
+  function openWallpaperPicker() {
+    var categories = Wallpaper.categories(), current = Prefs.wallpaper(), category = Wallpaper.categoryOf(current), options;
+    st.wallpaperCategory = Math.max(0, categories.indexOf(category));
+    options = Wallpaper.options(categories[st.wallpaperCategory]);
+    st.wallpaperOption = Math.max(0, options.indexOf(current)); st.wallpaperPane = 0;
+    setClass($('settings'), 'open', false); st.zone = Z.WALLPAPER; renderWallpaperPicker(); setClass($('wallpaperpick'), 'open', true); updateFocus();
+  }
+
+  function closeWallpaperPicker() {
+    setClass($('wallpaperpick'), 'open', false); openSettings(true);
+    for (var i = 0; i < rowsNow.length; i++) if (rowsNow[i].valueId === 'wallpaper') st.row = i;
+    updateFocus();
   }
 
   function placeRows() {
@@ -2029,6 +2067,14 @@
       case Z.LANG:
         closeLanguages(true);
         return;
+      case Z.WALLPAPER:
+        if (!st.wallpaperPane) { st.wallpaperPane = 1; updateFocus(); return; }
+        var wallpaperOptions = Wallpaper.options(Wallpaper.categories()[st.wallpaperCategory]);
+        Prefs.set('wallpaper', wallpaperOptions[st.wallpaperOption]);
+        refreshBackground();
+        renderWallpaperPicker();
+        updateFocus();
+        return;
       case Z.ABOUT:
         closeAbout();
         return;
@@ -2127,6 +2173,16 @@
       case Z.LANG:
         if (dy) st.lang = Math.max(0, Math.min(languageChoices().length - 1, st.lang + dy));
         break;
+      case Z.WALLPAPER:
+        if (dx) st.wallpaperPane = dx > 0 ? 1 : 0;
+        else if (dy && st.wallpaperPane) {
+          var options = Wallpaper.options(Wallpaper.categories()[st.wallpaperCategory]);
+          st.wallpaperOption = Math.max(0, Math.min(options.length - 1, st.wallpaperOption + dy));
+        } else if (dy) {
+          st.wallpaperCategory = Math.max(0, Math.min(3, st.wallpaperCategory + dy)); st.wallpaperOption = 0;
+        }
+        renderWallpaperPicker();
+        break;
     }
     updateFocus();
   }
@@ -2140,6 +2196,7 @@
       return;
     }
     if (st.zone === Z.LANG) { closeLanguages(false); return; }
+    if (st.zone === Z.WALLPAPER) { closeWallpaperPicker(); return; }
     if (st.zone === Z.SETTINGS && settingsSection) { leaveSection(); return; }
     if (st.zone === Z.ABOUT) { closeAbout(); return; }
     if (sheetOpen()) { closeSheets(); return; }
@@ -2526,6 +2583,16 @@
   // PREVIEW_PICKS and never expose it.
   if (window.PREVIEW_PICKS) {
     window.Home = window.Home || {};
+    window.Home.previewWallpaperPicker = function (category, option) {
+      openWallpaperPicker();
+      var categories = Wallpaper.categories(), options;
+      st.wallpaperCategory = Math.max(0, categories.indexOf(category || 'aerial'));
+      options = Wallpaper.options(categories[st.wallpaperCategory]);
+      st.wallpaperOption = Math.max(0, options.indexOf(option || 'aerial:yosemite'));
+      st.wallpaperPane = 1;
+      renderWallpaperPicker(); updateFocus();
+      return {category: categories[st.wallpaperCategory], option: options[st.wallpaperOption]};
+    };
     window.Home.testBackground = function (o) {
       o = o || {};
       if (o.app) shelf[st.shelf] = o.app;

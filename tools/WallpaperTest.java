@@ -19,6 +19,7 @@ public final class WallpaperTest {
         aerialCatalogueIsExact();
         urlAllowlistIsExact();
         solidsAreExact();
+        pickerCatalogueIsOrderedAndIsolated();
         System.out.println("WallpaperTest: " + checks + " checks passed");
     }
 
@@ -239,6 +240,25 @@ public final class WallpaperTest {
         no(found == Wallpaper.find("aerial:yosemite"), "find returns a defensive record");
     }
 
+    private static void pickerCatalogueIsOrderedAndIsolated() {
+        String[] categories = {"horizon", "aerial", "studio", "live"};
+        String[][] options = {
+                {"horizon:auto", "horizon:light", "horizon:dark"},
+                {"aerial:yosemite", "aerial:iceland", "aerial:north-america-aurora", "aerial:palau-coral", "aerial:new-york", "aerial:sonoma-coast"},
+                {"studio:black", "studio:space-gray", "studio:midnight-blue", "studio:deep-forest", "studio:teal", "studio:warm-stone", "studio:silver-mist"},
+                {"live:aerial"}
+        };
+        for (int i = 0; i < categories.length; i++) {
+            array(options[i], Wallpaper.options(categories[i]), "picker options " + categories[i]);
+            for (String id : options[i]) equal(categories[i], Wallpaper.categoryOf(id), "picker category " + id);
+        }
+        same(null, Wallpaper.categoryOf("missing"), "missing picker category");
+        equal(0, Wallpaper.options("missing").length, "missing picker options");
+        String[] changed = Wallpaper.options("aerial");
+        changed[0] = "changed";
+        equal("aerial:yosemite", Wallpaper.options("aerial")[0], "picker options are isolated");
+    }
+
     private static void aerial(String[] expected, Wallpaper.Aerial actual, String message) {
         checks++;
         if (actual == null || !Arrays.equals(expected, new String[]{actual.id, actual.asset, actual.title, actual.video, actual.preview})) {
@@ -257,6 +277,11 @@ public final class WallpaperTest {
     }
 
     private static void array(int[] expected, int[] actual, String message) {
+        checks++;
+        if (!Arrays.equals(expected, actual)) fail(message, Arrays.toString(expected), Arrays.toString(actual));
+    }
+
+    private static void array(String[] expected, String[] actual, String message) {
         checks++;
         if (!Arrays.equals(expected, actual)) fail(message, Arrays.toString(expected), Arrays.toString(actual));
     }

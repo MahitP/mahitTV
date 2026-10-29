@@ -556,7 +556,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 .night .cell .label, .has-photo .cell .label { color: #FFF; }
 
-#settings .box, #shelfedit .box, #langpick .box, #about .box {
+#settings .box, #shelfedit .box, #langpick .box, #wallpaperpick .box, #about .box {
   position: absolute;
   left: 560px;
   top: 150px;
@@ -584,6 +584,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .toggle::after { content: ''; position: absolute; left: 4px; top: 4px; width: 36px; height: 36px; border-radius: 18px; background: #FFF; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); -webkit-transition: -webkit-transform 0.14s; transition: transform 0.14s; }
 .toggle.on { background: #3FD69B; }
 .toggle.on::after { -webkit-transform: translateX(34px); transform: translateX(34px); }
+
+#wallpaperpick .box { left: 280px; top: 110px; width: 1360px; min-height: 790px; }
+#wallpaperpick .panes { position: relative; height: 570px; }
+#wallpaperpick .categories, #wallpaperpick .options { position: absolute; top: 0; width: 410px; }
+#wallpaperpick .categories { left: 0; } #wallpaperpick .options { left: 440px; }
+#wallpaperpick .preview { position: absolute; left: 870px; top: 0; width: 410px; height: 231px; border-radius: 24px; background: #B8C7D6; background-size: cover; background-position: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+#wallpaperpick .preview .status { position: absolute; left: 20px; bottom: 16px; font-size: 19px; color: rgba(255,255,255,.78); text-shadow: 0 1px 3px #000; }
 
 /* MARK: - Screensaver: the picks' photos, slowly moving, and a clock */
 

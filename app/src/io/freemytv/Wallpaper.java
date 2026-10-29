@@ -21,6 +21,8 @@ final class Wallpaper {
     }
 
     private static final String[] HORIZON_IDS = {"horizon:auto", "horizon:light", "horizon:dark"};
+    /** Picker categories deliberately stay small and ordered: the TV UI mirrors this exact sequence. */
+    private static final String[] CATEGORIES = {"horizon", "aerial", "studio", "live"};
     private static final String[] SOLID_IDS = {
             "studio:black", "studio:space-gray", "studio:midnight-blue", "studio:deep-forest",
             "studio:teal", "studio:warm-stone", "studio:silver-mist"
@@ -71,6 +73,29 @@ final class Wallpaper {
     private Wallpaper() {}
 
     static String[] horizonIds() { return HORIZON_IDS.clone(); }
+
+    static String categoryOf(String id) {
+        if (id == null) return null;
+        if (contains(HORIZON_IDS, id)) return "horizon";
+        if (findCanonical(id) != null) return "aerial";
+        if (contains(SOLID_IDS, id)) return "studio";
+        return "live:aerial".equals(id) ? "live" : null;
+    }
+
+    /** Ordered picker IDs. Always return a fresh array so a view cannot mutate the catalogue. */
+    static String[] options(String category) {
+        if ("horizon".equals(category)) return HORIZON_IDS.clone();
+        if ("studio".equals(category)) return SOLID_IDS.clone();
+        if ("live".equals(category)) return new String[]{"live:aerial"};
+        if ("aerial".equals(category)) {
+            String[] ids = new String[AERIALS.length];
+            for (int i = 0; i < AERIALS.length; i++) ids[i] = AERIALS[i].id;
+            return ids;
+        }
+        return new String[0];
+    }
+
+    static String[] categories() { return CATEGORIES.clone(); }
 
     static String[] solidIds() { return SOLID_IDS.clone(); }
 
