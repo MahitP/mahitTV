@@ -1,5 +1,5 @@
 /*
- * "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §3): the profiles' cards over a blurred aerial, and the PIN HUD (four
+ * "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §3): the profiles' cards over the Frosted Horizon, and the PIN HUD (four
  * dots, a glass 0–9 row, the remote's number keys). Guest and profiles without a PIN go straight in; a right PIN pulses
  * the dots gold and the avatar flies into the status pill. Back does nothing on the cards (it's the gate), unless the
  * lock was opened only to switch profile. Lock.ask() puts the same PIN pad over Settings (change a PIN, the manager's).
@@ -10,7 +10,7 @@ var Lock = (function () {
   var CARD = 240, GAP = 96, CARD_TOP = 380, PIN_TOP = 120;
   var P = Motion.P, BUMP = Motion.BUMP_VELOCITY;
 
-  var layer = null, bg = null, canvas = null, title = null, hud = null, prompt = null, dotsBox = null, msg = null, row = null;
+  var layer = null, bg = null, title = null, hud = null, prompt = null, dotsBox = null, msg = null, row = null;
   var cards = [], dots = [], keys = [];
   var mode = null;            // 'cards', 'pin', 'fly', or null (hidden)
   var at = 0, pad = 1, digits = '', chosen = null, opts = {}, asking = null, waitTimer = 0, busy = false;
@@ -50,9 +50,8 @@ var Lock = (function () {
   function build(list, glass) {
     layer.innerHTML = '';
     bg = el('div', 'bg' + (glass ? ' glass' : ''), layer);
-    canvas = el('canvas', '', bg);
-    canvas.width = 48;
-    canvas.height = 27;
+    el('div', 'hz hz-day', bg);
+    el('div', 'hz hz-night', bg);
     el('div', 'veil', bg);
     title = el('div', 'title', layer, tr("Who's Watching?"));
     cards = [];
@@ -113,14 +112,6 @@ var Lock = (function () {
         if (g.getImageData(0, 0, 1, 1).data[3] < 40 && g.getImageData(15, 15, 1, 1).data[3] < 40) setClass(face, 'round', true);
       } catch (e) {}
     };
-    img.src = url;
-  }
-
-  /** The blurred aerial behind the cards: the photo drawn tiny and stretched, as soft as a heavy blur. */
-  function backdrop(url) {
-    if (!url) return;
-    var img = new Image(), c = canvas;
-    img.onload = function () { try { c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); setClass(c, 'on', true); } catch (e) {} };
     img.src = url;
   }
 
@@ -356,7 +347,7 @@ var Lock = (function () {
 
     /**
      * The lock: o.from ('intro', 'idle', 'switch'), o.profile (that card first, and its PIN at once when it has one),
-     * o.cancel (Back on the cards returns: the lock was opened only to switch), o.wallpaper (the aerial behind).
+     * o.cancel (Back on the cards returns: the lock was opened only to switch).
      */
     show: function (o) {
       o = o || {};
@@ -364,7 +355,6 @@ var Lock = (function () {
       api.cancel = !!o.cancel;
       var list = Profiles.all(), want = o.profile || Profiles.current();
       present(list, false, o.from);
-      backdrop(o.wallpaper);
       mode = 'cards';
       at = Math.max(0, list.indexOf(want));
       chosen = null;

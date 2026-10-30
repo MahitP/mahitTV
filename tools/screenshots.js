@@ -100,18 +100,35 @@ async function shootHome(browser, shot) {
   return file;
 }
 
-/** mahitTV's profiles in one session, from power-on: web-mahittv-<name>.png. */
-async function shootProfiles(browser) {
+/** Each profile's own theme (light: the day Frosted Horizon, dark: its twilight), set before the page starts. */
+const PROFILE_IDS = ['mahit', 'dhruvin', 'subbu', 'lucky'];
+function themed(theme) {
+  return ({ theme, ids }) => {
+    try {
+      localStorage.clear();
+      localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      ids.forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
+    } catch (e) {}
+  };
+}
+
+/** mahitTV's profiles in one session, from power-on: web-mahittv-<name>.png by day, web-mahittv-night-<name>.png. */
+async function shootProfiles(browser, theme) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await context.addInitScript(() => {
+  await context.addInitScript(({ theme, ids }) => {
     if (sessionStorage.getItem('shot')) return;
-    try { localStorage.clear(); localStorage.setItem('fmtv.night', 'true'); } catch (e) {}
+    try {
+      localStorage.clear();
+      localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      ids.forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
+    } catch (e) {}
     sessionStorage.setItem('shot', '1');
-  });
+  }, { theme, ids: PROFILE_IDS });
+  const prefix = theme === 'dark' ? 'web-mahittv-night-' : 'web-mahittv-';
   const page = await context.newPage();
   const files = [];
   const shot = async (name) => {
-    const file = path.join(OUT, `web-mahittv-${name}.png`);
+    const file = path.join(OUT, `${prefix}${name}.png`);
     await page.screenshot({ path: file });
     files.push(file);
   };
@@ -144,9 +161,7 @@ async function shootProfiles(browser) {
 /** Welly's Continue Watching for one profile (from the "What am I watching?" pill): web-mahittv-welly-<id>.png. */
 async function shootWelly(browser, id) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await context.addInitScript(() => {
-    try { localStorage.clear(); localStorage.setItem('fmtv.night', 'true'); } catch (e) {}
-  });
+  await context.addInitScript(themed('light'), { theme: 'light', ids: PROFILE_IDS });
   const page = await context.newPage();
   await page.goto(PAGE);
   await page.waitForTimeout(1500);
@@ -342,7 +357,9 @@ async function shootAppleWallpapers(browser) {
     await browser.close(); server.close(); return;
   }
   if (only === 'profiles') {
-    for (const f of await shootProfiles(browser)) console.log('wrote', path.relative(ROOT, f));
+    for (const theme of ['light', 'dark']) {
+      for (const f of await shootProfiles(browser, theme)) console.log('wrote', path.relative(ROOT, f));
+    }
     for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
     await browser.close();
     server.close();
@@ -358,7 +375,9 @@ async function shootAppleWallpapers(browser) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
   for (const shot of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shootHome(browser, shot)));
-  for (const f of await shootProfiles(browser)) console.log('wrote', path.relative(ROOT, f));
+  for (const theme of ['light', 'dark']) {
+    for (const f of await shootProfiles(browser, theme)) console.log('wrote', path.relative(ROOT, f));
+  }
   for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
   for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
   for (const f of await shootAppleWallpapers(browser)) console.log('wrote', path.relative(ROOT, f));

@@ -1,26 +1,18 @@
 /* The golden intro and "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §2–3). Only transform and opacity animate. */
 
 /* The intro covers the screen from the first paint, so the home screen never flashes before the lock. */
-#intro { z-index: 7; background: #0A0A0C; }
+#intro { z-index: 7; background: #DCE6EF; }
+.night #intro { background: #1C2638; }
 #intro canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
 
-#lock { z-index: 6; color: #FFF; visibility: hidden; opacity: 0; -webkit-transform-origin: 50% 50%; transform-origin: 50% 50%; }
-#lock .bg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: #101014; }
-#lock .bg canvas { position: absolute; left: -4%; top: -4%; width: 108%; height: 108%; opacity: 0; -webkit-transition: opacity 0.6s; transition: opacity 0.6s; }
-#lock .bg canvas.on { opacity: 1; }
-#lock .bg .veil {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.62));
-  background: linear-gradient(rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.62));
-}
-/* Over Settings (a PIN pad): no photo, a deep dim. */
-#lock .bg.glass { background: rgba(0, 0, 0, 0.55); }
-#lock .bg.glass canvas { display: none; }
-#lock .bg.glass .veil { background: rgba(8, 8, 12, 0.84); }
+/* Over the Frosted Horizon: dark text by day, white at night. */
+#lock { z-index: 6; color: #1D1D1F; visibility: hidden; opacity: 0; -webkit-transform-origin: 50% 50%; transform-origin: 50% 50%; }
+.night #lock { color: #FFF; }
+/* The Frosted Horizon behind the cards and the PIN pad (over Settings too), a faint frost over it. */
+#lock .bg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: #DCE6EF; }
+.night #lock .bg { background: #1C2638; }
+#lock .bg .veil { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.1); }
+.night #lock .bg .veil { background: rgba(0, 0, 0, 0.14); }
 
 #lock .title {
   position: absolute;
@@ -46,7 +38,7 @@
   background-color: #2A2B31;
   background-size: cover;
   background-position: center;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 14px 34px rgba(22, 33, 45, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 /* A round avatar fills the squircle (lock.js checks its corners). */
 #lock .card .face.round { background-size: 142%; }
@@ -59,7 +51,7 @@
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 46%);
   background: linear-gradient(rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0) 46%);
 }
-#lock .card .shadow { position: absolute; left: 10px; top: 24px; width: 220px; height: 220px; border-radius: 56px; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.55); opacity: 0; }
+#lock .card .shadow { position: absolute; left: 10px; top: 24px; width: 220px; height: 220px; border-radius: 56px; box-shadow: 0 30px 60px rgba(22, 33, 45, 0.42); opacity: 0; }
 #lock .card .ring {
   position: absolute;
   left: -9px;
@@ -67,10 +59,10 @@
   width: 258px;
   height: 258px;
   border-radius: 64px;
-  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.92), 0 0 32px rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.95), 0 0 0 6px rgba(22, 33, 45, 0.12), 0 0 32px rgba(255, 255, 255, 0.5);
   opacity: 0;
 }
-#lock .card.manager .ring { box-shadow: 0 0 0 6px #E9C55A, 0 0 36px rgba(245, 208, 97, 0.55); }
+#lock .card.manager .ring { box-shadow: 0 0 0 6px #E9C55A, 0 0 0 7px rgba(122, 90, 18, 0.25), 0 0 36px rgba(245, 208, 97, 0.6); }
 #lock .card .label {
   position: absolute;
   left: -80px;
@@ -109,7 +101,7 @@
 
 /* The PIN HUD: a prompt, four dots, the glass 0–9 row, a message. */
 #lock .hud { position: absolute; left: 0; top: 520px; width: 1920px; opacity: 0; visibility: hidden; }
-#lock .prompt { text-align: center; font-size: 30px; font-weight: 600; color: rgba(255, 255, 255, 0.86); }
+#lock .prompt { text-align: center; font-size: 30px; font-weight: 600; opacity: 0.86; }
 #lock .dots { margin: 34px auto 0; width: 224px; height: 26px; font-size: 0; text-align: center; }
 #lock .dot {
   display: inline-block;
@@ -118,11 +110,13 @@
   margin: 0 14px;
   border-radius: 13px;
   box-sizing: border-box;
-  border: 2.5px solid rgba(255, 255, 255, 0.72);
+  border: 2.5px solid rgba(29, 29, 31, 0.6);
   -webkit-transition: background-color 0.12s, border-color 0.12s;
   transition: background-color 0.12s, border-color 0.12s;
 }
-#lock .dot.on { background: #FFF; border-color: #FFF; }
+#lock .dot.on { background: #1D1D1F; border-color: #1D1D1F; }
+.night #lock .dot { border-color: rgba(255, 255, 255, 0.72); }
+.night #lock .dot.on { background: #FFF; border-color: #FFF; }
 #lock .dots.gold .dot.on { background: #F5D061; border-color: #F5D061; box-shadow: 0 0 18px rgba(245, 208, 97, 0.75); }
 #lock .pad {
   position: relative;
@@ -132,6 +126,11 @@
   border-radius: 52px;
   font-size: 0;
   white-space: nowrap;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.4));
+  background: linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.4));
+  box-shadow: 0 24px 60px rgba(22, 33, 45, 0.22), inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+.night #lock .pad {
   background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09));
   background: linear-gradient(rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.09));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35), inset 0 1.5px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
@@ -152,12 +151,13 @@
   transition: background-color 0.12s, color 0.12s;
 }
 #lock .pad .digit:first-child { margin-left: 20px; }
-#lock .pad .digit.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35); }
-#lock .msg { margin-top: 30px; height: 34px; text-align: center; font-size: 26px; font-weight: 500; color: rgba(255, 255, 255, 0.7); }
+#lock .pad .digit.focus { background: #1D1D1F; color: #FFF; box-shadow: 0 10px 24px rgba(22, 33, 45, 0.3); }
+.night #lock .pad .digit.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35); }
+#lock .msg { margin-top: 30px; height: 34px; text-align: center; font-size: 26px; font-weight: 500; opacity: 0.7; }
 
 /* Control Center's Lock card uses the same glyph, larger. */
 #drawer .key .glyph-lock { position: absolute; left: 26px; top: 32px; width: 22px; height: 17px; margin: 0; opacity: 1; }
 #drawer .key .glyph-lock::before { left: 2.5px; top: -12px; width: 11px; height: 13px; border-width: 3px; }
 
-.lite #lock .bg canvas, .lite #lock .dot, .lite #lock .pad .digit { -webkit-transition: none; transition: none; }
+.lite #lock .dot, .lite #lock .pad .digit { -webkit-transition: none; transition: none; }
 .lite #lock .card .shadow { display: none; }

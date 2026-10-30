@@ -1830,6 +1830,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** Blends a color on top (the drawer's veil) as part of drawing the image, without another layer. */
+    /** The tint Home and Welly lay over the Frosted Horizon. */
+    private static final int SLATE = 0xFF16212D;
+
     private android.graphics.ColorFilter veil(float amount, int color) {
         if (amount <= 0.002f) return null;
         // 64 levels (a step is invisible on a moving fade), each made once and kept: no filter made per frame.
@@ -4258,7 +4261,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (bgTo == null || (fading && bgFrom == null)) {
             if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon()) {
                 scene.drawBackground(c);
-                if (v != null) { fill.setColorFilter(v); fill.setColor(0xFF000000); c.drawRect(screen, fill); fill.setColorFilter(null); }
+                // Over the Frosted Horizon the dims are see-through layers, not a filter: Home and Welly tint it slate
+                // (as web/home.css), so its colours stay under their white text.
+                float ht = tone(0.34f, 0.22f) * Ui.clamp(tabAway.value);
+                float amount = ht > dd && ht > ds ? ht : Math.max(dd, ds);
+                int over = ht > dd && ht > ds ? SLATE : dd > ds ? 0xFF000000 : blend(0xFFFFFFFF, 0xFF000000, night);
+                if (amount > 0.002f) {
+                    fill.setColor(Ui.alpha(over, amount));
+                    c.drawRect(screen, fill);
+                    fill.setColor(0xFF000000);
+                }
             } else {
                 if (lightGradient == null) lightGradient = Ui.gradient(h, 0xFFF5F5F7, 0xFFE2E2E7);
                 if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1E, 0xFF0B0B0D);

@@ -611,7 +611,7 @@
     A(q('#blur'), hasClass(body, 'has-photo') ? Math.max(p, away) : 1);
     var lift = q('#sky .lift');
     A(lift, Math.max(p * (night ? 0.42 : 0.6), d * (night ? 0.42 : 0.32)));
-    A(q('#sky .shade'), away * (night ? 0.55 : 0.45));
+    A(q('#sky .shade'), away * (hasClass(body, 'profile-background') ? (night ? 0.22 : 0.34) : (night ? 0.55 : 0.45)));
     A(q('#dim'), d * (night ? 0.3 : 0.22));
     T(q('#art'), 'translateX(' + r2(mv.par.x) + 'px)');
     // The Dock: its scroll, and in full screen it drops away.
@@ -2377,7 +2377,6 @@
       closeSheets();
       if (st.zone === Z.DRAWER) closeDrawer();
     }
-    o.wallpaper = wallpaperUrl();
     Lock.show(o);
   }
 

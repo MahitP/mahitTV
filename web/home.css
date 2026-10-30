@@ -65,7 +65,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
 #sky .horizon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky .horizon.night { opacity: 0; }
-#sky #horizonDay {
+.hz-day, #sky #horizonDay {
   background: -webkit-radial-gradient(-8% 69%, 83% 83%, #F5EBD6 0%, transparent 72%),
     -webkit-radial-gradient(53% 48%, 78% 78%, #DCE6EF 0%, transparent 74%),
     -webkit-radial-gradient(106% 104%, 104% 104%, #7E9BB5 0%, transparent 72%),
@@ -75,7 +75,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
     radial-gradient(104% 104% at 106% 104%, #7E9BB5 0%, transparent 72%),
     linear-gradient(180deg, #B8C7D6 0%, #DCE6EF 56%, #7E9BB5 100%);
 }
-#sky #horizonNight {
+.hz-night, #sky #horizonNight {
   background: -webkit-radial-gradient(-8% 69%, 83% 83%, #1C2638 0%, transparent 72%),
     -webkit-radial-gradient(53% 48%, 78% 78%, #151E2D 0%, transparent 74%),
     -webkit-radial-gradient(106% 104%, 104% 104%, #080B12 0%, transparent 72%),
@@ -86,19 +86,23 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
     linear-gradient(180deg, #0D131F 0%, #1C2638 56%, #080B12 100%);
 }
 /* A fixed two-pixel ordered dither keeps the broad gradients from banding on older TV panels. */
-#sky .horizon::before, #sky .horizon::after { content: ''; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
-#sky .horizon::before {
+.hz::before, .hz::after, #sky .horizon::before, #sky .horizon::after { content: ''; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.hz::before, #sky .horizon::before {
   background: -webkit-repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px);
   background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.004) 0, rgba(255, 255, 255, 0.004) 1px, rgba(0, 0, 0, 0.004) 1px, rgba(0, 0, 0, 0.004) 2px);
 }
-#sky #horizonDay::after {
+.hz-day::after, #sky #horizonDay::after {
   background: -webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%);
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.12) 100%);
 }
-#sky #horizonNight::after {
+.hz-night::after, #sky #horizonNight::after {
   background: -webkit-radial-gradient(center, ellipse, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%);
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.18) 100%);
 }
+/* The same Frosted Horizon on its own (the intro, the lock): day by day, its twilight at night. */
+.hz { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.hz-night, .night .hz-day { opacity: 0; }
+.night .hz-night { opacity: 1; }
 #sky .photo {
   position: absolute;
   left: 0;
@@ -542,7 +546,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 
 .sheet {
-  background: rgba(0, 0, 0, 0.66);
+  background: rgba(22, 33, 45, 0.42);
   color: #FFF;
   opacity: 0;
   visibility: hidden;
@@ -679,6 +683,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .tab-home #quotes, .tab-welly #quotes { opacity: 0; }
 /* Home and Welly over the art: home.js darkens it as the tabs swap (TAB_SWAP). */
 #sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; opacity: 0; }
+/* Over the profile's wallpaper (Frosted Horizon), Home and Welly tint it slate so its colours stay. */
+.profile-background #sky .shade { background: #16212D; }
 /* Above the TV tab's layer, under the dimmer that Control Center brings. The tabs slide in and out (home.js). */
 #house, #welly, #tabs { z-index: 1; }
 #house, #welly { opacity: 0; visibility: hidden; color: #FFF; }

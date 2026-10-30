@@ -168,6 +168,8 @@ public class SettingsActivity extends Activity {
 
         private final SettingsActivity activity;
         private final Scene scene = new Scene();
+        /** A slate tint over the Frosted Horizon, so the white text stays clear on the bright day sky (web: .sheet). */
+        private final Paint tint = new Paint();
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Spring[] pop = new Spring[12];
         private final List<String> appPkgs = new ArrayList<>(), appLabels = new ArrayList<>();
@@ -260,6 +262,9 @@ public class SettingsActivity extends Activity {
             Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
             scene.setMotion(0.5f, 0.2f);
             scene.applyPalette();
+            boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(a).isNight(System.currentTimeMillis()));
+            scene.setHorizon(dark);
+            tint.setColor(dark ? 0x2616212D : 0x5716212D);
             setFocusable(true);
             setContentDescription(Ui.tr("mahitTV Settings"));
             // TalkBack: one item per row, id = row + 1.
@@ -492,6 +497,7 @@ public class SettingsActivity extends Activity {
                 scene.advance(seconds);
             }
             scene.drawBackground(c);
+            c.drawRect(0, 0, w, h, tint);
 
             // On the left: big symbol, title, description.
             float cx = 500 * k;

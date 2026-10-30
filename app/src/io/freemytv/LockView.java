@@ -19,11 +19,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §3): the gate over the home screen. The blurred backdrop, a card per
+ * "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §3): the gate over the home screen. The Frosted Horizon, a card per
  * profile (a squircle with the avatar), the focused one grown 1.18× with a specular ring (gold for the manager) and its
  * name and lock glyph lit. Guest goes straight in; a profile with a PIN glides to the centre over a Liquid Glass PIN
  * pad (four dots, a 0–9 row, the remote's number keys). Wrong: the dots shake and clear; right: they pulse gold and the
  * avatar flies into the status pill. Back does nothing on the cards (it's the gate); on the PIN pad it goes back to them.
+ * By day its text is dark over the bright Horizon, at night white over its twilight (as web/lock.css).
  * Everything is measured in show()/onSizeChanged; frames only move springs (no allocation in doFrame or onDraw).
  */
 final class LockView extends View implements Choreographer.FrameCallback {
@@ -43,7 +44,9 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private static final float CARD = 240, CARD_GAP = 96, CARD_Y = 560, FOCUS_GROW = 0.18f;
     private static final float PIN_AVATAR_Y = 300, PIN_AVATAR_SCALE = 0.72f;
     private static final float HUD_W = 1060, HUD_TOP = 520, HUD_H = 300, KEY = 72, KEY_GAP = 14;
-    private static final int GOLD = 0xFFF5D061, INK = 0xFF1C1C1E;
+    private static final int GOLD = 0xFFF5D061, INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;
+    /** A faint frost over the Horizon: lighter by day, a little deeper at night. */
+    private static final int VEIL_DAY = 0x1AFFFFFF, VEIL_NIGHT = 0x24000000;
     private static final int[] GOLD_RING = {0xFFFFF3B0, 0xFFF5D061, 0xFFD4AF37, 0xFFF5D061};
 
     private final Activity activity;
@@ -64,7 +67,8 @@ final class LockView extends View implements Choreographer.FrameCallback {
 
     private int mode = CARDS, index, keyIndex, selected = -1, entered, shakeStep;
     private final char[] digits = new char[4];
-    private boolean busy, posted, switching, zoomOut;
+    private boolean busy, posted, switching, zoomOut, night = true;
+    private Bitmap horizon;
     private long lastNanos;
     private String header = "", pinHeader = "", waitText;
     private final String[] keyLabels = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ""};
@@ -101,6 +105,11 @@ final class LockView extends View implements Choreographer.FrameCallback {
      * With `on` (Control Center's profiles row) it opens straight on that profile's PIN pad, and Back there cancels.
      */
     void show(boolean fromIntro, ProfileManager.Profile on) {
+        boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(getContext()).isNight(System.currentTimeMillis()));
+        if (dark != night || horizon == null) {
+            night = dark;
+            theme();
+        }
         profiles = ProfileManager.all(getContext());
         measureProfiles();
         removeCallbacks(waitTick);
@@ -401,7 +410,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         setPivotX(w / 2);
         setPivotY(h / 2);
         screen.set(0, 0, w, h);
-        scrim.setShader(new LinearGradient(0, 0, 0, h, new int[] {0x8C000000, 0x59000000, 0xB3000000}, null, Shader.TileMode.CLAMP));
         headerPaint = Ui.text(Ui.displaySemibold, 57 * k, 0xFFFFFFFF);
         headerPaint.setTextAlign(Paint.Align.CENTER);
         headerPaint.setShadowLayer(24 * k, 0, 2 * k, 0x66000000);
@@ -412,6 +420,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
         keyText.setTextAlign(Paint.Align.CENTER);
         waitPaint = Ui.text(Ui.medium, 26 * k, 0xD9FFFFFF);
         waitPaint.setTextAlign(Paint.Align.CENTER);
+        theme();
         int s = Math.max(8, Math.round(360 * k));
         shadow = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -427,6 +436,20 @@ final class LockView extends View implements Choreographer.FrameCallback {
         deleteGlyph.close();
         Symbols.warm(getContext(), "lock", 22 * k);
         measureProfiles();
+    }
+
+    /** The Horizon for this size and theme, and the text in its colours: dark by day, white at night. */
+    private void theme() {
+        if (w == 0 || headerPaint == null) return;
+        horizon = Horizon.get((int) w, (int) h, night);
+        int text = night ? WHITE : INK;
+        headerPaint.setColor(text);
+        headerPaint.setShadowLayer(24 * k, 0, 2 * k, night ? 0x66000000 : 0x40FFFFFF);
+        namePaint.setColor(text);
+        namePaint.setShadowLayer(16 * k, 0, 1 * k, night ? 0x80000000 : 0x4DFFFFFF);
+        keyText.setColor(text);
+        waitPaint.setColor(Ui.alpha(text, 0.85f));
+        scrim.setColor(night ? VEIL_NIGHT : VEIL_DAY);
     }
 
     /** Cards, avatars, names and the ring's gradient for the current list (show() and a size change). */
@@ -525,21 +548,12 @@ final class LockView extends View implements Choreographer.FrameCallback {
         return selected >= 0 && selected < profiles.size() && (mode != CARDS || pv > 0.001f);
     }
 
-    /** The blurred backdrop (the home's frost: its photo or aerial, already soft), darkened; or the aurora. */
+    /** The Frosted Horizon (day or twilight) and a faint frost over it. */
     private void drawBackdrop(Canvas c, float alpha) {
         if (alpha <= 0.004f) return;
-        Bitmap frost = scene.frostImage();
-        if (frost != null) {
-            frostPaint.setAlpha(Math.round(255 * alpha));
-            c.drawBitmap(frost, null, screen, frostPaint);
-        } else if (alpha >= 0.999f) {
-            scene.drawBackground(c);
-        } else {
-            int save = c.saveLayerAlpha(screen, Math.round(255 * alpha));
-            scene.drawBackground(c);
-            c.restoreToCount(save);
-        }
-        scrim.setAlpha(Math.round(255 * alpha));
+        Horizon.draw(c, horizon, screen, frostPaint, alpha);
+        scrim.setColor(night ? VEIL_NIGHT : VEIL_DAY);
+        scrim.setAlpha(Math.round((scrim.getColor() >>> 24) * alpha));
         c.drawRect(screen, scrim);
     }
 
@@ -576,7 +590,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
         namePaint.setAlpha(255);
         if (pins[i] && f > 0.01f) {
             int a = Math.round(255 * f * alpha * 0.85f);
-            Symbols.draw(getContext(), c, "lock", cx + nameW[i] / 2 + 22 * k, y - Ui.cap(namePaint) / 2, 22 * k, (a << 24) | 0xFFFFFF);
+            Symbols.draw(getContext(), c, "lock", cx + nameW[i] / 2 + 22 * k, y - Ui.cap(namePaint) / 2, 22 * k, (a << 24) | ((night ? WHITE : INK) & 0xFFFFFF));
         }
     }
 
@@ -606,11 +620,11 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private void drawPad(Canvas c, float alpha) {
         float top = HUD_TOP * k + 40 * k * (1 - Ui.clamp(pin.value));
         hud.set(w / 2 - HUD_W * k / 2, top, w / 2 + HUD_W * k / 2, top + HUD_H * k);
-        scene.glass(c, hud, 56 * k, 0xFF1C1C22, 0.42f, 0xFFFFFFFF, 0.06f, 0.04f, 1, alpha);
+        scene.glass(c, hud, 56 * k, night ? 0xFF1C1C22 : WHITE, night ? 0.42f : 0.5f, WHITE, 0.06f, 0.04f, 1, alpha);
 
         // Dots (they shake together on a wrong PIN; each pops as its digit comes; gold when right).
         float dy = hud.top + 88 * k, gap = 64 * k, x0 = w / 2 - gap * 1.5f + shake.value * k;
-        int ink = blend(0xFFFFFFFF, GOLD, Ui.clamp(gold.value));
+        int text = night ? WHITE : INK, ink = blend(text, GOLD, Ui.clamp(gold.value));
         for (int i = 0; i < 4; i++) {
             float r = 13 * k * dotPop[i].value, x = x0 + i * gap;
             if (i < entered || busy && gold.target == 1) {
@@ -619,7 +633,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
             } else {
                 dot.setStyle(Paint.Style.STROKE);
                 dot.setStrokeWidth(3 * k);
-                dot.setColor(0xB3FFFFFF);
+                dot.setColor(night ? 0xB3FFFFFF : 0x991C1C1E);
             }
             dot.setAlpha(Math.round((dot.getColor() >>> 24) * alpha));
             c.drawCircle(x, dy, r, dot);
@@ -632,19 +646,20 @@ final class LockView extends View implements Choreographer.FrameCallback {
         for (int i = 0; i < KEYS; i++) {
             float f = Ui.clamp(keyFocus[i].value), x = kx0 + i * step + (i == keyIndex ? bump : 0);
             float r = key / 2 * (1 + FOCUS_GROW * keyFocus[i].value - 0.06f * keyPress.value * f);
-            keyFill.setColor(blend(0x26FFFFFF, 0xFFFFFFFF, f));
+            // tvOS's focused key: white with dark ink at night, dark with white ink over the day Horizon.
+            keyFill.setColor(blend(night ? 0x26FFFFFF : 0x73FFFFFF, night ? WHITE : INK, f));
             keyFill.setAlpha(Math.round((keyFill.getColor() >>> 24) * alpha));
             c.drawCircle(x, ky, r, keyFill);
-            int text = blend(0xFFFFFFFF, INK, f);
+            int keyInk = blend(text, night ? INK : WHITE, f);
             if (i == DELETE) {
-                keyFill.setColor(text);
+                keyFill.setColor(keyInk);
                 keyFill.setAlpha(Math.round(255 * alpha));
                 c.save();
                 c.translate(x, ky);
                 c.drawPath(deleteGlyph, keyFill);
                 c.restore();
             } else {
-                keyText.setColor(text);
+                keyText.setColor(keyInk);
                 keyText.setAlpha(Math.round(255 * alpha));
                 c.drawText(keyLabels[i], x, ky + half, keyText);
             }

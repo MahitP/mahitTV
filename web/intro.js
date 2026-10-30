@@ -1,5 +1,5 @@
 /*
- * The golden mahitTV intro (MAHITTV-PROFILES-SPEC.md §2): an obsidian screen, the wordmark in brushed gold with one
+ * The golden mahitTV intro (MAHITTV-PROFILES-SPEC.md §2): the Frosted Horizon, the wordmark in brushed gold with one
  * specular sweep, gold sparks rising with depth blur, and a quiet C–E–G chime. It ends by dissolving into the lock.
  * OK or Back skips it. Startup animation off, reduce motion or an old TV (lite): the wordmark alone, a quick fade.
  */
@@ -21,8 +21,10 @@ var Intro = (function () {
     font: 150,
     weight: 700,
     word: 'mahitTV',
-    background: '#0A0A0C',
-    gold: ['#D4AF37', '#F5D061', '#FFF3B0', '#D4AF37'],
+    gold: ['#D4AF37', '#F5D061', '#FFF3B0', '#D4AF37'],         // over the night Horizon
+    goldDay: ['#9C6F17', '#C9962E', '#E0B54E', '#9C6F17'],      // deeper, over the bright day Horizon
+    sweep: [0.85, 0.5],          // the specular band's strength, by night and by day
+    shadowDay: 'rgba(70, 50, 12, 0.32)',                        // under the word by day
     brush: 220,          // faint horizontal strokes in the gold
     sparks: 48,
     rise: [70, 190],     // px/s, far to near
@@ -32,7 +34,7 @@ var Intro = (function () {
     chime: {notes: [523.25, 659.25, 783.99], gap: 0.11, length: 1.2, volume: 0.06}
   };
 
-  var layer = null, canvas = null, ctx = null, word = null, wctx = null, goldTex = null, sharp = null, soft = null;
+  var layer = null, canvas = null, ctx = null, word = null, wctx = null, goldTex = null, sharp = null, soft = null, shade = null;
   var sparks = [], start = 0, endStart = 0, endFor = 0, done = null, running = false, still = false, frame = 0;
 
   function make(w, h) {
@@ -43,9 +45,9 @@ var Intro = (function () {
   }
 
   /** The brushed gold: the four-stop gradient with faint horizontal strokes, made once. */
-  function makeGold(w, h) {
+  function makeGold(w, h, gold) {
     var c = make(w, h), g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, w, h * 0.6);
-    for (var i = 0; i < INTRO.gold.length; i++) grad.addColorStop(i / (INTRO.gold.length - 1), INTRO.gold[i]);
+    for (var i = 0; i < gold.length; i++) grad.addColorStop(i / (gold.length - 1), gold[i]);
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
     for (var s = 0; s < INTRO.brush; s++) {
@@ -57,10 +59,33 @@ var Intro = (function () {
     return c;
   }
 
-  /** A spark: a bright core (in focus) or a soft disc (out of focus). */
-  function makeSpark(blurred) {
+  /** The word's soft shadow by day, made once: only the shadow of text drawn off the canvas. */
+  function makeShade(w, h) {
+    var c = make(w, h), g = c.getContext('2d');
+    g.font = INTRO.weight + ' ' + INTRO.font + 'px Inter, "Helvetica Neue", Arial, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.shadowColor = INTRO.shadowDay;
+    g.shadowBlur = 28;
+    g.shadowOffsetX = 4000;
+    g.shadowOffsetY = 10;
+    g.fillText(INTRO.word, w / 2 - 4000, h / 2);
+    return c;
+  }
+
+  /** A spark: a bright core (in focus) or a soft disc (out of focus); amber by day, so it shows on the bright sky. */
+  function makeSpark(blurred, day) {
     var c = make(64, 64), g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    if (blurred) {
+    if (day && blurred) {
+      grad.addColorStop(0, 'rgba(214, 160, 52, 0.5)');
+      grad.addColorStop(0.55, 'rgba(196, 140, 34, 0.28)');
+      grad.addColorStop(1, 'rgba(176, 122, 22, 0)');
+    } else if (day) {
+      grad.addColorStop(0, 'rgba(255, 244, 214, 1)');
+      grad.addColorStop(0.2, 'rgba(222, 165, 48, 0.95)');
+      grad.addColorStop(0.5, 'rgba(176, 122, 22, 0.4)');
+      grad.addColorStop(1, 'rgba(176, 122, 22, 0)');
+    } else if (blurred) {
       grad.addColorStop(0, 'rgba(255, 228, 140, 0.55)');
       grad.addColorStop(0.55, 'rgba(245, 208, 97, 0.32)');
       grad.addColorStop(1, 'rgba(212, 175, 55, 0)');
@@ -153,7 +178,7 @@ var Intro = (function () {
       var band = w * INTRO.sweepWidth, x = -band + (w + 2 * band) * sweep;
       var grad = wctx.createLinearGradient(x - band / 2, 0, x + band / 2, h * 0.3);
       grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-      grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.85)');
+      grad.addColorStop(0.5, 'rgba(255, 255, 255, ' + (shade ? INTRO.sweep[1] : INTRO.sweep[0]) + ')');
       grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
       wctx.globalCompositeOperation = 'source-atop';
       wctx.fillStyle = grad;
@@ -168,8 +193,7 @@ var Intro = (function () {
     if (!running) return;
     var t = now - start, dt = lastAt ? Math.min(0.05, (now - lastAt) / 1000) : 1 / 60;
     lastAt = now;
-    ctx.fillStyle = INTRO.background;
-    ctx.fillRect(0, 0, 1920, 1080);
+    ctx.clearRect(0, 0, 1920, 1080);   // the Horizon shows through
     // A warm glow behind the word.
     var glow = ctx.createRadialGradient(960, 540, 0, 960, 540, 760);
     glow.addColorStop(0, 'rgba(212, 175, 55, ' + (0.10 * ease(t / INTRO.fadeIn)) + ')');
@@ -194,6 +218,7 @@ var Intro = (function () {
     drawWord(still ? 0 : (t - INTRO.sweepAt) / INTRO.sweepFor);
     ctx.globalAlpha = a;
     var w = word.width * scale, h = word.height * scale;
+    if (shade) ctx.drawImage(shade, 960 - w / 2, 540 - h / 2, w, h);
     ctx.drawImage(word, 960 - w / 2, 540 - h / 2, w, h);
     ctx.globalAlpha = 1;
     if (!endStart && t >= (still ? INTRO.staticHold : INTRO.endAt)) end(still ? INTRO.staticFade : INTRO.fade);
@@ -237,14 +262,22 @@ var Intro = (function () {
       layer.style.webkitTransition = layer.style.transition = '';
       layer.style.opacity = '1';
       layer.style.visibility = 'visible';
+      var day = (' ' + document.body.className + ' ').indexOf(' night ') < 0;
+      var hz = document.createElement('div');
+      hz.className = 'hz hz-day';
+      layer.appendChild(hz);
+      hz = document.createElement('div');
+      hz.className = 'hz hz-night';
+      layer.appendChild(hz);
       canvas = make(1920, 1080);
       layer.appendChild(canvas);
       ctx = canvas.getContext('2d');
       word = make(1300, 280);
       wctx = word.getContext('2d');
-      goldTex = makeGold(word.width, word.height);
-      sharp = makeSpark(false);
-      soft = makeSpark(true);
+      goldTex = makeGold(word.width, word.height, day ? INTRO.goldDay : INTRO.gold);
+      shade = day ? makeShade(word.width, word.height) : null;
+      sharp = makeSpark(false, day);
+      soft = makeSpark(true, day);
       sparks = [];
       var lite = (' ' + document.documentElement.className + ' ').indexOf(' lite ') >= 0;
       if (!still && !lite) for (var i = 0; i < INTRO.sparks; i++) sparks.push(spark(true));

@@ -18,7 +18,8 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * mahitTV's golden intro (MAHITTV-PROFILES-SPEC.md §2): the wordmark in brushed gold on obsidian, one specular sweep,
+ * mahitTV's golden intro (MAHITTV-PROFILES-SPEC.md §2): the wordmark in brushed gold on the Frosted Horizon (deeper
+ * gold and amber sparks by day, so they show on the bright sky; web/intro.js does the same), one specular sweep,
  * gold sparks rising with depth blur and a warm chord; then it dissolves into "Who's Watching?". OK or Back skips.
  * Reduce motion (animations off): a still wordmark and a quick fade. Android 8–11: no sparks.
  * Everything is made in onSizeChanged; a frame only moves numbers (no allocation in doFrame or onDraw).
@@ -39,18 +40,20 @@ final class Intro extends View implements Choreographer.FrameCallback {
     /** Wordmark: text, size (1080p px) and how far above the centre it sits. */
     static final String INTRO_WORDMARK = "mahitTV";
     static final float INTRO_WORDMARK_SIZE = 150, INTRO_WORDMARK_LIFT = 10, INTRO_WORDMARK_TRACKING = -0.02f;
-    /** Brushed gold, top to bottom, and the glow behind the letters. */
+    /** Brushed gold, top to bottom, over the twilight Horizon and (deeper) over the day one; the glow behind the letters. */
     static final int[] INTRO_GOLD = {0xFFD4AF37, 0xFFF5D061, 0xFFFFF3B0, 0xFFD4AF37};
+    static final int[] INTRO_GOLD_DAY = {0xFF9C6F17, 0xFFC9962E, 0xFFE0B54E, 0xFF9C6F17};
     static final float[] INTRO_GOLD_STOPS = {0f, 0.38f, 0.55f, 1f};
-    static final int INTRO_GLOW = 0x66D4AF37;
+    /** At night a gold glow; by day a soft brown shadow that lifts the letters off the bright sky. */
+    static final int INTRO_GLOW = 0x66D4AF37, INTRO_GLOW_DAY = 0x52463208;
     static final float INTRO_GLOW_RADIUS = 36;
-    /** Obsidian: the centre and the edges. */
-    static final int INTRO_BG_CENTER = 0xFF15130F, INTRO_BG_EDGE = 0xFF030303;
+    /** The sweep's strength at night and by day. */
+    static final int INTRO_SWEEP = 0xD9FFFFFF, INTRO_SWEEP_DAY = 0x80FFFFFF;
     /** Sparks: how many, their rise (px/s at depth 1), size range (px), sway, and the depth under which they're bokeh. */
     static final int INTRO_SPARKS = 48;
     static final float INTRO_RISE = 120, INTRO_SPARK_MIN = 2.5f, INTRO_SPARK_MAX = 6f, INTRO_SWAY = 18;
     static final float INTRO_BOKEH_DEPTH = 0.45f, INTRO_BOKEH_SCALE = 5f;
-    static final int INTRO_SPARK_COLOR = 0xFFF5D061;
+    static final int INTRO_SPARK_COLOR = 0xFFF5D061, INTRO_SPARK_COLOR_DAY = 0xFFC8901E;
 
     interface Listener {
         /** The dissolve starts: the lock should come in under the intro now. */
@@ -61,18 +64,19 @@ final class Intro extends View implements Choreographer.FrameCallback {
     }
 
     private final Listener listener;
-    private boolean running, endingSent, reduced, sparks;
+    private boolean running, endingSent, reduced, sparks, night = true;
     private long startNanos;
     private float t, endAt, duration, alpha = 1;
     private float w, h, k = 1;
 
-    private final Paint bg = new Paint(), gold = new Paint(Paint.ANTI_ALIAS_FLAG), glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint horizonPaint = new Paint(Paint.FILTER_BITMAP_FLAG), gold = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sweep = new Paint(Paint.ANTI_ALIAS_FLAG), dot = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bokehPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Matrix sweepMatrix = new Matrix();
-    private final RectF rect = new RectF();
+    private final RectF rect = new RectF(), screen = new RectF();
     private float wordW, wordX, wordY, wordCap;
-    private Bitmap bokeh;
+    private Bitmap bokeh, horizon;
     private Typeface face;
 
     private final float[] sx = new float[INTRO_SPARKS], sy = new float[INTRO_SPARKS], sz = new float[INTRO_SPARKS];
@@ -108,6 +112,11 @@ final class Intro extends View implements Choreographer.FrameCallback {
 
     /** Plays the intro from the start. */
     void start() {
+        boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(getContext()).isNight(System.currentTimeMillis()));
+        if (dark != night || horizon == null) {
+            night = dark;
+            theme();
+        }
         reduced = Spring.instant;
         sparks = !reduced && !Ui.LEGACY;
         duration = reduced ? INTRO_DURATION_REDUCED : INTRO_DURATION;
@@ -181,7 +190,7 @@ final class Intro extends View implements Choreographer.FrameCallback {
         w = width;
         h = height;
         k = w / 1920f;
-        bg.setShader(new RadialGradient(w / 2, h / 2, Math.max(w, h) * 0.62f, INTRO_BG_CENTER, INTRO_BG_EDGE, Shader.TileMode.CLAMP));
+        screen.set(0, 0, w, h);
         gold.setTypeface(face);
         gold.setTextSize(INTRO_WORDMARK_SIZE * k);
         gold.setLetterSpacing(INTRO_WORDMARK_TRACKING);
@@ -190,28 +199,38 @@ final class Intro extends View implements Choreographer.FrameCallback {
         wordCap = Ui.cap(gold);
         wordX = (w - wordW) / 2;
         wordY = h / 2 + wordCap / 2 - INTRO_WORDMARK_LIFT * k;
-        gold.setShader(new LinearGradient(0, wordY - wordCap, 0, wordY + wordCap * 0.08f, INTRO_GOLD, INTRO_GOLD_STOPS, Shader.TileMode.CLAMP));
+        theme();
+    }
+
+    /** The Horizon, the gold, its glow, the sweep and the sparks for this size and the time of day (start, a resize). */
+    private void theme() {
+        if (w == 0) return;
+        horizon = Horizon.get((int) w, (int) h, night);
+        gold.setShader(new LinearGradient(0, wordY - wordCap, 0, wordY + wordCap * 0.08f, night ? INTRO_GOLD : INTRO_GOLD_DAY,
+                INTRO_GOLD_STOPS, Shader.TileMode.CLAMP));
         // The glow: the letters in plain gold with a soft shadow, under the gradient letters that cover them.
         glow.set(gold);
         glow.setShader(null);
-        glow.setColor(INTRO_GOLD[0]);
-        glow.setShadowLayer(INTRO_GLOW_RADIUS * k, 0, 0, INTRO_GLOW);
+        glow.setColor(night ? INTRO_GOLD[0] : INTRO_GOLD_DAY[0]);
+        glow.setShadowLayer(INTRO_GLOW_RADIUS * k, 0, night ? 0 : 8 * k, night ? INTRO_GLOW : INTRO_GLOW_DAY);
         sweep.set(gold);
         float band = wordW * INTRO_SWEEP_WIDTH;
         // A band at the origin, moved along by its local matrix (no new shader per frame).
         sweep.setShader(new LinearGradient(-band / 2, 0, band / 2, band * 0.35f,
-                new int[] {0x00FFFFFF, 0xD9FFFFFF, 0x00FFFFFF}, new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+                new int[] {0x00FFFFFF, night ? INTRO_SWEEP : INTRO_SWEEP_DAY, 0x00FFFFFF}, new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        int spark = night ? INTRO_SPARK_COLOR : INTRO_SPARK_COLOR_DAY;
         int b = Math.max(8, Math.round(48 * k));
-        bokeh = Bitmap.createBitmap(b, b, Bitmap.Config.ARGB_8888);
+        if (bokeh == null || bokeh.getWidth() != b) bokeh = Bitmap.createBitmap(b, b, Bitmap.Config.ARGB_8888);
+        bokeh.eraseColor(0);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setShader(new RadialGradient(b / 2f, b / 2f, b / 2f, new int[] {INTRO_SPARK_COLOR, Ui.alpha(INTRO_SPARK_COLOR, 0.35f), 0x00000000},
+        p.setShader(new RadialGradient(b / 2f, b / 2f, b / 2f, new int[] {spark, Ui.alpha(spark, 0.35f), 0x00000000},
                 new float[] {0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
         new Canvas(bokeh).drawCircle(b / 2f, b / 2f, b / 2f, p);
-        dot.setColor(INTRO_SPARK_COLOR);
+        dot.setColor(spark);
     }
 
     @Override protected void onDraw(Canvas c) {
-        c.drawRect(0, 0, w, h, bg);
+        Horizon.draw(c, horizon, screen, horizonPaint, 1);
         if (sparks) drawSparks(c);
         float in = reduced ? 1 : Ui.clamp(t / INTRO_FADE_IN);
         float ease = in * in * (3 - 2 * in);
