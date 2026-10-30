@@ -351,13 +351,13 @@ final class HomeMode {
     private static void applyFree(Context c) {
         JSONObject s = state(c);
         if (AMAZON) {
-            done(c, Ui.tr("On Fire TV the Home button belongs to Amazon's home screen. Free My TV stays an app here: open it from your apps."));
+            done(c, Ui.tr("On Fire TV the Home button belongs to Amazon's home screen. mahitTV stays an app here: open it from your apps."));
             return;
         }
         // Kalley 43G200 turns Google TV's setup app back on at every start: without its home screen the next start
         // looped at the logo, and that TV only came back with a USB reflash (CleanYourTV, examples/kalley-43g200).
         if ("R3_GTV".equals(Build.DEVICE)) {
-            done(c, Ui.tr("On this TV model, switching the home screen kept a TV from starting. Free My TV stays an app here: open it from your apps."));
+            done(c, Ui.tr("On this TV model, switching the home screen kept a TV from starting. mahitTV stays an app here: open it from your apps."));
             return;
         }
         try (Adb adb = connect(c, s)) {
@@ -467,14 +467,14 @@ final class HomeMode {
                     AppLog.w("remote buttons service: " + e.getMessage());
                 }
             }
-            notice(c, Ui.trf("Free My TV is on: new home screen and screensaver, {n} apps turned off.", "n", disabled.size()));
-            busy(c, Ui.tr("Measuring Free My TV…"));
+            notice(c, Ui.trf("mahitTV is on: new home screen and screensaver, {n} apps turned off.", "n", disabled.size()));
+            busy(c, Ui.tr("Measuring mahitTV…"));
             measureHomeTime(c, adb, FREE);
             done(c, null);
             adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
             ModeJob.schedule(c, ModeJob.MEMORY, FREE, 120_000);
         } catch (Exception e) {
-            done(c, Ui.trf("Couldn't turn on Free My TV: {error}", "error", e.getMessage()));
+            done(c, Ui.trf("Couldn't turn on mahitTV: {error}", "error", e.getMessage()));
         }
     }
 
@@ -639,7 +639,7 @@ final class HomeMode {
                 }
                 s.put("homeReverted", true).put("disabled", kept);
                 save(app, s);
-                notice(app, Ui.tr("Free My TV's home screen crashed 3 times in a row; I switched back to the original one."));
+                notice(app, Ui.tr("mahitTV's home screen crashed 3 times in a row; I switched back to the original one."));
                 adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
             } catch (Exception e) {
                 AppLog.w("could not give the home screen back: " + e.getMessage());
@@ -780,14 +780,14 @@ final class HomeMode {
                 latest.put("disabled", new JSONArray(sorted(disabled)));
                 save(app, latest);
             } catch (Exception e) {
-                notice(app, Ui.trf("Couldn't check Free My TV: {error}", "error", e.getMessage()));
+                notice(app, Ui.trf("Couldn't check mahitTV: {error}", "error", e.getMessage()));
                 return;
             }
             if (!fixed.isEmpty()) {
                 notice(app, updated ? Ui.trf("The TV update turned back on {list}.", "list", String.join(", ", fixed))
                         : Ui.trf("Turned off what was missing: {list}.", "list", String.join(", ", fixed)));
             } else if (updated) {
-                notice(app, Ui.tr("The TV was updated; Free My TV is still on."));
+                notice(app, Ui.tr("The TV was updated; mahitTV is still on."));
             }
         }
     }
