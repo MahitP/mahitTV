@@ -51,13 +51,15 @@ final class WallpaperPicker {
     private final Saver saver;
     private final Releaser releaser;
     private String[] categories = new String[0], options = new String[0];
-    private int category, option, loadGeneration;
+    private int category, option;
+    // Written on the UI thread and read by AerialCache's worker before it decodes a bitmap.
+    private volatile int loadGeneration;
     private boolean optionsPane;
     private Preview preview = Preview.HORIZON;
     private String status = "Frosted Horizon";
     private Object image;
     private DrawData draw;
-    private boolean closed;
+    private volatile boolean closed;
 
     WallpaperPicker(Loader loader, Saver saver, Releaser releaser) { this(DEFAULT, loader, saver, releaser); }
     WallpaperPicker(Catalogue catalogue, Loader loader, Saver saver, Releaser releaser) {

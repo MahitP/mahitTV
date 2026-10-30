@@ -39,6 +39,7 @@ public final class WallpaperPickerTest {
         WallpaperPicker.Callback beforeClose = loader.last();
         int released = loader.released;
         picker.close();
+        no(beforeClose.current(), "close publishes cancellation to queued preview callbacks");
         loader.ready(beforeClose, closedImage);
         same(null, picker.draw().image, "closed picker ignores a late preview");
         equal(released + 1, loader.released, "closed picker relinquishes late preview");
@@ -92,4 +93,5 @@ public final class WallpaperPickerTest {
     private static void equal(Object want, Object got, String message) { checks++; if (!want.equals(got)) throw new AssertionError(message + ": wanted " + want + ", got " + got); }
     private static void equal(int want, int got, String message) { checks++; if (want != got) throw new AssertionError(message + ": wanted " + want + ", got " + got); }
     private static void same(Object want, Object got, String message) { checks++; if (want != got) throw new AssertionError(message); }
+    private static void no(boolean value, String message) { checks++; if (value) throw new AssertionError(message); }
 }
