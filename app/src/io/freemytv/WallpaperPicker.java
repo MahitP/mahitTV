@@ -56,7 +56,7 @@ final class WallpaperPicker {
     private volatile int loadGeneration;
     private boolean optionsPane;
     private Preview preview = Preview.HORIZON;
-    private String status = "Unavailable — showing Frosted Horizon";
+    private String status = "";
     private Object image;
     private DrawData draw;
     private volatile boolean closed;
@@ -101,7 +101,7 @@ final class WallpaperPicker {
         loadGeneration++;
         releaseImage();
         preview = Preview.HORIZON;
-        status = "Unavailable — showing Frosted Horizon";
+        status = "";
         rebuild();
     }
     void optionsPane(boolean value) { if (optionsPane != value) { optionsPane = value; refresh(); } }
@@ -116,7 +116,7 @@ final class WallpaperPicker {
         final int generation = ++loadGeneration;
         if (aerial == null) {
             preview = "live:aerial".equals(selected) ? Preview.LIVE_FALLBACK : Preview.HORIZON;
-            status = "Unavailable — showing Frosted Horizon";
+            status = "live:aerial".equals(selected) ? "Unavailable — showing Frosted Horizon" : "";
         } else {
             preview = "live:aerial".equals(selected) ? Preview.LIVE_LOADING : Preview.LOADING;
             status = "Downloading…";

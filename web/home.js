@@ -1651,6 +1651,8 @@
     return id === 'horizon' ? tr('Apple Frosted Horizon') : id === 'aerial' ? tr('Apple 4K Aerials') : id === 'studio' ? tr('Apple Studio Solids') : tr('Live Aerial Screensaver');
   }
 
+  var wallpaperPreviewGeneration = 0;
+
   function renderWallpaperPicker() {
     var box = $('wallpaperpick').firstChild, categories = Wallpaper.categories(), category = categories[st.wallpaperCategory], options = Wallpaper.options(category);
     box.innerHTML = '';
@@ -1658,10 +1660,20 @@
     var panes = el('div', 'panes', box), left = el('div', 'categories', panes), right = el('div', 'options', panes);
     for (var i = 0; i < categories.length; i++) el('div', 'row', left, wallpaperCategoryName(categories[i]));
     for (i = 0; i < options.length; i++) el('div', 'row', right, wallpaperName(options[i]));
-    var preview = el('div', 'preview', panes), chosen = options[st.wallpaperOption], aerial = Wallpaper['find'](chosen), solid;
-    if (aerial) { preview.style.backgroundImage = 'url(' + aerial.preview + ')'; el('div', 'status', preview, tr('Downloading…')); }
+    var preview = el('div', 'preview', panes), chosen = options[st.wallpaperOption], aerial = chosen === 'live:aerial' ? Wallpaper.liveAerial(Math.floor(Date.now() / 86400000)) : Wallpaper['find'](chosen), solid, generation = ++wallpaperPreviewGeneration;
+    if (aerial) {
+      var live = chosen === 'live:aerial', status;
+      preview.style.backgroundImage = 'url(' + aerial.preview + ')'; status = el('div', 'status', preview, tr('Downloading…'));
+      var probe = new Image();
+      probe.onload = function () {
+        if (generation !== wallpaperPreviewGeneration) return;
+        status.textContent = live ? tr('Live Aerial preview ready') : tr('Aerial preview ready');
+      };
+      probe.onerror = function () { if (generation === wallpaperPreviewGeneration) { preview.style.backgroundImage = ''; preview.className += ' horizon'; status.textContent = tr('Unavailable — showing Frosted Horizon'); } };
+      probe.src = aerial.preview;
+    }
     else if (chosen.indexOf('studio:') === 0) { for (i = 0; i < Wallpaper.solids.length; i++) if (Wallpaper.solids[i].id === chosen) solid = Wallpaper.solids[i]; preview.style.background = solid ? solid.color : '#B8C7D6'; }
-    else { preview.className += ' horizon'; el('div', 'status', preview, tr('Unavailable — showing Frosted Horizon')); }
+    else { preview.className += ' horizon'; }
     el('div', 'hint', box, tr('OK selects immediately. Back keeps your choice.'));
   }
 

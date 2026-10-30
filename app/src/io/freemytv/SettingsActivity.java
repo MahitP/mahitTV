@@ -2163,6 +2163,8 @@ public class SettingsActivity extends Activity {
 
         private static String wallpaperStatus(String status) {
             if ("Downloading…".equals(status)) return Ui.tr("Downloading…");
+            if ("Aerial preview ready".equals(status)) return Ui.tr("Aerial preview ready");
+            if ("Live Aerial preview ready".equals(status)) return Ui.tr("Live Aerial preview ready");
             if ("Unavailable — showing Frosted Horizon".equals(status)) return Ui.tr("Unavailable — showing Frosted Horizon");
             return status;
         }

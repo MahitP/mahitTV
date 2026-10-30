@@ -31,6 +31,50 @@ function profile(page, zone, app) {
   await page.addInitScript(function () { localStorage.clear(); });
   await page.goto('http://127.0.0.1:' + server.address().port + '/index.html?nolock');
   await page.waitForTimeout(900);
+  var pickerStatus = async function (category, option) {
+    return page.evaluate(function (selection) {
+      Home.previewWallpaperPicker(selection.category, selection.option);
+      var preview = document.querySelector('#wallpaperpick .preview');
+      var status = preview.querySelector('.status');
+      return {status: status ? status.textContent : '', background: preview.style.backgroundImage, horizon: preview.className.indexOf('horizon') >= 0};
+    }, {category: category, option: option});
+  };
+  var pickerUrls = await page.evaluate(function () { return {
+    aerial: Wallpaper.find('aerial:yosemite').preview,
+    live: Wallpaper.liveAerial(Math.floor(Date.now() / 86400000)).preview
+  }; });
+  await page.route(pickerUrls.aerial, function (route) { route.fulfill({path: path.join(root, 'preview', 'art', 'long-dunes.jpg'), contentType: 'image/jpeg', headers: {'Cache-Control': 'no-store'}}); });
+  await page.route(pickerUrls.live, function (route) { route.fulfill({path: path.join(root, 'preview', 'art', 'long-dunes.jpg'), contentType: 'image/jpeg', headers: {'Cache-Control': 'no-store'}}); });
+  var horizonPicker = await pickerStatus('horizon', 'horizon:auto');
+  assert.strictEqual(horizonPicker.status, '', 'actual web Horizon preview has no unavailable fallback status');
+  var studioPicker = await pickerStatus('studio', 'studio:teal');
+  assert.strictEqual(studioPicker.status, '', 'actual web Studio preview has no unavailable fallback status');
+  var aerialPicker = await pickerStatus('aerial', 'aerial:yosemite');
+  assert.strictEqual(aerialPicker.status, 'Downloading…', 'actual web aerial preview shows its loading status');
+  await page.waitForFunction(function () { return document.querySelector('#wallpaperpick .preview .status').textContent === 'Aerial preview ready'; }, undefined, {timeout: 5000});
+  var aerialReady = await page.evaluate(function () { return document.querySelector('#wallpaperpick .preview .status').textContent; });
+  assert.strictEqual(aerialReady, 'Aerial preview ready', 'actual web aerial preview reports readiness');
+  var livePicker = await pickerStatus('live', 'live:aerial');
+  assert.strictEqual(livePicker.status, 'Downloading…', 'actual web live preview shows its loading status when available');
+  await page.waitForFunction(function () { return document.querySelector('#wallpaperpick .preview .status').textContent === 'Live Aerial preview ready'; }, undefined, {timeout: 5000});
+  var liveReady = await page.evaluate(function () { return document.querySelector('#wallpaperpick .preview .status').textContent; });
+  assert.strictEqual(liveReady, 'Live Aerial preview ready', 'actual web live preview reports readiness');
+  await page.evaluate(function () {
+    window.__PickerImage = window.Image;
+    window.Image = function () {
+      var image = this;
+      Object.defineProperty(image, 'src', {set: function () { setTimeout(function () { image.onerror(); }, 0); }});
+    };
+  });
+  await pickerStatus('aerial', 'aerial:iceland');
+  await page.waitForFunction(function () { return document.querySelector('#wallpaperpick .preview .status').textContent === 'Unavailable — showing Frosted Horizon'; }, undefined, {timeout: 5000});
+  var aerialError = await page.evaluate(function () { var preview = document.querySelector('#wallpaperpick .preview'); return {horizon: preview.className.indexOf('horizon') >= 0, background: preview.style.backgroundImage}; });
+  assert.ok(aerialError.horizon && !aerialError.background, 'actual web aerial error falls back to Horizon');
+  await pickerStatus('live', 'live:aerial');
+  await page.waitForFunction(function () { return document.querySelector('#wallpaperpick .preview .status').textContent === 'Unavailable — showing Frosted Horizon'; }, undefined, {timeout: 5000});
+  var liveError = await page.evaluate(function () { var preview = document.querySelector('#wallpaperpick .preview'); return {horizon: preview.className.indexOf('horizon') >= 0, background: preview.style.backgroundImage}; });
+  assert.ok(liveError.horizon && !liveError.background, 'actual web live error falls back to Horizon');
+  await page.evaluate(function () { window.Image = window.__PickerImage; delete window.__PickerImage; });
   await page.evaluate(function () { window.__resolveWatch = Data.resolveWatch; });
   var netflix = {id: 'netflix', title: 'Netflix'};
   var plain = {id: 'com.example.notes', title: 'Notes'};

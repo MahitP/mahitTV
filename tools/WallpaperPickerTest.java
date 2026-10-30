@@ -11,6 +11,8 @@ public final class WallpaperPickerTest {
         WallpaperPicker picker = new WallpaperPicker(catalogue, loader, id -> saved[0] = id, image -> loader.released++);
 
         picker.open("horizon:auto");
+        equal(WallpaperPicker.Preview.HORIZON, picker.draw().preview, "Horizon stays a normal preview");
+        equal("", picker.draw().status, "Horizon does not claim an unavailable fallback");
         equal(WallpaperPicker.Action.OPEN_OPTIONS, picker.ok(), "category OK opens options");
         equal("", saved[0], "category OK does not persist");
         picker.move(1);
@@ -20,17 +22,31 @@ public final class WallpaperPickerTest {
         equal(WallpaperPicker.Action.CLOSE, picker.back(), "options back returns to wallpaper row");
         equal("horizon:light", picker.selected(), "back retains the unmodified selection");
 
+        picker.open("studio:teal");
+        equal(WallpaperPicker.Preview.HORIZON, picker.draw().preview, "Studio stays a normal color preview");
+        equal("", picker.draw().status, "Studio does not claim an unavailable fallback");
+
         picker.open("aerial:yosemite");
         picker.ok();
         equal(WallpaperPicker.Preview.LOADING, picker.draw().preview, "aerial begins loading");
+        equal("Downloading…", picker.draw().status, "aerial loading status");
         loader.ready("preview");
         equal(WallpaperPicker.Preview.READY, picker.draw().preview, "aerial ready state");
+        equal("Aerial preview ready", picker.draw().status, "aerial ready status");
         loader.error();
         equal(WallpaperPicker.Preview.ERROR, picker.draw().preview, "aerial error state");
+        equal("Unavailable — showing Frosted Horizon", picker.draw().status, "aerial error states its fallback");
 
         picker.open("live:aerial");
         picker.ok();
-        equal(WallpaperPicker.Preview.LIVE_FALLBACK, picker.draw().preview, "live uses distinct Horizon fallback");
+        equal(WallpaperPicker.Preview.LIVE_LOADING, picker.draw().preview, "live begins loading");
+        equal("Downloading…", picker.draw().status, "live loading status");
+        loader.ready("live preview");
+        equal(WallpaperPicker.Preview.LIVE_READY, picker.draw().preview, "live ready state");
+        equal("Live Aerial preview ready", picker.draw().status, "live ready status");
+        loader.error();
+        equal(WallpaperPicker.Preview.LIVE_FALLBACK, picker.draw().preview, "live error uses distinct Horizon fallback");
+        equal("Unavailable — showing Frosted Horizon", picker.draw().status, "live error states its fallback");
         equal(0xffb8c7d6, picker.draw().color, "live fallback retains Horizon palette");
 
         picker.open("aerial:yosemite");
@@ -78,7 +94,7 @@ public final class WallpaperPickerTest {
                 : "aerial".equals(category) ? new String[]{"aerial:yosemite", "aerial:iceland"} : "live".equals(category) ? new String[]{"live:aerial"} : new String[]{"studio:teal"}; }
         public int color(String id) { colors++; return "studio:teal".equals(id) ? 0xff1b3b3a : 0xffb8c7d6; }
         public Wallpaper.Aerial aerial(String id) { aerials++; return id.startsWith("aerial:") ? Wallpaper.find(id) : null; }
-        public Wallpaper.Aerial live() { aerials++; return null; }
+        public Wallpaper.Aerial live() { aerials++; return Wallpaper.find("aerial:yosemite"); }
     }
 
     private static final class FakeLoader implements WallpaperPicker.Loader {
