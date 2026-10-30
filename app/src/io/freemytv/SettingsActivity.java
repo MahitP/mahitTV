@@ -35,6 +35,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.io.File;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -184,13 +185,9 @@ public class SettingsActivity extends Activity {
         private boolean hasKey;
         private int screen = MAIN, focus;
         // Dedicated two-pane wallpaper picker; unlike the generic PICKER it never shares a scroll or selection state.
-        private int wallpaperCategory, wallpaperOption;
-        private boolean wallpaperOptionsPane;
-        private final String[] wallpaperCategories = Wallpaper.categories();
-        private String[] wallpaperOptions = new String[0];
-        private Bitmap wallpaperPreviewBitmap;
-        private int wallpaperPreviewState;
-        private final Paint wallpaperPreviewPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final WallpaperPicker wallpaperPicker;
+        private final AerialCache aerialPreviewCache;
+        private String[] wallpaperCategoryLabels = new String[0], wallpaperOptionLabels = new String[0];
         private boolean running, okDown, backDown, wasBusy;
         private StaticLayout errorLayout;   // the last error, wrapped (rebuilt only when it changes)
         private Toast whyToast;   // why the focused option is unavailable
@@ -204,7 +201,7 @@ public class SettingsActivity extends Activity {
         private int w, h;
         private float k = 1;
         private Paint title, subtitle, version, rowLabel, rowValue, rowSub, header, cellLabel, cellValue, warn, spinner, white, shadow;
-        private Paint heading, hint, glass, ring, digit;
+        private Paint heading, hint, glass, ring, digit, previewPaint;
         private TextPaint notice;
 
         private final Runnable poll = new Runnable() {
@@ -241,6 +238,11 @@ public class SettingsActivity extends Activity {
         SettingsView(SettingsActivity a) {
             super(a);
             activity = a;
+            aerialPreviewCache = new AerialCache(new File(a.getCacheDir(), "aerial-previews"));
+            wallpaperPicker = new WallpaperPicker((aerial, callback) -> aerialPreviewCache.fetch(aerial.preview, file -> {
+                Bitmap bitmap = file == null ? null : BitmapFactory.decodeFile(file.getPath());
+                handler.post(() -> { if (bitmap == null) callback.error(); else callback.ready(bitmap); invalidate(); });
+            }), id -> { Prefs.setWallpaper(id); HomeData.get(getContext()).settingsChanged(); });
             for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.28f, 0.85f, 0);
             HomeData.Weather wx = HomeData.get(a).weather;
             Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
@@ -422,6 +424,7 @@ public class SettingsActivity extends Activity {
             ring.setStrokeWidth(3 * k);
             digit = Ui.numbers(Ui.medium, 34 * k, 0xF2FFFFFF);
             digit.setTextAlign(Paint.Align.CENTER);
+            previewPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         }
 
         private boolean busy() {
@@ -445,7 +448,7 @@ public class SettingsActivity extends Activity {
                 case SECTION: return Math.min(SETTINGS_VISIBLE, rows.length);
                 case PIN_PAD: return 10;
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
-                case WALLPAPER_PICKER: return wallpaperOptionsPane ? wallpaperOptions.length : 4;
+                case WALLPAPER_PICKER: return wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().options.length : wallpaperPicker.draw().categories.length;
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
                 default: return Prefs.KEYS.length;
@@ -696,7 +699,14 @@ public class SettingsActivity extends Activity {
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    if (down && screen == WALLPAPER_PICKER) { wallpaperOptionsPane = e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT; invalidate(); return true; }
+                    if (down && screen == WALLPAPER_PICKER) {
+                        wallpaperPicker.optionsPane(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT);
+                        cacheWallpaperLabels();
+                        focus = wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().option : wallpaperPicker.draw().category;
+                        invalidate();
+                        spoken.focusMoved();
+                        return true;
+                    }
                     if (down && screen == SHELF_EDIT) {
                         moveShelfApp(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
                     } else if (down && (screen == SECTION || screen == REMOTE_KEYS || screen == POWER)) {
@@ -726,6 +736,7 @@ public class SettingsActivity extends Activity {
                         if (backDown && !e.isCanceled()) {
                             armed = 0;
                             if (screen == WALLPAPER_PICKER) {
+                                wallpaperPicker.back();
                                 openSection(S_APPEARANCE, R_WALLPAPER);
                             } else if (screen == PICKER && pickFor <= PICK_SLEEP) {
                                 focus = powerFocus(pickFor == PICK_SLEEP ? P_SLEEP : P_WHERE);
@@ -2081,51 +2092,26 @@ public class SettingsActivity extends Activity {
         }
 
         private void openWallpaperPicker() {
-            String category = Wallpaper.categoryOf(Prefs.wallpaper());
-            wallpaperCategory = 0;
-            for (int i = 0; i < wallpaperCategories.length; i++) if (wallpaperCategories[i].equals(category)) wallpaperCategory = i;
-            wallpaperOptions = Wallpaper.options(wallpaperCategories[wallpaperCategory]);
-            wallpaperOption = 0;
-            for (int i = 0; i < wallpaperOptions.length; i++) if (wallpaperOptions[i].equals(Prefs.wallpaper())) wallpaperOption = i;
-            wallpaperOptionsPane = false;
+            wallpaperPicker.open(Prefs.wallpaper());
+            cacheWallpaperLabels();
             screen = WALLPAPER_PICKER;
-            focus = wallpaperCategory;
-            refreshWallpaperPreview();
+            focus = wallpaperPicker.draw().category;
         }
 
         private void moveWallpaper(int direction) {
-            if (wallpaperOptionsPane) {
-                wallpaperOption = Math.max(0, Math.min(wallpaperOptions.length - 1, wallpaperOption + direction));
-                focus = wallpaperOption;
-            } else {
-                wallpaperCategory = Math.max(0, Math.min(3, wallpaperCategory + direction));
-                wallpaperOptions = Wallpaper.options(wallpaperCategories[wallpaperCategory]);
-                wallpaperOption = 0;
-                focus = wallpaperCategory;
-            }
+            wallpaperPicker.move(direction);
+            cacheWallpaperLabels();
+            focus = wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().option : wallpaperPicker.draw().category;
             invalidate();
             spoken.focusMoved();
-            refreshWallpaperPreview();
         }
 
-        private void refreshWallpaperPreview() {
-            final String id = wallpaperOptions[wallpaperOption];
-            wallpaperPreviewBitmap = null;
-            Wallpaper.Aerial aerial = Wallpaper.find(id);
-            if (aerial == null) { wallpaperPreviewState = "live:aerial".equals(id) ? Wallpaper.PickerState.PREVIEW_LIVE_FALLBACK : Wallpaper.PickerState.PREVIEW_HORIZON; return; }
-            wallpaperPreviewState = Wallpaper.PickerState.PREVIEW_LOADING;
-            final String url = aerial.preview;
-            new Thread(() -> {
-                Bitmap bitmap = null;
-                try { InputStream stream = new URL(url).openStream(); bitmap = BitmapFactory.decodeStream(stream); stream.close(); } catch (Exception ignored) {}
-                final Bitmap ready = bitmap;
-                handler.post(() -> {
-                    if (screen != WALLPAPER_PICKER || !id.equals(wallpaperOptions[wallpaperOption])) return;
-                    wallpaperPreviewBitmap = ready;
-                    wallpaperPreviewState = ready == null ? Wallpaper.PickerState.PREVIEW_ERROR : Wallpaper.PickerState.PREVIEW_READY;
-                    invalidate();
-                });
-            }, "wallpaper-preview").start();
+        private void cacheWallpaperLabels() {
+            WallpaperPicker.DrawData data = wallpaperPicker.draw();
+            wallpaperCategoryLabels = new String[data.categories.length];
+            for (int i = 0; i < data.categories.length; i++) wallpaperCategoryLabels[i] = wallpaperCategoryName(data.categories[i]);
+            wallpaperOptionLabels = new String[data.options.length];
+            for (int i = 0; i < data.options.length; i++) wallpaperOptionLabels[i] = wallpaperOptionName(data.options[i]);
         }
 
         private static String wallpaperCategoryName(String category) {
@@ -2146,32 +2132,30 @@ public class SettingsActivity extends Activity {
         }
 
         private void drawWallpaperPicker(Canvas c) {
+            WallpaperPicker.DrawData data = wallpaperPicker.draw();
             c.drawText(Ui.tr("Wallpaper"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             float left = LIST_X * k, middle = 1335 * k, right = LIST_R * k, top = (LIST_TOP + 20) * k, pitch = 74 * k;
-            for (int i = 0; i < wallpaperCategories.length; i++) {
+            white.setColor(0xFFF5F5F7);
+            for (int i = 0; i < data.categories.length; i++) {
                 rowRect.set(left, top + i * pitch, middle - 16 * k, top + i * pitch + 66 * k);
-                boolean selected = !wallpaperOptionsPane && i == wallpaperCategory;
+                boolean selected = !data.optionsPane && i == data.category;
                 c.drawRoundRect(rowRect, 18 * k, 18 * k, selected ? white : glass);
                 rowLabel.setColor(selected ? INK : 0xF2FFFFFF);
-                c.drawText(wallpaperCategoryName(wallpaperCategories[i]), rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
+                c.drawText(wallpaperCategoryLabels[i], rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
             }
-            for (int i = 0; i < wallpaperOptions.length && i < 7; i++) {
+            for (int i = 0; i < data.options.length && i < 7; i++) {
                 rowRect.set(middle, top + i * pitch, right, top + i * pitch + 66 * k);
-                boolean selected = wallpaperOptionsPane && i == wallpaperOption;
+                boolean selected = data.optionsPane && i == data.option;
                 c.drawRoundRect(rowRect, 18 * k, 18 * k, selected ? white : glass);
                 rowLabel.setColor(selected ? INK : 0xF2FFFFFF);
-                c.drawText(wallpaperOptionName(wallpaperOptions[i]), rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
+                c.drawText(wallpaperOptionLabels[i], rowRect.left + 22 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
             }
             tmp.set(590 * k, 585 * k, 1230 * k, 945 * k);
-            String chosen = wallpaperOptions[wallpaperOption];
-            wallpaperPreviewPaint.setColor(0xffb8c7d6);
-            if (chosen.startsWith("studio:")) wallpaperPreviewPaint.setColor(Wallpaper.solidColor(chosen));
-            c.drawRoundRect(tmp, 22 * k, 22 * k, wallpaperPreviewPaint);
-            if (wallpaperPreviewBitmap != null) c.drawBitmap(wallpaperPreviewBitmap, null, tmp, wallpaperPreviewPaint);
-            if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_LOADING) c.drawText("Loading Apple preview…", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
-            else if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_ERROR) c.drawText("Apple preview unavailable · Frosted Horizon", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
-            else if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_LIVE_FALLBACK) c.drawText("Live aerial available on the Home screen", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
-            c.drawText("OK applies immediately · Back returns to Appearance", LIST_X * k + 30 * k, 1000 * k, hint);
+            previewPaint.setColor(data.color);
+            c.drawRoundRect(tmp, 22 * k, 22 * k, previewPaint);
+            if (data.image instanceof Bitmap) c.drawBitmap((Bitmap) data.image, null, tmp, previewPaint);
+            c.drawText(data.status, tmp.left, tmp.bottom + 34 * k, hint);
+            c.drawText("OK chooses · Back returns to Appearance", LIST_X * k + 30 * k, 1000 * k, hint);
         }
 
         private void drawList(Canvas c) {
@@ -2266,8 +2250,11 @@ public class SettingsActivity extends Activity {
                 HomeData.get(c).settingsChanged();
                 openSection(S_LOCATION, R_CITY);
             } else if (screen == WALLPAPER_PICKER) {
-                Prefs.setWallpaper(wallpaperOptions[wallpaperOption]);
-                HomeData.get(c).settingsChanged();
+                WallpaperPicker.Action action = wallpaperPicker.ok();
+                if (action == WallpaperPicker.Action.OPEN_OPTIONS) {
+                    cacheWallpaperLabels();
+                    focus = wallpaperPicker.draw().option;
+                }
             } else if (screen == PICKER && pickFor <= PICK_SLEEP) {
                 pickPower();
             } else if (screen == PICKER && pickFor == PICK_LANGUAGE) {

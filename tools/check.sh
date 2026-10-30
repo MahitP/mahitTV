@@ -36,8 +36,9 @@ trap cleanup EXIT
 
 if [ "$what" = all ] || [ "$what" = android ]; then
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
+  java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
   java -cp "$wallpaper_classes" io.freemytv.AerialRequestTest
   ./build.sh
