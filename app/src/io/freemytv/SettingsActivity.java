@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -38,6 +39,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.net.URL;
+import java.io.InputStream;
 
 /**
  * mahitTV Settings (the app's icon, "All Apps", or the gear on the home screen), in the style of Apple TV's settings:
@@ -185,6 +188,9 @@ public class SettingsActivity extends Activity {
         private boolean wallpaperOptionsPane;
         private final String[] wallpaperCategories = Wallpaper.categories();
         private String[] wallpaperOptions = new String[0];
+        private Bitmap wallpaperPreviewBitmap;
+        private int wallpaperPreviewState;
+        private final Paint wallpaperPreviewPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private boolean running, okDown, backDown, wasBusy;
         private StaticLayout errorLayout;   // the last error, wrapped (rebuilt only when it changes)
         private Toast whyToast;   // why the focused option is unavailable
@@ -2084,6 +2090,7 @@ public class SettingsActivity extends Activity {
             wallpaperOptionsPane = false;
             screen = WALLPAPER_PICKER;
             focus = wallpaperCategory;
+            refreshWallpaperPreview();
         }
 
         private void moveWallpaper(int direction) {
@@ -2098,6 +2105,27 @@ public class SettingsActivity extends Activity {
             }
             invalidate();
             spoken.focusMoved();
+            refreshWallpaperPreview();
+        }
+
+        private void refreshWallpaperPreview() {
+            final String id = wallpaperOptions[wallpaperOption];
+            wallpaperPreviewBitmap = null;
+            Wallpaper.Aerial aerial = Wallpaper.find(id);
+            if (aerial == null) { wallpaperPreviewState = "live:aerial".equals(id) ? Wallpaper.PickerState.PREVIEW_LIVE_FALLBACK : Wallpaper.PickerState.PREVIEW_HORIZON; return; }
+            wallpaperPreviewState = Wallpaper.PickerState.PREVIEW_LOADING;
+            final String url = aerial.preview;
+            new Thread(() -> {
+                Bitmap bitmap = null;
+                try { InputStream stream = new URL(url).openStream(); bitmap = BitmapFactory.decodeStream(stream); stream.close(); } catch (Exception ignored) {}
+                final Bitmap ready = bitmap;
+                handler.post(() -> {
+                    if (screen != WALLPAPER_PICKER || !id.equals(wallpaperOptions[wallpaperOption])) return;
+                    wallpaperPreviewBitmap = ready;
+                    wallpaperPreviewState = ready == null ? Wallpaper.PickerState.PREVIEW_ERROR : Wallpaper.PickerState.PREVIEW_READY;
+                    invalidate();
+                });
+            }, "wallpaper-preview").start();
         }
 
         private static String wallpaperCategoryName(String category) {
@@ -2136,11 +2164,13 @@ public class SettingsActivity extends Activity {
             }
             tmp.set(590 * k, 585 * k, 1230 * k, 945 * k);
             String chosen = wallpaperOptions[wallpaperOption];
-            if (chosen.startsWith("studio:")) {
-                int at = java.util.Arrays.asList(Wallpaper.solidIds()).indexOf(chosen);
-                white.setColor(Wallpaper.solidColors()[Math.max(0, at)]);
-            } else white.setColor(Wallpaper.palette(Wallpaper.dark(chosen, false))[0]);
-            c.drawRoundRect(tmp, 22 * k, 22 * k, white);
+            wallpaperPreviewPaint.setColor(0xffb8c7d6);
+            if (chosen.startsWith("studio:")) wallpaperPreviewPaint.setColor(Wallpaper.solidColor(chosen));
+            c.drawRoundRect(tmp, 22 * k, 22 * k, wallpaperPreviewPaint);
+            if (wallpaperPreviewBitmap != null) c.drawBitmap(wallpaperPreviewBitmap, null, tmp, wallpaperPreviewPaint);
+            if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_LOADING) c.drawText("Loading Apple preview…", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
+            else if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_ERROR) c.drawText("Apple preview unavailable · Frosted Horizon", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
+            else if (wallpaperPreviewState == Wallpaper.PickerState.PREVIEW_LIVE_FALLBACK) c.drawText("Live aerial available on the Home screen", tmp.left + 22 * k, tmp.bottom - 22 * k, hint);
             c.drawText("OK applies immediately · Back returns to Appearance", LIST_X * k + 30 * k, 1000 * k, hint);
         }
 

@@ -51,6 +51,7 @@ final class Preview {
                 p.backdrop = "preview/" + s[0] + ".jpg";
                 p.app = s[5];
                 p.pkg = s[6];
+                p.service = Recs.serviceName(p);
                 p.rating = Double.parseDouble(s[7]);
                 p.overview = s[8];
                 p.cert = s[9];

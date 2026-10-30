@@ -20,6 +20,7 @@ public final class WallpaperTest {
         urlAllowlistIsExact();
         solidsAreExact();
         pickerCatalogueIsOrderedAndIsolated();
+        pickerStateKeepsCategoryAndOptionActionsSeparate();
         System.out.println("WallpaperTest: " + checks + " checks passed");
     }
 
@@ -257,6 +258,23 @@ public final class WallpaperTest {
         String[] changed = Wallpaper.options("aerial");
         changed[0] = "changed";
         equal("aerial:yosemite", Wallpaper.options("aerial")[0], "picker options are isolated");
+    }
+
+    private static void pickerStateKeepsCategoryAndOptionActionsSeparate() {
+        Wallpaper.PickerState picker = new Wallpaper.PickerState("aerial:yosemite");
+        equal("aerial", picker.category(), "picker opens current category");
+        equal(Wallpaper.PickerState.ENTER_OPTIONS, picker.activate(), "category OK enters options");
+        equal("aerial:yosemite", picker.selected(), "category OK cannot change selection");
+        picker.moveOption(1);
+        equal(Wallpaper.PickerState.APPLY, picker.activate(), "option OK applies");
+        equal("aerial:iceland", picker.selected(), "option selection advances");
+        equal(Wallpaper.PickerState.BACK_TO_APPEARANCE, picker.back(), "back target is Appearance wallpaper row");
+        picker.setPreview(Wallpaper.PickerState.PREVIEW_LOADING);
+        equal(Wallpaper.PickerState.PREVIEW_LOADING, picker.preview(), "aerial loading state is explicit");
+        picker.setPreview(Wallpaper.PickerState.PREVIEW_ERROR);
+        equal(Wallpaper.PickerState.PREVIEW_ERROR, picker.preview(), "aerial error state is explicit");
+        picker.setCategory("live");
+        equal(Wallpaper.PickerState.PREVIEW_LIVE_FALLBACK, picker.preview(), "live has an explicit fallback state");
     }
 
     private static void aerial(String[] expected, Wallpaper.Aerial actual, String message) {

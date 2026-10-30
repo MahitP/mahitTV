@@ -97,9 +97,39 @@ final class Wallpaper {
 
     static String[] categories() { return CATEGORIES.clone(); }
 
+    /** Allocation-free-at-draw-time state contract for the settings wallpaper picker. */
+    static final class PickerState {
+        static final int ENTER_OPTIONS = 1, APPLY = 2, BACK_TO_APPEARANCE = 3;
+        static final int PREVIEW_HORIZON = 0, PREVIEW_LOADING = 1, PREVIEW_READY = 2, PREVIEW_ERROR = 3, PREVIEW_LIVE_FALLBACK = 4;
+        private int category, option, preview;
+        private boolean optionsPane;
+
+        PickerState(String selected) { setSelected(selected); }
+        String category() { return CATEGORIES[category]; }
+        String selected() { return options(CATEGORIES[category])[option]; }
+        boolean optionsPane() { return optionsPane; }
+        int categoryIndex() { return category; }
+        int optionIndex() { return option; }
+        int preview() { return preview; }
+        void setPreview(int preview) { this.preview = preview; }
+        void setSelected(String selected) { setCategory(categoryOf(selected)); String[] choices = options(CATEGORIES[category]); for (int i = 0; i < choices.length; i++) if (choices[i].equals(selected)) option = i; }
+        void setCategory(String id) { for (int i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].equals(id)) { category = i; break; } option = 0; optionsPane = false; preview = "live".equals(CATEGORIES[category]) ? PREVIEW_LIVE_FALLBACK : PREVIEW_HORIZON; }
+        void moveCategory(int direction) { category = Math.max(0, Math.min(CATEGORIES.length - 1, category + direction)); option = 0; optionsPane = false; preview = "live".equals(CATEGORIES[category]) ? PREVIEW_LIVE_FALLBACK : PREVIEW_HORIZON; }
+        void moveOption(int direction) { String[] choices = options(CATEGORIES[category]); option = Math.max(0, Math.min(choices.length - 1, option + direction)); }
+        void optionsPane(boolean value) { optionsPane = value; }
+        int activate() { if (!optionsPane) { optionsPane = true; return ENTER_OPTIONS; } return APPLY; }
+        int back() { return BACK_TO_APPEARANCE; }
+    }
+
     static String[] solidIds() { return SOLID_IDS.clone(); }
 
     static int[] solidColors() { return SOLID_COLORS.clone(); }
+
+    /** Internal draw helper: callers get a scalar, never a mutable palette array. */
+    static int solidColor(String id) {
+        for (int i = 0; i < SOLID_IDS.length; i++) if (SOLID_IDS[i].equals(id)) return SOLID_COLORS[i];
+        return SOLID_COLORS[0];
+    }
 
     static float[][] horizonGeometry() {
         float[][] copy = new float[HORIZON_GEOMETRY.length][];
