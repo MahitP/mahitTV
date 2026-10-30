@@ -84,6 +84,13 @@ function profile(page, zone, app) {
   await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'History only', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); }; });
   result = await profile(page, 'shelf', netflix);
   assert.ok(result.media && result.title === 'History only', 'media Shelf renders actual resolved history hero');
+  var mediaLayer = await page.evaluate(function () {
+    var tile = document.querySelector('#tiles .tile');
+    var point = document.elementFromPoint(210, 875);
+    return {tileVisible: tile && getComputedStyle(tile).opacity !== '0', tileOnTop: !!(point && point.closest && point.closest('#tiles'))};
+  });
+  assert.ok(mediaLayer.tileVisible && mediaLayer.tileOnTop,
+    'media art remains behind the focused Dock UI: ' + JSON.stringify(mediaLayer));
   await page.evaluate(function () {
     Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Track A', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); };
     Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
@@ -100,6 +107,13 @@ function profile(page, zone, app) {
     result = await profile(page, ['tabs', 'apps', 'settings'][i], netflix);
     assert.ok(result.profile && !result.title, ['tabs', 'grid', 'settings'][i] + ' clears actual hero');
   }
+  await page.evaluate(function () { Prefs.set('wallpaper', 'horizon:light'); Home.testBackground({zone: 'tabs', app: {id: 'netflix', title: 'Netflix'}, tab: 0}); });
+  var profileLayer = await page.evaluate(function () {
+    return {profile: document.body.className.indexOf('profile-background') >= 0,
+      veil: getComputedStyle(document.querySelector('#sky .veil')).opacity};
+  });
+  assert.ok(profileLayer.profile && profileLayer.veil === '0',
+    'selected profile wallpaper is not washed out by the legacy veil: ' + JSON.stringify(profileLayer));
   result = await profile(page, 'shelf', plain);
   assert.ok(result.profile && !result.title, 'non-media Shelf tile is profile-only');
   await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, null); }; });

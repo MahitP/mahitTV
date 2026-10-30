@@ -58,5 +58,7 @@ assert.ok(/\.profile-background #hero/.test(css), 'profile wallpaper clears Top 
 assert.ok(/\.profile-background #details/.test(css), 'profile wallpaper clears details');
 assert.ok(/\.profile-background #dots/.test(css), 'profile wallpaper clears dots');
 assert.ok(/\.profile-background #watch/.test(css), 'profile wallpaper clears Play');
+assert.ok(/\.profile-background #sky \.veil\s*\{\s*opacity:\s*0/.test(css),
+  'profile Horizon is not covered by the legacy white veil');
 
 console.log('home-background-test: passed');
