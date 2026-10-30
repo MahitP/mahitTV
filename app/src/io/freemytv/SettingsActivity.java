@@ -982,13 +982,7 @@ public class SettingsActivity extends Activity {
 
         /** A stable wallpaper ID as the transitional Appearance row presents it. */
         private static String wallpaperName(String id) {
-            if ("horizon:auto".equals(id)) return Ui.tr("Automatic");
-            if ("horizon:light".equals(id)) return Ui.tr("Light");
-            if ("horizon:dark".equals(id)) return Ui.tr("Dark");
-            if ("live:aerial".equals(id)) return "Live Aerial Screensaver";
-            if (id.startsWith("studio:")) return id.substring("studio:".length()).replace('-', ' ');
-            Wallpaper.Aerial aerial = Wallpaper.find(id);
-            return aerial == null ? Ui.tr("Automatic") : aerial.title;
+            return wallpaperOptionName(id);
         }
 
         private ProfileManager.Profile other(int id) {
@@ -2137,20 +2131,40 @@ public class SettingsActivity extends Activity {
         }
 
         private static String wallpaperCategoryName(String category) {
-            if ("horizon".equals(category)) return "Apple Frosted Horizon";
-            if ("aerial".equals(category)) return "Apple 4K Aerials";
-            if ("studio".equals(category)) return "Apple Studio Solids";
-            return "Live Aerial Screensaver";
+            if ("horizon".equals(category)) return Ui.tr("Apple Frosted Horizon");
+            if ("aerial".equals(category)) return Ui.tr("Apple 4K Aerials");
+            if ("studio".equals(category)) return Ui.tr("Apple Studio Solids");
+            return Ui.tr("Live Aerial Screensaver");
         }
 
-        private String wallpaperOptionName(String id) {
-            if ("horizon:auto".equals(id)) return Ui.tr("Automatic");
+        private static String wallpaperOptionName(String id) {
+            if ("horizon:auto".equals(id)) return Ui.tr("Auto Sunset");
             if ("horizon:light".equals(id)) return Ui.tr("Light");
             if ("horizon:dark".equals(id)) return Ui.tr("Dark");
+            if ("aerial:yosemite".equals(id)) return Ui.tr("Yosemite");
+            if ("aerial:iceland".equals(id)) return Ui.tr("Iceland");
+            if ("aerial:north-america-aurora".equals(id)) return Ui.tr("North America Aurora");
+            if ("aerial:palau-coral".equals(id)) return Ui.tr("Palau Coral");
+            if ("aerial:new-york".equals(id)) return Ui.tr("New York");
+            if ("aerial:sonoma-coast".equals(id)) return Ui.tr("Sonoma Coast");
+            if ("studio:black".equals(id)) return Ui.tr("Studio Black");
+            if ("studio:space-gray".equals(id)) return Ui.tr("Space Gray");
+            if ("studio:midnight-blue".equals(id)) return Ui.tr("Midnight Blue");
+            if ("studio:deep-forest".equals(id)) return Ui.tr("Deep Forest Green");
+            if ("studio:teal".equals(id)) return Ui.tr("Teal");
+            if ("studio:warm-stone".equals(id)) return Ui.tr("Warm Stone");
+            if ("studio:silver-mist".equals(id)) return Ui.tr("Silver Mist");
+            if ("live:aerial".equals(id)) return Ui.tr("Live Aerial Screensaver");
             Wallpaper.Aerial aerial = Wallpaper.find(id);
             if (aerial != null) return aerial.title;
-            if ("live:aerial".equals(id)) return "Live Aerial Screensaver";
+            if (!id.startsWith("studio:")) return Ui.tr("Automatic");
             return id.substring("studio:".length()).replace('-', ' ');
+        }
+
+        private static String wallpaperStatus(String status) {
+            if ("Downloading…".equals(status)) return Ui.tr("Downloading…");
+            if ("Unavailable — showing Frosted Horizon".equals(status)) return Ui.tr("Unavailable — showing Frosted Horizon");
+            return status;
         }
 
         private void drawWallpaperPicker(Canvas c) {
@@ -2176,8 +2190,8 @@ public class SettingsActivity extends Activity {
             previewPaint.setColor(data.color);
             c.drawRoundRect(tmp, 22 * k, 22 * k, previewPaint);
             if (data.image instanceof Bitmap) c.drawBitmap((Bitmap) data.image, null, tmp, previewPaint);
-            c.drawText(data.status, tmp.left, tmp.bottom + 34 * k, hint);
-            c.drawText("OK chooses · Back returns to Appearance", LIST_X * k + 30 * k, 1000 * k, hint);
+            c.drawText(wallpaperStatus(data.status), tmp.left, tmp.bottom + 34 * k, hint);
+            c.drawText(Ui.tr("OK selects immediately. Back keeps your choice."), LIST_X * k + 30 * k, 1000 * k, hint);
         }
 
         private void drawList(Canvas c) {

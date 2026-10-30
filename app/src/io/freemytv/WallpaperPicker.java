@@ -56,7 +56,7 @@ final class WallpaperPicker {
     private volatile int loadGeneration;
     private boolean optionsPane;
     private Preview preview = Preview.HORIZON;
-    private String status = "Frosted Horizon";
+    private String status = "Unavailable — showing Frosted Horizon";
     private Object image;
     private DrawData draw;
     private volatile boolean closed;
@@ -101,7 +101,7 @@ final class WallpaperPicker {
         loadGeneration++;
         releaseImage();
         preview = Preview.HORIZON;
-        status = "Frosted Horizon";
+        status = "Unavailable — showing Frosted Horizon";
         rebuild();
     }
     void optionsPane(boolean value) { if (optionsPane != value) { optionsPane = value; refresh(); } }
@@ -116,10 +116,10 @@ final class WallpaperPicker {
         final int generation = ++loadGeneration;
         if (aerial == null) {
             preview = "live:aerial".equals(selected) ? Preview.LIVE_FALLBACK : Preview.HORIZON;
-            status = "live:aerial".equals(selected) ? "Live Aerial unavailable — Frosted Horizon" : "Frosted Horizon";
+            status = "Unavailable — showing Frosted Horizon";
         } else {
             preview = "live:aerial".equals(selected) ? Preview.LIVE_LOADING : Preview.LOADING;
-            status = "live:aerial".equals(selected) ? "Loading live aerial preview…" : "Loading aerial preview…";
+            status = "Downloading…";
             final boolean live = "live:aerial".equals(selected);
             loader.load(aerial, new Callback() {
                 public boolean current() { return !closed && generation == loadGeneration; }
@@ -131,7 +131,7 @@ final class WallpaperPicker {
                 public void error() {
                     if (!current()) return;
                     preview = live ? Preview.LIVE_FALLBACK : Preview.ERROR;
-                    status = live ? "Live Aerial unavailable — Frosted Horizon" : "Aerial preview unavailable — Frosted Horizon"; rebuild();
+                    status = "Unavailable — showing Frosted Horizon"; rebuild();
                 }
             });
         }

@@ -1624,15 +1624,31 @@
   }
 
   function wallpaperName(id) {
+    if (id === 'horizon:auto') return tr('Auto Sunset');
+    if (id === 'horizon:light') return tr('Light');
+    if (id === 'horizon:dark') return tr('Dark');
+    if (id === 'aerial:yosemite') return tr('Yosemite');
+    if (id === 'aerial:iceland') return tr('Iceland');
+    if (id === 'aerial:north-america-aurora') return tr('North America Aurora');
+    if (id === 'aerial:palau-coral') return tr('Palau Coral');
+    if (id === 'aerial:new-york') return tr('New York');
+    if (id === 'aerial:sonoma-coast') return tr('Sonoma Coast');
+    if (id === 'studio:black') return tr('Studio Black');
+    if (id === 'studio:space-gray') return tr('Space Gray');
+    if (id === 'studio:midnight-blue') return tr('Midnight Blue');
+    if (id === 'studio:deep-forest') return tr('Deep Forest Green');
+    if (id === 'studio:teal') return tr('Teal');
+    if (id === 'studio:warm-stone') return tr('Warm Stone');
+    if (id === 'studio:silver-mist') return tr('Silver Mist');
+    if (id === 'live:aerial') return tr('Live Aerial Screensaver');
     var aerial = Wallpaper['find'](id);
     if (aerial) return aerial.title;
-    if (id === 'live:aerial') return 'Live Aerial Screensaver';
     if (id.indexOf('studio:') === 0) return id.substring(7).replace(/-/g, ' ');
     return tr('Automatic');
   }
 
   function wallpaperCategoryName(id) {
-    return id === 'horizon' ? 'Apple Frosted Horizon' : id === 'aerial' ? 'Apple 4K Aerials' : id === 'studio' ? 'Apple Studio Solids' : 'Live Aerial Screensaver';
+    return id === 'horizon' ? tr('Apple Frosted Horizon') : id === 'aerial' ? tr('Apple 4K Aerials') : id === 'studio' ? tr('Apple Studio Solids') : tr('Live Aerial Screensaver');
   }
 
   function renderWallpaperPicker() {
@@ -1643,10 +1659,10 @@
     for (var i = 0; i < categories.length; i++) el('div', 'row', left, wallpaperCategoryName(categories[i]));
     for (i = 0; i < options.length; i++) el('div', 'row', right, wallpaperName(options[i]));
     var preview = el('div', 'preview', panes), chosen = options[st.wallpaperOption], aerial = Wallpaper['find'](chosen), solid;
-    if (aerial) { preview.style.backgroundImage = 'url(' + aerial.preview + ')'; el('div', 'status', preview, 'Apple preview loads when available'); }
+    if (aerial) { preview.style.backgroundImage = 'url(' + aerial.preview + ')'; el('div', 'status', preview, tr('Downloading…')); }
     else if (chosen.indexOf('studio:') === 0) { for (i = 0; i < Wallpaper.solids.length; i++) if (Wallpaper.solids[i].id === chosen) solid = Wallpaper.solids[i]; preview.style.background = solid ? solid.color : '#B8C7D6'; }
-    else { preview.className += ' horizon'; el('div', 'status', preview, chosen === 'live:aerial' ? 'Live aerial when available' : 'Frosted Horizon'); }
-    el('div', 'hint', box, '← → change pane · OK applies immediately · Back returns to Wallpaper');
+    else { preview.className += ' horizon'; el('div', 'status', preview, tr('Unavailable — showing Frosted Horizon')); }
+    el('div', 'hint', box, tr('OK selects immediately. Back keeps your choice.'));
   }
 
   function openWallpaperPicker() {
