@@ -12,6 +12,7 @@
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const assert = require('assert');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
@@ -217,6 +218,118 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
   return file;
 }
 
+/* Apple-wallpaper acceptance frames.  These use a fixed active profile and
+ * clock so the preview catalogue, profile history, and appearance are stable
+ * without asking any external service for data. */
+const APPLE_SHOT_TIME = 1772308800000; // 2026-03-01T12:00:00.000Z
+const APPLE_DOCK = ['netflix', 'youtube.leanback.v4', 'com.apple.appletv', 'com.disney.disneyplus-prod', 'amazon', 'com.apple.music'];
+const APPLE_HISTORY = [{title: 'The Long Dunes', tmdb: 9001, kind: 'tv', app: 'Netflix', appKey: 'netflix', pos: 720000, dur: 2880000, at: APPLE_SHOT_TIME - 7200000}];
+
+async function appleContext(browser, wallpaper) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(({ wallpaper, now, dock, history }) => {
+    try {
+      localStorage.clear();
+      // Keep the scenario on a fixed day while letting Motion's Date.now-based
+      // springs advance, so sheets and crossfades actually settle.
+      Date.now = function () { return now + Math.floor(performance.now()); };
+      localStorage.setItem('fmtv.night', 'false');
+      localStorage.setItem('mahittv.state', JSON.stringify({current: 'mahit', lastActive: now}));
+      localStorage.setItem('mahittv.profile.mahit', JSON.stringify({
+        theme: 'light', wallpaper: wallpaper, shelf: dock, watchLog: history,
+        previewSeeded: true, previewMediaSeeded: true
+      }));
+    } catch (e) {}
+  }, { wallpaper, now: APPLE_SHOT_TIME, dock: APPLE_DOCK, history: APPLE_HISTORY });
+  return context;
+}
+
+async function shootAppleWallpapers(browser) {
+  const files = [];
+
+  { // Top tab: the unadorned Frosted Horizon is the resting state.
+    const context = await appleContext(browser, 'horizon:light');
+    const page = await context.newPage();
+    await page.goto(PAGE);
+    await page.waitForTimeout(900);
+    for (const key of UP2) { await page.keyboard.press(key); await page.waitForTimeout(300); }
+    await page.waitForTimeout(900); // let the 700 ms media/profile crossfade finish
+    const state = await page.evaluate(() => ({
+      tabs: Array.from(document.querySelectorAll('#tabs .focus')).map((node) => node.textContent.trim()),
+      profile: document.body.classList.contains('profile-background'), media: document.body.classList.contains('media-background'),
+      logo: document.querySelector('#hero .logo').getAttribute('src') || '', title: document.querySelector('#hero h1').textContent.trim(),
+      meta: document.querySelector('#details .meta').textContent.trim(), overview: document.querySelector('#details .overview').textContent.trim(),
+      play: document.querySelector('#watch').textContent.trim(), dots: document.querySelectorAll('#dots > *').length,
+      chevron: document.querySelector('#chevron').textContent.trim()
+    }));
+    assert.deepStrictEqual(state.tabs, ['TV'], 'TV top tab is focused');
+    assert.ok(state.profile && !state.media, 'top tab restores the clean profile wallpaper');
+    assert.deepStrictEqual([state.logo, state.title, state.meta, state.overview, state.play, state.dots, state.chevron], ['', '', '', '', '', 0, ''],
+      'resting Horizon has no media Top Shelf clutter');
+    const file = path.join(OUT, 'web-tv-default-apple-bg.png');
+    await page.screenshot({ path: file }); files.push(file);
+    await context.close();
+  }
+
+  { // Netflix is first in the deterministic Dock and resolves the seeded watch-log item.
+    const context = await appleContext(browser, 'horizon:light');
+    const page = await context.newPage();
+    await page.goto(PAGE);
+    await page.waitForTimeout(900);
+    await page.waitForFunction(() => document.body.classList.contains('media-background') && document.querySelector('#hero h1').textContent.trim() === 'The Long Dunes');
+    await page.waitForTimeout(900); // keep this after the resolver/image fade, not just after DOM insertion
+    const state = await page.evaluate(() => ({
+      focused: document.querySelector('#tiles .focus .name, #tiles .focus').textContent.trim(),
+      dockName: document.querySelector('#dockname').textContent.trim(), media: document.body.classList.contains('media-background'),
+      title: document.querySelector('#hero h1').textContent.trim(), logo: document.querySelector('#hero .logo').getAttribute('src') || '',
+      art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage,
+      homeOpacity: getComputedStyle(document.querySelector('#home')).opacity,
+      dockOpacity: getComputedStyle(document.querySelector('#tiles')).opacity,
+      visibleTile: !!document.elementFromPoint(210, 875).closest('#tiles')
+    }));
+    assert.ok(/Netflix/i.test(state.focused) && state.dockName === 'Netflix', 'Netflix media Dock tile is focused');
+    assert.ok(state.media && state.title === 'The Long Dunes' && /long-dunes/.test(state.logo) && /long-dunes/.test(state.art),
+      'focused Netflix resolves the seeded Continue Watching title and artwork');
+    assert.ok(Number(state.homeOpacity) > .99 && Number(state.dockOpacity) > .99 && state.visibleTile,
+      'focused media Dock remains visibly rendered: ' + JSON.stringify(state));
+    const file = path.join(OUT, 'web-tv-dock-app-continue-watching.png');
+    await page.screenshot({ path: file }); files.push(file);
+    await context.close();
+  }
+
+  { // Fulfil Yosemite's remote preview locally so this picker frame never touches the network.
+    const context = await appleContext(browser, 'aerial:yosemite');
+    const page = await context.newPage();
+    await page.goto(PAGE);
+    // `wallpaperpick` is intentionally outside the legacy sheet spring list;
+    // make this capture-only fixture visible while preserving application code.
+    await page.addStyleTag({content: '#wallpaperpick.open { opacity: 1; visibility: visible; transform: scale(1); }'});
+    await page.waitForTimeout(900);
+    const yosemitePreview = await page.evaluate(() => Wallpaper.find('aerial:yosemite').preview);
+    await page.route(yosemitePreview, (route) => route.fulfill({path: path.join(ROOT, 'preview', 'art', 'long-dunes.jpg'), contentType: 'image/jpeg'}));
+    await page.evaluate(() => Home.previewWallpaperPicker('aerial', 'aerial:yosemite'));
+    await page.waitForFunction(() => document.querySelector('#wallpaperpick .preview .status').textContent === 'Aerial preview ready');
+    await page.waitForTimeout(900);
+    const state = await page.evaluate(() => ({
+      open: document.querySelector('#wallpaperpick').classList.contains('open'),
+      labels: Array.from(document.querySelectorAll('#wallpaperpick .categories .row')).map((node) => node.textContent.trim()),
+      options: Array.from(document.querySelectorAll('#wallpaperpick .options .row')).map((node) => node.textContent.trim()),
+      status: document.querySelector('#wallpaperpick .preview .status').textContent.trim(),
+      opacity: getComputedStyle(document.querySelector('#wallpaperpick')).opacity,
+      visible: getComputedStyle(document.querySelector('#wallpaperpick')).visibility
+    }));
+    assert.ok(state.open && state.opacity === '1' && state.visible === 'visible', 'dedicated wallpaper picker is visibly open');
+    assert.deepStrictEqual(state.labels, ['Apple Frosted Horizon', 'Apple 4K Aerials', 'Apple Studio Solids', 'Live Aerial Screensaver'],
+      'all four Apple-only wallpaper categories are visible');
+    assert.ok(state.options.some((option) => /Yosemite/i.test(option)) && state.status === 'Aerial preview ready',
+      'Yosemite option and locally loaded preview are visible: ' + JSON.stringify(state));
+    const file = path.join(OUT, 'web-settings-apple-wallpapers.png');
+    await page.screenshot({ path: file }); files.push(file);
+    await context.close();
+  }
+  return files;
+}
+
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const server = await serve();
@@ -235,6 +348,12 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
     server.close();
     return;
   }
+  if (only === 'apple-wallpapers') {
+    for (const f of await shootAppleWallpapers(browser)) console.log('wrote', path.relative(ROOT, f));
+    await browser.close();
+    server.close();
+    return;
+  }
   for (const theme of ['light', 'dark']) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
@@ -242,6 +361,7 @@ async function shoot(browser, theme, [name, keys, noPicks]) {
   for (const f of await shootProfiles(browser)) console.log('wrote', path.relative(ROOT, f));
   for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
   for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
+  for (const f of await shootAppleWallpapers(browser)) console.log('wrote', path.relative(ROOT, f));
   await browser.close();
   server.close();
 })().catch((e) => { console.error(e); process.exit(1); });

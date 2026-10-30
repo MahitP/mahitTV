@@ -14,14 +14,14 @@
 - [ ] **On-Device 85" TCL Google TV Validation**: Sideload `FreeMyTV.apk` via ADB, test remote D-pad focus, `ACTION_SCREEN_ON` intro/lock behavior, Kasa TCP/9999 switches, and `HomeMode` Original-TV restore safety net.
 
 ### 2. Phase 1 — Authentic Apple TV Wallpaper Engine & Top Shelf "Continue Watching" Behavior
-- [ ] **Replace Default Netflix/Movie Poster Background with Clean Apple TV Horizon Mesh**:
+- [x] **Replace Default Netflix/Movie Poster Background with Clean Apple TV Horizon Mesh**:
   - The default resting background of the `TV` tab (when focus is on the top menu bar `TV | Home | Welly`, on a utility app like Settings, or before selecting a streaming app) **must NOT be a Netflix/movie backdrop**.
   - Set the default background to an exact recreation of **Apple's signature tvOS Frosted Horizon Wallpaper** (matching the uploaded Apple TV reference image—soft diffused slate-blue `#B8C7D6` upper sky, warm cream/gold left horizon glow `#F5EBD6`, and muted coastal blue `#7E9BB5` lower right—with **the center `tv` apple icon and `tv` text completely removed** so it is a pure, seamless atmospheric canvas, plus its matching dark-mode twilight variant after sunset).
-- [ ] **App-Driven Top Shelf ("Continue Watching" Artwork Only When Hovering an App)**:
+- [x] **App-Driven Top Shelf ("Continue Watching" Artwork Only When Hovering an App)**:
   - Keep the clean default Apple background visible until the user focuses a specific streaming/media app in the Dock.
   - When a user focuses a streaming app in the Dock, smoothly cross-dissolve the Top Shelf backdrop to show **that profile's "Continue Watching" title for that app** (from `WatchLog`, or that app's featured media pick if nothing is in `WatchLog` for that app yet).
   - When focus leaves the media app (e.g., returning to the top menu bar, focusing Settings, or scrolling into the app grid), smoothly cross-dissolve back to the user's selected **Apple Default Background**.
-- [ ] **Official Apple TV Wallpaper & Background Selector in Settings (Strictly Apple Options Only)**:
+- [x] **Official Apple TV Wallpaper & Background Selector in Settings (Strictly Apple Options Only)**:
   - Restrict all background and wallpaper choices in Settings (per profile) strictly to authentic Apple TV categories—remove any non-Apple filler backgrounds:
     1. **Apple TV Signature Frosted Horizon** (Default — matches the uploaded Apple TV image without the `tv` logo, in Light, Dark, or Auto Sunset).
     2. **Apple 4K Aerial Backdrops** (Curated from Apple's 5 official Aerial categories: *Landscape* [Yosemite, Iceland, Patagonia], *Earth/Space* [North America Aurora, Sahara], *Underwater* [Palau Coral, Alaskan Jellies], *Cityscape* [New York, San Francisco, London], and *Coastal Horizon*).
