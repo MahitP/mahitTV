@@ -22,11 +22,13 @@ final class AerialCache {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final byte[] buffer = new byte[16 * 1024];
     private static long lastTouch;
+    private volatile boolean closed;
 
     AerialCache(File directory) { this(directory, MAX_BYTES); }
     AerialCache(File directory, long byteCap) { this.directory = directory; this.byteCap = byteCap; }
 
-    void fetch(final String url, final Callback callback) {
+    synchronized void fetch(final String url, final Callback callback) {
+        if (closed) { callback.complete(null); return; }
         if (!Wallpaper.allowed(url)) { callback.complete(null); return; }
         worker.execute(() -> callback.complete(download(url)));
     }
@@ -120,7 +122,8 @@ final class AerialCache {
         lastTouch = next;
     }
     void cleanup() { cleanup(null); }
-    void close() { worker.shutdownNow(); }
+    synchronized void close() { if (!closed) { closed = true; worker.shutdownNow(); } }
+    synchronized boolean closed() { return closed; }
     int completeCount() { return complete().length; }
     long completeBytes() { long total = 0; for (File f : complete()) total += f.length(); return total; }
 

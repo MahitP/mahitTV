@@ -110,6 +110,11 @@ public class SettingsActivity extends Activity {
         super.onPause();
     }
 
+    @Override protected void onDestroy() {
+        if (view != null) view.destroy();
+        super.onDestroy();
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (preview != null) {
             // Like the real screensaver: arrows, OK or Back close it (other keys go on to the system); with Watch from the
@@ -240,9 +245,16 @@ public class SettingsActivity extends Activity {
             activity = a;
             aerialPreviewCache = new AerialCache(new File(a.getCacheDir(), "aerial-previews"));
             wallpaperPicker = new WallpaperPicker((aerial, callback) -> aerialPreviewCache.fetch(aerial.preview, file -> {
-                Bitmap bitmap = file == null ? null : BitmapFactory.decodeFile(file.getPath());
-                handler.post(() -> { if (bitmap == null) callback.error(); else callback.ready(bitmap); invalidate(); });
-            }), id -> { Prefs.setWallpaper(id); HomeData.get(getContext()).settingsChanged(); });
+                if (!callback.current()) return;
+                if (file == null) { handler.post(() -> { if (callback.current()) callback.error(); }); return; }
+                Bitmap bitmap = BitmapFactory.decodeFile(file.getPath());
+                if (!callback.current()) { releasePreview(bitmap); return; }
+                handler.post(() -> {
+                    if (!callback.current()) releasePreview(bitmap);
+                    else if (bitmap == null) callback.error(); else callback.ready(bitmap);
+                    invalidate();
+                });
+            }), id -> { Prefs.setWallpaper(id); HomeData.get(getContext()).settingsChanged(); }, SettingsView::releasePreview);
             for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.28f, 0.85f, 0);
             HomeData.Weather wx = HomeData.get(a).weather;
             Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
@@ -371,6 +383,15 @@ public class SettingsActivity extends Activity {
             running = false;
             handler.removeCallbacks(poll);
             Choreographer.getInstance().removeFrameCallback(this);
+        }
+
+        void destroy() { wallpaperPicker.close(); aerialPreviewCache.close(); }
+
+        private static void releasePreview(Object image) {
+            if (image instanceof Bitmap) {
+                Bitmap bitmap = (Bitmap) image;
+                if (!bitmap.isRecycled()) bitmap.recycle();
+            }
         }
 
         @Override public void doFrame(long frameTimeNanos) {
@@ -896,6 +917,7 @@ public class SettingsActivity extends Activity {
 
         /** Opens section `s`, focused on row `id` (its first row when it has none). */
         private void openSection(int s, int id) {
+            if (screen == WALLPAPER_PICKER) wallpaperPicker.close();
             section = s;
             rows = sectionRows(s);
             screen = SECTION;

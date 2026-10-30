@@ -12,9 +12,10 @@ final class WallpaperPicker {
         Wallpaper.Aerial aerial(String id);
         Wallpaper.Aerial live();
     }
-    interface Callback { void ready(Object image); void error(); }
+    interface Callback { boolean current(); void ready(Object image); void error(); }
     interface Loader { void load(Wallpaper.Aerial aerial, Callback callback); }
     interface Saver { void save(String id); }
+    interface Releaser { void release(Object image); }
 
     static final class DrawData {
         final String[] categories, options;
@@ -48,6 +49,7 @@ final class WallpaperPicker {
     private final Catalogue catalogue;
     private final Loader loader;
     private final Saver saver;
+    private final Releaser releaser;
     private String[] categories = new String[0], options = new String[0];
     private int category, option, loadGeneration;
     private boolean optionsPane;
@@ -55,11 +57,15 @@ final class WallpaperPicker {
     private String status = "Frosted Horizon";
     private Object image;
     private DrawData draw;
+    private boolean closed;
 
-    WallpaperPicker(Loader loader, Saver saver) { this(DEFAULT, loader, saver); }
-    WallpaperPicker(Catalogue catalogue, Loader loader, Saver saver) { this.catalogue = catalogue; this.loader = loader; this.saver = saver; }
+    WallpaperPicker(Loader loader, Saver saver, Releaser releaser) { this(DEFAULT, loader, saver, releaser); }
+    WallpaperPicker(Catalogue catalogue, Loader loader, Saver saver, Releaser releaser) {
+        this.catalogue = catalogue; this.loader = loader; this.saver = saver; this.releaser = releaser;
+    }
 
     void open(String selected) {
+        closed = false;
         categories = catalogue.categories();
         category = index(categories, Wallpaper.categoryOf(selected));
         if (category < 0) category = 0;
@@ -86,6 +92,16 @@ final class WallpaperPicker {
         return Action.PERSIST;
     }
     Action back() { return Action.CLOSE; }
+    /** Releases this picker's preview and makes every queued callback stale. Safe to call more than once. */
+    void close() {
+        if (closed) return;
+        closed = true;
+        loadGeneration++;
+        releaseImage();
+        preview = Preview.HORIZON;
+        status = "Frosted Horizon";
+        rebuild();
+    }
     void optionsPane(boolean value) { if (optionsPane != value) { optionsPane = value; refresh(); } }
     String selected() { return options.length == 0 ? "horizon:auto" : options[option]; }
     DrawData draw() { return draw; }
@@ -93,7 +109,7 @@ final class WallpaperPicker {
     private void refresh() {
         String selected = selected();
         int color = catalogue.color(selected);
-        image = null;
+        releaseImage();
         Wallpaper.Aerial aerial = "live:aerial".equals(selected) ? catalogue.live() : catalogue.aerial(selected);
         final int generation = ++loadGeneration;
         if (aerial == null) {
@@ -104,13 +120,14 @@ final class WallpaperPicker {
             status = "live:aerial".equals(selected) ? "Loading live aerial preview…" : "Loading aerial preview…";
             final boolean live = "live:aerial".equals(selected);
             loader.load(aerial, new Callback() {
+                public boolean current() { return !closed && generation == loadGeneration; }
                 public void ready(Object bitmap) {
-                    if (generation != loadGeneration) return;
+                    if (!current()) { if (bitmap != null) releaser.release(bitmap); return; }
                     image = bitmap; preview = live ? Preview.LIVE_READY : Preview.READY;
                     status = live ? "Live Aerial preview ready" : "Aerial preview ready"; rebuild();
                 }
                 public void error() {
-                    if (generation != loadGeneration) return;
+                    if (!current()) return;
                     preview = live ? Preview.LIVE_FALLBACK : Preview.ERROR;
                     status = live ? "Live Aerial unavailable — Frosted Horizon" : "Aerial preview unavailable — Frosted Horizon"; rebuild();
                 }
@@ -118,6 +135,7 @@ final class WallpaperPicker {
         }
         draw = new DrawData(categories, options, category, option, optionsPane, selected, color, preview, status, image);
     }
+    private void releaseImage() { if (image != null) { releaser.release(image); image = null; } }
     private void rebuild() { draw = new DrawData(categories, options, category, option, optionsPane, selected(), catalogue.color(selected()), preview, status, image); }
     private static int index(String[] values, String value) { for (int i = 0; i < values.length; i++) if (values[i].equals(value)) return i; return -1; }
     private static int clamp(int value, int size) { return Math.max(0, Math.min(size - 1, value)); }

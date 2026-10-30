@@ -36,6 +36,12 @@ public final class AerialCacheTest {
             no(new File(root, "zero.mov").exists(), "cleans invalid complete files");
             ok(cache.completeCount() <= 2, "at most two complete files");
             ok(cache.completeBytes() <= 9, "injected byte cap is obeyed");
+            cache.close();
+            cache.close();
+            yes(cache.closed(), "close is owned and idempotent");
+            final File[] afterClose = {first};
+            cache.fetch(one, file -> afterClose[0] = file);
+            same(null, afterClose[0], "closed cache accepts no more preview work");
         } finally { delete(root); }
         System.out.println("AerialCacheTest: passed");
     }
@@ -43,4 +49,5 @@ public final class AerialCacheTest {
     private static void yes(boolean v, String m) { if (!v) throw new AssertionError(m); }
     private static void no(boolean v, String m) { yes(!v, m); }
     private static void ok(boolean v, String m) { yes(v, m); }
+    private static void same(Object want, Object got, String m) { if (want != got) throw new AssertionError(m); }
 }
