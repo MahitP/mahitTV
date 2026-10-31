@@ -52,7 +52,7 @@ final class Click {
         if (pool != null && Prefs.sounds()) pool.play(bump, 0.12f, 0.12f, 1, 0, 1f);
     }
 
-    /** mahitTV's startup chord (Intro). */
+    /** mahitTV's startup chord (Intro, from its first frame: the chord carries its own timing). */
     void chime() {
         if (pool != null && Prefs.sounds()) pool.play(chime, 0.32f, 0.32f, 2, 0, 1f);
     }
@@ -79,33 +79,59 @@ final class Click {
     }
 
     /**
-     * A warm C–E–G major chord (C5, E5, G5 rolled in 40 ms apart), each note a sine with soft 2nd and 3rd harmonics,
-     * a 12 ms attack and a long exponential tail, about 1.2 s.
+     * The startup's Cmaj9 glass resonance chord (TVOS-LAUNCHER-MERGE-SPEC.md §1.6), 2.6 s, timed to the intro: a warm
+     * sub-swell (C2 + G2, sines) from 0.05 s with a 180 ms attack as the horizon ignites, then five glass bells (C4 G4
+     * B4 D5 E5) strummed 18 ms apart from 0.62 s so they peak at about 0.75 s as the light sweeps the wordmark. Each bell
+     * is two voices detuned ±1.5 cents (a slow chorus) with slightly inharmonic partials (1, 2, 3.01, 4.2), an 8 ms
+     * attack and an exponential decay (τ 0.45 s: −34 dB at 1.8 s). Peak-normalised to −3 dBFS, 60 ms fade at the end.
+     * Voices run on the sine recurrence y[n] = 2cos(w)·y[n−1] − y[n−2] (no sin() per sample).
      */
     private static String chord(Context c) throws IOException {
-        File f = new File(c.getCacheDir(), "chime-mahittv.wav");
+        new File(c.getCacheDir(), "chime-mahittv.wav").delete();   // the golden intro's chord
+        File f = new File(c.getCacheDir(), "chime-mahittv-glass.wav");
         if (f.exists() && f.length() > 44) return f.getPath();
-        float seconds = 1.25f;
-        double[] notes = {523.25, 659.25, 783.99, 1046.5};
-        double[] gains = {0.34, 0.28, 0.26, 0.10};
+        float seconds = 2.6f;
         int n = Math.round(RATE * seconds);
-        ByteBuffer b = header(n);
-        for (int i = 0; i < n; i++) {
-            double t = (double) i / RATE, s = 0;
-            for (int k = 0; k < notes.length; k++) {
-                double tk = t - k * 0.040;
-                if (tk < 0) continue;
-                double env = Math.min(1, tk / 0.012) * Math.exp(-tk / 0.42);
-                double w = 2 * Math.PI * notes[k] * tk;
-                s += gains[k] * env * (Math.sin(w) + 0.22 * Math.sin(2 * w) + 0.07 * Math.sin(3 * w));
+        float[] mix = new float[n];
+        for (double hz : new double[] {65.41, 98.00}) voice(mix, hz, 0.05, 0.180, 0.55, 0.30);
+        double[] bells = {261.63, 392.00, 493.88, 587.33, 659.25};
+        double[] partials = {1, 2, 3.01, 4.2}, weights = {1, 0.22, 0.07, 0.03};
+        double[] detune = {0.999134, 1.000867};   // 2^(∓1.5/1200)
+        for (int b = 0; b < bells.length; b++) {
+            for (double d : detune) {
+                for (int p = 0; p < partials.length; p++) {
+                    voice(mix, bells[b] * d * partials[p], 0.62 + 0.018 * b, 0.008, 0.45, 0.10 * 0.5 * weights[p]);
+                }
             }
-            double fade = Math.min(1, (seconds - t) / 0.08);
-            b.putShort((short) Math.round(Math.max(-1, Math.min(1, s * 0.8 * fade)) * Short.MAX_VALUE));
         }
-        try (FileOutputStream out = new FileOutputStream(f)) {
-            out.write(b.array());
+        float peak = 1e-6f;
+        for (float v : mix) peak = Math.max(peak, Math.abs(v));
+        float gain = 0.708f / peak;   // −3 dBFS
+        ByteBuffer out = header(n);
+        for (int i = 0; i < n; i++) {
+            double fade = Math.min(1, (seconds - (double) i / RATE) / 0.06);
+            out.putShort((short) Math.round(Math.max(-1, Math.min(1, mix[i] * gain * fade)) * Short.MAX_VALUE));
+        }
+        try (FileOutputStream o = new FileOutputStream(f)) {
+            o.write(out.array());
         }
         return f.getPath();
+    }
+
+    /** Adds one sine voice into `mix`: from `start` s, a linear attack, then exponential decay τ, at `level`. */
+    private static void voice(float[] mix, double hz, double start, double attack, double tau, double level) {
+        if (hz >= RATE / 2.0) return;
+        int from = (int) Math.round(start * RATE), rise = Math.max(1, (int) Math.round(attack * RATE));
+        double w = 2 * Math.PI * hz / RATE, k = 2 * Math.cos(w), fall = Math.exp(-1 / (tau * RATE));
+        double y1 = -Math.sin(w), y2 = -Math.sin(2 * w), env = 1;
+        for (int i = from; i < mix.length; i++) {
+            double y = k * y1 - y2;
+            y2 = y1;
+            y1 = y;
+            int t = i - from;
+            double e = t < rise ? (double) t / rise : (env *= fall);
+            mix[i] += (float) (level * e * y);
+        }
     }
 
     private static ByteBuffer header(int n) throws IOException {

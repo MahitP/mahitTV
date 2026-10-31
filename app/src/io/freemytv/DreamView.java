@@ -717,71 +717,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         return s;
     }
 
-    /**
-     * The sharp rendering of the digits, the surface height (the blurred rendering: 0.5 at the edge, 1 in the middle of
-     * the strokes), its slope (for the lens and the highlight) and the shadow.
-     */
+    /** The glass digits (GlassText: the sharp rendering, the surface slope and the shadow), placed right-aligned. */
     private static Glass makeGlass(String text, Paint paint, float right, float top, float k) {
-        Rect ink = new Rect();
-        paint.getTextBounds(text, 0, text.length(), ink);
-        int pad = Math.round(40 * k);
-        int w = ink.width() + 2 * pad, h = ink.height() + 2 * pad;
-        Bitmap cover = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-        new Canvas(cover).drawText(text, pad - ink.left, pad - ink.top, paint);
-        int[] px = new int[w * h];
-        cover.getPixels(px, 0, w, 0, 0, w, h);
-        int[] alpha = new int[px.length];
-        for (int i = 0; i < px.length; i++) alpha[i] = (px[i] >>> 24) * 16;
-        int[] height = blur(alpha, w, h, Math.max(2, Math.round(6 * k)), 3);
-        int[] soft = blur(alpha, w, h, Math.max(3, Math.round(12 * k)), 3);
-        float max = 1;
-        for (int y = 1; y < h - 1; y++) {
-            for (int x = 1; x < w - 1; x++) {
-                int i = y * w + x;
-                float gx = height[i + 1] - height[i - 1], gy = height[i + w] - height[i - w];
-                max = Math.max(max, (float) Math.sqrt(gx * gx + gy * gy));
-            }
-        }
-        int[] slope = new int[px.length], shadow = new int[px.length];
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int i = y * w + x;
-                float gx = x > 0 && x < w - 1 ? height[i + 1] - height[i - 1] : 0;
-                float gy = y > 0 && y < h - 1 ? height[i + w] - height[i - w] : 0;
-                int r = 128 + Math.round(127 * gx / max), g = 128 + Math.round(127 * gy / max);
-                int b = Math.min(255, height[i] / 16);
-                slope[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
-                shadow[i] = Math.min(255, soft[i] / 16) << 24;
-            }
-        }
-        int x = Math.round(right - ink.width()) - pad, y = Math.round(top) - pad;
-        return new Glass(text, Bitmap.createBitmap(slope, w, h, Bitmap.Config.ARGB_8888), cover,
-                Bitmap.createBitmap(shadow, w, h, Bitmap.Config.ARGB_8888), x, y, pad, Math.max(1, ink.height()));
-    }
-
-    /** Box blur (passes of radius r in both directions); anything outside the image counts as empty. */
-    private static int[] blur(int[] src, int w, int h, int r, int passes) {
-        int[] a = src.clone(), b = new int[src.length];
-        for (int pass = 0; pass < passes; pass++) {
-            box(a, b, w, h, r, true);
-            box(b, a, w, h, r, false);
-        }
-        return a;
-    }
-
-    private static void box(int[] in, int[] out, int w, int h, int r, boolean horizontal) {
-        int n = horizontal ? w : h, lines = horizontal ? h : w, step = horizontal ? 1 : w, lineStep = horizontal ? w : 1;
-        int div = 2 * r + 1;
-        for (int line = 0; line < lines; line++) {
-            int base = line * lineStep, sum = 0;
-            for (int i = 0; i <= r && i < n; i++) sum += in[base + i * step];
-            for (int i = 0; i < n; i++) {
-                out[base + i * step] = (sum + div / 2) / div;
-                int add = i + r + 1, sub = i - r;
-                if (add < n) sum += in[base + add * step];
-                if (sub >= 0) sum -= in[base + sub * step];
-            }
-        }
+        GlassText.Built b = GlassText.build(text, paint, k);
+        int x = Math.round(right - b.ink.width()) - b.pad, y = Math.round(top) - b.pad;
+        return new Glass(text, b.slope, b.cover, b.shadow, x, y, b.pad, Math.max(1, b.ink.height()));
     }
 
     // MARK: - Photo caption (bottom left)

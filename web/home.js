@@ -614,7 +614,7 @@
     var lift = q('#sky .lift');
     // At night the art darkens only a little (the grid 0.25, Control Center 0.12 here plus #dim 0.22): no heavy scrims.
     A(lift, Math.max(p * (night ? 0.25 : 0.6), d * (night ? 0.12 : 0.32)));
-    A(q('#sky .shade'), away * (hasClass(body, 'profile-background') ? (night ? 0.22 : 0.34) : (night ? 0.55 : 0.45)));
+    A(q('#sky .shade'), away * (night ? 0.22 : 0.34));
     A(q('#dim'), d * (night ? 0.22 : 0.18));
     T(q('#art'), 'translateX(' + r2(mv.par.x) + 'px)');
     // The Dock: its scroll; in full screen it only recesses (36 px lower, 0.75 opacity), it never leaves.
@@ -780,9 +780,9 @@
     Motion.kick();
   }
 
-  /** The sheets (Home Settings, Shelf, Language, About) open on SHEET_OPEN and close on SHEET_CLOSE. */
+  /** The sheets (Home Settings, Shelf, Language, Wallpaper, About) open on SHEET_OPEN and close on SHEET_CLOSE. */
   function syncSheets() {
-    var ids = ['settings', 'shelfedit', 'langpick', 'about', 'recents'];
+    var ids = ['settings', 'shelfedit', 'langpick', 'wallpaperpick', 'about', 'recents'];
     for (var i = 0; i < ids.length; i++) {
       var s = sheetSprings[ids[i]] || (sheetSprings[ids[i]] = spring(P.SHEET_OPEN)), open = hasClass($(ids[i]), 'open');
       if (open !== (s.to === 1)) s.tune(open ? P.SHEET_OPEN : P.SHEET_CLOSE).set(open ? 1 : 0);
@@ -2443,7 +2443,7 @@
     Motion.kick();   // the page's shades are darker at night
     if (night === lastNight) return;
     lastNight = night;
-    document.documentElement.style.background = night ? '#0B0B0D' : '';
+    document.documentElement.style.background = night ? '#1C2638' : '';   // the twilight Horizon's mid colour
     try { localStorage.setItem('fmtv.night', night ? 'true' : 'false'); } catch (e) {}   // for index.html, next start
   }
 
@@ -2660,6 +2660,9 @@
     var zoom = el('div', 'zoom nature', s);
     T(zoom, Motion.instant ? '' : 'scale(1.06)');
     setTimeout(function () { T(zoom, ''); }, 30);
+    // Under the scenes, the Frosted Horizon: never black while a scene loads, or if one doesn't.
+    el('div', 'hz hz-day', zoom);
+    el('div', 'hz hz-night', zoom);
     var a = el('canvas', 'scene', zoom), b = el('canvas', 'scene', zoom), front = a;
     a.width = b.width = 1920;
     a.height = b.height = 1080;
@@ -2957,13 +2960,14 @@
     renderAll();
     Data.refresh();
   });
-  // Power-on: the golden intro, dissolving into "Who's Watching?" (preview builds skip both with ?nolock).
+  // Power-on: the Liquid Glass startup handing off to "Who's Watching?"; with Startup animation off, the lock at once
+  // (preview builds skip both with ?nolock).
   Lock.init($('lock'), {onUnlock: unlocked});
   if (window.PREVIEW_PICKS && /[?&]nolock\b/.test(location.search)) {
     Intro.skip($('intro'));
     Profiles.unlock(Profiles.current());
   } else {
-    Intro.play($('intro'), function () { showLock({from: 'intro'}); });
+    Intro.play($('intro'), function (shown) { showLock({from: shown ? 'intro' : 'power'}); });
   }
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {

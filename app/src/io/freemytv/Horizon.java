@@ -52,7 +52,9 @@ final class Horizon {
         float[][] geometry = Wallpaper.horizonGeometry();
         float[] fade = {0.72f, 0.74f, 0.72f};
         Matrix m = new Matrix();
-        for (int i = 0; i < geometry.length; i++) {
+        // Back to front as web/home.css lists them (its first radial is on top) and as Shaders.HORIZON mixes them:
+        // the coastal blue (bottom right) first, then the mist, then the warm cream glow on the left over both.
+        for (int i = geometry.length - 1; i >= 0; i--) {
             int color = p[i + 1];
             RadialGradient g = new RadialGradient(0, 0, 1, new int[] {color, color & 0x00FFFFFF},
                     new float[] {0, fade[i]}, Shader.TileMode.CLAMP);

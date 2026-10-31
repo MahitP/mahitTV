@@ -190,7 +190,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final int[] glassNight = new int[Backdrop.GW * Backdrop.GH], frostNight = new int[Backdrop.FW * Backdrop.FH];
     private final int[] neutralGlassPx = new int[Backdrop.GW * Backdrop.GH], neutralFrostPx = new int[Backdrop.FW * Backdrop.FH];
     private boolean nightPair;          // the glass holds both photos (day and night), blended by `night`
-    private Shader nightGradient;
+    /** The Frosted Horizon, day and twilight (Horizon's cached bitmaps): under any image that hasn't arrived yet. */
+    private Bitmap horizonDay, horizonNight;
 
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
@@ -215,7 +216,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private long fullAt;
     /** The last ← → (−1, 0, 1): the focused tile's logo leans that way (a touch of tvOS's parallax). */
     private float lean;
-    private Shader lightGradient;
 
     // Shelf
     private List<HomeApps.Item> shelf = new ArrayList<>();
@@ -454,6 +454,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private TextPaint titlePaint, gridLabel, toastPaint;
     private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint imagePaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+    private final Paint horizonPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint shadowSoft = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint shadowDeep = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -796,6 +797,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         motionDirty = true;
     }
 
+    /** Home pressed twice quickly (HomeActivity): Recent Apps, as tvOS's double press of the TV button. Never over the lock. */
+    void showRecents() {
+        if (lock.showing() || intro.showing()) return;
+        reset(true);
+        recentsOverlay.show();
+    }
+
     /** The round buttons at the top right (Settings > Top Buttons), with their names in the current language. */
     private void setLightButtons(List<HomeApps.Item> list) {
         lightButtons.clear();
@@ -942,7 +950,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lClock.setLetterSpacing(-0.01f);
         lWeather = Ui.text(Ui.medium, 34 * k, L_DIM);
         lClockQuote = Ui.numbers(Ui.medium, 28 * k, L_DIM);
-        lightGradient = null;
+        horizonDay = Horizon.get(w, h, false);
+        horizonNight = Horizon.get(w, h, true);
         buttonPaint = Ui.text(Ui.semibold, 29 * k, INK);
         capsuleText = Ui.numbers(Ui.medium, 29 * k, 0xF2FFFFFF);
         tipPaint = Ui.text(Ui.semibold, 25 * k, 0xF2FFFFFF);
@@ -1542,7 +1551,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (generation != aerialGeneration || url == null || !url.equals(liveUrl)) return;
         liveUrl = null;
         setLiveVideoVisible(false);
+        // No video: the Frosted Horizon for good (until the wallpaper changes), not the empty aurora's fallback.
+        scene.setHorizon(Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis())));
         showBackdrop(null);
+        neutralGlass();
     }
 
     void aerialReady(long generation, String url) {
@@ -4544,42 +4556,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Drawer or app grid open: the background lightens (by day) or darkens (at night), as a filter on the drawing.
         // (Control Center: the page dims a little behind the panel; the app grid: it lightens or darkens a lot.)
         // Light dims only (the wallpaper stays bright): Control Center 0.18 by day, 0.22 at night; the app grid's
-        // white lift by day, 0.35 black at night.
-        float dd = tone(0.18f, 0.22f) * Ui.clamp(drawer.value), ds = tone(0.62f, 0.35f) * Ui.clamp(sheet.value);
-        // Home and Welly: the background dims behind them (0.45 black by day, 0.55 at night).
-        float dt = tone(0.45f, 0.55f) * Ui.clamp(tabAway.value);
-        android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, 0xFF000000)
+        // white lift by day, 0.25 black at night (as web/home.css).
+        float dd = tone(0.18f, 0.22f) * Ui.clamp(drawer.value), ds = tone(0.62f, 0.25f) * Ui.clamp(sheet.value);
+        // Home and Welly: a slate tint over any wallpaper (0.34 by day, 0.22 at night), never black, as on the web.
+        float dt = tone(0.34f, 0.22f) * Ui.clamp(tabAway.value);
+        android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, SLATE)
                 : dd > ds ? veil(dd, 0xFF000000) : veil(ds, blend(0xFFFFFFFF, 0xFF000000, night));
         if (bgTo == null || (fading && bgFrom == null)) {
             if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon()) {
                 scene.drawBackground(c);
                 // Over the Frosted Horizon the dims are see-through layers, not a filter: Home and Welly tint it slate
                 // (as web/home.css), so its colours stay under their white text.
-                float ht = tone(0.34f, 0.22f) * Ui.clamp(tabAway.value);
-                float amount = ht > dd && ht > ds ? ht : Math.max(dd, ds);
-                int over = ht > dd && ht > ds ? SLATE : dd > ds ? 0xFF000000 : blend(0xFFFFFFFF, 0xFF000000, night);
+                float amount = dt > dd && dt > ds ? dt : Math.max(dd, ds);
+                int over = dt > dd && dt > ds ? SLATE : dd > ds ? 0xFF000000 : blend(0xFFFFFFFF, 0xFF000000, night);
                 if (amount > 0.002f) {
                     fill.setColor(Ui.alpha(over, amount));
                     c.drawRect(screen, fill);
                     fill.setColor(0xFF000000);
                 }
             } else {
-                if (lightGradient == null) lightGradient = Ui.gradient(h, 0xFFF5F5F7, 0xFFE2E2E7);
-                if (nightGradient == null) nightGradient = Ui.gradient(h, 0xFF1C1C1E, 0xFF0B0B0D);
-                fill.setColorFilter(v);
-                fill.setColor(0xFF000000);
-                if (night < 0.999f) {
-                    fill.setShader(lightGradient);
-                    c.drawRect(screen, fill);
-                }
-                if (night > 0.001f) {
-                    fill.setShader(nightGradient);
-                    fill.setAlpha(Math.round(255 * night));
-                    c.drawRect(screen, fill);
-                    fill.setAlpha(255);
-                }
-                fill.setShader(null);
-                fill.setColorFilter(null);
+                // An image that hasn't arrived (Live Aerial loading, a Top Shelf fade): the Frosted Horizon under it, day
+                // and twilight by the night value, never a black or grey void.
+                horizonPaint.setColorFilter(v);
+                if (night < 0.999f) Horizon.draw(c, horizonDay, screen, horizonPaint, 1);
+                if (night > 0.001f) Horizon.draw(c, horizonNight, screen, horizonPaint, night);
+                horizonPaint.setColorFilter(null);
             }
         }
         imagePaint.setColorFilter(v);

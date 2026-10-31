@@ -8,16 +8,28 @@ var Lock = (function () {
   'use strict';
 
   var CARD = 240, GAP = 96, CARD_TOP = 380, PIN_TOP = 120;
+  // The entrance from the startup (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1.5): the header rises 24 px, each card 48 px
+  // from 0.92×, 30 ms after the one before; the Horizon behind them is already there.
+  var TITLE_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92, STAGGER = 0.03;
   var P = Motion.P, BUMP = Motion.BUMP_VELOCITY;
 
   var layer = null, bg = null, title = null, hud = null, prompt = null, dotsBox = null, msg = null, row = null;
   var cards = [], dots = [], keys = [];
   var mode = null;            // 'cards', 'pin', 'fly', or null (hidden)
   var at = 0, pad = 1, digits = '', chosen = null, opts = {}, asking = null, waitTimer = 0, busy = false;
+  var entering = -1;          // seconds into the staggered entrance, or -1
+  var uncoverTimer = 0;
+
+  /** The home screen's background may paint again (intro.js holds it back while the startup covers it). */
+  function uncover() {
+    clearTimeout(uncoverTimer);
+    var b = document.body;
+    if ((' ' + b.className + ' ').indexOf(' covered ') >= 0) b.className = (' ' + b.className + ' ').replace(' covered ', ' ').replace(/^\s+|\s+$/g, '');
+  }
 
   function spring(preset, value) { return new Motion.Spring(preset, value || 0); }
   var sp = {
-    show: spring(P.SPATIAL_SCROLL, 1), veil: spring(P.SHEET_OPEN, 1), title: spring(P.TITLE_SETTLE, 1), hud: spring(P.SHEET_OPEN),
+    veil: spring(P.SHEET_OPEN, 1), title: spring(P.TITLE_SETTLE, 1), titleIn: spring(P.TITLE_SETTLE, 1), hud: spring(P.SHEET_OPEN),
     shake: spring(P.BOUNDARY_BUMP).px(), gold: spring(P.MICRO_PRESS), row: spring(P.BOUNDARY_BUMP).px()
   };
 
@@ -68,7 +80,7 @@ var Lock = (function () {
       var c = {p: p, node: node, ring: node.childNodes[1], shadow: node.firstChild, spec: face.lastChild, label: label,
         f: spring(P.SNAPPY_FOCUS), bx: spring(P.BOUNDARY_BUMP).px(), by: spring(P.BOUNDARY_BUMP).px(),
         x: spring(P.SPATIAL_SCROLL, restX(i, list.length)).px(), y: spring(P.SPATIAL_SCROLL, CARD_TOP).px(),
-        s: spring(P.SPATIAL_SCROLL, 1), a: spring(P.TITLE_SETTLE, 1)};
+        s: spring(P.SPATIAL_SCROLL, 1), a: spring(P.TITLE_SETTLE, 1), e: spring(P.CARD_ENTER, 1)};
       hoverCard(c, i);
       cards.push(c);
     }
@@ -101,15 +113,22 @@ var Lock = (function () {
    * A round avatar (a disc on transparent corners) is drawn larger, so its disc fills the squircle instead of floating
    * in it. Where the image can't be read back (file:// on some TVs), it stays as it is.
    */
+  var probe = null, probeCtx = null;
   function roundness(url, face) {
     var img = new Image();
     img.onload = function () {
       try {
-        var c = document.createElement('canvas');
-        c.width = c.height = 16;
-        var g = c.getContext('2d');
-        g.drawImage(img, 0, 0, 16, 16);
-        if (g.getImageData(0, 0, 1, 1).data[3] < 40 && g.getImageData(15, 15, 1, 1).data[3] < 40) setClass(face, 'round', true);
+        // One small canvas kept on the CPU (willReadFrequently): reading back a GPU canvas stalls the page for a frame
+        // per avatar, right while the cards come in.
+        if (!probe) {
+          probe = document.createElement('canvas');
+          probe.width = probe.height = 16;
+          probeCtx = probe.getContext('2d', {willReadFrequently: true}) || probe.getContext('2d');
+        }
+        probeCtx.clearRect(0, 0, 16, 16);
+        probeCtx.drawImage(img, 0, 0, 16, 16);
+        var d = probeCtx.getImageData(0, 0, 16, 16).data;
+        if (d[3] < 40 && d[(15 * 16 + 15) * 4 + 3] < 40) setClass(face, 'round', true);
       } catch (e) {}
     };
     img.src = url;
@@ -143,6 +162,19 @@ var Lock = (function () {
       if (c.y.step(dt)) m = true;
       if (c.s.step(dt)) m = true;
       if (c.a.step(dt)) m = true;
+      if (c.e.step(dt)) m = true;
+    }
+    // The staggered entrance: card i's spring starts STAGGER·i after the first.
+    if (entering >= 0) {
+      entering += dt;
+      var left = false;
+      for (i = 0; i < cards.length; i++) {
+        if (cards[i].e.to === 1) continue;
+        if (entering >= i * STAGGER) cards[i].e.set(1);
+        else left = true;
+      }
+      if (left) m = true;
+      else entering = -1;
     }
     for (i = 0; i < dots.length; i++) if (dots[i].pop.step(dt)) m = true;
     for (i = 0; i < keys.length; i++) if (keys[i].f.step(dt)) m = true;
@@ -150,17 +182,16 @@ var Lock = (function () {
   }
 
   function draw() {
-    var s = sp.show.x;
-    T(layer, 'scale(' + r4(1.04 - 0.04 * s) + ')');
-    A(layer, s);
+    // The backdrop (the Horizon) never moves: only what's on it comes in.
     A(bg, sp.veil.x);
-    A(title, sp.title.x);
-    T(title, 'translateY(' + r2(-14 * (1 - sp.title.x)) + 'px)');
+    A(title, sp.title.x * sp.titleIn.x);
+    T(title, 'translateY(' + r2(-14 * (1 - sp.title.x) + TITLE_RISE * (1 - sp.titleIn.x)) + 'px)');
     for (var i = 0; i < cards.length; i++) {
-      var c = cards[i], f = c.f.x, shake = c === chosen ? sp.shake.x : 0;
-      var x = c.x.x + Motion.rubber(c.bx.x) + shake, y = c.y.x + Motion.rubber(c.by.x), sc = c.s.x * (1 + 0.18 * f);
+      var c = cards[i], f = c.f.x, e = c.e.x, shake = c === chosen ? sp.shake.x : 0;
+      var x = c.x.x + Motion.rubber(c.bx.x) + shake, y = c.y.x + Motion.rubber(c.by.x) + CARD_RISE * (1 - e);
+      var sc = c.s.x * (1 + 0.18 * f) * (CARD_FROM + (1 - CARD_FROM) * e);
       T(c.node, 'translate(' + r2(x) + 'px,' + r2(y) + 'px) scale(' + r4(sc) + ')');
-      A(c.node, c.a.x);
+      A(c.node, c.a.x * Motion.clamp(e, 0, 1));
       A(c.ring, f);
       A(c.shadow, f);
       A(c.spec, 0.35 + 0.65 * f);
@@ -285,6 +316,7 @@ var Lock = (function () {
   }
 
   function success(c) {
+    uncover();
     mode = 'fly';
     clearInterval(waitTimer);
     var p = c.p, cb = opts.onUnlock;
@@ -305,6 +337,7 @@ var Lock = (function () {
   }
 
   function hide() {
+    uncover();
     mode = null;
     asking = null;
     chosen = null;
@@ -327,17 +360,25 @@ var Lock = (function () {
     layer.style.visibility = 'visible';
     layer.style.opacity = '1';
     layer._t = layer._o = null;
+    layer.style.webkitTransform = layer.style.transform = '';
     build(list, glass);
     sp.veil.tune(P.SHEET_OPEN).snap(1);
     sp.title.snap(1);
     sp.hud.snap(0);
     sp.shake.snap(0);
     sp.gold.snap(0);
-    // From the intro (or the screensaver), it settles from 1.04 as the intro dissolves over it.
-    if (from === 'intro' && !Motion.instant) { sp.show.snap(0); sp.show.set(1); }
-    else sp.show.snap(1);
-    for (var i = 0; i < cards.length; i++) { cards[i].f.snap(0); cards[i].a.snap(1); }
+    // From the startup the Horizon is already on screen (the intro's own, identical, goes as this one appears): the
+    // header and the cards come in over it, staggered. Otherwise everything is simply there.
+    var enter = from === 'intro' && !Motion.instant;
+    sp.titleIn.snap(enter ? 0 : 1);
+    if (enter) sp.titleIn.set(1);
+    for (var i = 0; i < cards.length; i++) { cards[i].f.snap(0); cards[i].a.snap(1); cards[i].e.snap(enter ? 0 : 1); }
+    entering = enter ? 0 : -1;
+    // Once the cards have settled (about 0.8 s), the home background paints behind the lock, while nothing moves.
+    clearTimeout(uncoverTimer);
+    uncoverTimer = setTimeout(uncover, enter ? 900 : 0);
     draw();
+    Motion.kick();
   }
 
   var api = {

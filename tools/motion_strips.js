@@ -27,7 +27,11 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 
 const BAR = ['ArrowUp', 'ArrowUp'];          // from the Dock: full screen on the pick, then the tab bar
 // name: { setup keys, action (keys or {down|up|js}), frames, step ms, crop [x, y, w, h] or null }
+// The startup (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1): frames at fixed moments (ms after the page loads), from power-on.
+const STARTUP_TIMES = [100, 400, 800, 1200, 1600, 2200, 2600];
 const SCENARIOS = {
+  'startup-day': { startup: true, theme: 'light', times: STARTUP_TIMES, crop: null },
+  'startup-night': { startup: true, theme: 'dark', times: STARTUP_TIMES, crop: null },
   'focus-hop': { setup: [], action: ['ArrowRight'], frames: 10, step: 33, crop: [0, 640, 1920, 440] },
   'dead-end': { setup: [], action: ['ArrowLeft'], frames: 10, step: 33, crop: [0, 640, 1920, 440] },
   'press': { setup: ['ArrowRight'], action: [{ down: 'Enter' }], frames: 6, step: 33, crop: [0, 640, 1920, 440] },
@@ -53,16 +57,38 @@ function serve() {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
-async function context(browser) {
+async function context(browser, theme) {
   const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await ctx.addInitScript(() => {
+  await ctx.addInitScript((theme) => {
     try {
       localStorage.clear();
-      localStorage.setItem('fmtv.prefs', JSON.stringify({ theme: 'dark' }));
-      localStorage.setItem('fmtv.night', 'true');
+      localStorage.setItem('fmtv.prefs', JSON.stringify({ theme }));
+      localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      // The theme is each profile's own: set it for every profile, or the frames follow the clock.
+      ['mahit', 'dhruvin', 'subbu', 'lucky'].forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
     } catch (e) {}
-  });
+  }, theme || 'dark');
   return ctx;
+}
+
+/** The startup from the first frame: a screenshot at each of `sc.times` (ms) on the page's fake clock. */
+async function startupStrip(browser, url, name, sc, dir) {
+  const ctx = await context(browser, sc.theme);
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto(url);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1);
+  const files = [];
+  let at = 0;
+  for (let i = 0; i < sc.times.length; i++) {
+    await page.clock.runFor(sc.times[i] - at);
+    at = sc.times[i];
+    const file = path.join(dir, `${name}-${String(i).padStart(2, '0')}.png`);
+    await page.screenshot({ path: file });
+    files.push(file);
+  }
+  await ctx.close();
+  return files;
 }
 
 async function step(page, s, fake) {
@@ -82,6 +108,7 @@ async function act(page, s) {
 }
 
 async function strip(browser, url, name, sc, dir) {
+  if (sc.startup) return startupStrip(browser, url, name, sc, dir);
   const ctx = await context(browser);
   const page = await ctx.newPage();
   await page.clock.install();
@@ -105,8 +132,26 @@ async function strip(browser, url, name, sc, dir) {
 }
 
 async function timing(browser, url, sc) {
-  const ctx = await context(browser);
+  const ctx = await context(browser, sc.theme);
   const page = await ctx.newPage();
+  if (sc.startup) {
+    // The whole startup, from load: every animation frame's cost for 3 s.
+    await page.addInitScript(() => {
+      window.__frames = [];
+      let last = 0;
+      (function tick(now) {
+        if (last) window.__frames.push(now - last);
+        last = now;
+        if (window.__frames.length < 400) requestAnimationFrame(tick);
+      })(0);
+    });
+    await page.goto(url);
+    await page.waitForTimeout(3200);
+    const frames = (await page.evaluate(() => window.__frames)).slice(2).sort((a, b) => a - b);
+    await ctx.close();
+    const p = (q) => frames[Math.min(frames.length - 1, Math.floor(q * frames.length))];
+    return { n: frames.length, median: p(0.5), p95: p(0.95), max: frames[frames.length - 1], over: frames.filter((f) => f > 16.7).length };
+  }
   await page.goto(url);
   await page.waitForTimeout(2500);
   for (const s of sc.setup) await step(page, s, false);
@@ -137,7 +182,8 @@ async function timing(browser, url, sc) {
   const names = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SCENARIOS);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmtv-frames-'));
   const server = await serve();
-  const url = 'http://127.0.0.1:' + server.address().port + '/index.html';
+  const base = 'http://127.0.0.1:' + server.address().port + '/index.html';
+  const url = base + '?nolock';   // the home screen (preview builds skip the startup and the lock with ?nolock)
   const browser = await chromium.launch();
   // GPU rendering, as on a TV (headless Chromium otherwise rasterises in software, SwiftShader, ~7x slower here).
   const unthrottled = await chromium.launch({ args: ['--disable-frame-rate-limit', '--disable-gpu-vsync',
@@ -146,10 +192,11 @@ async function timing(browser, url, sc) {
   for (const name of names) {
     const sc = SCENARIOS[name];
     if (!sc) { console.error('no scenario', name); continue; }
-    const files = await strip(browser, url, name, sc, dir);
+    const at = sc.startup ? base : url;
+    const files = await strip(browser, at, name, sc, dir);
     const out = path.join(OUT, `motion-${name}.png`);
-    execFileSync('python3', ['-c', TILE, out, String(sc.step), ...files]);
-    report[name] = await timing(unthrottled, url, sc);
+    execFileSync('python3', ['-c', TILE, out, sc.times ? sc.times.join(',') : String(sc.step), ...files]);
+    report[name] = await timing(unthrottled, at, sc);
     const t = report[name];
     console.log(`wrote ${path.relative(ROOT, out)}  frames ${t.n}, median ${t.median.toFixed(1)} ms, ` +
       `p95 ${t.p95.toFixed(1)} ms, max ${t.max.toFixed(1)} ms, over 16.7 ms: ${t.over}`);
@@ -164,7 +211,8 @@ async function timing(browser, url, sc) {
 const TILE = `
 import sys
 from PIL import Image, ImageDraw, ImageFont
-out, step, files = sys.argv[1], int(sys.argv[2]), sys.argv[3:]
+out, step, files = sys.argv[1], sys.argv[2], sys.argv[3:]
+labels = ['+%s ms' % t for t in step.split(',')] if ',' in step else ['+%d ms' % (i * int(step)) for i in range(len(files))]
 frames = [Image.open(f).convert('RGB') for f in files]
 w, h = frames[0].size
 scale = min(1.0, 640 / w)
@@ -181,6 +229,6 @@ except Exception:
 for i, f in enumerate(frames):
     x, y = pad + (i % cols) * (fw + pad), pad + (i // cols) * (fh + label + pad)
     sheet.paste(f.resize((fw, fh), Image.LANCZOS), (x, y + label))
-    draw.text((x + 2, y + 4), '+%d ms' % (i * step), fill=(200, 200, 205), font=font)
+    draw.text((x + 2, y + 4), labels[i], fill=(200, 200, 205), font=font)
 sheet.save(out)
 `;

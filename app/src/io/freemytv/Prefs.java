@@ -335,6 +335,8 @@ final class Prefs {
     private static final String[] keyApps = new String[KEYS.length];   // null = the default
     /** The app a quick second press opens ("<key>d=<package>" lines; "" or none = no double press). */
     private static final String[] keyDoubles = new String[KEYS.length];
+    /** The app holding the button opens ("<key>l=<package>" lines; "" or none = no long press). */
+    private static final String[] keyLongs = new String[KEYS.length];
     private static long keysStamp = Long.MIN_VALUE;
 
     /** A temporary file per process (two can start together after an update), synced before it replaces the old one. */
@@ -371,14 +373,16 @@ final class Prefs {
         keysStamp = stamp;
         java.util.Arrays.fill(keyApps, null);
         java.util.Arrays.fill(keyDoubles, null);
+        java.util.Arrays.fill(keyLongs, null);
         if (stamp == 0) return;
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
             String line;
             while ((line = r.readLine()) != null) {
                 for (int i = 0; i < KEYS.length; i++) {
-                    String prefix = KEYS[i] + "=", twice = KEYS[i] + "d=";
+                    String prefix = KEYS[i] + "=", twice = KEYS[i] + "d=", held = KEYS[i] + "l=";
                     if (line.startsWith(prefix)) keyApps[i] = line.substring(prefix.length());
                     else if (line.startsWith(twice)) keyDoubles[i] = line.substring(twice.length());
+                    else if (line.startsWith(held)) keyLongs[i] = line.substring(held.length());
                 }
             }
         } catch (IOException ignored) {
@@ -403,20 +407,39 @@ final class Prefs {
         }
     }
 
+    /** Package holding the key (RemoteKeys.LONG_MS) opens ("" = none: the key acts on its press as before). */
+    static String keyLongApp(int keyCode) {
+        synchronized (keyApps) {
+            readKeys();
+            for (int i = 0; i < KEYS.length; i++) if (KEYS[i] == keyCode && keyLongs[i] != null) return keyLongs[i];
+            return "";
+        }
+    }
+
     static void setKeyApp(int keyCode, String pkg) {
-        writeKeyChoice(keyCode, pkg, false);
+        writeKeyChoice(keyCode, pkg, PRESS_ONCE);
     }
 
     static void setKeyDoubleApp(int keyCode, String pkg) {
-        writeKeyChoice(keyCode, pkg, true);
+        writeKeyChoice(keyCode, pkg, PRESS_TWICE);
     }
 
-    private static void writeKeyChoice(int keyCode, String pkg, boolean twice) {
+    static void setKeyLongApp(int keyCode, String pkg) {
+        writeKeyChoice(keyCode, pkg, PRESS_HOLD);
+    }
+
+    /** Which of a button's three choices a write changes. */
+    static final int PRESS_ONCE = 0, PRESS_TWICE = 1, PRESS_HOLD = 2;
+
+    private static void writeKeyChoice(int keyCode, String pkg, int which) {
         StringBuilder sb = new StringBuilder();
         for (int key : KEYS) {
-            sb.append(key).append('=').append(key == keyCode && !twice ? pkg : keyApp(key)).append('\n');
-            String second = key == keyCode && twice ? pkg : keyDoubleApp(key);
+            boolean mine = key == keyCode;
+            sb.append(key).append('=').append(mine && which == PRESS_ONCE ? pkg : keyApp(key)).append('\n');
+            String second = mine && which == PRESS_TWICE ? pkg : keyDoubleApp(key);
             if (!second.isEmpty()) sb.append(key).append("d=").append(second).append('\n');
+            String held = mine && which == PRESS_HOLD ? pkg : keyLongApp(key);
+            if (!held.isEmpty()) sb.append(key).append("l=").append(held).append('\n');
         }
         if (writeKeys(sb.toString())) version++;
     }

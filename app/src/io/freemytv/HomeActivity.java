@@ -3,8 +3,10 @@ package io.freemytv;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -20,6 +22,9 @@ import java.io.File;
 public class HomeActivity extends Activity {
     /** Opens All Apps (a remote's All Apps button, RemoteKeys). */
     static final String EXTRA_ALL_APPS = "io.freemytv.ALL_APPS";
+    /** Two Home presses this close together open Recent Apps (tvOS's double press of the TV button). */
+    static final long DOUBLE_HOME_MS = 400;
+    private long lastHome;
     private HomeView home;
     private WallpaperVideoView wallpaperVideo;
     private AerialCache aerialCache;
@@ -34,12 +39,20 @@ public class HomeActivity extends Activity {
         if (Watchdog.crashedTooOften(this)) {
             // Don't try to draw again: only show a notice while the main process restores the original home screen.
             HomeMode.requestRevertHome(this);
+            // On the Frosted Horizon (day or twilight by the hour: nothing else is loaded on this path), never a void.
+            int hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+            boolean dark = hour < 7 || hour >= 19;
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
             TextView t = new TextView(this);
             t.setText(Ui.tr("mahitTV's home screen ran into a problem.\nGoing back to the TV's original home screen…"));
-            t.setTextColor(Color.WHITE);
+            t.setTextColor(dark ? Color.WHITE : 0xFF1D1D1F);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             t.setGravity(Gravity.CENTER);
-            t.setBackgroundColor(Color.rgb(7, 11, 30));
+            try {
+                t.setBackground(new BitmapDrawable(getResources(), Horizon.get(dm.widthPixels, dm.heightPixels, dark)));
+            } catch (RuntimeException | OutOfMemoryError e) {
+                t.setBackgroundColor(dark ? 0xFF1C2638 : 0xFFDCE6EF);   // the Horizon's mid-sky
+            }
             setContentView(t);
             return;
         }
@@ -52,7 +65,8 @@ public class HomeActivity extends Activity {
                 aerialCache.fetch(url, file -> runOnUiThread(() -> {
                     if (!aerialRequest.matches(token, url)) return;
                     if (file == null) { wallpaperVideo.hide(); home.aerialFailed(generation, url); }
-                    else if (aerialRequest.videoReady(token, url)) { home.aerialReady(generation, url); wallpaperVideo.show(file, () -> home.aerialFailed(generation, url)); }
+                    // The sky stops drawing only once the video's first frame is on screen (no black gap while it starts).
+                    else if (aerialRequest.videoReady(token, url)) wallpaperVideo.show(file, () -> home.aerialReady(generation, url), () -> home.aerialFailed(generation, url));
                 }));
             }
             @Override public void hide(long generation) { aerialRequest.hide(); wallpaperVideo.hide(); }
@@ -92,11 +106,21 @@ public class HomeActivity extends Activity {
         super.onPause();
     }
 
-    /** Home button pressed on the home screen: back to the entry state (focus on the first app, sheet closed). */
+    /**
+     * Home button pressed on the home screen: back to the entry state (focus on the first app, sheet closed). Pressed
+     * twice within DOUBLE_HOME_MS: Recent Apps.
+     */
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (home == null) return;
-        if (intent.getBooleanExtra(EXTRA_ALL_APPS, false)) home.showAllApps();
+        if (intent.getBooleanExtra(EXTRA_ALL_APPS, false)) {
+            home.showAllApps();
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        boolean twice = lastHome != 0 && now - lastHome < DOUBLE_HOME_MS;
+        lastHome = twice ? 0 : now;
+        if (twice) home.showRecents();
         else home.reset(true);
     }
 

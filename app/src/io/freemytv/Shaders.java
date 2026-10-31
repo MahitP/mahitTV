@@ -98,7 +98,8 @@ final class Shaders {
         "}\n" +
         "half4 main(float2 xy) {\n" +
         "  float2 uv = (xy * (res / layer)) / res;\n" +
-        "  half3 col = mix(c0, c2, half(clamp(uv.y / 0.56, 0.0, 1.0)));\n" +
+        // The mid-sky stop: c2 by day, c1 at night (as Horizon.java and web/home.css .hz-night).
+        "  half3 col = mix(c0, dark > 0.5 ? c1 : c2, half(clamp(uv.y / 0.56, 0.0, 1.0)));\n" +
         "  col = mix(col, c3, half(clamp((uv.y - 0.56) / 0.44, 0.0, 1.0)));\n" +
         "  col = mix(col, c3, half(field(uv, float2(1.06, 1.04), 1.04, 0.72)));\n" +
         "  col = mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)));\n" +
@@ -311,6 +312,90 @@ final class Shaders {
         "  col *= half(1.0 - 0.1 * back * bend * (1.0 - rim));\n" +
         "  half k = a * half(alpha);\n" +
         "  return half4(col * k, k);\n" +
+        "}\n";
+
+    /**
+     * The startup's glass wordmark (TVOS-LAUNCHER-MERGE-SPEC.md §1.3): GLASS_TEXT's refractive letters over the Frosted
+     * Horizon (`sky`, in screen space), with an inner optical tint (`body`: dark slate by day so the clear glass reads
+     * on the bright sky, frost at night), a 1.5 px R/B split along the surface normal (`fringe`), the specular rim, and
+     * the caustic sweep: a Gaussian band at −28° (`sweepDir`, `sweepPos`, `sweepWidth`, in px along the word's local
+     * axis) that brightens the glass and splits its rim into three tints (`prismA/B/C`) `prismPx` apart across the band.
+     * `zoom` scales the word around `pivot` without a canvas transform, so the sky stays put. Premultiplied color.
+     */
+    static final String GLASS_WORD =
+        "uniform shader sky;\n" +
+        "uniform shader slope;\n" +
+        "uniform shader cover;\n" +
+        "uniform float2 origin;\n" +
+        "uniform float2 pivot;\n" +
+        "uniform float zoom;\n" +
+        "uniform float refraction;\n" +
+        "uniform float fringe;\n" +
+        "uniform half4 body;\n" +
+        "uniform float2 sweepDir;\n" +
+        "uniform float sweepPos;\n" +
+        "uniform float sweepWidth;\n" +
+        "uniform half3 prismA;\n" +
+        "uniform half3 prismB;\n" +
+        "uniform half3 prismC;\n" +
+        "uniform float prismPx;\n" +
+        "uniform float alpha;\n" +
+        "float rimAt(float2 local) {\n" +
+        "  half3 s = slope.eval(local).rgb;\n" +
+        "  float bend = length((float2(s.r, s.g) - 0.5) * 2.0);\n" +
+        "  return (1.0 - smoothstep(0.5, 0.6, float(s.b))) * smoothstep(0.05, 0.35, bend);\n" +
+        "}\n" +
+        "half4 main(float2 xy) {\n" +
+        "  float2 local = (xy - pivot) / zoom + pivot - origin;\n" +
+        "  half a = cover.eval(local).a;\n" +
+        "  if (a <= 0.0) { return half4(0.0); }\n" +
+        "  half3 s = slope.eval(local).rgb;\n" +
+        "  float2 n = (float2(s.r, s.g) - 0.5) * 2.0;\n" +
+        "  float bend = length(n);\n" +
+        "  float height = float(s.b);\n" +
+        "  float2 p = xy + n * refraction;\n" +
+        "  half3 bg = sky.eval(p).rgb;\n" +
+        "  if (bend > 0.02) {\n" +
+        "    bg = half3(sky.eval(p + n * fringe).r, bg.g, sky.eval(p - n * fringe).b);\n" +
+        "  }\n" +
+        "  half3 col = mix(bg, body.rgb, body.a) + half3(0.05);\n" +
+        "  float2 dir = n / max(bend, 0.001);\n" +
+        "  float2 L = float2(-0.447, -0.894);\n" +
+        "  float facing = clamp(-dot(dir, L), 0.0, 1.0);\n" +
+        "  float back = clamp(dot(dir, L), 0.0, 1.0);\n" +
+        "  float rim = (1.0 - smoothstep(0.5, 0.6, height)) * smoothstep(0.05, 0.35, bend);\n" +
+        "  col += half3(rim * (0.30 + 0.9 * facing + 0.35 * back));\n" +
+        "  float along = dot(local, sweepDir) - sweepPos;\n" +
+        "  float band = exp(-(along * along) / (sweepWidth * sweepWidth * 0.18));\n" +
+        "  if (band > 0.003) {\n" +
+        "    float2 across = float2(-sweepDir.y, sweepDir.x) * prismPx;\n" +
+        "    half3 prism = prismA * half(rimAt(local + across)) + prismB * half(rim) + prismC * half(rimAt(local - across));\n" +
+        "    col += half3(0.55 * band) + prism * half(0.9 * band);\n" +
+        "  }\n" +
+        "  half k = a * half(alpha);\n" +
+        "  return half4(clamp(col, half3(0.0), half3(1.0)) * k, k);\n" +
+        "}\n";
+
+    /**
+     * The startup's glass shockwave (TVOS-LAUNCHER-MERGE-SPEC.md §1.4): the Frosted Horizon (`sky`, screen space) seen
+     * through a soft ring of `radius` and `width` around `center`, bent `amp` px along the ring's normal (outward on its
+     * leading side, inward behind) with a little light on the ring; `strength` fades it all out. Opaque.
+     */
+    static final String HORIZON_RIPPLE =
+        "uniform shader sky;\n" +
+        "uniform float2 center;\n" +
+        "uniform float radius;\n" +
+        "uniform float width;\n" +
+        "uniform float amp;\n" +
+        "uniform float strength;\n" +
+        "half4 main(float2 xy) {\n" +
+        "  float2 d = xy - center;\n" +
+        "  float dist = length(d);\n" +
+        "  float x = (dist - radius) / width;\n" +
+        "  float ring = exp(-x * x * 4.0) * strength;\n" +
+        "  float2 dir = d / max(dist, 1.0);\n" +
+        "  half3 c = sky.eval(xy - dir * (x * ring * amp)).rgb;\n" +
+        "  return half4(c + half3(0.10 * ring), 1.0);\n" +
         "}\n";
 
     /** Aurora colors: three tones (background, middle, highlight), from 0 to 1. */

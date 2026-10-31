@@ -278,7 +278,7 @@ function assertHorizonParity(cssText, shaderText) {
     ['float2 res', 'float2 layer', 'half3 c0', 'half3 c1', 'half3 c2', 'half3 c3', 'float dark'],
     'Horizon has only the required uniforms in order');
   assertOrdered(horizon, [
-    'mix(c0, c2, half(clamp(uv.y / 0.56, 0.0, 1.0)))',
+    'mix(c0, dark > 0.5 ? c1 : c2, half(clamp(uv.y / 0.56, 0.0, 1.0)))',   // mid-sky: p2 by day, p1 at night
     'mix(col, c3, half(clamp((uv.y - 0.56) / 0.44, 0.0, 1.0)))',
     'mix(col, c3, half(field(uv, float2(1.06, 1.04), 1.04, 0.72)))',
     'mix(col, c2, half(field(uv, float2(0.53, 0.48), 0.78, 0.74)))',
@@ -307,4 +307,16 @@ parityMustReject('rejects changed shader geometry', css,
   shaders.replace('float2(0.53, 0.48), 0.78, 0.74', 'float2(0.54, 0.48), 0.78, 0.74'));
 parityMustReject('rejects changed vignette distance', css,
   shaders.replace('length((uv - 0.5) * 1.41421356)', 'length((uv - 0.5) * 2.0)'));
+parityMustReject('rejects the night mid-sky going back to c2', css,
+  shaders.replace('dark > 0.5 ? c1 : c2', 'c2'));
+
+// Android's Horizon bitmap (Horizon.java: the lock, the intro, the crash notice) is the third renderer: the same
+// mid-sky stop by day and at night, and its three glows painted back to front as the CSS lists them and the shader
+// mixes them (coastal blue, then the mist, then the cream glow on top).
+var horizonJava = fs.readFileSync('app/src/io/freemytv/Horizon.java', 'utf8');
+assert.ok(horizonJava.indexOf('new int[] {p[0], dark ? p[1] : p[2], p[3]}') >= 0,
+  'Horizon bitmap uses the CSS and shader mid-sky stop (p2 by day, p1 at night)');
+assert.ok(/for \(int i = geometry\.length - 1; i >= 0; i--\)/.test(horizonJava),
+  'Horizon bitmap paints its glows back to front, as the CSS and the shader do');
+assert.ok(horizonJava.indexOf('{0.72f, 0.74f, 0.72f}') >= 0, 'Horizon bitmap fades match the CSS (72/74/72%)');
 console.log('wallpaper-web-test: passed');

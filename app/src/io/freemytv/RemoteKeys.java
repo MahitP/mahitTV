@@ -28,9 +28,10 @@ import android.view.KeyEvent;
  * hot-key receiver (partnercustomizer's GlobalKeyReceiver).
  * On Hisense TVs, the Prime Video, YouTube, Disney+, All Apps, Settings (gear) and profile buttons go to Google TV's
  * home app, which Free My TV mode turns off: without the filter they do nothing. Netflix stays with the system.
- * Double press (TVOS-LAUNCHER-MERGE-SPEC.md S6, the idea adapted from tvOS-Launcher (Apache-2.0)): a button can open a
- * second app when pressed twice within DOUBLE_MS. Only a button with a second app waits that long before opening its
- * first one; not on Xiaomi, whose remote already sends one press as a burst.
+ * Double press and long press (TVOS-LAUNCHER-MERGE-SPEC.md S6 and Part 2 §4, the idea adapted from tvOS-Launcher
+ * (Apache-2.0)): a button can open a second app when pressed twice within DOUBLE_MS, and a third when held LONG_MS.
+ * Only a button with a second app waits DOUBLE_MS before opening its first one; only one with a held app acts on its
+ * release instead of its press. Neither on Xiaomi, whose remote already sends one press as a burst.
  */
 final class RemoteKeys {
     private RemoteKeys() {}
@@ -58,11 +59,26 @@ final class RemoteKeys {
     private static long lastDown;
 
     /** A second press within this long opens the button's second app. */
-    static final long DOUBLE_MS = 350;
-    /** Whether this remote's buttons can have a second app (Settings shows the rows only then). */
+    static final long DOUBLE_MS = 320;
+    /** Holding the button this long opens its held app. */
+    static final long LONG_MS = 550;
+    /** Whether this remote's buttons can have a second and a held app (Settings shows the rows only then). */
     static boolean doublePress() {
         return supported() && !XIAOMI;
     }
+
+    // The button being held, when it has a held app: the app opens after LONG_MS unless it's released first.
+    private static int heldKey;
+    private static boolean heldFired;
+    private static String heldPkg;
+    private static Context heldContext;
+    private static final Runnable openHeld = () -> {
+        Context c = heldContext;
+        String pkg = heldPkg;
+        heldFired = true;
+        heldContext = null;
+        if (c != null && pkg != null) open(c, pkg, 0);
+    };
 
     // The press waiting for a possible second one: its key, when, and what it opens if no second press comes.
     private static Handler handler;
@@ -105,34 +121,54 @@ final class RemoteKeys {
         if (!ours) return false;
         String pkg = Prefs.keyApp(keyCode);
         if (pkg.isEmpty()) return false;   // "Nothing": the key goes on as if we weren't here
+        if (handler == null) handler = new Handler(Looper.getMainLooper());
         if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
             // Only on Xiaomi, where the bursts are: everywhere else a second press opens the app again, as before.
             boolean burst = XIAOMI && keyCode == lastKey && e.getEventTime() - lastDown < BURST_MS;
             lastKey = keyCode;
             lastDown = e.getEventTime();
             if (burst) return true;
-            String twice = doublePress() ? Prefs.keyDoubleApp(keyCode) : "";
-            if (handler == null) handler = new Handler(Looper.getMainLooper());
-            if (pendingKey != 0 && pendingKey != keyCode) {   // another button: the first one's app opens now
-                handler.removeCallbacks(openPending);
-                openPending.run();
+            String held = doublePress() ? Prefs.keyLongApp(keyCode) : "";
+            if (held.isEmpty()) {
+                press(c, keyCode, pkg, e.getEventTime(), e.getKeyCode());
+            } else {   // a held app: wait for the release (a press) or LONG_MS (held)
+                handler.removeCallbacks(openHeld);
+                heldKey = keyCode;
+                heldFired = false;
+                heldPkg = held;
+                heldContext = c;
+                handler.postDelayed(openHeld, LONG_MS);
             }
-            if (twice.isEmpty()) {
-                open(c, pkg, e.getKeyCode());
-            } else if (pendingKey == keyCode && e.getEventTime() - pendingAt < DOUBLE_MS) {
-                handler.removeCallbacks(openPending);
-                pendingKey = 0;
-                pendingContext = null;
-                open(c, twice, e.getKeyCode());
-            } else {
-                pendingKey = keyCode;
-                pendingAt = e.getEventTime();
-                pendingPkg = pkg;
-                pendingContext = c;
-                handler.postDelayed(openPending, DOUBLE_MS);
-            }
+        } else if (e.getAction() == KeyEvent.ACTION_UP && keyCode == heldKey) {
+            heldKey = 0;
+            handler.removeCallbacks(openHeld);
+            heldContext = null;
+            if (!heldFired) press(c, keyCode, pkg, e.getEventTime(), e.getKeyCode());
         }
         return true;
+    }
+
+    /** One press of a button: its app at once, or (with a second app) after DOUBLE_MS unless a second press comes. */
+    private static void press(Context c, int keyCode, String pkg, long at, int rawKey) {
+        String twice = doublePress() ? Prefs.keyDoubleApp(keyCode) : "";
+        if (pendingKey != 0 && pendingKey != keyCode) {   // another button: the first one's app opens now
+            handler.removeCallbacks(openPending);
+            openPending.run();
+        }
+        if (twice.isEmpty()) {
+            open(c, pkg, rawKey);
+        } else if (pendingKey == keyCode && at - pendingAt < DOUBLE_MS) {
+            handler.removeCallbacks(openPending);
+            pendingKey = 0;
+            pendingContext = null;
+            open(c, twice, rawKey);
+        } else {
+            pendingKey = keyCode;
+            pendingAt = at;
+            pendingPkg = pkg;
+            pendingContext = c;
+            handler.postDelayed(openPending, DOUBLE_MS);
+        }
     }
 
     /** Opens `pkg` (our own package: the home screen in use; ALL_APPS: its All Apps). */

@@ -1,41 +1,70 @@
 /*
- * The golden mahitTV intro (MAHITTV-PROFILES-SPEC.md §2): the Frosted Horizon, the wordmark in brushed gold with one
- * specular sweep, gold sparks rising with depth blur, and a quiet C–E–G chime. It ends by dissolving into the lock.
- * OK or Back skips it. Startup animation off, reduce motion or an old TV (lite): the wordmark alone, a quick fade.
+ * The Liquid Glass & Prismatic Horizon startup (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1). From studio midnight a seam of
+ * light ignites on the horizon line and opens onto the Frosted Horizon (day, or its twilight); "mahitTV" comes into
+ * focus as glass, a −28° band of light crosses it with a prism fringe along the letters while a soft ring spreads over
+ * the sky; then the wordmark goes and "Who's Watching?" comes in over the same, uninterrupted Horizon. A Cmaj9 glass
+ * chord goes with it. OK or Back jumps to the hand-off. Reduce motion or an old TV (lite): the Horizon and the still
+ * wordmark, then the hand-off at once. Startup animation off: no startup at all (the lock straight away).
+ * Everything is built in play(); a frame only sets transforms, alphas and composite modes (gradients are made once and
+ * placed with setTransform).
  */
 var Intro = (function () {
   'use strict';
 
-  /** Every parameter in one place (times in ms, sizes in px on the 1920×1080 stage). */
+  /** Every parameter in one place (times in s, sizes in px on the 1920×1080 stage). */
   var INTRO = {
-    duration: 2400,      // to the end of the dissolve
-    fadeIn: 520,         // the wordmark comes in, settling from 0.96
-    sweepAt: 620,        // the specular band crosses the word once
-    sweepFor: 900,
-    sweepWidth: 0.22,    // of the word's width
-    endAt: 1900,         // the dissolve into the lock starts
-    fade: 500,
-    skipFade: 240,       // OK or Back
-    staticHold: 700,     // no animation: the wordmark alone, then a quick fade
-    staticFade: 260,
-    font: 150,
-    weight: 700,
-    word: 'mahitTV',
-    gold: ['#D4AF37', '#F5D061', '#FFF3B0', '#D4AF37'],         // over the night Horizon
-    goldDay: ['#9C6F17', '#C9962E', '#E0B54E', '#9C6F17'],      // deeper, over the bright day Horizon
-    sweep: [0.85, 0.5],          // the specular band's strength, by night and by day
-    shadowDay: 'rgba(70, 50, 12, 0.32)',                        // under the word by day
-    brush: 220,          // faint horizontal strokes in the gold
-    sparks: 48,
-    rise: [70, 190],     // px/s, far to near
-    sway: 14,            // px
-    size: [3, 9],        // far to near
-    bokeh: 0.35,         // the share of sparks out of focus (soft, larger, dimmer)
-    chime: {notes: [523.25, 659.25, 783.99], gap: 0.11, length: 1.2, volume: 0.06}
+    W: 1920, H: 1080,
+    midnight: '#090D16',
+    // Stage 1: the anamorphic ignition.
+    horizonY: 0.44,             // the seam's line, of the height
+    apertureAt: 0.08,           // the opening starts (SPATIAL_SCROLL)
+    seamIn: [0.08, 0.18],       // the seam brightens (smoothstep)
+    seamOut: [0.30, 0.65],      // and fades (smoothstep)
+    seamPeak: 0.9,
+    seamCore: 1.5, seamGrow: 38, // half-height: core + grow·opening
+    featherBase: 8, featherGrow: 0.10,
+    // Stage 2: the glass wordmark.
+    word: 'mahitTV', font: 116, weight: 700, tracking: -0.03,
+    wordAt: 0.40, wordFadeIn: 0.30, wordFrom: 1.10,   // scale 1.10 → 1 and defocus → sharp on TITLE_SETTLE
+    box: [1100, 220],                                   // the word's canvas
+    refract: 1.04,                                      // the sky through the letters, magnified
+    tintDay: [74, 93, 112, 0.38], frostNight: [255, 255, 255, 0.22],   // #4A5D70 by day, white frost at night
+    shadowDay: 'rgba(74, 93, 112, 0.30)', shadowNight: 'rgba(255, 255, 255, 0.10)',
+    rim: 1.5, rimHi: 0.9, rimLo: 0.25,
+    sweep: [0.95, 1.75], sweepAngle: -28, sweepWidth: 0.30, sweepLift: 0.55,
+    prism: ['#7DD3FC', '#FFFFFF', '#FEF3C7'], prismPx: 1.5,
+    ripple: [1.10, 2.00], rippleReach: 0.9, ripplePeak: 0.16,
+    // Stage 3: the hand-off.
+    handoff: 2.10, wordOut: 0.28, wordTo: 0.94, end: 2.38,
+    stillHold: 0.7,
+    // The Cmaj9 glass resonance chord (§1.6).
+    chord: {
+      sub: [65.41, 98.00], subAt: 0.05, subAttack: 0.18, subTau: 0.55, subLevel: 0.30,
+      bells: [261.63, 392.00, 493.88, 587.33, 659.25], bellAt: 0.62, bellRoll: 0.018, bellAttack: 0.008,
+      bellTau: 0.45, bellLevel: 0.10, detune: [0.999134, 1.000867],
+      partials: [[2.00, 0.22], [3.01, 0.07], [4.20, 0.03]],
+      length: 2.6, master: 0.18
+    }
   };
 
-  var layer = null, canvas = null, ctx = null, word = null, wctx = null, goldTex = null, sharp = null, soft = null, shade = null;
-  var sparks = [], start = 0, endStart = 0, endFor = 0, done = null, running = false, still = false, frame = 0;
+  // Apple's springs (response, damping), evaluated in closed form from rest: the same curve as Motion.Spring, at any time.
+  var P = Motion.P;
+  function springAt(pre, t) {
+    if (t <= 0) return 0;
+    var w = 2 * Math.PI / pre[0], z = pre[1];
+    if (z >= 1) return 1 - Math.exp(-w * t) * (1 + w * t);
+    var wd = w * Math.sqrt(1 - z * z);
+    return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + z * w / wd * Math.sin(wd * t));
+  }
+  function smooth(a, b, t) { var x = Math.max(0, Math.min(1, (t - a) / (b - a))); return x * x * (3 - 2 * x); }
+  function easeOut(x) { x = Math.max(0, Math.min(1, x)); return 1 - (1 - x) * (1 - x) * (1 - x); }
+
+  var layer = null, canvas = null, ctx = null, hzDay = null, hzNight = null, veil = null, dark = false;
+  var sharp = null, blur = null, cover = null, prisms = [], sweepC = null, sctx = null, seam = null;
+  var edgeTop = null, ringGrad = null, bandGrad = null;
+  var running = false, still = false, frame = 0, start = 0, t = 0, handAt = 0, frozen = 0, handed = false;
+  var done = null, audio = null, wordTimer = 0;
+  var bandDir = [Math.cos(INTRO.sweepAngle * Math.PI / 180), Math.sin(INTRO.sweepAngle * Math.PI / 180)];
 
   function make(w, h) {
     var c = document.createElement('canvas');
@@ -43,79 +72,188 @@ var Intro = (function () {
     c.height = h;
     return c;
   }
+  function night() { return (' ' + document.body.className + ' ').indexOf(' night ') >= 0; }
 
-  /** The brushed gold: the four-stop gradient with faint horizontal strokes, made once. */
-  function makeGold(w, h, gold) {
-    var c = make(w, h), g = c.getContext('2d'), grad = g.createLinearGradient(0, 0, w, h * 0.6);
-    for (var i = 0; i < gold.length; i++) grad.addColorStop(i / (gold.length - 1), gold[i]);
-    g.fillStyle = grad;
+  // MARK: - Built once
+
+  /** The Frosted Horizon (web/home.css .hz-day/.hz-night) at half size, for the sky seen through the glass letters. */
+  function makeHorizon(dark) {
+    var w = INTRO.W / 2, h = INTRO.H / 2, c = make(w, h), g = c.getContext('2d');
+    var base = dark ? ['#0D131F', '#1C2638', '#080B12'] : ['#B8C7D6', '#DCE6EF', '#7E9BB5'];
+    var glow = dark ? [[28, 38, 56], [21, 30, 45], [8, 11, 18]] : [[245, 235, 214], [220, 230, 239], [126, 155, 181]];
+    var lin = g.createLinearGradient(0, 0, 0, h);
+    lin.addColorStop(0, base[0]);
+    lin.addColorStop(0.56, base[1]);
+    lin.addColorStop(1, base[2]);
+    g.fillStyle = lin;
     g.fillRect(0, 0, w, h);
-    for (var s = 0; s < INTRO.brush; s++) {
-      g.globalAlpha = 0.04 + Math.random() * 0.07;
-      g.fillStyle = Math.random() < 0.5 ? '#FFFFFF' : '#7A5A12';
-      g.fillRect(Math.random() * w * 0.4 - w * 0.1, Math.random() * h, w * (0.3 + Math.random() * 0.8), 1);
+    // CSS paints its first background on top: the lower-right glow first, the left horizon glow last.
+    var fields = [[1.06, 1.04, 1.04, 0.72, glow[2]], [0.53, 0.48, 0.78, 0.74, glow[1]], [-0.08, 0.69, 0.83, 0.72, glow[0]]];
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i], col = f[4].join(', '), rg = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+      rg.addColorStop(0, 'rgba(' + col + ', 1)');
+      rg.addColorStop(f[3], 'rgba(' + col + ', 0)');
+      g.setTransform(f[2] * w, 0, 0, f[2] * h, f[0] * w, f[1] * h);
+      g.fillStyle = rg;
+      g.fillRect(-4, -4, 8, 8);
     }
-    g.globalAlpha = 1;
+    var vg = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+    vg.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
+    vg.addColorStop(1, 'rgba(0, 0, 0, ' + (dark ? 0.18 : 0.12) + ')');
+    g.setTransform(w * 0.7071, 0, 0, h * 0.7071, w / 2, h / 2);
+    g.fillStyle = vg;
+    g.fillRect(-2, -2, 4, 4);
+    g.setTransform(1, 0, 0, 1, 0, 0);
     return c;
   }
 
-  /** The word's soft shadow by day, made once: only the shadow of text drawn off the canvas. */
-  function makeShade(w, h) {
-    var c = make(w, h), g = c.getContext('2d');
+  /** The word's glyphs, each placed with the −0.03 em tracking (old TVs have no letterSpacing). */
+  function layout(g) {
+    var spots = [], x = 0, track = INTRO.tracking * INTRO.font;
+    for (var i = 0; i < INTRO.word.length; i++) {
+      var ch = INTRO.word.charAt(i);
+      spots.push([ch, x]);
+      x += g.measureText(ch).width + track;
+    }
+    return {spots: spots, width: x - track};
+  }
+
+  function font(g) {
     g.font = INTRO.weight + ' ' + INTRO.font + 'px Inter, "Helvetica Neue", Arial, sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.shadowColor = INTRO.shadowDay;
-    g.shadowBlur = 28;
-    g.shadowOffsetX = 4000;
-    g.shadowOffsetY = 10;
-    g.fillText(INTRO.word, w / 2 - 4000, h / 2);
-    return c;
+    g.textBaseline = 'alphabetic';
+    g.textAlign = 'left';
   }
 
-  /** A spark: a bright core (in focus) or a soft disc (out of focus); amber by day, so it shows on the bright sky. */
-  function makeSpark(blurred, day) {
-    var c = make(64, 64), g = c.getContext('2d'), grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    if (day && blurred) {
-      grad.addColorStop(0, 'rgba(214, 160, 52, 0.5)');
-      grad.addColorStop(0.55, 'rgba(196, 140, 34, 0.28)');
-      grad.addColorStop(1, 'rgba(176, 122, 22, 0)');
-    } else if (day) {
-      grad.addColorStop(0, 'rgba(255, 244, 214, 1)');
-      grad.addColorStop(0.2, 'rgba(222, 165, 48, 0.95)');
-      grad.addColorStop(0.5, 'rgba(176, 122, 22, 0.4)');
-      grad.addColorStop(1, 'rgba(176, 122, 22, 0)');
-    } else if (blurred) {
-      grad.addColorStop(0, 'rgba(255, 228, 140, 0.55)');
-      grad.addColorStop(0.55, 'rgba(245, 208, 97, 0.32)');
-      grad.addColorStop(1, 'rgba(212, 175, 55, 0)');
-    } else {
-      grad.addColorStop(0, 'rgba(255, 250, 225, 1)');
-      grad.addColorStop(0.18, 'rgba(255, 228, 140, 0.95)');
-      grad.addColorStop(0.45, 'rgba(212, 175, 55, 0.35)');
-      grad.addColorStop(1, 'rgba(212, 175, 55, 0)');
+  function eachGlyph(g, word, x0, y0, fn) {
+    for (var i = 0; i < word.spots.length; i++) fn(word.spots[i][0], x0 + word.spots[i][1], y0);
+  }
+
+  /**
+   * An edge of the whole word (not of each glyph, which overlap with the tracking): the letters minus themselves
+   * moved (dx, dy), in `color`. (+d, +d) leaves the top-left edges, (−d, −d) the bottom-right ones.
+   */
+  function edge(dst, color, alpha, dx, dy) {
+    var bw = INTRO.box[0], bh = INTRO.box[1], e = make(bw, bh), g = e.getContext('2d');
+    g.drawImage(cover, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, bw, bh);
+    g.globalCompositeOperation = 'destination-out';
+    g.drawImage(cover, dx, dy);
+    var dg = dst.getContext('2d');
+    dg.globalAlpha = alpha;
+    dg.drawImage(e, 0, 0);
+    dg.globalAlpha = 1;
+  }
+
+  /** The glass word and everything the sweep needs, at the word canvas's size. */
+  function makeWord(dark) {
+    var bw = INTRO.box[0], bh = INTRO.box[1];
+    var probe = make(4, 4).getContext('2d');
+    font(probe);
+    var word = layout(probe), cap = 0.727 * INTRO.font;   // Inter's cap height
+    var x0 = (bw - word.width) / 2, y0 = bh / 2 + cap / 2;
+
+    // The letters' alpha.
+    cover = make(bw, bh);
+    var cg = cover.getContext('2d');
+    font(cg);
+    cg.fillStyle = '#FFF';
+    eachGlyph(cg, word, x0, y0, function (ch, x, y) { cg.fillText(ch, x, y); });
+
+    // The body: the sky through the letters at 1.04×, then the tint (slate by day, frost at night).
+    var sky = makeHorizon(dark), body = make(bw, bh), bg = body.getContext('2d');
+    var sw = bw / INTRO.refract, sh = bh / INTRO.refract;
+    var sx = INTRO.W / 2 - sw / 2, sy = INTRO.H / 2 - sh / 2;
+    bg.drawImage(sky, sx / 2, sy / 2, sw / 2, sh / 2, 0, 0, bw, bh);
+    var tint = dark ? INTRO.frostNight : INTRO.tintDay;
+    bg.fillStyle = 'rgba(' + tint[0] + ', ' + tint[1] + ', ' + tint[2] + ', ' + tint[3] + ')';
+    bg.fillRect(0, 0, bw, bh);
+    bg.globalCompositeOperation = 'destination-in';
+    bg.drawImage(cover, 0, 0);
+    bg.globalCompositeOperation = 'source-over';
+
+    // The sharp glass: the soft shadow (inner tint) under, the body, the specular rim on top.
+    sharp = make(bw, bh);
+    var sg = sharp.getContext('2d');
+    font(sg);
+    sg.shadowColor = dark ? INTRO.shadowNight : INTRO.shadowDay;
+    sg.shadowBlur = 6;
+    sg.shadowOffsetY = 3;
+    sg.fillStyle = dark ? 'rgba(255, 255, 255, 0.10)' : 'rgba(74, 93, 112, 0.30)';
+    eachGlyph(sg, word, x0, y0, function (ch, x, y) { sg.fillText(ch, x, y); });
+    sg.shadowColor = 'rgba(0, 0, 0, 0)';
+    sg.shadowBlur = 0;
+    sg.shadowOffsetY = 0;
+    sg.drawImage(body, 0, 0);
+    // The specular rim, 1.5 px: bright where the light comes from (top left), faint on the far side.
+    edge(sharp, '#FFF', INTRO.rimHi, INTRO.rim, INTRO.rim);
+    edge(sharp, '#FFF', INTRO.rimLo, -INTRO.rim, -INTRO.rim);
+
+    // The defocused copy (24 px): down to an eighth and back, twice.
+    blur = make(bw, bh);
+    var small = make(Math.ceil(bw / 8), Math.ceil(bh / 8)), smid = make(Math.ceil(bw / 4), Math.ceil(bh / 4));
+    var mg = smid.getContext('2d'), lg = small.getContext('2d'), blg = blur.getContext('2d');
+    mg.drawImage(sharp, 0, 0, smid.width, smid.height);
+    lg.drawImage(smid, 0, 0, small.width, small.height);
+    mg.clearRect(0, 0, smid.width, smid.height);
+    mg.drawImage(small, 0, 0, smid.width, smid.height);
+    blg.drawImage(smid, 0, 0, bw, bh);
+
+    // The prism: the rim in each of the three colours, drawn apart along the band's normal while it passes.
+    prisms = [];
+    for (var p = 0; p < INTRO.prism.length; p++) {
+      var pc = make(bw, bh);
+      edge(pc, INTRO.prism[p], 1, INTRO.rim, INTRO.rim);
+      edge(pc, INTRO.prism[p], 0.6, -INTRO.rim, -INTRO.rim);
+      prisms.push(pc);
     }
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
+    sweepC = make(bw, bh);
+    sctx = sweepC.getContext('2d');
+    // The band: a soft stripe across x (unit wide), placed and turned with setTransform.
+    bandGrad = sctx.createLinearGradient(-0.5, 0, 0.5, 0);
+    bandGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    bandGrad.addColorStop(0.25, 'rgba(255, 255, 255, 0.32)');
+    bandGrad.addColorStop(0.5, 'rgba(255, 255, 255, 1)');
+    bandGrad.addColorStop(0.75, 'rgba(255, 255, 255, 0.32)');
+    bandGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    return {x0: x0, width: word.width};
+  }
+
+  /** The seam: an anamorphic streak, wide and thin (stretched vertically as the horizon opens). */
+  function makeSeam() {
+    var w = INTRO.W, h = 64, c = make(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
+    for (var y = 0; y < h; y++) {
+      var v = (y - h / 2 + 0.5) / (h / 2), core = Math.exp(-v * v * 18), halo = Math.exp(-v * v * 3.2);
+      for (var x = 0; x < w; x++) {
+        var u = Math.exp(-Math.abs(x - w / 2) / (0.55 * w)), i = (y * w + x) * 4;
+        var a = Math.min(1, u * (core + 0.55 * halo));
+        var mixCore = core / (core + 0.55 * halo + 1e-6);   // white core, #CFE8FF halo
+        d[i] = Math.round(207 + 48 * mixCore);
+        d[i + 1] = Math.round(232 + 23 * mixCore);
+        d[i + 2] = 255;
+        d[i + 3] = Math.round(255 * a);
+      }
+    }
+    g.putImageData(img, 0, 0);
     return c;
   }
 
-  function spark(fresh) {
-    var z = Math.random(), out = Math.random() < INTRO.bokeh;
-    return {
-      x: 160 + Math.random() * 1600,
-      y: fresh ? 300 + Math.random() * 900 : 1120,
-      z: z,
-      out: out,
-      size: (INTRO.size[0] + (INTRO.size[1] - INTRO.size[0]) * z) * (out ? 3.2 : 1),
-      v: INTRO.rise[0] + (INTRO.rise[1] - INTRO.rise[0]) * z,
-      phase: Math.random() * 6.28,
-      a: (out ? 0.35 : 0.55 + 0.45 * z) * (0.6 + Math.random() * 0.4)
-    };
+  function makeGradients() {
+    // The opening's soft edge: midnight to clear, over a unit height (placed by setTransform).
+    edgeTop = ctx.createLinearGradient(0, 0, 0, 1);
+    edgeTop.addColorStop(0, INTRO.midnight);
+    edgeTop.addColorStop(1, 'rgba(9, 13, 22, 0)');
+    // The ripple: a thin bright ring on a unit circle.
+    ringGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    ringGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    ringGrad.addColorStop(0.86, 'rgba(255, 255, 255, 0)');
+    ringGrad.addColorStop(0.93, 'rgba(255, 255, 255, 1)');
+    ringGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
   }
 
-  /** The chime, synthesized once: three soft bell tones, rising, quiet. Silent where Web Audio isn't. */
-  var audio = null;
+  // MARK: - The chord (Web Audio; silent where there's none)
+
   function context() {
     if (audio) return audio;
     var A = window.AudioContext || window.webkitAudioContext;
@@ -124,27 +262,38 @@ var Intro = (function () {
     return audio;
   }
 
-  function tone(ac, at, freq, length, volume, type) {
+  function voice(ac, out, freq, at, attack, tau, level, stop) {
     var o = ac.createOscillator(), g = ac.createGain();
-    o.type = type || 'sine';
+    o.type = 'sine';
     o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.linearRampToValueAtTime(volume, at + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + length);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(level, at + attack);
+    g.gain.setTargetAtTime(0, at + attack, tau);
     o.connect(g);
-    g.connect(ac.destination);
+    g.connect(out);
     o.start(at);
-    o.stop(at + length + 0.05);
+    o.stop(stop);
   }
 
-  function chime() {
-    var ac = context(), c = INTRO.chime;
+  /** Cmaj9: a C2 + G2 swell as the horizon ignites, then five glass bells, each a detuned pair with three partials. */
+  function chord() {
+    var ac = context(), c = INTRO.chord;
     if (!ac) return;
     try {
-      var t = ac.currentTime + 0.05;
-      for (var i = 0; i < c.notes.length; i++) {
-        tone(ac, t + i * c.gap, c.notes[i], c.length - i * c.gap, c.volume, 'sine');
-        tone(ac, t + i * c.gap, c.notes[i] * 2, (c.length - i * c.gap) * 0.5, c.volume * 0.18, 'triangle');   // the bell's shimmer
+      var t0 = ac.currentTime + 0.02, end = t0 + c.length, master = ac.createGain();
+      master.gain.setValueAtTime(c.master, t0);
+      master.gain.setValueAtTime(c.master, end - 0.06);
+      master.gain.linearRampToValueAtTime(0, end);
+      master.connect(ac.destination);
+      for (var s = 0; s < c.sub.length; s++) voice(ac, master, c.sub[s], t0 + c.subAt, c.subAttack, c.subTau, c.subLevel, end);
+      for (var n = 0; n < c.bells.length; n++) {
+        var at = t0 + c.bellAt + n * c.bellRoll;
+        for (var d = 0; d < c.detune.length; d++) {
+          voice(ac, master, c.bells[n] * c.detune[d], at, c.bellAttack, c.bellTau, c.bellLevel / 2, end);
+        }
+        for (var p = 0; p < c.partials.length; p++) {
+          voice(ac, master, c.bells[n] * c.partials[p][0], at, c.bellAttack, c.bellTau, c.bellLevel * c.partials[p][1], end);
+        }
       }
     } catch (e) {}
   }
@@ -154,148 +303,246 @@ var Intro = (function () {
     var ac = context();
     if (!ac) return;
     try {
-      var t = ac.currentTime + 0.01;
-      tone(ac, t, 140, 0.16, 0.08, 'sine');
-      tone(ac, t + 0.07, 104, 0.18, 0.06, 'sine');
+      var t0 = ac.currentTime + 0.01;
+      voice(ac, ac.destination, 140, t0, 0.012, 0.05, 0.08, t0 + 0.2);
+      voice(ac, ac.destination, 104, t0 + 0.07, 0.012, 0.06, 0.06, t0 + 0.3);
     } catch (e) {}
   }
 
-  function ease(t) { t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
+  // MARK: - A frame
 
-  /** The wordmark into its own canvas: white text, the gold in it, then the specular band over the gold only. */
-  function drawWord(sweep) {
-    var w = word.width, h = word.height;
-    wctx.globalCompositeOperation = 'source-over';
-    wctx.clearRect(0, 0, w, h);
-    wctx.font = INTRO.weight + ' ' + INTRO.font + 'px Inter, "Helvetica Neue", Arial, sans-serif';
-    wctx.textAlign = 'center';
-    wctx.textBaseline = 'middle';
-    wctx.fillStyle = '#FFF';
-    wctx.fillText(INTRO.word, w / 2, h / 2);
-    wctx.globalCompositeOperation = 'source-in';
-    wctx.drawImage(goldTex, 0, 0);
-    if (sweep > 0 && sweep < 1) {
-      var band = w * INTRO.sweepWidth, x = -band + (w + 2 * band) * sweep;
-      var grad = wctx.createLinearGradient(x - band / 2, 0, x + band / 2, h * 0.3);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-      grad.addColorStop(0.5, 'rgba(255, 255, 255, ' + (shade ? INTRO.sweep[1] : INTRO.sweep[0]) + ')');
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      wctx.globalCompositeOperation = 'source-atop';
-      wctx.fillStyle = grad;
-      wctx.fillRect(0, 0, w, h);
+  var wordBox = null;
+
+  /** The glass word at its state for time tw (frozen at a skip), alpha a, on the stage. */
+  function drawWord(tw, a) {
+    if (a <= 0.002 || !sharp) return;
+    var bw = INTRO.box[0], bh = INTRO.box[1];
+    var k = still ? 1 : springAt(P.TITLE_SETTLE, tw - INTRO.wordAt), sc = INTRO.wordFrom + (1 - INTRO.wordFrom) * k;
+    var appear = still ? 1 : smooth(INTRO.wordAt, INTRO.wordAt + INTRO.wordFadeIn, tw);
+    if (t >= handAt) {
+      var out = easeOut((t - handAt) / INTRO.wordOut);
+      sc *= 1 - (1 - INTRO.wordTo) * out;
+      a *= 1 - out;
     }
-    wctx.globalCompositeOperation = 'source-over';
+    a *= appear;
+    if (a <= 0.002) return;
+    var dw = bw * sc, dh = bh * sc, dx = INTRO.W / 2 - dw / 2, dy = INTRO.H / 2 - dh / 2, defocus = 1 - k;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    if (defocus > 0.01) {
+      ctx.globalAlpha = a * defocus;
+      ctx.drawImage(blur, dx, dy, dw, dh);
+    }
+    ctx.globalAlpha = a * (1 - defocus);
+    ctx.drawImage(sharp, dx, dy, dw, dh);
+    // The caustic sweep: brighter glass and the prism fringe, inside a −28° band crossing left to right.
+    var sp = still ? -1 : smooth(INTRO.sweep[0], INTRO.sweep[1], tw);
+    if (sp > 0 && sp < 1) {
+      var o = INTRO.prismPx, nx = -bandDir[1] * o, ny = bandDir[0] * o;
+      sctx.setTransform(1, 0, 0, 1, 0, 0);
+      sctx.globalCompositeOperation = 'source-over';
+      sctx.globalAlpha = 1;
+      sctx.clearRect(0, 0, bw, bh);
+      sctx.globalAlpha = INTRO.sweepLift;
+      sctx.drawImage(cover, 0, 0);
+      sctx.globalAlpha = 0.9;
+      sctx.globalCompositeOperation = 'lighter';
+      sctx.drawImage(prisms[0], -nx, -ny);
+      sctx.drawImage(prisms[1], 0, 0);
+      sctx.drawImage(prisms[2], nx, ny);
+      sctx.globalAlpha = 1;
+      sctx.globalCompositeOperation = 'destination-in';
+      // Wide and long enough to cover the whole word canvas wherever the band is.
+      var wide = INTRO.sweepWidth * wordBox.width, cx = wordBox.x0 + (-0.3 + 1.6 * sp) * wordBox.width, long = bh * 12;
+      sctx.setTransform(bandDir[0] * wide, bandDir[1] * wide, -bandDir[1] * long, bandDir[0] * long, cx, bh / 2);
+      sctx.fillStyle = bandGrad;
+      sctx.fillRect(-40, -0.5, 80, 1);
+      sctx.setTransform(1, 0, 0, 1, 0, 0);
+      sctx.globalCompositeOperation = 'source-over';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a;
+      ctx.drawImage(sweepC, dx, dy, dw, dh);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
   }
 
-  var lastAt = 0;
+  /** Stage 1: midnight outside the opening, its soft edges, the seam. */
+  function drawIgnition() {
+    var W = INTRO.W, H = INTRO.H, y0 = INTRO.horizonY * H;
+    var r = Math.max(0, Math.min(1.02, springAt(P.SPATIAL_SCROLL, t - INTRO.apertureAt)));
+    var feather = INTRO.featherBase + INTRO.featherGrow * H * r, reach = Math.max(y0, H - y0) + feather;
+    var half = 1 + (reach - 1) * Math.min(1, r);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    if (half < reach) {
+      var top = y0 - half, bottom = y0 + half;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = INTRO.midnight;
+      if (top - feather > 0) ctx.fillRect(0, 0, W, top - feather);
+      if (bottom + feather < H) ctx.fillRect(0, bottom + feather, W, H - bottom - feather);
+      ctx.fillStyle = edgeTop;
+      ctx.setTransform(1, 0, 0, feather, 0, top - feather);
+      ctx.fillRect(0, 0, W, 1);
+      ctx.setTransform(1, 0, 0, -feather, 0, bottom + feather);
+      ctx.fillRect(0, 0, W, 1);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    var glow = INTRO.seamPeak * smooth(INTRO.seamIn[0], INTRO.seamIn[1], t) * (1 - smooth(INTRO.seamOut[0], INTRO.seamOut[1], t));
+    if (glow > 0.004) {
+      var hh = INTRO.seamCore + INTRO.seamGrow * Math.min(1, r);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = glow;
+      ctx.drawImage(seam, 0, y0 - hh, W, 2 * hh);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+
+  /** The soft ring that spreads over the sky as the light crosses the word. */
+  function drawRipple() {
+    var p = (t - INTRO.ripple[0]) / (INTRO.ripple[1] - INTRO.ripple[0]);
+    if (p <= 0 || p >= 1) return;
+    var R = easeOut(p) * INTRO.rippleReach * INTRO.W;
+    if (R < 2) return;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = INTRO.ripplePeak * (1 - p);
+    ctx.setTransform(R, 0, 0, R, INTRO.W / 2, INTRO.H / 2);
+    ctx.fillStyle = ringGrad;
+    ctx.fillRect(-1, -1, 2, 2);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   function draw(now) {
     frame = 0;
     if (!running) return;
-    var t = now - start, dt = lastAt ? Math.min(0.05, (now - lastAt) / 1000) : 1 / 60;
-    lastAt = now;
-    ctx.clearRect(0, 0, 1920, 1080);   // the Horizon shows through
-    // A warm glow behind the word.
-    var glow = ctx.createRadialGradient(960, 540, 0, 960, 540, 760);
-    glow.addColorStop(0, 'rgba(212, 175, 55, ' + (0.10 * ease(t / INTRO.fadeIn)) + ')');
-    glow.addColorStop(1, 'rgba(212, 175, 55, 0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, 1920, 1080);
-    // The sparks, far ones first.
-    if (!still) {
-      var show = ease(t / 600);
-      for (var i = 0; i < sparks.length; i++) {
-        var s = sparks[i];
-        s.y -= s.v * dt;
-        if (s.y < -40) sparks[i] = s = spark(false);
-        var sx = s.x + Math.sin(s.phase + t / 900) * INTRO.sway * (0.4 + s.z), fadeTop = Math.max(0, Math.min(1, s.y / 260));
-        ctx.globalAlpha = s.a * show * fadeTop;
-        ctx.drawImage(s.out ? soft : sharp, sx - s.size, s.y - s.size, s.size * 2, s.size * 2);
+    if (!start) start = now;
+    t = (now - start) / 1000;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, INTRO.W, INTRO.H);   // the .hz layers (the Horizon) show through
+    if (t < handAt) {
+      if (!still) {
+        drawIgnition();
+        drawRipple();
       }
-      ctx.globalAlpha = 1;
+      drawWord(t, 1);
+    } else {
+      if (!handed) handoff();
+      drawWord(frozen, 1);
     }
-    // The wordmark: in over fadeIn, from 0.96; the sweep once.
-    var a = still ? 1 : ease(t / INTRO.fadeIn), scale = still ? 1 : 0.96 + 0.04 * a;
-    drawWord(still ? 0 : (t - INTRO.sweepAt) / INTRO.sweepFor);
-    ctx.globalAlpha = a;
-    var w = word.width * scale, h = word.height * scale;
-    if (shade) ctx.drawImage(shade, 960 - w / 2, 540 - h / 2, w, h);
-    ctx.drawImage(word, 960 - w / 2, 540 - h / 2, w, h);
-    ctx.globalAlpha = 1;
-    if (!endStart && t >= (still ? INTRO.staticHold : INTRO.endAt)) end(still ? INTRO.staticFade : INTRO.fade);
-    if (endStart && now - endStart >= endFor) { finish(); return; }
+    if (t >= handAt + INTRO.wordOut) { finish(); return; }
     frame = requestAnimationFrame(draw);
   }
 
-  /** The dissolve: the layer fades (a CSS opacity transition), and the lock comes in under it at the same moment. */
-  function end(ms) {
-    if (endStart) return;
-    endStart = lastAt || start || 1;   // frame time (rAF's clock, whatever it counts from)
-    endFor = ms;
-    layer.style.webkitTransition = layer.style.transition = 'opacity ' + ms + 'ms ease-out';
-    layer.style.opacity = '0';
+  /** Stage 3: the lock comes in under the startup with its identical Horizon; the startup goes clear but the word. */
+  function handoff() {
+    handed = true;
+    if (frozen > handAt) frozen = handAt;
+    // The lock first (its Horizon and veil are the same pixels), then this layer's sky goes: nothing shows through.
     var d = done;
     done = null;
-    if (d) d();
+    if (d) d(true);
+    hzDay.style.display = hzNight.style.display = veil.style.display = 'none';
+    layer.className += ' handoff';
+  }
+
+  /** The glass word, once Inter is there (baked once: it must not catch the fallback font). */
+  function buildWord() {
+    clearTimeout(wordTimer);
+    if (!running || sharp) return;
+    wordBox = makeWord(dark);
   }
 
   function finish() {
     running = false;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
+    if (!handed) handoff();
     layer.style.visibility = 'hidden';
     layer.innerHTML = '';
-    canvas = ctx = null;
+    layer.className = layer.className.replace(/\s*handoff\b/g, '');
+    clearTimeout(wordTimer);
+    canvas = ctx = sharp = blur = cover = sweepC = sctx = seam = null;
+    prisms = [];
   }
 
   return {
     INTRO: INTRO,
-    chime: chime,
+    chime: chord,
     knock: knock,
-    showing: function () { return running && !endStart; },
+    showing: function () { return running && !handed; },
 
-    /** Plays it in `node`; then(done) runs as the dissolve starts (show the lock then). */
+    /**
+     * Plays it in `node`; then(shown) runs at the hand-off (show the lock then): shown is false when there was no
+     * startup at all (Startup animation off), so the lock just appears.
+     */
     play: function (node, then) {
       layer = node;
+      if (!Prefs.intro()) {
+        node.style.visibility = 'hidden';
+        node.style.opacity = '0';
+        if (then) then(false);
+        return;
+      }
       done = then;
-      still = !Prefs.intro() || Motion.instant;
+      // The home screen's background (art, aerial, blur) first paints in about a second of raster work: while this
+      // and the lock cover it, it waits (lock.css), and the lock lets it paint once its cards have settled.
+      if ((' ' + document.body.className + ' ').indexOf(' covered ') < 0) document.body.className += ' covered';
+      var lite = (' ' + document.documentElement.className + ' ').indexOf(' lite ') >= 0;
+      still = lite || Motion.instant;
       layer.innerHTML = '';
-      layer.style.webkitTransition = layer.style.transition = '';
+      layer.className = layer.className.replace(/\s*handoff\b/g, '');
       layer.style.opacity = '1';
       layer.style.visibility = 'visible';
-      var day = (' ' + document.body.className + ' ').indexOf(' night ') < 0;
-      var hz = document.createElement('div');
-      hz.className = 'hz hz-day';
-      layer.appendChild(hz);
-      hz = document.createElement('div');
-      hz.className = 'hz hz-night';
-      layer.appendChild(hz);
-      canvas = make(1920, 1080);
+      hzDay = document.createElement('div');
+      hzDay.className = 'hz hz-day';
+      layer.appendChild(hzDay);
+      hzNight = document.createElement('div');
+      hzNight.className = 'hz hz-night';
+      layer.appendChild(hzNight);
+      veil = document.createElement('div');   // the lock's faint frost (lock.css), so the hand-off changes no pixel
+      veil.className = 'veil';
+      layer.appendChild(veil);
+      canvas = make(INTRO.W, INTRO.H);
       layer.appendChild(canvas);
       ctx = canvas.getContext('2d');
-      word = make(1300, 280);
-      wctx = word.getContext('2d');
-      goldTex = makeGold(word.width, word.height, day ? INTRO.goldDay : INTRO.gold);
-      shade = day ? makeShade(word.width, word.height) : null;
-      sharp = makeSpark(false, day);
-      soft = makeSpark(true, day);
-      sparks = [];
-      var lite = (' ' + document.documentElement.className + ' ').indexOf(' lite ') >= 0;
-      if (!still && !lite) for (var i = 0; i < INTRO.sparks; i++) sparks.push(spark(true));
-      sparks.sort(function (x, y) { return x.z - y.z; });
-      endStart = 0;
-      lastAt = 0;
+      dark = night();
+      sharp = null;
+      if (!still) {
+        seam = makeSeam();
+        makeGradients();
+      }
+      handAt = still ? INTRO.stillHold : INTRO.handoff;
+      frozen = handAt;
+      handed = false;
       running = true;
       start = 0;
-      if (Prefs.intro()) setTimeout(chime, 280);
-      frame = requestAnimationFrame(function (now) { start = now; draw(now); });
+      t = 0;
+      // The word is baked before the first frame (still midnight) when Inter is there; otherwise it waits for it, at
+      // most 0.3 s, so the fallback font is never baked in.
+      var face = INTRO.weight + ' ' + INTRO.font + 'px Inter', ready = still;
+      try { ready = ready || !document.fonts || document.fonts.check(face); } catch (e) { ready = true; }
+      if (ready) buildWord();
+      else {
+        wordTimer = setTimeout(buildWord, 300);
+        try { document.fonts.load(face).then(buildWord, buildWord); } catch (e) {}
+      }
+      if (!lite) chord();
+      frame = requestAnimationFrame(draw);
     },
 
-    /** OK or Back: straight to the dissolve. Every other key waits. */
+    /** OK or Back: straight to the hand-off. Every other key waits. */
     key: function (k) {
-      if (k === TV.keys.ok || k === TV.keys.back || k === 27 || k === 8 || k === 13) end(INTRO.skipFade);
+      if (!running || handed) return;
+      if (k === TV.keys.ok || k === TV.keys.back || k === 27 || k === 8 || k === 13) {
+        frozen = t;
+        handAt = t;
+      }
     },
 
-    /** Off at once (no intro wanted): the layer goes without a frame drawn. */
+    /** Off at once (no startup wanted): the layer goes without a frame drawn. */
     skip: function (node) {
       node.style.visibility = 'hidden';
       node.style.opacity = '0';

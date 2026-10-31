@@ -50,15 +50,14 @@ Memoji in to replace one; `app/assets/profiles/` is git-ignored (personal).
   profile's file. Five wrong tries → 30 s wait (per profile, in memory).
 - Anyone changes their own PIN (old PIN first); the manager can set anyone's (with the manager PIN).
 
-## 2. Golden intro
+## 2. Startup: Liquid Glass & Prismatic Horizon
 - When: power-on (a `SCREEN_ON` receiver in the home process), first launch after boot or install. Web: first load.
-- Obsidian background; **mahitTV** in Inter Display 700, brushed-gold fill (#D4AF37 → #F5D061 → #FFF3B0 → #D4AF37), a
-  specular band sweeping once; 48 gold sparks rising with depth blur; a warm C–E–G chime (synthesized once, SoundPool;
-  Web Audio on the web where it exists).
-- All parameters in one place: `Intro.java` `INTRO_*` constants and `web/intro.js` `INTRO` (duration 2.4 s, sparks,
-  rise, bokeh, sweep, colours, chime).
-- Ends: cross-dissolve, the lock 1.04 → 1.0 on SPATIAL_SCROLL. OK or Back skips. Off with Settings → Appearance →
-  Startup animation, reduce motion (static wordmark, quick fade), Android 8–11 (no sparks).
+- 2.8 s: studio midnight #090D16, a light seam at 0.44·H opening onto the Frosted Horizon; **mahitTV** as refractive
+  glass (Inter opsz 32 / wght 700, 116 px) with a −28° prismatic sweep and a ripple; then "Who's Watching?" springs in
+  over the same, uninterrupted Horizon; a Cmaj9 glass chord. Every detail and number:
+  `TVOS-LAUNCHER-MERGE-SPEC.md` Part 2, Section 1. (It replaced the golden intro on 2026-10-31.)
+- OK or Back jumps to the hand-off. Off with Settings → Appearance → Startup animation (the lock comes at once, on
+  Android and the web); reduce motion: the Horizon and a still glass wordmark, then the lock.
 
 ## 3. "Who's Watching?"
 - After the intro, on lock from Control Center / the status pill, and after 10 minutes away.

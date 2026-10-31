@@ -42,6 +42,11 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private static final int CARDS = 0, PIN = 1, LEAVING = 2;
     private static final int KEYS = 11, DELETE = 10;
     private static final float CARD = 240, CARD_GAP = 96, CARD_Y = 560, FOCUS_GROW = 0.18f;
+    /**
+     * The entrance (TVOS-LAUNCHER-MERGE-SPEC.md §1.5): the header rises 24 px (TITLE_SETTLE); card i starts 30 ms after
+     * card i − 1, rising 48 px from 0.92× and fading in (CARD_ENTER); the focused card grows (SNAPPY_FOCUS) 0.20 s in.
+     */
+    private static final float HEADER_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92f, CARD_STAGGER = 0.03f, FOCUS_AT = 0.20f;
     private static final float PIN_AVATAR_Y = 300, PIN_AVATAR_SCALE = 0.72f;
     private static final float HUD_W = 1060, HUD_TOP = 520, HUD_H = 300, KEY = 72, KEY_GAP = 14;
     private static final int GOLD = 0xFFF5D061, INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;
@@ -64,6 +69,10 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private final Spring enter = new Spring(Spring.SPATIAL_SCROLL, 1), pin = new Spring(Spring.SPATIAL_SCROLL, 0);
     private final Spring leave = new Spring(Spring.SPATIAL_SCROLL, 0), gold = new Spring(Spring.ROOM_FADE, 0);
     private final Spring keyPress = new Spring(Spring.MICRO_PRESS, 0);
+    private final Spring headerIn = new Spring(Spring.TITLE_SETTLE, 1);
+    private Spring[] cardIn = new Spring[0];
+    private float[] cardAt = new float[0];
+    private float clock, focusAt = -1;
 
     private int mode = CARDS, index, keyIndex, selected = -1, entered, shakeStep;
     private final char[] digits = new char[4];
@@ -101,8 +110,11 @@ final class LockView extends View implements Choreographer.FrameCallback {
     }
 
     /**
-     * Shows the gate: on the current profile's card, coming in from 1.04× (`fromIntro`: under the intro's dissolve).
-     * With `on` (Control Center's profiles row) it opens straight on that profile's PIN pad, and Back there cancels.
+     * Shows the gate on the current profile's card. From the intro (`fromIntro`) the Frosted Horizon is already on
+     * screen: the backdrop is opaque and 1:1 from the first frame (the same Horizon bitmap as the intro's, so nothing
+     * changes) and only the header and cards come in. Otherwise the whole gate arrives from 1.04×, fading in over the
+     * home screen. With `on` (Control Center's profiles row) it opens straight on that profile's PIN pad, and Back
+     * there cancels.
      */
     void show(boolean fromIntro, ProfileManager.Profile on) {
         boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(getContext()).isNight(System.currentTimeMillis()));
@@ -123,14 +135,23 @@ final class LockView extends View implements Choreographer.FrameCallback {
         waitText = null;
         switching = on != null;
         index = Math.max(0, on != null ? profiles.indexOf(on) : ProfileManager.currentIndex(getContext()));
-        for (int i = 0; i < focus.length; i++) focus[i].snap(i == index ? 1 : 0);
+        // The entrance: the header and the cards spring in, staggered; the focused card grows once they're up.
+        clock = 0;
+        headerIn.snap(on != null ? 1 : 0);
+        headerIn.target = 1;
+        for (int i = 0; i < cardIn.length; i++) {
+            cardIn[i].snap(on != null ? 1 : 0);
+            cardAt[i] = i * CARD_STAGGER;
+        }
+        for (int i = 0; i < focus.length; i++) focus[i].snap(on != null && i == index ? 1 : 0);
+        focusAt = on != null ? -1 : FOCUS_AT;
         pin.snap(0);
         leave.snap(0);
         gold.snap(0);
         shake.snap(0);
         nudgeX.snap(0);
         nudgeY.snap(0);
-        enter.snap(fromIntro ? 0 : 0.6f);   // after a while away: a quicker, smaller arrival
+        enter.snap(fromIntro ? 1 : 0.6f);   // from the intro: already in place; after a while away: a quick arrival
         enter.target = 1;
         setVisibility(VISIBLE);
         bringToFront();
@@ -211,6 +232,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
                 return;
             }
             index = next;
+            focusAt = -1;
             for (int i = 0; i < focus.length; i++) focus[i].target = i == index ? 1 : 0;
             announceForAccessibility(names[index]);
         } else {
@@ -370,8 +392,21 @@ final class LockView extends View implements Choreographer.FrameCallback {
         if (!showing()) return;
         float dt = lastNanos == 0 ? 1 / 60f : Math.min(1 / 30f, (frameTimeNanos - lastNanos) / 1e9f);
         lastNanos = frameTimeNanos;
+        clock += dt;
         boolean moving = enter.step(dt) | pin.step(dt) | leave.step(dt) | gold.step(dt) | shake.step(dt)
-                | nudgeX.step(dt) | nudgeY.step(dt) | keyPress.step(dt);
+                | nudgeX.step(dt) | nudgeY.step(dt) | keyPress.step(dt) | headerIn.step(dt);
+        for (int i = 0; i < cardIn.length; i++) {
+            if (cardIn[i].target == 0 && clock >= cardAt[i]) cardIn[i].target = 1;
+            moving |= cardIn[i].step(dt);
+            if (cardIn[i].target == 0) moving = true;   // waiting for its turn
+        }
+        if (focusAt >= 0) {
+            if (clock >= focusAt) {
+                if (mode == CARDS && index < focus.length) focus[index].target = 1;
+                focusAt = -1;
+            }
+            moving = true;
+        }
         for (Spring s : focus) moving |= s.step(dt);
         for (int i = 0; i < KEYS; i++) {
             keyFocus[i].target = mode == PIN && i == keyIndex ? 1 : 0;
@@ -467,7 +502,12 @@ final class LockView extends View implements Choreographer.FrameCallback {
         avatarSize = Math.round(size * 0.84f);
         if (focus.length != n) {
             focus = new Spring[n];
-            for (int i = 0; i < n; i++) focus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
+            cardIn = new Spring[n];
+            cardAt = new float[n];
+            for (int i = 0; i < n; i++) {
+                focus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
+                cardIn[i] = new Spring(Spring.CARD_ENTER, 1);
+            }
         }
         avatars = new Bitmap[n];
         names = new String[n];
@@ -503,8 +543,9 @@ final class LockView extends View implements Choreographer.FrameCallback {
 
         // Header: "Who's Watching?" crossfades to "Enter Passcode" on the PIN pad.
         if (pv < 0.999f) {
-            headerPaint.setAlpha(Math.round(255 * (1 - pv) * stay));
-            c.drawText(header, w / 2, 330 * k - 40 * k * pv, headerPaint);
+            float hi = Ui.clamp(headerIn.value);
+            headerPaint.setAlpha(Math.round(255 * (1 - pv) * stay * hi));
+            c.drawText(header, w / 2, 330 * k - 40 * k * pv + HEADER_RISE * k * (1 - headerIn.value), headerPaint);
         }
         if (pv > 0.001f) {
             headerPaint.setAlpha(Math.round(255 * pv * stay));
@@ -515,11 +556,11 @@ final class LockView extends View implements Choreographer.FrameCallback {
         float bumpX = Spring.rubber(nudgeX.value) * k, bumpY = Spring.rubber(nudgeY.value) * k;
         for (int i = 0; i < profiles.size(); i++) {
             if (i == selected && glides(pv)) continue;
-            float f = Ui.clamp(focus[i].value), alpha = (1 - pv) * stay;
+            float in = cardIn[i].value, f = Ui.clamp(focus[i].value), alpha = (1 - pv) * stay * Ui.clamp(in);
             if (alpha <= 0.004f) continue;
-            float scale = 1 + FOCUS_GROW * focus[i].value - 0.04f * keyPress.value * f;
+            float scale = (1 + FOCUS_GROW * focus[i].value - 0.04f * keyPress.value * f) * (CARD_FROM + (1 - CARD_FROM) * in);
             boolean on = i == index && mode == CARDS;
-            drawCard(c, i, cardX[i] + (on ? bumpX : 0), CARD_Y * k + (on ? bumpY : 0), scale, f, alpha, true);
+            drawCard(c, i, cardX[i] + (on ? bumpX : 0), CARD_Y * k + (on ? bumpY : 0) + CARD_RISE * k * (1 - in), scale, f, alpha, true);
         }
 
         if (glides(pv)) {

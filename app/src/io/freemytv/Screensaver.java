@@ -1,6 +1,8 @@
 package io.freemytv;
 
+import android.graphics.drawable.BitmapDrawable;
 import android.service.dreams.DreamService;
+import android.util.DisplayMetrics;
 import android.view.KeyEvent;
 
 /**
@@ -21,6 +23,14 @@ public class Screensaver extends DreamService {
         setScreenBright(true);
         view = new DreamView(this);
         setContentView(view);
+        // Until DreamView's first frame, the window shows the Frosted Horizon instead of Android's black dream window.
+        try {
+            DisplayMetrics dm = getResources().getDisplayMetrics();
+            boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(this).isNight(System.currentTimeMillis()));
+            getWindow().setBackgroundDrawable(new BitmapDrawable(getResources(), Horizon.get(dm.widthPixels, dm.heightPixels, dark)));
+        } catch (RuntimeException | OutOfMemoryError e) {
+            AppLog.w("screensaver background: " + e.getMessage());
+        }
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {

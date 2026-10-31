@@ -227,6 +227,56 @@ final class HomeMode {
         ModeJob.schedule(c, ModeJob.APPLY, mode, 0);
     }
 
+    /**
+     * Recent Apps' Close (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §4): `am force-stop` for one app the person chose, through our
+     * own ADB, in mahitTV mode only, and never for an app mayForceStop refuses. Blocking: call it off the UI thread. It
+     * runs in the home screen's process, so RUN keeps two closes apart; a switch runs in the main process on its own
+     * connection. True if the command ran.
+     */
+    static boolean forceStop(Context c, String pkg) {
+        if (!mayForceStop(c, pkg)) return false;
+        JSONObject s = state(c);
+        if (!FREE.equals(s.optString("mode"))) return false;
+        synchronized (RUN) {
+            try (Adb adb = Adb.connect(c, 5_000, null)) {
+                if (homeOwned(adb, s).contains(pkg)) return false;
+                adb.shell("am force-stop " + pkg);
+                AppLog.w("closed " + pkg + " (Recent Apps)");
+                return true;
+            } catch (Exception e) {
+                AppLog.w("couldn't close " + pkg + ": " + e.getMessage());
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Which apps Recent Apps may close: an installed package name (nothing else reaches the shell), never ours, the
+     * setup app, a Live TV app, any home screen, a system app that wasn't updated, or one mayTurnOff refuses (Android's
+     * pieces, PROTECTED, Amazon's, factory menus).
+     */
+    static boolean mayForceStop(Context c, String pkg) {
+        if (pkg == null || !pkg.matches("[A-Za-z][\\w.]*") || pkg.equals(PKG) || pkg.equals(GOOGLE_SETUP) || !mayTurnOff(pkg)) {
+            return false;
+        }
+        for (String tv : HomeApps.LIVE_TV_APPS) if (tv.equals(pkg)) return false;
+        android.content.pm.PackageManager pm = c.getPackageManager();
+        try {
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            boolean system = (ai.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0;
+            boolean updated = (ai.flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0;
+            if (system && !updated) return false;
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            return false;
+        }
+        android.content.Intent home = new android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_HOME);
+        for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(home, 0)) {
+            if (pkg.equals(r.activityInfo.packageName)) return false;
+        }
+        return true;
+    }
+
     /** Clean Up: turns off these apps of the plan (each checked again first), in the main process. */
     static void requestClean(Context c, List<String> pkgs) {
         JSONObject s = state(c);

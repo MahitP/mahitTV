@@ -177,6 +177,8 @@ public class SettingsActivity extends Activity {
         private final Scene scene = new Scene();
         /** A slate tint over the Frosted Horizon, so the white text stays clear on the bright day sky (web: .sheet). */
         private final Paint tint = new Paint();
+        /** The Horizon is its twilight (night): the system dialogs follow it too (light by day). */
+        private boolean dark;
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Spring[] pop = new Spring[12];
         private final List<String> appPkgs = new ArrayList<>(), appLabels = new ArrayList<>();
@@ -269,7 +271,7 @@ public class SettingsActivity extends Activity {
             Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
             scene.setMotion(0.5f, 0.2f);
             scene.applyPalette();
-            boolean dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(a).isNight(System.currentTimeMillis()));
+            dark = Wallpaper.dark(Prefs.wallpaper(), HomeData.get(a).isNight(System.currentTimeMillis()));
             scene.setHorizon(dark);
             tint.setColor(dark ? 0x2616212D : 0x5716212D);
             setFocusable(true);
@@ -2035,28 +2037,43 @@ public class SettingsActivity extends Activity {
 
         /**
          * Remote Buttons' rows: each button, and (where the remote allows it, RemoteKeys.doublePress) the same button
-         * pressed twice. Row r is button r / 2 (r with no double press); odd rows are the second press.
+         * pressed twice and held. Row r is button r / 3 (r with neither); r % 3 is 0 (press), 1 (twice) or 2 (held).
          */
         private int keyRowCount() {
-            return Prefs.KEYS.length * (RemoteKeys.doublePress() ? 2 : 1);
+            return Prefs.KEYS.length * keyRowsPerButton();
+        }
+
+        private static int keyRowsPerButton() {
+            return RemoteKeys.doublePress() ? 3 : 1;
         }
 
         private int keyOfRow(int row) {
-            return RemoteKeys.doublePress() ? row / 2 : row;
+            return row / keyRowsPerButton();
         }
 
         private boolean twiceRow(int row) {
-            return RemoteKeys.doublePress() && row % 2 == 1;
+            return RemoteKeys.doublePress() && row % 3 == 1;
+        }
+
+        private boolean heldRow(int row) {
+            return RemoteKeys.doublePress() && row % 3 == 2;
+        }
+
+        /** A second or held app: "Off" (none) is a choice there. */
+        private boolean optionalRow(int row) {
+            return twiceRow(row) || heldRow(row);
         }
 
         private String keyRowApp(int row) {
             int key = Prefs.KEYS[keyOfRow(row)];
-            return twiceRow(row) ? Prefs.keyDoubleApp(key) : Prefs.keyApp(key);
+            return heldRow(row) ? Prefs.keyLongApp(key) : twiceRow(row) ? Prefs.keyDoubleApp(key) : Prefs.keyApp(key);
         }
 
         private void setKeyRowApp(int row, String pkg) {
             int key = Prefs.KEYS[keyOfRow(row)];
-            if (twiceRow(row)) Prefs.setKeyDoubleApp(key, pkg); else Prefs.setKeyApp(key, pkg);
+            if (heldRow(row)) Prefs.setKeyLongApp(key, pkg);
+            else if (twiceRow(row)) Prefs.setKeyDoubleApp(key, pkg);
+            else Prefs.setKeyApp(key, pkg);
             keyVersion++;
         }
 
@@ -2095,10 +2112,11 @@ public class SettingsActivity extends Activity {
         private String[] makeKeyLabels() {
             String[] buttons = buttonLabels();
             if (!RemoteKeys.doublePress()) return buttons;
-            String[] out = new String[buttons.length * 2];
+            String[] out = new String[buttons.length * 3];
             for (int i = 0; i < buttons.length; i++) {
-                out[2 * i] = buttons[i];
-                out[2 * i + 1] = Ui.trf("{button}, pressed twice", "button", buttons[i]);
+                out[3 * i] = buttons[i];
+                out[3 * i + 1] = Ui.trf("{button}, pressed twice", "button", buttons[i]);
+                out[3 * i + 2] = Ui.trf("{button}, held", "button", buttons[i]);
             }
             return out;
         }
@@ -2124,7 +2142,7 @@ public class SettingsActivity extends Activity {
             for (int i = 0; i < v.length; i++) {
                 String pkg = keyRowApp(i);
                 int at = appPkgs.indexOf(pkg);
-                v[i] = twiceRow(i) && pkg.isEmpty() ? Ui.tr("Off") : at >= 0 ? appLabels.get(at) : Ui.tr("Not installed");
+                v[i] = optionalRow(i) && pkg.isEmpty() ? Ui.tr("Off") : at >= 0 ? appLabels.get(at) : Ui.tr("Not installed");
             }
             return v;
         }
@@ -2247,7 +2265,7 @@ public class SettingsActivity extends Activity {
             field.setSingleLine(true);
             field.setHint(Ui.tr("Type the city's name"));
             field.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-            AlertDialog dialog = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            AlertDialog dialog = new AlertDialog.Builder(activity, dialogTheme())
                     .setTitle(Ui.tr("City"))
                     .setView(field)
                     .setPositiveButton(Ui.tr("Search"), (d, which) -> searchCity(field.getText().toString()))
@@ -2259,6 +2277,17 @@ public class SettingsActivity extends Activity {
                 return true;
             });
             dialog.show();
+            lightDim(dialog);
+        }
+
+        /** The system dialog matching the Horizon: light by day, dark at night. */
+        private int dialogTheme() {
+            return dark ? android.R.style.Theme_DeviceDefault_Dialog_Alert : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+        }
+
+        /** The system dims the whole screen about 60% behind a dialog: only a light dim, so the Horizon stays bright. */
+        private static void lightDim(AlertDialog dialog) {
+            if (dialog.getWindow() != null) dialog.getWindow().setDimAmount(0.15f);
         }
 
         // MARK: - My Photos (sent from a computer: tools/photos.py)
@@ -2267,7 +2296,7 @@ public class SettingsActivity extends Activity {
         private void askRemovePhotos() {
             int n = Photos.files(getContext()).size();
             if (n == 0) return;
-            AlertDialog dialog = new AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            AlertDialog dialog = new AlertDialog.Builder(activity, dialogTheme())
                     .setTitle(Ui.plural("plural|one:Remove {n} photo?|other:Remove {n} photos?", n))
                     .setPositiveButton(Ui.tr("Remove"), (d, which) -> {
                         Photos.removeAll(getContext());
@@ -2276,6 +2305,7 @@ public class SettingsActivity extends Activity {
                     })
                     .setNegativeButton(Ui.tr("Cancel"), null)
                     .show();
+            lightDim(dialog);
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE).requestFocus();   // one stray OK keeps them
         }
 
@@ -2436,7 +2466,7 @@ public class SettingsActivity extends Activity {
                 }
             } else {
                 pickLabels.addAll(appLabels);
-                if (twiceRow(which - 1)) pickLabels.set(0, Ui.tr("Off"));   // no second app: the first opens at once
+                if (optionalRow(which - 1)) pickLabels.set(0, Ui.tr("Off"));   // none: the first app opens at once
                 pickCurrent = appPkgs.indexOf(keyRowApp(which - 1));
             }
             int visible = Math.min(PICK_VISIBLE, pickLabels.size());
@@ -2627,7 +2657,7 @@ public class SettingsActivity extends Activity {
                         : RemoteKeys.supported() ? Ui.tr("Disney and Globoplay: the TV itself controls those buttons.")
                         : Ui.tr("TCL remote buttons: on this TV they work as always."), LIST_X * k + 30 * k, hy + 38 * k, hint);
                 if (RemoteKeys.doublePress()) {
-                    c.drawText(Ui.tr("Pressed twice: two quick presses open the second app."),
+                    c.drawText(Ui.tr("Pressed twice or held: a second or a third app."),
                             LIST_X * k + 30 * k, hy + 76 * k, hint);
                 }
             }

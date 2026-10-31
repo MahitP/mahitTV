@@ -75,6 +75,14 @@ function profile(page, zone, app) {
   var liveError = await page.evaluate(function () { var preview = document.querySelector('#wallpaperpick .preview'); return {horizon: preview.className.indexOf('horizon') >= 0, background: preview.style.backgroundImage}; });
   assert.ok(liveError.horizon && !liveError.background, 'actual web live error falls back to Horizon');
   await page.evaluate(function () { window.Image = window.__PickerImage; delete window.__PickerImage; });
+  // The picker is a real sheet over the page now (it was never visible before): Back out of it and out of Settings,
+  // as the remote does, before the Dock's hit tests.
+  await page.evaluate(function () { FreeMyTV.back(); FreeMyTV.back(); });
+  await page.waitForTimeout(700);
+  var pickerClosed = await page.evaluate(function () {
+    return !document.querySelector('#wallpaperpick').classList.contains('open') && !document.querySelector('#settings').classList.contains('open');
+  });
+  assert.ok(pickerClosed, 'Back closes the wallpaper picker and Settings');
   await page.evaluate(function () { window.__resolveWatch = Data.resolveWatch; });
   var netflix = {id: 'netflix', title: 'Netflix'};
   var plain = {id: 'com.example.notes', title: 'Notes'};

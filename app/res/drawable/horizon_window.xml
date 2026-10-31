@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The window's own background before the first frame (cold start, and Android 12's splash): the day Frosted Horizon's
+     sky (Wallpaper.palette(false): #B8C7D6 → #DCE6EF at 56% → #7E9BB5), so mahitTV never opens on a flat or black void. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#FFB8C7D6"
+        android:centerColor="#FFDCE6EF"
+        android:centerY="0.56"
+        android:endColor="#FF7E9BB5" />
+</shape>

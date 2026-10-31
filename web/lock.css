@@ -1,9 +1,16 @@
-/* The golden intro and "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §2–3). Only transform and opacity animate. */
+/* The Liquid Glass & Prismatic Horizon startup and "Who's Watching?" (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1,
+ * MAHITTV-PROFILES-SPEC.md §3). Only transform and opacity animate; the startup's canvas draws the rest. */
 
-/* The intro covers the screen from the first paint, so the home screen never flashes before the lock. */
-#intro { z-index: 7; background: #DCE6EF; }
-.night #intro { background: #1C2638; }
+/* The startup covers the screen from the first paint (studio midnight, as its first frame), so the home screen never
+ * flashes before the lock. At the hand-off it turns transparent: the lock's identical Horizon is already under it. */
+#intro { z-index: 7; background: #090D16; }
+#intro.handoff { background: none; }
 #intro canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+/* While the startup and the lock cover the screen, the home's background (art, aerial, blur) doesn't paint yet: its
+ * first paint is a second of raster work, which would stall the startup (intro.js and lock.js set and clear this). */
+.covered #sky { visibility: hidden; }
+#intro .veil { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(255, 255, 255, 0.1); }
+.night #intro .veil { background: rgba(0, 0, 0, 0.14); }
 
 /* Over the Frosted Horizon: dark text by day, white at night. */
 #lock { z-index: 6; color: #1D1D1F; visibility: hidden; opacity: 0; -webkit-transform-origin: 50% 50%; transform-origin: 50% 50%; }

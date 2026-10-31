@@ -15,7 +15,7 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
     private MediaPlayer player;
     private Surface surface;
     private File source;
-    private Runnable failed;
+    private Runnable failed, rendering;
     private long generation;
 
     WallpaperVideoView(Context context) {
@@ -25,22 +25,23 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
         setVisibility(INVISIBLE);
     }
 
-    void show(File next, Runnable onFailed) {
+    /** Plays `next`; `onRendering` runs once its first frame is on screen, `onFailed` if it can't play. */
+    void show(File next, Runnable onRendering, Runnable onFailed) {
         generation++;
-        source = next; failed = onFailed;
+        source = next; failed = onFailed; rendering = onRendering;
         if (next == null || !next.isFile()) { fail(generation); return; }
         setVisibility(VISIBLE);
         if (isAvailable()) start(generation, next);
     }
 
     void hide() {
-        generation++; source = null; failed = null;
+        generation++; source = null; failed = null; rendering = null;
         if (player != null) { try { player.reset(); } catch (IllegalStateException ignored) { } }
         setVisibility(INVISIBLE);
     }
 
     void release() {
-        generation++; source = null; failed = null;
+        generation++; source = null; failed = null; rendering = null;
         if (player != null) { player.reset(); player.release(); player = null; }
         if (surface != null) { surface.release(); surface = null; }
         setVisibility(INVISIBLE);
@@ -58,6 +59,14 @@ final class WallpaperVideoView extends TextureView implements TextureView.Surfac
                 crop(p.getVideoWidth(), p.getVideoHeight()); p.start();
             });
             player.setOnErrorListener((p, what, extra) -> { fail(token); return true; });
+            player.setOnInfoListener((p, what, extra) -> {
+                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START && token == generation && rendering != null) {
+                    Runnable r = rendering;
+                    rendering = null;
+                    r.run();
+                }
+                return false;
+            });
             player.setDataSource(source.getAbsolutePath()); player.prepareAsync();
         } catch (Exception e) { fail(token); }
     }

@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky { z-index: 0; background: #EBEBEF; }
 #sky .grad { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky .day { background: -webkit-linear-gradient(top, #F5F5F7, #E2E2E7); background: linear-gradient(#F5F5F7, #E2E2E7); }
-#sky .night { background: -webkit-linear-gradient(top, #1C1C1E, #0B0B0D); background: linear-gradient(#1C1C1E, #0B0B0D); opacity: 0; }
+#sky .night { background: -webkit-linear-gradient(top, #0D131F, #1C2638 56%, #080B12); background: linear-gradient(#0D131F, #1C2638 56%, #080B12); opacity: 0; }
 #sky .horizon { position: absolute; left: 0; top: 0; width: 100%; height: 100%; -webkit-transition: opacity 2s; transition: opacity 2s; }
 #sky .horizon.night { opacity: 0; }
 .hz-day, #sky #horizonDay {
@@ -129,6 +129,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .media-background #sky .photo { z-index: 2; }
 .profile-background #hero, .profile-background #details, .profile-background #dots,
 .profile-background #watch, .profile-background #chevron { opacity: 0 !important; visibility: hidden; pointer-events: none; }
+/* At night without the profile background (a media page with no art, the first frame), the twilight Horizon shows,
+ * not the day one. */
+.night #horizonDay { opacity: 0; }
+.night #horizonNight { opacity: 1; }
 .profile-background #horizonDay { opacity: 1; }
 .profile-background #horizonNight { opacity: 0; }
 .profile-background.night #horizonDay { opacity: 0; }
@@ -181,7 +185,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #sky .lift { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #FFF; opacity: 0; -webkit-transition: background-color 2s; transition: background-color 2s; }
 .night #sky .day { opacity: 0; }
 .night #sky .night { opacity: 1; }
-.night #sky .veil { background: rgba(11, 11, 13, 0.78); }
+.night #sky .veil { background: rgba(13, 19, 31, 0.22); }
+/* Without a photo there's only the Horizon under it: nothing to wash out. */
+body:not(.has-photo) #sky .veil { opacity: 0; }
 .night #sky .lift { background: #000; }
 
 /* MARK: - Moving parts: the app grid lifts the page; Control Center floats in from the right over everything. */
@@ -581,13 +587,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 
 .sheet {
-  background: rgba(22, 33, 45, 0.42);
+  background: rgba(22, 33, 45, 0.34);
   color: #FFF;
   opacity: 0;
   visibility: hidden;
   pointer-events: none; /* while it fades out, the pointer goes to what's under it, not to its rows */
 }
 /* Open: SHEET_OPEN from 1.04 (home.js sets the opacity and scale). */
+/* Sheets only tint the wallpaper (as Android's Settings: 0.34 by day, 0.15 at night). */
+.night .sheet { background: rgba(22, 33, 45, 0.15); }
 .sheet.open { pointer-events: auto; }
 .sheet h2 { position: absolute; left: 0; right: 0; top: 84px; margin: 0; text-align: center; font-size: 40px; font-weight: 600; }
 
@@ -631,6 +639,28 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .toggle.on::after { -webkit-transform: translateX(34px); transform: translateX(34px); }
 
 #wallpaperpick .box { left: 280px; top: 110px; width: 1360px; min-height: 790px; }
+/* At 1360 px it's half the screen: light glass instead of a dark slab, with dark ink by day. It sits over the Dock and
+ * old TVs can't blur, so a solid base under the glass keeps the tiles from reading through (as Control Center's). */
+#wallpaperpick .box {
+  color: #1D1D1F;
+  background: #EEF1F5 -webkit-linear-gradient(top, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.2));
+  background: #EEF1F5 linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.2));
+  box-shadow: 0 40px 90px rgba(22, 33, 45, 0.22), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+#wallpaperpick .box .title .sym { color: rgba(29, 29, 31, 0.8); }
+#wallpaperpick .box .row.focus { background: rgba(255, 255, 255, 0.86); box-shadow: 0 8px 20px rgba(22, 33, 45, 0.14); }
+#wallpaperpick .box .row.dim { color: rgba(29, 29, 31, 0.4); }
+#wallpaperpick .box .hint { color: rgba(29, 29, 31, 0.55); }
+.night #wallpaperpick .box {
+  color: #FFF;
+  background: #1B2130 -webkit-linear-gradient(top, rgba(44, 52, 70, 0.6), rgba(20, 26, 38, 0.2));
+  background: #1B2130 linear-gradient(rgba(44, 52, 70, 0.6), rgba(20, 26, 38, 0.2));
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.35), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.night #wallpaperpick .box .title .sym { color: rgba(255, 255, 255, 0.85); }
+.night #wallpaperpick .box .row.focus { background: rgba(255, 255, 255, 0.13); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+.night #wallpaperpick .box .row.dim { color: rgba(255, 255, 255, 0.4); }
+.night #wallpaperpick .box .hint { color: rgba(255, 255, 255, 0.5); }
 #wallpaperpick .panes { position: relative; height: 570px; }
 #wallpaperpick .categories, #wallpaperpick .options { position: absolute; top: 0; width: 410px; }
 #wallpaperpick .categories { left: 0; } #wallpaperpick .options { left: 440px; }
@@ -639,7 +669,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Screensaver: the picks' photos, slowly moving, and a clock */
 
-#saver { background: #000; opacity: 0; visibility: hidden; -webkit-transition: opacity 1.2s, visibility 0s 1.2s; transition: opacity 1.2s, visibility 0s 1.2s; }
+#saver { background: transparent; opacity: 0; visibility: hidden; -webkit-transition: opacity 1.2s, visibility 0s 1.2s; transition: opacity 1.2s, visibility 0s 1.2s; }
 #saver.on { opacity: 1; visibility: visible; -webkit-transition-delay: 0s; transition-delay: 0s; }
 /* Coming in it settles from 1.06 to 1.0 over the 1.2 s dissolve; each photo drifts from rest (home.js). */
 #saver .zoom { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; -webkit-transition: -webkit-transform 1.2s cubic-bezier(0.2, 0.9, 0.3, 1); transition: transform 1.2s cubic-bezier(0.2, 0.9, 0.3, 1); }
@@ -727,10 +757,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   pointer-events: none;
 }
 .tab-home #quotes, .tab-welly #quotes { opacity: 0; }
-/* Home and Welly over the art: home.js darkens it as the tabs swap (TAB_SWAP). */
-#sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #000; opacity: 0; }
-/* Over the profile's wallpaper (Frosted Horizon), Home and Welly tint it slate so its colours stay. */
-.profile-background #sky .shade { background: #16212D; }
+/* Home and Welly tint the wallpaper slate as the tabs swap (TAB_SWAP; home.js), so its colours stay. */
+#sky .shade { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #16212D; opacity: 0; }
 /* Above the TV tab's layer, under the dimmer that Control Center brings. The tabs slide in and out (home.js). */
 #house, #welly, #tabs { z-index: 1; }
 #house, #welly { opacity: 0; visibility: hidden; color: #FFF; }
@@ -793,6 +821,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   #platter .tint, #drawer .tint { background: rgba(36, 36, 40, 0.96) !important; }
   #platter .bleed, #drawer .bleed { opacity: 0 !important; }
   #toast { background: rgba(17, 17, 19, 0.98) !important; }
-  .sheet:not(#apps) { background: rgba(0, 0, 0, 0.9) !important; }
+  .sheet:not(#apps) { background: rgba(22, 33, 45, 0.34) !important; }
   #saver .clock { background: rgba(30, 30, 34, 0.94) !important; }
 }

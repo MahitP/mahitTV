@@ -12,11 +12,12 @@
 </head>
 <body>
 <script>
-  // The look the home screen last had, before anything is drawn, so a night start doesn't flash the day one first.
+  // The look the home screen last had, before anything is drawn, so a night start doesn't flash the day one first:
+  // the twilight Horizon's mid colour (never black), on the profile background until home.js picks the real one.
   try {
     if (localStorage.getItem('fmtv.night') === 'true') {
-      document.documentElement.style.background = '#0B0B0D';
-      document.body.className = 'night';
+      document.documentElement.style.background = '#1C2638';
+      document.body.className = 'night profile-background';
     }
   } catch (e) {}
 </script>

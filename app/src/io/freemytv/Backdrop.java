@@ -105,7 +105,8 @@ final class Backdrop {
             int[] nightGlass = darken(glass, 0.56f);
             if (own) {
                 int[] sharp = reduce(out, GW, GH, 1, 1);
-                int[] lightBg = ramp(sharp.clone(), 0.82f, 0.45f, true), nightBg = ramp(sharp, 0.76f, 0.5f, false);
+                // At night your photo stays a photo: only a light twilight wash (0.35 easing to 0.20), never near-black.
+                int[] lightBg = ramp(sharp.clone(), 0.82f, 0.45f, true), nightBg = ramp(sharp, 0.35f, 0.2f, false);
                 out.recycle();
                 return new Backdrop(null, frost, null, wide, tall, light, lightGlass, night, nightGlass, lightBg, nightBg, GW, GH);
             }
@@ -200,14 +201,14 @@ final class Backdrop {
         return g;
     }
 
-    /** Blends with a near-black (the darkest gray of Apple's dark-mode backgrounds), keeping the photo's tint. */
+    /** Blends toward the twilight Frosted Horizon's mid-sky (#1C2638, Wallpaper.palette(true)), keeping the photo's tint. */
     private static int[] darken(int[] px, float amount) {
-        float keep = 1 - amount, base = 11 * amount;
+        float keep = 1 - amount;
         for (int i = 0; i < px.length; i++) {
             int p = px[i];
-            int r = Math.round(((p >> 16) & 255) * keep + base);
-            int g = Math.round(((p >> 8) & 255) * keep + base);
-            int b = Math.round((p & 255) * keep + base + 2 * amount);
+            int r = Math.round(((p >> 16) & 255) * keep + 0x1C * amount);
+            int g = Math.round(((p >> 8) & 255) * keep + 0x26 * amount);
+            int b = Math.round((p & 255) * keep + 0x38 * amount);
             px[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
         }
         return px;
