@@ -193,6 +193,9 @@ final class Prefs {
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it. Off: any key closes it. */
     static boolean saverWatch() { return sp().getBoolean("saverWatch", false); }
     static void setSaverWatch(boolean on) { put("saverWatch", on); }
+    /** The screensaver's look: "photos" (the picks or your photos, the default) or "nature" (the depth-layered clock). */
+    static String saverStyle() { return sp().getString("saverStyle", "photos"); }
+    static void setSaverStyle(String style) { put("saverStyle", style); }
 
     // MARK: - Widgets and coins
 
@@ -330,6 +333,8 @@ final class Prefs {
     }
 
     private static final String[] keyApps = new String[KEYS.length];   // null = the default
+    /** The app a quick second press opens ("<key>d=<package>" lines; "" or none = no double press). */
+    private static final String[] keyDoubles = new String[KEYS.length];
     private static long keysStamp = Long.MIN_VALUE;
 
     /** A temporary file per process (two can start together after an update), synced before it replaces the old one. */
@@ -358,35 +363,61 @@ final class Prefs {
         writeKeys(sb.toString());
     }
 
+    /** Reads the file again when it changed (call holding keyApps). */
+    private static void readKeys() {
+        File f = keysFile();
+        long stamp = f.lastModified() * 31 + f.length();   // 0 without the file: every key opens its default
+        if (stamp == keysStamp) return;
+        keysStamp = stamp;
+        java.util.Arrays.fill(keyApps, null);
+        java.util.Arrays.fill(keyDoubles, null);
+        if (stamp == 0) return;
+        try (BufferedReader r = new BufferedReader(new FileReader(f))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                for (int i = 0; i < KEYS.length; i++) {
+                    String prefix = KEYS[i] + "=", twice = KEYS[i] + "d=";
+                    if (line.startsWith(prefix)) keyApps[i] = line.substring(prefix.length());
+                    else if (line.startsWith(twice)) keyDoubles[i] = line.substring(twice.length());
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
     /** Package the key opens ("" = nothing). */
     static String keyApp(int keyCode) {
         synchronized (keyApps) {
-            File f = keysFile();
-            long stamp = f.lastModified() * 31 + f.length();   // 0 without the file: every key opens its default
-            if (stamp != keysStamp) {
-                keysStamp = stamp;
-                java.util.Arrays.fill(keyApps, null);
-                if (stamp != 0) {
-                    try (BufferedReader r = new BufferedReader(new FileReader(f))) {
-                        String line;
-                        while ((line = r.readLine()) != null) {
-                            for (int i = 0; i < KEYS.length; i++) {
-                                String prefix = KEYS[i] + "=";
-                                if (line.startsWith(prefix)) keyApps[i] = line.substring(prefix.length());
-                            }
-                        }
-                    } catch (IOException ignored) {
-                    }
-                }
-            }
+            readKeys();
             for (int i = 0; i < KEYS.length; i++) if (KEYS[i] == keyCode && keyApps[i] != null) return keyApps[i];
             return defaultApp(keyCode);
         }
     }
 
+    /** Package a quick second press of the key opens ("" = none: the key opens its app at once). */
+    static String keyDoubleApp(int keyCode) {
+        synchronized (keyApps) {
+            readKeys();
+            for (int i = 0; i < KEYS.length; i++) if (KEYS[i] == keyCode && keyDoubles[i] != null) return keyDoubles[i];
+            return "";
+        }
+    }
+
     static void setKeyApp(int keyCode, String pkg) {
+        writeKeyChoice(keyCode, pkg, false);
+    }
+
+    static void setKeyDoubleApp(int keyCode, String pkg) {
+        writeKeyChoice(keyCode, pkg, true);
+    }
+
+    private static void writeKeyChoice(int keyCode, String pkg, boolean twice) {
         StringBuilder sb = new StringBuilder();
-        for (int key : KEYS) sb.append(key).append('=').append(key == keyCode ? pkg : keyApp(key)).append('\n');
+        for (int key : KEYS) {
+            sb.append(key).append('=').append(key == keyCode && !twice ? pkg : keyApp(key)).append('\n');
+            String second = key == keyCode && twice ? pkg : keyDoubleApp(key);
+            if (!second.isEmpty()) sb.append(key).append("d=").append(second).append('\n');
+        }
         if (writeKeys(sb.toString())) version++;
     }
 }

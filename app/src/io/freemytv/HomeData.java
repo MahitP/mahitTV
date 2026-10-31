@@ -44,10 +44,11 @@ final class HomeData {
     private static String quote() {
         return CURRENCY.equals("USD") || inDollars ? "USDT" : CURRENCY;
     }
-    // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
-    // asking again, and offline too.
-    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code"
-            + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=6&forecast_hours=48";
+    // Both forecasts in one answer, the next 48 hours and today plus 7 days: Home Settings → Forecast switches without
+    // asking again, and offline too; the weather overlay (WeatherOverlay) reads the longer lists and the extras.
+    private static final String WEATHER_QUERY = "&current=temperature_2m,weather_code,is_day,relative_humidity_2m,wind_speed_10m"
+            + "&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code,precipitation_probability_max"
+            + "&hourly=temperature_2m,weather_code,is_day,precipitation_probability&timezone=auto&forecast_days=8&forecast_hours=48";
 
     private static String weatherPlace() {
         return Prefs.latitude() + "," + Prefs.longitude();
@@ -137,6 +138,20 @@ final class HomeData {
         final List<Double> dayMax = new ArrayList<>();
         final List<Double> dayMin = new ArrayList<>();
         final List<Integer> dayCode = new ArrayList<>();
+        // For the weather overlay: humidity (%) and wind (km/h) now; the next 24 hours and 7 days (from today) with the
+        // chance of rain (%, -1 when unknown).
+        int humidity = -1;
+        double wind = Double.NaN;
+        final List<Long> hours24 = new ArrayList<>();
+        final List<Double> hour24Temp = new ArrayList<>();
+        final List<Integer> hour24Code = new ArrayList<>();
+        final List<Boolean> hour24Day = new ArrayList<>();
+        final List<Integer> hour24Rain = new ArrayList<>();
+        final List<Long> week = new ArrayList<>();
+        final List<Double> weekMax = new ArrayList<>();
+        final List<Double> weekMin = new ArrayList<>();
+        final List<Integer> weekCode = new ArrayList<>();
+        final List<Integer> weekRain = new ArrayList<>();
     }
 
     private static HomeData instance;
@@ -294,6 +309,8 @@ final class HomeData {
         w.temp = current.getDouble("temperature_2m");
         w.code = current.getInt("weather_code");
         w.isDay = current.optInt("is_day", 1) == 1;
+        w.humidity = current.optInt("relative_humidity_2m", -1);
+        w.wind = current.optDouble("wind_speed_10m", Double.NaN);
         JSONObject daily = o.getJSONObject("daily");
         w.max = daily.getJSONArray("temperature_2m_max").getDouble(0);
         w.min = daily.getJSONArray("temperature_2m_min").getDouble(0);
@@ -304,20 +321,39 @@ final class HomeData {
             JSONArray times = hourly.getJSONArray("time");
             JSONArray temps = hourly.getJSONArray("temperature_2m");
             JSONArray codes = hourly.getJSONArray("weather_code");
-            JSONArray days = hourly.optJSONArray("is_day");
+            JSONArray days = hourly.optJSONArray("is_day"), rain = hourly.optJSONArray("precipitation_probability");
             long now = System.currentTimeMillis();
-            for (int i = 0; i < times.length() && w.hours.size() < 6; i++) {
+            for (int i = 0; i < times.length() && w.hours24.size() < 24; i++) {
                 long at = localTime(times.getString(i), zone);
                 if (at <= now) continue;
-                w.hours.add(at);
-                w.hourTemp.add(temps.getDouble(i));
-                w.hourCode.add(codes.getInt(i));
-                w.hourDay.add(days == null || days.optInt(i, 1) == 1);
+                boolean day = days == null || days.optInt(i, 1) == 1;
+                if (w.hours.size() < 6) {
+                    w.hours.add(at);
+                    w.hourTemp.add(temps.getDouble(i));
+                    w.hourCode.add(codes.getInt(i));
+                    w.hourDay.add(day);
+                }
+                w.hours24.add(at);
+                w.hour24Temp.add(temps.optDouble(i));
+                w.hour24Code.add(codes.optInt(i, -1));
+                w.hour24Day.add(day);
+                w.hour24Rain.add(rain == null ? -1 : rain.optInt(i, -1));
             }
         }
         JSONArray dates = daily.getJSONArray("time"), highs = daily.getJSONArray("temperature_2m_max"),
                 lows = daily.getJSONArray("temperature_2m_min"), codes = daily.optJSONArray("weather_code");
+        JSONArray dayRain = daily.optJSONArray("precipitation_probability_max");
         long now = System.currentTimeMillis();
+        // The overlay's week: today (until it ends at the city) and the 6 days after it.
+        for (int i = 0; codes != null && i < dates.length() && w.week.size() < 7; i++) {
+            String date = dates.getString(i);
+            if (localTime(date + "T12:00", zone) + 12 * 3600_000L <= now) continue;
+            w.week.add(localTime(date + "T12:00", TimeZone.getDefault()));
+            w.weekMax.add(highs.optDouble(i));
+            w.weekMin.add(lows.optDouble(i));
+            w.weekCode.add(codes.optInt(i, -1));
+            w.weekRain.add(dayRain == null ? -1 : dayRain.optInt(i, -1));
+        }
         for (int i = 0; codes != null && i < dates.length() && w.days.size() < 5; i++) {
             String date = dates.getString(i);
             // Only days that haven't started at the city: today, and past days in a forecast kept offline, are left out.
@@ -473,6 +509,12 @@ final class HomeData {
     static String degrees(double v) {
         if (Double.isNaN(v)) return "—";
         return Math.round(fahrenheit() ? v * 9 / 5 + 32 : v) + "°";
+    }
+
+    /** Wind speed from Open-Meteo's km/h: "9 mph" with Fahrenheit, else "14 km/h". */
+    static String wind(double kmh) {
+        if (Double.isNaN(kmh)) return "—";
+        return fahrenheit() ? Ui.trf("{n} mph", "n", Math.round(kmh * 0.621371)) : Ui.trf("{n} km/h", "n", Math.round(kmh));
     }
 
     private static boolean fahrenheit() {

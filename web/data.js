@@ -54,6 +54,8 @@ var Prefs = (function () {
     weather: function () { return pick('weather', true); },
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it (off by default). */
     saverWatch: function () { return pick('saverWatch', false) === true; },
+    /** The screensaver's look, for the whole TV: 'photos' (the picks, the default) or 'nature' (the scene clock). */
+    saverStyle: function () { return pick('saverStyle', 'photos') === 'nature' ? 'nature' : 'photos'; },
     /** The weather card's forecast: 'hours' (the next 6 hours) or 'days' (the next 5 days). */
     forecast: function () { return pick('forecast', 'hours') === 'days' ? 'days' : 'hours'; },
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
@@ -118,10 +120,11 @@ var Data = (function () {
   // MARK: - Weather
 
   var PLACE = Place.lat + ',' + Place.lon;
-  // Both forecasts in one answer, the next 48 hours and today plus 5 days: Home Settings → Forecast switches without
-  // asking again, and offline too.
-  var QUERY = '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code'
-      + '&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=6&forecast_hours=48';
+  // Both forecasts in one answer, the next 48 hours and today plus 7 days: Home Settings → Forecast switches without
+  // asking again, and offline too. The forecast overlay (weather.js) uses the longer lists and the extra fields.
+  var QUERY = '&current=temperature_2m,weather_code,is_day,relative_humidity_2m,wind_speed_10m'
+      + '&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,weather_code,precipitation_probability_max'
+      + '&hourly=temperature_2m,weather_code,is_day,precipitation_probability&timezone=auto&forecast_days=8&forecast_hours=48';
   var weather = null, weatherAt = 0, fetchingWeather = false;
   (function () {
     var w = stored('weather');
@@ -142,13 +145,29 @@ var Data = (function () {
     var w = {
       temp: o.current.temperature_2m, code: o.current.weather_code, isDay: o.current.is_day !== 0,
       max: dl.temperature_2m_max[0], min: dl.temperature_2m_min[0],
-      sunrise: localTime(dl.sunrise[0], off), sunset: localTime(dl.sunset[0], off), hours: [], days: []
+      sunrise: localTime(dl.sunrise[0], off), sunset: localTime(dl.sunset[0], off), hours: [], days: [],
+      // The forecast overlay's: humidity (%), wind (km/h), 24 hours from this one, and 7 days from today.
+      humidity: o.current.relative_humidity_2m, wind: o.current.wind_speed_10m, hours24: [], days7: []
     };
     var hr = o.hourly;
     for (var i = 0; hr && i < hr.time.length && w.hours.length < 6; i++) {
       var at = localTime(hr.time[i], off);
       if (at <= now) continue;
       w.hours.push({at: at, temp: hr.temperature_2m[i], code: hr.weather_code[i], day: !hr.is_day || hr.is_day[i] !== 0});
+    }
+    var hourStart = now - 3600000;
+    for (var h = 0; hr && h < hr.time.length && w.hours24.length < 24; h++) {
+      var hat = localTime(hr.time[h], off);
+      if (hat <= hourStart) continue;
+      w.hours24.push({at: hat, temp: hr.temperature_2m[h], code: hr.weather_code[h], day: !hr.is_day || hr.is_day[h] !== 0,
+        rain: hr.precipitation_probability ? hr.precipitation_probability[h] : null, now: w.hours24.length === 0});
+    }
+    for (var t = 0; dl.weather_code && t < dl.time.length && w.days7.length < 7; t++) {
+      if (localTime(dl.time[t] + 'T12:00', off) + 12 * 3600000 <= now) continue;   // days already over at the city
+      var q = dl.time[t].split('-');
+      w.days7.push({at: new Date(+q[0], q[1] - 1, +q[2], 12).getTime(), max: dl.temperature_2m_max[t], min: dl.temperature_2m_min[t],
+        code: dl.weather_code[t], rain: dl.precipitation_probability_max ? dl.precipitation_probability_max[t] : null,
+        today: w.days7.length === 0});
     }
     // The next 5 days, from tomorrow (none in a forecast cached before the days). Only days that haven't started at
     // the city: today, and past days in a forecast cached offline, are left out.
@@ -731,6 +750,13 @@ var Data = (function () {
       var unit = Prefs.temperature();
       var f = unit === 'F' || (unit === 'auto' && Place.fahrenheit);
       return Math.round(f ? v * 9 / 5 + 32 : v) + '°';
+    },
+    /** The wind for the forecast overlay: mph where the temperature is in Fahrenheit, else km/h. */
+    wind: function (kmh) {
+      if (kmh === undefined || kmh === null || isNaN(kmh)) return '—';
+      var unit = Prefs.temperature();
+      if (unit === 'F' || (unit === 'auto' && Place.fahrenheit)) return trf('{n} mph', {n: Math.round(kmh * 0.621371)});
+      return trf('{n} km/h', {n: Math.round(kmh)});
     },
     /** "3 PM", "15:00", "15 Uhr": the hourly forecast. */
     hour: function (at) { return formatDate('format|h a', at); },

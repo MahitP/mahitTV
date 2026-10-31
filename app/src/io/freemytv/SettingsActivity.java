@@ -53,6 +53,7 @@ import java.io.InputStream;
 public class SettingsActivity extends Activity {
     private SettingsView view;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
+    private boolean previewOnly;   // opened only for the preview (Control Center): closing it closes Settings
 
     /** Opens straight on the Sleep Timer (the home screen's Control Center). */
     static final String EXTRA_SLEEP = "sleep";
@@ -93,6 +94,7 @@ public class SettingsActivity extends Activity {
         // From ADB: am start -n io.freemytv/.SettingsActivity --ez screensaver true (straight to the preview).
         if (preview == null && getIntent().getBooleanExtra("screensaver", false)) {
             getIntent().removeExtra("screensaver");
+            previewOnly = true;   // Control Center's Screensaver card: closing it goes back home, not to Settings
             view.pause();
             showPreview();
         }
@@ -151,13 +153,18 @@ public class SettingsActivity extends Activity {
         if (preview == null) return;
         preview.stop();
         preview = null;
+        if (previewOnly) {
+            previewOnly = false;
+            finish();
+            return;
+        }
         setContentView(view);
         view.resume();
     }
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, SECTION = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5,
-                POWER = 6, PIN_PAD = 7, WALLPAPER_PICKER = 8;
+                POWER = 6, PIN_PAD = 7, WALLPAPER_PICKER = 8, CLEAN = 9;
         private static final float LIST_ROW_H = 68, LIST_ROW_GAP = 6;
         private static final int PICK_VISIBLE = 9;
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_GAP = 8, CHOICE_H = 104;
@@ -316,10 +323,15 @@ public class SettingsActivity extends Activity {
                 case SECTION:
                 case REMOTE_KEYS:
                 case POWER: {
-                    boolean keys = screen == REMOTE_KEYS;
                     String[] labels = listLabels(), values = listValues();
-                    int at = keys ? row : pickScroll + row;
+                    int at = pickScroll + row;
                     return at < labels.length ? labels[at] + ", " + values[at] : "";
+                }
+                case CLEAN: {
+                    int at = pickScroll + row;
+                    if (at >= cleanRowIds.length) return "";
+                    String value = cleanValue(cleanRowIds[at]);
+                    return value.isEmpty() ? cleanLabel(cleanRowIds[at]) : cleanLabel(cleanRowIds[at]) + ", " + value;
                 }
                 case PICKER: {
                     int at = pickScroll + row;
@@ -412,6 +424,7 @@ public class SettingsActivity extends Activity {
             w = width;
             h = height;
             k = w / 1920f;
+            cleanMeasure = null;   // the row text's size changed
             scene.setSize(w, h);
             Symbols.warm(getContext(), "sparkles", 150 * k);
             Symbols.warm(getContext(), "chevron_right", 22 * k);
@@ -477,7 +490,8 @@ public class SettingsActivity extends Activity {
                 case WALLPAPER_PICKER: return wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().options.length : wallpaperPicker.draw().categories.length;
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
-                default: return Prefs.KEYS.length;
+                case CLEAN: return Math.min(SETTINGS_VISIBLE, cleanRowIds.length);
+                default: return Math.min(SETTINGS_VISIBLE, keyRowCount());
             }
         }
 
@@ -508,6 +522,7 @@ public class SettingsActivity extends Activity {
 
             if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == WALLPAPER_PICKER) drawWallpaperPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c);
             else if (screen == PIN_PAD) drawPinPad(c, dt);
+            else if (screen == CLEAN) drawClean(c, seconds);
             else drawList(c);
         }
 
@@ -774,14 +789,15 @@ public class SettingsActivity extends Activity {
                             } else if (screen == PICKER && pickFor == PICK_LANGUAGE) {
                                 openSection(S_SYSTEM, R_LANGUAGE);
                             } else if (screen == PICKER) {
-                                focus = pickFor - 1;
-                                screen = REMOTE_KEYS;
+                                focusKeyRow(pickFor - 1);
                             } else if (screen == HOME_CHOICE) {
                                 openSection(S_SYSTEM, R_HOME);
                             } else if (screen == SHELF_EDIT) {
                                 openSection(editingTop ? S_SYSTEM : shelfSection, editingTop ? R_TOP_BUTTONS : R_DOCK);
                             } else if (screen == REMOTE_KEYS) {
                                 openSection(S_SYSTEM, R_REMOTE);
+                            } else if (screen == CLEAN) {
+                                openSection(S_SYSTEM, R_CLEAN);
                             } else if (screen == POWER) {
                                 openSection(S_SYSTEM, R_SLEEP);
                             } else {
@@ -817,7 +833,7 @@ public class SettingsActivity extends Activity {
                 R_SAVER = 26, R_TMDB = 27, R_WATCHMODE = 28, R_TOP_SHELF = 29,
                 R_CHECK = 40, R_GEMINI = 50, R_OLLAMA = 51, R_FORGET = 52,
                 R_HOME = 60, R_SCREENSAVER = 61, R_TOP_BUTTONS = 62, R_REMOTE = 63, R_SLEEP = 64, R_TV_SETTINGS = 65,
-                R_LANGUAGE = 66, R_SYSTEM_APPS = 67, R_APP_COUNT = 68,
+                R_LANGUAGE = 66, R_SYSTEM_APPS = 67, R_APP_COUNT = 68, R_SAVER_STYLE = 69, R_CLEAN = 72,
                 R_RESET = 70, R_RESTORE = 71,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
@@ -910,8 +926,8 @@ public class SettingsActivity extends Activity {
                     Collections.addAll(l, R_GEMINI, R_OLLAMA, R_FORGET);
                     break;
                 case S_SYSTEM:
-                    Collections.addAll(l, R_HOME, R_SCREENSAVER, R_DOCK, R_TOP_BUTTONS, R_REMOTE, R_SLEEP, R_LANGUAGE,
-                            R_SYSTEM_APPS, R_APP_COUNT, R_TV_SETTINGS);
+                    Collections.addAll(l, R_HOME, R_SCREENSAVER, R_SAVER_STYLE, R_DOCK, R_TOP_BUTTONS, R_REMOTE, R_SLEEP,
+                            R_LANGUAGE, R_SYSTEM_APPS, R_APP_COUNT, R_CLEAN, R_TV_SETTINGS);
                     break;
                 default:
                     Collections.addAll(l, R_RESET, R_RESTORE);
@@ -1039,6 +1055,8 @@ public class SettingsActivity extends Activity {
                 case R_LANGUAGE: return Ui.tr("Language");
                 case R_SYSTEM_APPS: return Ui.tr("Show system apps");
                 case R_APP_COUNT: return Ui.tr("Apps found");
+                case R_SAVER_STYLE: return Ui.tr("Screensaver Style");
+                case R_CLEAN: return Ui.tr("Clean Up This TV");
                 case R_RESET: return Ui.tr("Reset mahitTV Data");
                 case R_RESTORE: return Ui.tr("Restore Original TV");
                 default: return "";
@@ -1112,6 +1130,11 @@ public class SettingsActivity extends Activity {
                 }
                 case R_SYSTEM_APPS: return onOff(Prefs.systemApps());
                 case R_APP_COUNT: return appCount < 0 ? Ui.tr("Counting…") : String.valueOf(appCount);
+                case R_SAVER_STYLE: return "nature".equals(Prefs.saverStyle()) ? Ui.tr("Nature Clock") : Ui.tr("saver|Photos");
+                case R_CLEAN: {
+                    int off = HomeMode.stringList(state, "debloated").size();
+                    return off == 0 ? "" : Ui.plural("plural|one:{n} app off|other:{n} apps off", off);
+                }
                 case R_RESTORE: return originalNow() ? Ui.tr("In use") : "";
                 default: return "";
             }
@@ -1122,6 +1145,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
+                case R_CLEAN:
                     return true;
                 default:
                     return id >= R_OTHER && id < R_COIN;
@@ -1165,6 +1189,8 @@ public class SettingsActivity extends Activity {
                 case R_HOME: return Ui.tr("OK opens the choice: mahitTV or the TV's original home screen.");
                 case R_SYSTEM_APPS: return Ui.tr("Also lists system apps that only have a phone-style entry.");
                 case R_APP_COUNT: return Ui.tr("Every app the TV can open from All Apps.");
+                case R_SAVER_STYLE: return Ui.tr("Photos: the picks or your own photos. Nature Clock: a big clock between a landscape's layers.");
+                case R_CLEAN: return Ui.tr("Turns off the promo and tracking apps CleanYourTV lists for this TV. Nothing is uninstalled, and Original turns them back on. Asks for the manager's PIN.");
                 case R_RESET: return armed == R_RESET ? Ui.tr("OK again resets it. Any other key keeps it.")
                         : Ui.tr("Clears every profile's Dock, theme, PIN changes, Welly memory and history. Language, city and remote buttons stay. Asks for the manager's PIN.");
                 case R_RESTORE: return armed == R_RESTORE ? Ui.tr("OK again restores it. Any other key keeps mahitTV.")
@@ -1243,11 +1269,16 @@ public class SettingsActivity extends Activity {
                     pause();
                     activity.showPreview();
                     return false;
+                case R_CLEAN:
+                    if (busy()) return false;
+                    askPin(PIN_MANAGER, THEN_CLEAN, ProfileManager.manager(c), id);
+                    return true;
                 case R_REMOTE:
                     HomeMode.ensureRemoteService(c, 0);   // the buttons work from inside other apps through this service
                     loadApps();
                     screen = REMOTE_KEYS;
                     focus = 0;
+                    pickScroll = 0;
                     return true;
                 case R_SLEEP:
                     pickScroll = 0;
@@ -1309,11 +1340,221 @@ public class SettingsActivity extends Activity {
             openSection(S_SYSTEM, R_HOME);
         }
 
+        // MARK: - Clean Up This TV (TVOS-LAUNCHER-MERGE-SPEC.md S1)
+
+        /** Clean Up's rows: these two, then the plan's packages by index. */
+        private static final int CLEAN_APPLY = -1, CLEAN_UNDO = -2, ARM_CLEAN = 1000;
+        private final Set<String> cleanOff = new HashSet<>();   // the safe packages ticked to go off
+        private long cleanAskedAt, cleanPlanAt = -1;
+        private int[] cleanRowIds = new int[0];
+        private JSONArray cleanItems = new JSONArray();
+        private String cleanError = "", cleanModel = "", cleanFrom = "";
+        private int cleanKind;
+        private TextPaint cleanMeasure;   // made once, for long package names
+
+        /** After the manager's PIN: the screen, and this TV read again (the plan comes back through the state). */
+        private void openClean() {
+            screen = CLEAN;
+            focus = 0;
+            pickScroll = 0;
+            armed = 0;
+            cleanPlanAt = -1;
+            cleanRowIds = new int[0];
+            if (busy()) {   // another job is running (a new one would stop it): the last plan, if there is one
+                cleanAskedAt = 0;
+                return;
+            }
+            cleanAskedAt = System.currentTimeMillis();
+            HomeMode.request(getContext(), HomeMode.CLEAN_SCAN);
+            pendingAt = SystemClock.uptimeMillis();
+        }
+
+        /** Reads the plan from the state when a newer one arrives (with the poll, not per frame). */
+        private void syncClean() {
+            JSONObject clean = state.optJSONObject("clean");
+            if (clean == null) {
+                // Opened while another job ran and there's no plan yet: read the TV now that it's done.
+                if (cleanAskedAt == 0 && !busy()) {
+                    cleanAskedAt = System.currentTimeMillis();
+                    HomeMode.request(getContext(), HomeMode.CLEAN_SCAN);
+                    pendingAt = SystemClock.uptimeMillis();
+                }
+                return;
+            }
+            long at = clean.optLong("at");
+            boolean fresh = at >= cleanAskedAt - 1000;
+            if (!fresh || at == cleanPlanAt) return;
+            cleanPlanAt = at;
+            cleanError = clean.optString("error");
+            cleanModel = clean.optString("title");
+            cleanKind = clean.optInt("kind");
+            String from = cleanKind == Debloat.EXACT ? Ui.trf("CleanYourTV's list for {model}.", "model", cleanModel)
+                    : cleanKind == Debloat.SIMILAR ? Ui.trf("CleanYourTV's list for a similar TV: {model}.", "model", cleanModel)
+                    : Ui.trf("CleanYourTV's list for the TV with the most apps in common: {model}.", "model", cleanModel);
+            cleanFrom = cleanModel.isEmpty() ? "" : TextUtils.ellipsize(from, new TextPaint(hint), 764 * k, TextUtils.TruncateAt.END).toString();
+            cleanItems = clean.optJSONArray("items");
+            if (cleanItems == null) cleanItems = new JSONArray();
+            cleanOff.clear();
+            for (int i = 0; i < cleanItems.length(); i++) {
+                JSONObject o = cleanItems.optJSONObject(i);
+                if (o != null && o.optInt("w") == Debloat.SAFE) cleanOff.add(o.optString("p"));
+            }
+            List<Integer> ids = new ArrayList<>();
+            if (!cleanOff.isEmpty()) ids.add(CLEAN_APPLY);
+            if (!HomeMode.stringList(state, "debloated").isEmpty()) ids.add(CLEAN_UNDO);
+            for (int i = 0; i < cleanItems.length(); i++) ids.add(i);
+            cleanRowIds = new int[ids.size()];
+            for (int i = 0; i < cleanRowIds.length; i++) cleanRowIds[i] = ids.get(i);
+            focus = Math.min(focus, Math.max(0, rowCount() - 1));
+            whyRows = null;
+        }
+
+        private JSONObject cleanItem(int id) {
+            JSONObject o = id >= 0 ? cleanItems.optJSONObject(id) : null;
+            return o == null ? new JSONObject() : o;
+        }
+
+        private String cleanLabel(int id) {
+            if (id == CLEAN_APPLY) return Ui.plural("plural|one:Turn Off {n} App|other:Turn Off {n} Apps", cleanOff.size());
+            if (id == CLEAN_UNDO) {
+                return Ui.plural("plural|one:Turn {n} App Back On|other:Turn {n} Apps Back On",
+                        HomeMode.stringList(state, "debloated").size());
+            }
+            return cleanItem(id).optString("p");
+        }
+
+        private String cleanValue(int id) {
+            if (id == CLEAN_APPLY) return armed == ARM_CLEAN ? Ui.tr("Press OK again") : "";
+            if (id == CLEAN_UNDO) return "";
+            JSONObject o = cleanItem(id);
+            switch (o.optInt("w")) {
+                case Debloat.SAFE: return cleanOff.contains(o.optString("p")) ? Ui.tr("clean|Turn off") : Ui.tr("clean|Keep");
+                case Debloat.SYSTEM: return Ui.tr("Part of the system");
+                case Debloat.TV_NEEDS: return Ui.tr("The TV needs it");
+                case Debloat.WIFI: return Ui.tr("Saved the Wi-Fi");
+                case Debloat.HOME: return Ui.tr("A home screen");
+                default: return Ui.tr("Not checked");
+            }
+        }
+
+        private String cleanHint(int id) {
+            if (id == CLEAN_APPLY) {
+                return armed == ARM_CLEAN ? Ui.tr("OK again turns them off. Any other key keeps them.")
+                        : Ui.tr("Nothing is uninstalled: they're only turned off, and Original turns them back on.");
+            }
+            if (id == CLEAN_UNDO) return Ui.tr("Turns back on only what Clean Up turned off.");
+            switch (cleanItem(id).optInt("w")) {
+                case Debloat.SAFE: return Ui.tr("OK chooses whether this one goes off.");
+                case Debloat.SYSTEM: return Ui.tr("Stays on: Android or the TV needs it to start, or it's a factory menu.");
+                case Debloat.TV_NEEDS: return Ui.tr("Stays on: the TV's inputs or remote use it.");
+                case Debloat.WIFI: return Ui.tr("Stays on: turning it off would erase a saved Wi-Fi network.");
+                case Debloat.HOME: return Ui.tr("Stays on: only Home Screen switches home screens and screensavers.");
+                default: return Ui.tr("Stays on: I couldn't check what the TV's inputs need. Try again later.");
+            }
+        }
+
+        /** OK on Clean Up: an app's tick, or (twice) turning the ticked ones off, or turning Clean Up's back on. */
+        private void activateClean() {
+            if (busy() || cleanRowIds.length == 0) return;
+            int id = cleanRowIds[pickScroll + focus];
+            if (id == CLEAN_APPLY) {
+                if (armed != ARM_CLEAN) {
+                    armed = ARM_CLEAN;
+                    return;
+                }
+                armed = 0;
+                List<String> chosen = new ArrayList<>();
+                for (int i = 0; i < cleanItems.length(); i++) {   // in the profile's order
+                    String pkg = cleanItem(i).optString("p");
+                    if (cleanOff.contains(pkg)) chosen.add(pkg);
+                }
+                if (chosen.isEmpty()) return;
+                HomeMode.requestClean(getContext(), chosen);
+            } else if (id == CLEAN_UNDO) {
+                HomeMode.request(getContext(), HomeMode.UNCLEAN);
+            } else {
+                JSONObject o = cleanItem(id);
+                if (o.optInt("w") != Debloat.SAFE) {
+                    say(cleanHint(id));
+                    return;
+                }
+                String pkg = o.optString("p");
+                if (!cleanOff.remove(pkg)) cleanOff.add(pkg);
+                return;
+            }
+            cleanAskedAt = System.currentTimeMillis();   // the job reads the TV again when it's done
+            pendingAt = SystemClock.uptimeMillis();
+        }
+
+        private void drawClean(Canvas c, float seconds) {
+            syncClean();
+            c.drawText(Ui.tr("Clean Up This TV"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            boolean waiting = cleanPlanAt < 0 || busy();
+            float pitch = LIST_ROW_H + LIST_ROW_GAP, x = LIST_X * k + 30 * k;
+            if (cleanPlanAt < 0) {   // the first plan isn't here yet
+                String text = busyText().isEmpty() ? Ui.tr("Reading this TV's apps…") : busyText();
+                spinner.setColor(0xFFFFFFFF);
+                Ui.spinner(c, x + 12 * k, (LIST_TOP + 60) * k, 12 * k, seconds * 1.3f, spinner);
+                c.drawText(text, x + 40 * k, (LIST_TOP + 60) * k + Ui.halfCap(hint), hint);
+                return;
+            }
+            if (cleanRowIds.length == 0) {
+                String text = !cleanError.isEmpty() ? cleanError : Ui.tr("Nothing on this TV is on its list: it's already clean.");
+                drawHint(c, text, (LIST_TOP + 60) * k);
+                return;
+            }
+            int shown = rowCount();
+            for (int i = 0; i < shown; i++) {
+                int id = cleanRowIds[pickScroll + i];
+                float y = (LIST_TOP + 20 + i * pitch) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
+                float f = drawRowBackground(c, i);
+                boolean safe = id < 0 || cleanItem(id).optInt("w") == Debloat.SAFE;
+                rowLabel.setColor(safe && !waiting ? blend(0xF2FFFFFF, INK, f) : blend(0x73FFFFFF, 0x731C1C1E, f));
+                float base = rowRect.centerY() + Ui.halfCap(rowLabel), right = rowRect.right - 30 * k;
+                if (cleanMeasure == null) cleanMeasure = new TextPaint(rowLabel);
+                String label = cleanLabel(id);
+                if (rowLabel.measureText(label) > 540 * k) {
+                    label = TextUtils.ellipsize(label, cleanMeasure, 540 * k, TextUtils.TruncateAt.MIDDLE).toString();
+                }
+                c.drawText(label, rowRect.left + 30 * k, base, rowLabel);
+                boolean ticked = id >= 0 && cleanOff.contains(cleanItem(id).optString("p"));
+                if (ticked) {   // going off: a check, as in the pickers
+                    float cw = Symbols.width(getContext(), "check", 26 * k);
+                    Symbols.draw(getContext(), c, "check", right - cw / 2, rowRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, f));
+                    right -= cw + 16 * k;
+                }
+                rowValue.setColor(armed == ARM_CLEAN && id == CLEAN_APPLY ? blend(AMBER, 0xFFB25000, f)
+                        : safe ? blend(0xB3FFFFFF, 0xB31C1C1E, f) : blend(0x59FFFFFF, 0x591C1C1E, f));
+                c.drawText(cleanValue(id), right, base, rowValue);
+            }
+            float hy = (LIST_TOP + 20 + shown * pitch + 36) * k;
+            String where = shown < cleanRowIds.length ? (pickScroll + focus + 1) + " / " + cleanRowIds.length + "  ·  " : "";
+            String tip = busy() ? (busyText().isEmpty() ? Ui.tr("Starting…") : busyText())
+                    : where + cleanHint(cleanRowIds[pickScroll + focus]);
+            drawHint(c, tip, hy);
+            c.drawText(cleanFrom, LIST_X * k + 30 * k, hy + hintLayout.getHeight() + 30 * k, hint);
+        }
+
+        /** A hint under a list, wrapped on up to three lines (the layout is made again only when its text changes). */
+        private void drawHint(Canvas c, String tip, float y) {
+            int width = Math.round(764 * k);
+            if (hintLayout == null || !tip.equals(hintShown) || hintLayout.getWidth() != width) {
+                hintShown = tip;
+                hintLayout = StaticLayout.Builder.obtain(tip, 0, tip.length(), new TextPaint(hint), width)
+                        .setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build();
+            }
+            c.save();
+            c.translate(LIST_X * k + 30 * k, y - hintLayout.getLineBaseline(0));
+            hintLayout.draw(c);
+            c.restore();
+        }
+
         // MARK: - PIN pad (MAHITTV-PROFILES-SPEC.md §1.4, §3)
 
         private static final int PIN_OLD = 0, PIN_NEW = 1, PIN_CONFIRM = 2, PIN_MANAGER = 3;
         /** What the manager's PIN was asked for. */
-        private static final int THEN_SET = 1, THEN_REMOVE = 2, THEN_RESET = 3, THEN_ORIGINAL = 4, THEN_RESTORE = 5;
+        private static final int THEN_SET = 1, THEN_REMOVE = 2, THEN_RESET = 3, THEN_ORIGINAL = 4, THEN_RESTORE = 5, THEN_CLEAN = 6;
         private static final float PAD_KEY = 72, PAD_GAP = 11, PAD_X = LIST_X + (LIST_R - LIST_X - 10 * PAD_KEY - 9 * PAD_GAP) / 2,
                 PAD_KEYS_TOP = 560, PAD_DOTS_Y = 420, PAD_DOT_R = 13, PAD_DOT_GAP = 58;
         private static final String[] DIGITS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -1385,6 +1626,7 @@ public class SettingsActivity extends Activity {
                 case THEN_SET: return Ui.trf("To set {name}'s PIN", "name", pinFor.name);
                 case THEN_REMOVE: return Ui.trf("To remove {name}'s PIN", "name", pinFor.name);
                 case THEN_RESET: return Ui.tr("To reset all mahitTV data");
+                case THEN_CLEAN: return Ui.tr("To clean up this TV");
                 default: return Ui.tr("To restore the TV's original home screen");
             }
         }
@@ -1510,6 +1752,11 @@ public class SettingsActivity extends Activity {
                     ProfileManager.resetAll(c);
                     activity.finish();   // the home screen, locked: "Who's Watching?" with the default profiles
                     return;
+                case THEN_CLEAN:
+                    pinDigits.setLength(0);
+                    openClean();
+                    for (Spring s : pop) s.snap(0);
+                    return;
                 default:   // THEN_ORIGINAL, THEN_RESTORE
                     pinDigits.setLength(0);
                     requestOriginal();
@@ -1590,7 +1837,7 @@ public class SettingsActivity extends Activity {
             switch (screen) {
                 case SECTION: {
                     int id = rows[pickScroll + i];
-                    return id == R_REMOTE ? Capabilities.NEED_REMOTE_BUTTONS : id == R_SLEEP ? Capabilities.NEED_ADB
+                    return id == R_REMOTE ? Capabilities.NEED_REMOTE_BUTTONS : id == R_SLEEP || id == R_CLEAN ? Capabilities.NEED_ADB
                             : id == R_PLAYING ? Capabilities.NEED_LISTENER : null;
                 }
                 case POWER: {
@@ -1748,7 +1995,52 @@ public class SettingsActivity extends Activity {
             return on ? Ui.tr("On") : Ui.tr("Off");
         }
 
+        /**
+         * Remote Buttons' rows: each button, and (where the remote allows it, RemoteKeys.doublePress) the same button
+         * pressed twice. Row r is button r / 2 (r with no double press); odd rows are the second press.
+         */
+        private int keyRowCount() {
+            return Prefs.KEYS.length * (RemoteKeys.doublePress() ? 2 : 1);
+        }
+
+        private int keyOfRow(int row) {
+            return RemoteKeys.doublePress() ? row / 2 : row;
+        }
+
+        private boolean twiceRow(int row) {
+            return RemoteKeys.doublePress() && row % 2 == 1;
+        }
+
+        private String keyRowApp(int row) {
+            int key = Prefs.KEYS[keyOfRow(row)];
+            return twiceRow(row) ? Prefs.keyDoubleApp(key) : Prefs.keyApp(key);
+        }
+
+        private void setKeyRowApp(int row, String pkg) {
+            int key = Prefs.KEYS[keyOfRow(row)];
+            if (twiceRow(row)) Prefs.setKeyDoubleApp(key, pkg); else Prefs.setKeyApp(key, pkg);
+        }
+
+        /** Back on Remote Buttons at row `row`, scrolled so it shows. */
+        private void focusKeyRow(int row) {
+            screen = REMOTE_KEYS;
+            pickScroll = Math.max(0, Math.min(row - SETTINGS_VISIBLE + 1, keyRowCount() - SETTINGS_VISIBLE));
+            pickScroll = Math.max(0, Math.min(pickScroll, row));
+            focus = row - pickScroll;
+        }
+
         private String[] keyLabels() {
+            String[] buttons = buttonLabels();
+            if (!RemoteKeys.doublePress()) return buttons;
+            String[] out = new String[buttons.length * 2];
+            for (int i = 0; i < buttons.length; i++) {
+                out[2 * i] = buttons[i];
+                out[2 * i + 1] = Ui.trf("{button}, pressed twice", "button", buttons[i]);
+            }
+            return out;
+        }
+
+        private String[] buttonLabels() {
             if (RemoteKeys.HISENSE) return new String[] {Ui.tr("Prime Video button"), Ui.tr("YouTube button"),
                     Ui.tr("Disney+ button"), Ui.tr("All Apps button"), Ui.tr("Settings button"), Ui.tr("Profile button")};
             if (RemoteKeys.STEM_NETFLIX) return new String[] {Ui.tr("Netflix button")};
@@ -1765,10 +2057,11 @@ public class SettingsActivity extends Activity {
         }
 
         private String[] keyValues() {
-            String[] v = new String[Prefs.KEYS.length];
+            String[] v = new String[keyRowCount()];
             for (int i = 0; i < v.length; i++) {
-                int at = appPkgs.indexOf(Prefs.keyApp(Prefs.KEYS[i]));
-                v[i] = at >= 0 ? appLabels.get(at) : Ui.tr("Not installed");
+                String pkg = keyRowApp(i);
+                int at = appPkgs.indexOf(pkg);
+                v[i] = twiceRow(i) && pkg.isEmpty() ? Ui.tr("Off") : at >= 0 ? appLabels.get(at) : Ui.tr("Not installed");
             }
             return v;
         }
@@ -1821,10 +2114,10 @@ public class SettingsActivity extends Activity {
                 return;
             }
             if (screen == REMOTE_KEYS) {
-                int n = appPkgs.size();
-                int at = appPkgs.indexOf(Prefs.keyApp(Prefs.KEYS[focus]));
+                int n = appPkgs.size(), row = pickScroll + focus;
+                int at = appPkgs.indexOf(keyRowApp(row));
                 int next = at < 0 ? (dir > 0 ? 0 : n - 1) : (at + dir + n) % n;
-                Prefs.setKeyApp(Prefs.KEYS[focus], appPkgs.get(next));
+                setKeyRowApp(row, appPkgs.get(next));
                 return;
             }
             if (screen != SECTION) return;
@@ -1861,6 +2154,9 @@ public class SettingsActivity extends Activity {
                 case R_INTRO: Prefs.setIntro(!Prefs.intro()); return;
                 case R_SOUNDS: Prefs.setSounds(!Prefs.sounds()); break;
                 case R_SAVER: Prefs.setSaverWatch(!Prefs.saverWatch()); break;
+                case R_SAVER_STYLE:
+                    Prefs.setSaverStyle("nature".equals(Prefs.saverStyle()) ? "photos" : "nature");
+                    return;
                 case R_WEATHER: Prefs.setWeather(!Prefs.weather()); break;
                 case R_FORECAST:   // both are in memory: nothing to fetch
                     Prefs.setForecast(Prefs.forecast().equals("days") ? "hours" : "days");
@@ -1951,11 +2247,12 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean scrolling() {
-            return screen == PICKER || screen == SHELF_EDIT || screen == SECTION;
+            return screen == PICKER || screen == SHELF_EDIT || screen == SECTION || screen == CLEAN || screen == REMOTE_KEYS;
         }
 
         private int listSize() {
-            return screen == SHELF_EDIT ? shelfRows.size() : screen == SECTION ? rows.length : pickLabels.size();
+            return screen == SHELF_EDIT ? shelfRows.size() : screen == SECTION ? rows.length
+                    : screen == CLEAN ? cleanRowIds.length : screen == REMOTE_KEYS ? keyRowCount() : pickLabels.size();
         }
 
         // MARK: - Shelf editor
@@ -2075,7 +2372,8 @@ public class SettingsActivity extends Activity {
                 }
             } else {
                 pickLabels.addAll(appLabels);
-                pickCurrent = appPkgs.indexOf(Prefs.keyApp(Prefs.KEYS[which - 1]));
+                if (twiceRow(which - 1)) pickLabels.set(0, Ui.tr("Off"));   // no second app: the first opens at once
+                pickCurrent = appPkgs.indexOf(keyRowApp(which - 1));
             }
             int visible = Math.min(PICK_VISIBLE, pickLabels.size());
             int at = Math.max(0, pickCurrent);
@@ -2209,7 +2507,7 @@ public class SettingsActivity extends Activity {
             c.drawText(keys ? Ui.tr("Remote Buttons") : screen == POWER ? Ui.tr("Sleep Timer") : sectionName(section),
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             float pitch = LIST_ROW_H + LIST_ROW_GAP;
-            int shown = keys ? labels.length : rowCount(), from = keys ? 0 : pickScroll;
+            int shown = rowCount(), from = pickScroll;
             for (int i = 0; i < shown; i++) {
                 int id = sec ? rows[from + i] : 0;
                 float y = (LIST_TOP + 20 + i * pitch) * k;
@@ -2264,6 +2562,10 @@ public class SettingsActivity extends Activity {
                         : RemoteKeys.HISENSE ? Ui.tr("Netflix: the TV itself controls that button.")
                         : RemoteKeys.supported() ? Ui.tr("Disney and Globoplay: the TV itself controls those buttons.")
                         : Ui.tr("TCL remote buttons: on this TV they work as always."), LIST_X * k + 30 * k, hy + 38 * k, hint);
+                if (RemoteKeys.doublePress()) {
+                    c.drawText(Ui.tr("Pressed twice: two quick presses open the second app."),
+                            LIST_X * k + 30 * k, hy + 76 * k, hint);
+                }
             }
         }
 
@@ -2307,15 +2609,19 @@ public class SettingsActivity extends Activity {
                 openSection(S_SYSTEM, R_LANGUAGE);
             } else if (screen == PICKER) {
                 int at = pickScroll + focus;
-                Prefs.setKeyApp(Prefs.KEYS[pickFor - 1], appPkgs.get(at));
-                focus = pickFor - 1;
-                screen = REMOTE_KEYS;
+                setKeyRowApp(pickFor - 1, appPkgs.get(at));
+                focusKeyRow(pickFor - 1);
             } else if (screen == SHELF_EDIT) {
                 toggleShelfApp();
                 invalidate();
                 return;
+            } else if (screen == CLEAN) {
+                activateClean();
+                invalidate();
+                spoken.focusMoved();
+                return;
             } else if (screen == REMOTE_KEYS) {
-                openPicker(focus + 1);
+                openPicker(pickScroll + focus + 1);
             } else if (screen == POWER) {
                 activatePower();
             } else if (screen == SECTION) {

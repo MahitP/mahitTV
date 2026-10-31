@@ -1,0 +1,5 @@
+These debloat profiles (index.txt and examples/<model>/debloat.txt) come from CleanYourTV
+(https://github.com/Gathin23/cleanyourtv) by @Gathin23, MIT License, as bundled by tvOS Launcher
+(https://github.com/techgenius1/tvOS-Launcher, Copyright 2026 techgenius, Apache License 2.0).
+mahitTV reads them only to suggest packages; every package goes through HomeMode's own safety checks
+(Debloat.java) and is only turned off with `pm disable-user`, so Original turns it back on.

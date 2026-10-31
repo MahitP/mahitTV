@@ -96,6 +96,8 @@
   // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
   var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 251, TILE_H = 150, TILE_GAP = 49, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
   var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
+  // The Top Shelf's full screen (↑ on a pick) recesses the Dock this far and to this opacity; it never hides it.
+  var RECESS = 36, RECESS_A = 0.75;
 
   function shelfKey(app) {
     for (var i = 0; i < SHELF.length; i++) if (SHELF[i][1].test(app.id) || SHELF[i][2].test(app.title)) return SHELF[i];
@@ -520,11 +522,11 @@
     dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
     heroX: spring(P.TITLE_SETTLE).px(), heroA: spring(P.TITLE_SETTLE, 1), heroShow: spring([0.3, 1], 1),
     lensX: spring(P.LIQUID_PILL).px(), lensW: spring(P.LIQUID_PILL, 100).px(), dot: spring(P.SNAPPY_FOCUS).px(),
-    rowNudge: spring(P.BOUNDARY_BUMP).px()
+    rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL).px()
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
-  var fxTiles = [], fxCells = [], fxTabs = [], fxKeys = [], fxWho = [], fxPill = null, fxWatch = null, launching = null;
+  var fxTiles = [], fxCells = [], fxTabs = [], fxKeys = [], fxWho = [], fxRecents = [], fxPill = null, fxWatch = null, launching = null;
   var pending = [];
 
   /** Sets a spring's target after `ms` (a stagger); a newer call for the same spring replaces it. */
@@ -596,7 +598,7 @@
     var tvA = tabLayer(tvLayer, 0, '', 1);
     A(tvLayer, tvA);
     var apps = q('#apps');
-    A(apps, tabLayer(apps, 0, ' translateY(' + r2(722 - y + 300 * full) + 'px)', behind) * (1 - full));
+    A(apps, tabLayer(apps, 0, ' translateY(' + r2(722 - y + RECESS * full) + 'px)', behind) * (1 - (1 - RECESS_A) * full));
     var house = q('#house'), welly = q('#welly'), ha = tabLayer(house, 1, '', behind), wa = tabLayer(welly, 2, '', behind);
     A(house, ha); V(house, ha);
     A(welly, wa); V(welly, wa);
@@ -614,13 +616,14 @@
     A(q('#sky .shade'), away * (hasClass(body, 'profile-background') ? (night ? 0.22 : 0.34) : (night ? 0.55 : 0.45)));
     A(q('#dim'), d * (night ? 0.3 : 0.22));
     T(q('#art'), 'translateX(' + r2(mv.par.x) + 'px)');
-    // The Dock: its scroll, and in full screen it drops away.
-    T(q('#tiles'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(300 * full) + 'px)');
-    T(q('#shadows'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(300 * full) + 'px)');
-    T(q('#platter'), full ? 'translateY(' + r2(300 * full) + 'px)' : '');
-    A(q('#platter'), 1 - full);
-    A(q('#tiles'), 1 - full);
-    A(q('#shadows'), 1 - full);
+    // The Dock: its scroll; in full screen it only recesses (36 px lower, 0.75 opacity), it never leaves.
+    var rec = RECESS * full, recA = 1 - (1 - RECESS_A) * full;
+    T(q('#tiles'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(rec) + 'px)');
+    T(q('#shadows'), 'translate(' + r2(-mv.dock.x) + 'px,' + r2(rec) + 'px)');
+    T(q('#platter'), full ? 'translateY(' + r2(rec) + 'px)' : '');
+    A(q('#platter'), recA);
+    A(q('#tiles'), recA);
+    A(q('#shadows'), recA);
     // The Top Shelf's title: out the way it goes, in from the other side.
     var hero = q('#hero');
     T(hero, 'translateX(' + r2(mv.heroX.x) + 'px)');
@@ -658,6 +661,8 @@
       T(weather, 'translateX(' + r2(28 * (1 - wr.x)) + 'px)');
       A(weather, wr.x);
     }
+    var recentRow = q('#recents .row');
+    if (recentRow) T(recentRow, 'translateX(' + r2(mv.recents.x) + 'px)');
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
       if (!sheetSprings.hasOwnProperty(id)) continue;
@@ -675,13 +680,14 @@
   // MARK: - Focus
 
   var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', WALLPAPER: 'wallpaper', ABOUT: 'about',
-    TABS: 'tabs', HOUSE: 'house', WELLY: 'welly'};
+    TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
-  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0};
+  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
+    recent: 0};
   var cards = [];
   var was = {drawer: false, full: false, row: null};
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT; }
+  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT || st.zone === Z.RECENTS; }
 
   function focusList(list, on, index) {
     for (var i = 0; i < list.length; i++) {
@@ -705,6 +711,10 @@
     list = document.querySelectorAll('#drawer .who');
     for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
     focusList(fxKeys, st.zone === Z.DRAWER, st.drawer - P1);
+    if ($('weather')) setClass($('weather'), 'focus', drawerWeather && st.zone === Z.DRAWER && st.drawer === P1 + drawerItems.length);
+    focusList(fxRecents, st.zone === Z.RECENTS, st.recent);
+    // Recent Apps: the row follows the focus once it's wider than the screen.
+    mv.recents.set(recentsShift());
     focusList(fxCells, st.zone === Z.APPS, st.grid);
     // The grid shows 2 rows under the risen Dock; past them, the page (Dock and all) scrolls on.
     var rows = Math.max(1, Math.ceil(others.length / COLS)), r = Math.floor(st.grid / COLS), first = Math.max(0, Math.min(rows - 2, r - 1));
@@ -772,7 +782,7 @@
 
   /** The sheets (Home Settings, Shelf, Language, About) open on SHEET_OPEN and close on SHEET_CLOSE. */
   function syncSheets() {
-    var ids = ['settings', 'shelfedit', 'langpick', 'about'];
+    var ids = ['settings', 'shelfedit', 'langpick', 'about', 'recents'];
     for (var i = 0; i < ids.length; i++) {
       var s = sheetSprings[ids[i]] || (sheetSprings[ids[i]] = spring(P.SHEET_OPEN)), open = hasClass($(ids[i]), 'open');
       if (open !== (s.to === 1)) s.tune(open ? P.SHEET_OPEN : P.SHEET_CLOSE).set(open ? 1 : 0);
@@ -788,6 +798,7 @@
       case Z.TOP: return fxPill;
       case Z.HERO: return fxWatch;
       case Z.DRAWER: return st.drawer < people().length ? fxWho[st.drawer] || null : fxKeys[st.drawer - people().length] || null;
+      case Z.RECENTS: return fxRecents[st.recent] || null;
     }
     return null;
   }
@@ -1393,7 +1404,8 @@
 
   // MARK: - Drawer
 
-  var drawerItems = [], drawerInputs = 0;
+  var drawerItems = [], drawerInputs = 0, drawerWeather = false, recentList = [];
+  var DRAWER_KEYS = 10;   // cards in Control Center (five rows of two at most, above the weather card)
 
   /** Control Center: the time, a 2-column bento of glass cards (the inputs, All Apps, the settings), the weather. */
   function renderDrawer() {
@@ -1402,22 +1414,26 @@
     killFx(fxKeys);
     killFx(fxWho);
     drawerItems = [];
+    // From tvOS-Launcher's control panel, what an LG or Samsung web app can do: Recent Apps and the screensaver.
+    // (Wi-Fi, Bluetooth, volume and closing apps need the TV's own APIs; only the Google TV app has them.)
     var fixed = [
       {label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }},
+      {label: tr('Recent Apps'), symbol: 'recents', run: openRecents},
+      {label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }},
       {label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }},
       {label: tr('Lock'), glyph: 'glyph-lock', run: lockNow}
     ];
     if (TV.canOpenSettings) fixed.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
-    for (var i = 0; i < inputs.length && drawerItems.length < 8 - fixed.length; i++) {
+    for (var i = 0; i < inputs.length && drawerItems.length < DRAWER_KEYS - fixed.length; i++) {
       var x = inputs[i];
       drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label, null, true)});
     }
     drawerInputs = drawerItems.length;
     drawerItems = drawerItems.concat(fixed);
     // Profiles first, as on tvOS: the avatars, the current one ringed; OK opens the lock on that profile.
-    var row = el('div', 'profiles' + (people().length > 4 ? ' many' : ''), d), list = people(), P = list.length;
-    var step = P > 4 ? Math.floor((464 - 88) / (P - 1)) : 116;   // five or more: smaller faces, spread over the width
-    for (var w = 0; w < P; w++) {
+    var row = el('div', 'profiles' + (people().length > 4 ? ' many' : ''), d), list = people(), np = list.length;
+    var step = np > 4 ? Math.floor((464 - 88) / (np - 1)) : 116;   // five or more: smaller faces, spread over the width
+    for (var w = 0; w < np; w++) {
       var who = el('div', 'who' + (list[w].id === person().id ? ' on' : ''), row);
       who.style.left = (w * step) + 'px';
       var faceEl = el('span', 'face', who);
@@ -1426,20 +1442,24 @@
       hover(who, Z.DRAWER, w);
       fxWho.push(new Fx(faceEl, {grow: 0.12}));
     }
-    var rows = Math.min(4, Math.ceil(drawerItems.length / 2));
+    // Up to four rows of cards; a fifth makes them all a little shorter, so the weather card still fits under them.
+    var rows = Math.min(DRAWER_KEYS / 2, Math.ceil(drawerItems.length / 2)), compact = rows > 4, pitch = compact ? 108 : 136;
     drawerItems = drawerItems.slice(0, rows * 2);
     for (var k = 0; k < drawerItems.length; k++) {
-      var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : ''), d);
+      var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : '') + (compact ? ' compact' : ''), d);
       key.style.left = (k % 2) * 240 + 'px';
-      key.style.top = (148 + Math.floor(k / 2) * 136) + 'px';
+      key.style.top = (148 + Math.floor(k / 2) * pitch) + 'px';
       if (item.glyph) el('span', item.glyph, key);
       else sym(item.symbol, key);
       el('div', 'label', key, item.label);
-      hover(key, Z.DRAWER, P + k);
+      hover(key, Z.DRAWER, np + k);
       fxKeys.push(new Fx(key, {grow: 0.06}));
     }
     var w = el('div', '', d);
     w.id = 'weather';
+    // The weather card is the panel's last stop: OK opens the forecast (weather.js).
+    drawerWeather = Prefs.weather();
+    hover(w, Z.DRAWER, np + drawerItems.length);
     // One spring per row (profiles, each pair of cards, the weather): they come in 25 ms apart.
     var count = 2 + rows;
     while (drawerRows.length < count) drawerRows.push(spring(P.SHEET_OPEN, 1));
@@ -1498,6 +1518,73 @@
     updateFocus();
   }
 
+  // MARK: - The forecast and Recent Apps (TVOS-LAUNCHER-MERGE-SPEC.md S3, S4)
+
+  /** OK on Control Center's weather card: the 24-hour / 7-day forecast over the Horizon; Back comes back to the card. */
+  function openForecast() {
+    var at = st.drawer;
+    Forecast.open($('forecast'), function () {
+      if (!saverOn) { openDrawer(); st.drawer = at; updateFocus(); }
+    });
+    closeDrawer();
+  }
+
+  /** An installed app by its id (the TV's app list). */
+  function appById(id) {
+    for (var i = 0; i < apps.length; i++) if (apps[i].id === id) return apps[i];
+    return null;
+  }
+
+  /** The profile's last apps, newest first: from mahitTV's own launch log, each once, still installed (12 at most). */
+  function recentApps() {
+    var log = Profiles.log(), out = [], seen = {};
+    for (var i = 0; i < log.length && out.length < 12; i++) {
+      var id = log[i].appKey;
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      var app = appById(id);
+      if (app) out.push(app);
+    }
+    return out;
+  }
+
+  var RECENT_W = 400, RECENT_GAP = 64;
+
+  /** The row's offset: centred while it fits, then following the focus (the focused card kept inside the screen). */
+  function recentsShift() {
+    var n = recentList.length, total = n * RECENT_W + Math.max(0, n - 1) * RECENT_GAP;
+    if (total <= 1760) return (1920 - total) / 2;
+    var x = 80 - st.recent * (RECENT_W + RECENT_GAP) + Math.min(st.recent, 1) * (RECENT_W + RECENT_GAP);
+    return Math.max(1840 - total, Math.min(80, x));
+  }
+
+  /** Recent Apps from Control Center: cards over the Frosted Horizon; OK opens one (logged as any launch). */
+  function openRecents() {
+    var layer = $('recents');
+    layer.innerHTML = '';
+    killFx(fxRecents);
+    el('div', 'hz hz-day', layer);
+    el('div', 'hz hz-night', layer);
+    el('h2', '', layer, tr('Recent Apps'));
+    recentList = recentApps();
+    var row = el('div', 'row', layer);
+    for (var i = 0; i < recentList.length; i++) {
+      var card = el('div', 'card', row), f = el('div', 'face', card);
+      card.style.left = (i * (RECENT_W + RECENT_GAP)) + 'px';
+      face(recentList[i], f, wordFit(recentList[i].title, RECENT_W, 44));
+      var label = el('div', 'label', card, recentList[i].title);
+      hover(card, Z.RECENTS, i);
+      fxRecents.push(new Fx(card, {grow: 0.12, tilt: true, label: label}));
+    }
+    if (!recentList.length) el('div', 'empty', layer, tr('No recent apps yet.'));
+    st.recent = 0;
+    mv.recents.snap(recentsShift());
+    if (st.zone === Z.DRAWER) closeDrawer();
+    st.zone = Z.RECENTS;
+    setClass(layer, 'open', true);
+    updateFocus();
+  }
+
   // MARK: - All Apps
 
   function renderApps() {
@@ -1540,6 +1627,7 @@
     setClass($('langpick'), 'open', false);
     setClass($('wallpaperpick'), 'open', false);
     setClass($('about'), 'open', false);
+    setClass($('recents'), 'open', false);
     langHint = null;
     st.zone = Z.SHELF;
     updateFocus();
@@ -1737,6 +1825,8 @@
       {label: tr('Language'), value: picked === 'auto' ? tr('Automatic') : I18N.languageName(picked), opens: true, language: true,
         step: function (d) { if (d >= 0) openLanguages(); }},
       {label: tr('Dock'), value: '›', shelf: true, step: function (d) { if (d >= 0) openShelfEdit(); }},
+      {label: tr('Screensaver Style'), value: Prefs.saverStyle() === 'nature' ? tr('Nature Clock') : tr('Photos'),
+        step: function (d) { cycle('saverStyle', ['photos', 'nature'], Prefs.saverStyle(), d); }},
       {label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
         step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }},
       {label: tr('About this TV'), value: '›', about: true, step: function (d) { if (d >= 0) openAbout(); }}
@@ -2082,6 +2172,15 @@
           return;
         }
         if (drawerItems[st.drawer - people().length]) drawerItems[st.drawer - people().length].run();
+        else if (st.drawer - people().length === drawerItems.length && drawerWeather) openForecast();
+        return;
+      case Z.RECENTS:
+        var recent = recentList[st.recent];
+        if (recent) {
+          launchMotion(fxRecents[st.recent]);
+          launcher(recent.id, recent.title)();
+          setTimeout(closeSheets, 260);   // after the press, so the card is seen going in
+        }
         return;
       case Z.APPS:
         if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
@@ -2110,7 +2209,7 @@
   }
 
   function snapshot() {
-    return [st.zone, st.tab, st.top, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang].join(',');
+    return [st.zone, st.tab, st.top, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang, st.recent].join(',');
   }
 
   function move(dx, dy) {
@@ -2170,11 +2269,20 @@
           else if (dy > 0 && drawerItems.length) st.drawer = P;
           break;
         }
-        var k = st.drawer - P;
+        var k = st.drawer - P, nk = drawerItems.length;
+        if (k === nk) {   // the weather card: ↑ to the last row of cards
+          if (dx < 0) { closeDrawer(); return; }
+          if (dy < 0 && nk) st.drawer = P + nk - (nk % 2 ? 1 : 2);
+          break;
+        }
         if (dx < 0 && k % 2 === 0) { closeDrawer(); return; }
-        if (dx && k + dx >= 0 && k + dx < drawerItems.length && Math.floor((k + dx) / 2) === Math.floor(k / 2)) st.drawer += dx;
+        if (dx && k + dx >= 0 && k + dx < nk && Math.floor((k + dx) / 2) === Math.floor(k / 2)) st.drawer += dx;
         else if (dy < 0 && k < 2) st.drawer = Math.min(P - 1, k % 2 ? P - 1 : 0);
-        else if (dy && k + 2 * dy >= 0 && k + 2 * dy < drawerItems.length) st.drawer += 2 * dy;
+        else if (dy && k + 2 * dy >= 0 && k + 2 * dy < nk) st.drawer += 2 * dy;
+        else if (dy > 0 && drawerWeather && Data.weather) st.drawer = P + nk;
+        break;
+      case Z.RECENTS:
+        if (dx) st.recent = Math.max(0, Math.min(recentList.length - 1, st.recent + dx));
         break;
       case Z.APPS:
         if (dy < 0 && st.grid < COLS) {
@@ -2291,6 +2399,7 @@
   }
 
   function showSaver() {
+    if (Prefs.saverStyle() === 'nature') { showNatureSaver(); return; }
     aerialVideo.hide();
     var photos = saverPhotos();
     saverOn = true;
@@ -2337,6 +2446,182 @@
     next();
   }
 
+  // MARK: - The nature clock screensaver (TVOS-LAUNCHER-MERGE-SPEC.md S5)
+
+  /*
+   * Depth-layered scenes, adapted from tvOS-Launcher (Apache-2.0), Scenes.java: the photo, then a giant clock filled
+   * with the scene's own blurred glass texture (a soft shadow under it, a light rim on it), then the foreground cutout
+   * over the clock (a ridge, a canopy), so the clock sits inside the landscape; the date and weather in Inter above.
+   * No shade over the photo. The water scene has no cutout: under its waterline the clock is drawn again, wetter.
+   * Each spec is in tvOS-Launcher's units of 1/540 of the height: clock top, clock size, left (0: centred), date top,
+   * date left, then [water line, dark clock, dark date].
+   */
+  var SCENES = [
+    {id: 'night', clockTop: 62, size: 178, left: 0, dateTop: 42, dateLeft: 0},
+    {id: 'golden', clockTop: 76, size: 195, left: 0, dateTop: 53, dateLeft: 0},
+    {id: 'water', clockTop: 134, size: 210, left: 0, dateTop: 108, dateLeft: 0, water: true},
+    {id: 'fog', clockTop: 86, size: 235, left: 48, dateTop: 58, dateLeft: 52, darkClock: true, darkDate: true},
+    {id: 'dawn', clockTop: 115, size: 200, left: 0, dateTop: 88, dateLeft: 0}
+  ];
+  var natureTimer = 0, natureScene = 0, natureImages = {};
+
+  /** A scene's three images (the cutout may be missing: the water scene has none, and old TVs may not read WebP). */
+  function sceneImages(sc, then) {
+    var got = natureImages[sc.id];
+    if (got) { if (got.ready) then(got); else got.waiting.push(then); return; }
+    got = natureImages[sc.id] = {bg: new Image(), glass: new Image(), fg: sc.water ? null : new Image(), ready: false, waiting: [then]};
+    var left = got.fg ? 3 : 2;
+    function one() {
+      if (--left > 0) return;
+      got.ready = true;
+      for (var i = 0; i < got.waiting.length; i++) got.waiting[i](got);
+      got.waiting = [];
+    }
+    got.bg.onload = got.bg.onerror = one;
+    got.glass.onload = got.glass.onerror = one;
+    got.bg.src = 'scenes/scene-' + sc.id + '.jpg';
+    got.glass.src = 'scenes/scene-' + sc.id + '-glass.jpg';
+    if (got.fg) { got.fg.onload = one; got.fg.onerror = function () { got.fg = null; one(); }; got.fg.src = 'scenes/scene-' + sc.id + '-fg.webp'; }
+  }
+
+  function loaded(img) { return img && img.complete && img.naturalWidth > 0; }
+
+  /** The clock's glass: the scene's glass texture screen-sized, a diagonal sheen over it, cut to the digits. */
+  function glassDigits(img, text, x, base, px, cap, wet, dark) {
+    var c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = 1920;
+    c.height = 1080;
+    g.font = '300 ' + px + 'px Antonio, Inter, sans-serif';
+    g.fillStyle = '#FFF';
+    g.fillText(text, x, base);
+    g.globalCompositeOperation = 'source-in';
+    if (loaded(img)) {
+      var src = img;
+      if (wet) {   // blurrier under the water: the texture shrunk to 120 × 68 and stretched back
+        src = document.createElement('canvas');
+        src.width = 120;
+        src.height = 68;
+        src.getContext('2d').drawImage(img, 0, 0, 120, 68);
+      }
+      g.drawImage(src, 0, 0, 1920, 1080);
+    }
+    var sheen = g.createLinearGradient(0, 0, 864, 1080);
+    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.27)');
+    sheen.addColorStop(0.35, 'rgba(255, 255, 255, 0.11)');
+    sheen.addColorStop(0.65, 'rgba(255, 255, 255, 0.04)');
+    sheen.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
+    g.fillStyle = sheen;
+    g.fillRect(0, 0, 1920, 1080);
+    // The frost: airy at the top of the digits, milkier at the bottom, so the glass reads over any sky.
+    var frost = g.createLinearGradient(0, base - cap, 0, base);
+    frost.addColorStop(0, dark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(218, 224, 255, 0.28)');
+    frost.addColorStop(0.52, dark ? 'rgba(255, 255, 255, 0.32)' : 'rgba(236, 232, 255, 0.44)');
+    frost.addColorStop(1, dark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 242, 252, 0.64)');
+    g.fillStyle = frost;
+    g.fillRect(0, base - cap, 1920, cap);
+    return c;
+  }
+
+  /** One scene, drawn whole into `canvas` (once a minute: the clock changes; nothing moves in between). */
+  function drawScene(canvas, sc, im) {
+    var g = canvas.getContext('2d'), u = 2, now = Date.now(), w = Data.weather;
+    g.clearRect(0, 0, 1920, 1080);
+    if (loaded(im.bg)) g.drawImage(im.bg, 0, 0, 1920, 1080);
+    var text = formatDate('format|h:mm', now).replace(/\s?[AaPp]\.?\s?[Mm]\.?$/, ''), px = sc.size * u;
+    g.font = '300 ' + px + 'px Antonio, Inter, sans-serif';
+    // Antonio's digits are tall: its own measure where the browser has one, else 0.86 of the size.
+    var metrics = g.measureText(text), tw = metrics.width, cap = metrics.actualBoundingBoxAscent || px * 0.86;
+    var dateBase = Math.max((46 + 19) * u, (sc.dateTop + 19) * u);
+    var top = Math.max((sc.clockTop + 19) * u, dateBase + 14 * u), base = top + cap;
+    var x = sc.left ? sc.left * u : (1920 - tw) / 2;
+    var waterY = sc.water ? 1080 * 0.55 : 1080;
+    // The clock: its shadow, the glass, the rim (above the waterline); under it, the wet copy.
+    g.save();
+    g.beginPath();
+    g.rect(0, 0, 1920, waterY);
+    g.clip();
+    g.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    g.fillText(text, x, base + 4 * u);
+    g.drawImage(glassDigits(im.glass, text, x, base, px, cap, false, sc.darkClock), 0, 0);
+    var rim = g.createLinearGradient(0, base - cap, 0, base);
+    rim.addColorStop(0, sc.darkClock ? 'rgba(255, 255, 255, 0.82)' : 'rgba(244, 248, 255, 0.9)');
+    rim.addColorStop(0.5, sc.darkClock ? 'rgba(255, 255, 255, 0.63)' : 'rgba(232, 236, 255, 0.73)');
+    rim.addColorStop(1, sc.darkClock ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.98)');
+    g.globalAlpha = 0.85;
+    g.lineWidth = 2.6;
+    g.strokeStyle = rim;
+    g.strokeText(text, x, base);
+    g.globalAlpha = 1;
+    g.restore();
+    if (sc.water) {
+      g.save();
+      g.beginPath();
+      g.rect(0, waterY, 1920, 1080 - waterY);
+      g.clip();
+      g.globalAlpha = 0.62;
+      g.drawImage(glassDigits(im.glass, text, x, base, px, cap, true, sc.darkClock), 0, 0);
+      g.globalAlpha = 1;
+      g.restore();
+    }
+    if (im.fg && loaded(im.fg)) g.drawImage(im.fg, 0, 0, 1920, 1080);
+    // The date and the weather, above the clock.
+    var line = formatDate('format|EEEE, MMMM d', now);
+    if (w) line = trf('{date} · {temp} {sky}', {date: line, temp: Data.degrees(w.temp), sky: Data.condition(w.code, w.isDay)});
+    g.font = '600 ' + Math.round(13.5 * u) + 'px Inter, sans-serif';
+    g.textAlign = sc.dateLeft ? 'left' : 'center';
+    g.fillStyle = sc.darkDate ? 'rgba(22, 32, 29, 0.78)' : 'rgba(240, 242, 248, 0.92)';
+    if (!sc.darkDate) { g.shadowColor = 'rgba(0, 0, 0, 0.45)'; g.shadowBlur = 14; g.shadowOffsetY = 3; }
+    g.fillText(line, sc.dateLeft ? sc.dateLeft * u : 960, dateBase);
+    g.shadowColor = 'rgba(0, 0, 0, 0)';
+    g.textAlign = 'left';
+  }
+
+  function showNatureSaver() {
+    aerialVideo.hide();
+    saverOn = true;
+    saverPick = null;
+    var s = $('saver');
+    s.innerHTML = '';
+    s.style.webkitTransition = s.style.transition = '';
+    var zoom = el('div', 'zoom nature', s);
+    T(zoom, Motion.instant ? '' : 'scale(1.06)');
+    setTimeout(function () { T(zoom, ''); }, 30);
+    var a = el('canvas', 'scene', zoom), b = el('canvas', 'scene', zoom), front = a;
+    a.width = b.width = 1920;
+    a.height = b.height = 1080;
+    var shown = -1, drawnAt = '';
+    // The scene changes every minute (a 2.4 s cross-fade); in between, the clock is redrawn when the minute turns.
+    function frame() {
+      if (!saverOn) return;
+      var minute = formatDate('format|h:mm', Date.now()), want = Math.floor(Date.now() / 60000) % SCENES.length;
+      if (want !== shown) {
+        var sc = SCENES[(natureScene + want) % SCENES.length], next = shown < 0 ? front : front === a ? b : a;
+        shown = want;
+        sceneImages(sc, function (im) {
+          if (!saverOn) return;
+          drawScene(next, sc, im);
+          drawnAt = minute;
+          next.sc = sc;
+          next.im = im;
+          setClass(next, 'on', true);
+          if (next !== front) setClass(front, 'on', false);
+          front = next;
+        });
+      } else if (minute !== drawnAt && front.sc) {
+        drawScene(front, front.sc, front.im);
+        drawnAt = minute;
+      }
+      natureTimer = setTimeout(frame, 1000);
+    }
+    natureScene = Math.floor(Math.random() * SCENES.length);
+    setClass(s, 'on', true);
+    frame();
+    // Antonio may arrive after the first frame: draw again once fonts are in.
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('300 100px Antonio').then(function () { if (saverOn && front.sc) drawScene(front, front.sc, front.im); }, function () {});
+    }
+  }
+
   function tickSaverClock(clock) {
     var d = new Date();
     clock.firstChild.textContent = formatDate('format|h:mm', d.getTime());
@@ -2353,6 +2638,7 @@
     }
     saverOn = false;
     clearTimeout(saverTimer);
+    clearTimeout(natureTimer);
     setClass(s, 'on', false);
     syncAerialVideo();
   }
@@ -2432,6 +2718,7 @@
     if (Profiles.needsLock()) { e.preventDefault(); showLock({from: 'idle'}); return; }
     touch();
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
+    if (Forecast.showing()) { if (Forecast.key(k, TV.keys)) e.preventDefault(); return; }
     if (launching) endLaunch(true);
     // Welly's text field has the keyboard: the field keeps the letters and the ← →, Welly takes OK and ↑ ↓ Back.
     if (st.zone === Z.WELLY && Welly.typing()) {
@@ -2595,13 +2882,14 @@
   setInterval(function () {
     checkNight();
     Data.refresh();
-    if (!saverOn && !sheetOpen() && !Lock.showing() && !Intro.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
-    if (saverOn) tickSaverClock($('saver').querySelector('.clock'));
+    if (!saverOn && !sheetOpen() && !Forecast.showing() && !Lock.showing() && !Intro.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
+    var saverClock = saverOn && $('saver').querySelector('.clock');   // the nature clock draws its own
+    if (saverClock) tickSaverClock(saverClock);
   }, 30000);
 
   // For the browser preview and tests.
   window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
-    lock: lockNow, showLock: showLock, openSettings: openSettings,
+    lock: lockNow, showLock: showLock, openSettings: openSettings, recents: openRecents, forecast: openForecast,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
     nowPlaying: nowPlaying};

@@ -62,6 +62,12 @@ final class HomeApps {
     static final int SLEEP = 8;
     /** Control Center's Lock card: back to "Who's Watching?" (the home screen handles it). */
     static final int LOCK = 9;
+    /**
+     * Control Center's cards from TVOS-LAUNCHER-MERGE-SPEC.md S2/S3: Recent Apps and Close Background Apps (the home
+     * screen handles both), Wi-Fi and Bluetooth (the TV's own pages; their state as the card's detail, nothing
+     * written), Screensaver (starts it now).
+     */
+    static final int RECENTS = 10, WIFI = 11, BLUETOOTH = 12, SAVER = 13, CLOSE_BG = 14;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -74,6 +80,7 @@ final class HomeApps {
         long tmdbId;        // the pick's TMDB id, 0 when none
         Intent intent;      // DEVICE: the TV maker's own screen it opens
         String symbol;      // icon for the shortcuts and special cards
+        String detail;      // a Control Center card's state under its symbol (Wi-Fi: "Connected"), or null
         Bitmap tile;        // 16:9 card (apps and specials): set with setTile
         BitmapShader tileShader;   // the card's, for its rounded corners (made with the card, never while drawing)
         Bitmap logo;        // colored logo with no background (shelf); null = use the card
@@ -185,6 +192,15 @@ final class HomeApps {
             Item it = new Item();
             it.kind = APP;
             it.pkg = pkg;
+            Bitmap bundled = bundledTile(c, pkg, extract);
+            if (bundled != null) {
+                // The app's HD icon bundled in assets/logos/<package>.png: the whole card, edge to edge.
+                it.key = d == null ? pkg : d[0];
+                it.label = d != null ? d[1] : ri != null ? String.valueOf(ri.loadLabel(pm)) : pkg;
+                it.setTile(bundled);
+                items.add(it);
+                continue;
+            }
             if (d == null) {
                 // An app picked in Settings > Shelf that isn't in SHELF: its own name and TV art.
                 it.key = pkg;
@@ -326,15 +342,75 @@ final class HomeApps {
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
         items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
+        items.add(shortcut(RECENTS, "recents", Ui.tr("Recent Apps"), "recents"));
+        items.add(shortcut(WIFI, "wifi", Ui.tr("Wi-Fi"), "wifi"));
+        items.add(shortcut(BLUETOOTH, "bluetooth", Ui.tr("Bluetooth"), "bluetooth"));
+        items.add(shortcut(SAVER, "screensaver", Ui.tr("Screensaver"), "screensaver"));
+        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
         items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
         items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
+        connectivity(c, items);
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
         return items;
+    }
+
+    /**
+     * Control Center's "Close Background Apps": Android's killBackgroundProcesses (what the system itself does when it
+     * needs memory: only processes in the background, never the app in front, no data touched) for the apps the TV
+     * lists to open, the ones installed or updated by the person and the services' apps; not mahitTV, not Live TV, and
+     * not the TV's own system apps. Runs off the UI thread.
+     */
+    static void closeBackgroundApps(Context c) {
+        android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(Context.ACTIVITY_SERVICE);
+        if (am == null) return;
+        PackageManager pm = c.getPackageManager();
+        Set<String> skip = new HashSet<>(java.util.Arrays.asList(LIVE_TV_APPS));
+        skip.add(c.getPackageName());
+        for (String[] app : launchable(c)) {
+            if (skip.contains(app[0])) continue;
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(app[0], 0);
+                boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0 && (ai.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+                if (!system) am.killBackgroundProcesses(app[0]);
+            } catch (PackageManager.NameNotFoundException | SecurityException e) {
+                AppLog.w("close " + app[0] + ": " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Wi-Fi's and Bluetooth's state as their cards' detail, read only (Android's own pages change them). Bluetooth's
+     * needs BLUETOOTH_CONNECT from Android 12, which mahitTV doesn't ask for: there the card shows no state.
+     */
+    static void connectivity(Context c, List<Item> items) {
+        String wifi = null, bluetooth = null;
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
+            android.net.NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+            android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) c.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) wifi = Ui.tr("Connected");
+            else if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) wifi = Ui.tr("Ethernet");
+            else if (wm != null) wifi = wm.isWifiEnabled() ? Ui.tr("state|On") : Ui.tr("state|Off");
+        } catch (RuntimeException e) {
+            AppLog.w("Wi-Fi state: " + e.getMessage());
+        }
+        try {
+            boolean allowed = android.os.Build.VERSION.SDK_INT < 31
+                    || c.checkSelfPermission("android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_GRANTED;
+            android.bluetooth.BluetoothAdapter bt = allowed ? android.bluetooth.BluetoothAdapter.getDefaultAdapter() : null;
+            if (bt != null) bluetooth = bt.isEnabled() ? Ui.tr("state|On") : Ui.tr("state|Off");
+        } catch (RuntimeException e) {
+            AppLog.w("Bluetooth state: " + e.getMessage());
+        }
+        for (Item it : items) {
+            if (it.kind == WIFI) it.detail = wifi;
+            else if (it.kind == BLUETOOTH) it.detail = bluetooth;
+        }
     }
 
     private static void device(Context c, List<Item> items, String key, String label, String symbol, Intent intent) {
@@ -601,6 +677,19 @@ final class HomeApps {
             case ANDROID_SETTINGS:
                 intent = new Intent(Settings.ACTION_SETTINGS);
                 break;
+            case WIFI:
+                intent = new Intent(Settings.ACTION_WIFI_SETTINGS);
+                plain = new Intent(Settings.ACTION_SETTINGS);   // a TV without that page: its settings
+                break;
+            case BLUETOOTH:
+                intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+                plain = new Intent(Settings.ACTION_SETTINGS);
+                break;
+            case SAVER:
+                // The system's dream (mahitTV's screensaver in mahitTV mode); without SystemUI's starter, the preview.
+                intent = new Intent(Intent.ACTION_MAIN).setClassName("com.android.systemui", "com.android.systemui.Somnambulator");
+                plain = new Intent().setComponent(new ComponentName(a, SettingsActivity.class)).putExtra("screensaver", true);
+                break;
             case DEVICE:
                 // A fresh task: else Back walks through whatever the maker's settings app had open before
                 intent = new Intent(it.intent).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -612,6 +701,7 @@ final class HomeApps {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             a.startActivity(intent, options);
+            softEnter(a, it, options);
             opened(a, it);
             return true;
         } catch (ActivityNotFoundException | SecurityException e) {
@@ -620,12 +710,22 @@ final class HomeApps {
             plain.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
                 a.startActivity(plain);
+                softEnter(a, it, null);
                 opened(a, it);
                 return true;
             } catch (ActivityNotFoundException | SecurityException e2) {
                 return false;
             }
         }
+    }
+
+    /**
+     * An app opened with no card to grow out of (a pick from Welly, the screensaver, Recent Apps): its window comes in
+     * from 0.97 and 65% and the home recedes to 1.025 and 25% (200 ms). Adapted from tvOS-Launcher (Apache-2.0).
+     */
+    private static void softEnter(Context c, Item it, android.os.Bundle options) {
+        if (options != null || it.kind != APP || !(c instanceof Activity)) return;
+        ((Activity) c).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
     }
 
     /** Every launch counts as use (the 10-minute lock), and an app or title goes into the profile's Continue Watching. */
@@ -1164,7 +1264,11 @@ final class HomeApps {
         }
         Composed out;
         Drawable banner = bannerDrawable(c, pkg);
-        if (banner != null) {
+        Bitmap bundled = bundledTile(c, pkg, extract);
+        if (bundled != null) {
+            out = new Composed();
+            out.tile = bundled;
+        } else if (banner != null) {
             out = flatBanner(c, pkg, banner, extract);
             if (out == null || out == PICTURE) {
                 Composed picture = new Composed();
@@ -1302,14 +1406,57 @@ final class HomeApps {
             icon.setBounds(0, 0, 288, 288);
             icon.draw(new Canvas(pic));
             Bitmap trimmed = trim(pic);
-            int dominant = dominantColor(trimmed);
-            out.style = dominant == 0 ? NEUTRAL : richGradient(dominant, 0);
-            out.logo = fit(trimmed, 240, 240);
-            out.emblemHeight = 0.58f;
+            int[] edges = filledSquareEdges(trimmed);
+            if (edges != null) {
+                // A filled square (its own background): its top and bottom edge colours behind it and the square
+                // larger, so it reads as one picture rather than a sticker. Adapted from tvOS-Launcher (Apache-2.0).
+                out.style = new int[] {edges[0], edges[1], 0};
+                out.logo = fit(trimmed, 240, 240);
+                out.emblemHeight = 0.82f;
+            } else {
+                int dominant = dominantColor(trimmed);
+                out.style = dominant == 0 ? NEUTRAL : richGradient(dominant, 0);
+                out.logo = fit(trimmed, 240, 240);
+                out.emblemHeight = 0.58f;
+            }
         }
         if (out.logo != null) out.ink = ink(out.logo);
         if (out.logo == null && out.tile == null) out.tile = darkTile(TILE_W, TILE_H);
         return out;
+    }
+
+    /**
+     * A legacy icon that is a filled, nearly square picture (corners opaque, aspect 0.85 to 1.18): the mean colours of
+     * its top and bottom edge bands, else null.
+     */
+    private static int[] filledSquareEdges(Bitmap b) {
+        int w = b.getWidth(), h = b.getHeight();
+        if (w < 16 || h < 16) return null;
+        float aspect = (float) w / h;
+        if (aspect < 0.85f || aspect > 1.18f) return null;
+        int inset = Math.max(2, Math.round(Math.min(w, h) * 0.12f));
+        int[] corners = {b.getPixel(inset, inset), b.getPixel(w - 1 - inset, inset), b.getPixel(inset, h - 1 - inset),
+                b.getPixel(w - 1 - inset, h - 1 - inset)};
+        for (int px : corners) if ((px >>> 24) < 0xF0) return null;
+        int band = Math.max(1, Math.round(h * 0.04f));
+        return new int[] {bandMean(b, 0, band), bandMean(b, h - band, h)};
+    }
+
+    private static int bandMean(Bitmap b, int y0, int y1) {
+        long r = 0, g = 0, bl = 0, n = 0;
+        int w = b.getWidth(), step = Math.max(1, w / 48);
+        for (int y = y0; y < y1; y++) {
+            for (int x = 0; x < w; x += step) {
+                int px = b.getPixel(x, y);
+                if ((px >>> 24) < 0x80) continue;
+                r += (px >> 16) & 255;
+                g += (px >> 8) & 255;
+                bl += px & 255;
+                n++;
+            }
+        }
+        if (n == 0) return 0xFF3A3A3C;
+        return 0xFF000000 | (int) (r / n) << 16 | (int) (g / n) << 8 | (int) (bl / n);
     }
 
     private static Drawable appIcon(Context c, String pkg) {
@@ -1399,6 +1546,48 @@ final class HomeApps {
     }
 
     // MARK: - Cards
+
+    private static final Map<String, Bitmap> BUNDLED = new HashMap<>();   // package → its bundled icon's card (or null)
+
+    /**
+     * The app's HD icon bundled in assets/logos/<package>.png (a square, full-bleed tvOS-style icon, from
+     * tvOS-Launcher (Apache-2.0)) as a 16:9 card: the square fills the card's height in the middle and its edges carry
+     * on to the sides (each row's edge colour), so it reads as one artwork; transparent parts sit on white. Null when
+     * the app has none. Made once per process, only when `load` (the background load); else only if already made.
+     */
+    static Bitmap bundledTile(Context c, String pkg, boolean load) {
+        synchronized (BUNDLED) {
+            if (BUNDLED.containsKey(pkg) || !load) return BUNDLED.get(pkg);
+        }
+        Bitmap tile = null;
+        try (InputStream in = c.getAssets().open("logos/" + pkg + ".png")) {
+            Bitmap icon = BitmapFactory.decodeStream(in);
+            if (icon != null) {
+                Bitmap square = Bitmap.createBitmap(TILE_H, TILE_H, Bitmap.Config.ARGB_8888);
+                Canvas sc = new Canvas(square);
+                sc.drawColor(0xFFFFFFFF);
+                Paint p = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+                sc.drawBitmap(icon, null, new RectF(0, 0, TILE_H, TILE_H), p);
+                icon.recycle();
+                tile = Bitmap.createBitmap(TILE_W, TILE_H, Bitmap.Config.ARGB_8888);
+                Canvas tc = new Canvas(tile);
+                BitmapShader edge = new BitmapShader(square, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                Matrix m = new Matrix();
+                m.setTranslate((TILE_W - TILE_H) / 2f, 0);
+                edge.setLocalMatrix(m);
+                p.setShader(edge);
+                tc.drawRect(0, 0, TILE_W, TILE_H, p);
+                square.recycle();
+                tile.setHasMipMap(true);
+            }
+        } catch (IOException ignored) {
+            // no bundled icon for this app
+        }
+        synchronized (BUNDLED) {
+            BUNDLED.put(pkg, tile);
+        }
+        return tile;
+    }
 
     private static synchronized Bitmap appTile(Context c, String key, String pkg, int brand) {
         String cacheKey = key != null ? key : pkg;

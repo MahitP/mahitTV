@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 
@@ -26,6 +28,9 @@ import android.view.KeyEvent;
  * hot-key receiver (partnercustomizer's GlobalKeyReceiver).
  * On Hisense TVs, the Prime Video, YouTube, Disney+, All Apps, Settings (gear) and profile buttons go to Google TV's
  * home app, which Free My TV mode turns off: without the filter they do nothing. Netflix stays with the system.
+ * Double press (TVOS-LAUNCHER-MERGE-SPEC.md S6, the idea adapted from tvOS-Launcher (Apache-2.0)): a button can open a
+ * second app when pressed twice within DOUBLE_MS. Only a button with a second app waits that long before opening its
+ * first one; not on Xiaomi, whose remote already sends one press as a burst.
  */
 final class RemoteKeys {
     private RemoteKeys() {}
@@ -51,6 +56,27 @@ final class RemoteKeys {
     private static final long BURST_MS = 1000;
     private static int lastKey;
     private static long lastDown;
+
+    /** A second press within this long opens the button's second app. */
+    static final long DOUBLE_MS = 350;
+    /** Whether this remote's buttons can have a second app (Settings shows the rows only then). */
+    static boolean doublePress() {
+        return supported() && !XIAOMI;
+    }
+
+    // The press waiting for a possible second one: its key, when, and what it opens if no second press comes.
+    private static Handler handler;
+    private static int pendingKey;
+    private static long pendingAt;
+    private static String pendingPkg;
+    private static Context pendingContext;
+    private static final Runnable openPending = () -> {
+        Context c = pendingContext;
+        String pkg = pendingPkg;
+        pendingKey = 0;
+        pendingContext = null;
+        if (c != null && pkg != null) open(c, pkg, 0);
+    };
 
     static boolean supported() {
         return TCL || STEM_NETFLIX || KTC || SONY || XIAOMI || HISENSE;
@@ -85,16 +111,40 @@ final class RemoteKeys {
             lastKey = keyCode;
             lastDown = e.getEventTime();
             if (burst) return true;
-            // Our own package means the home screen in use (Xiaomi's Mi button): ours, or the TV's own after the
-            // watchdog handed it back. Not the settings app our launcher icon opens.
-            Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
-                    ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                    : launchIntent(c.getPackageManager(), pkg);
-            if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
-            AppLog.w("remote key " + e.getKeyCode() + " -> " + pkg + (intent == null ? " (not installed)" : ""));
-            if (intent != null) c.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            String twice = doublePress() ? Prefs.keyDoubleApp(keyCode) : "";
+            if (handler == null) handler = new Handler(Looper.getMainLooper());
+            if (pendingKey != 0 && pendingKey != keyCode) {   // another button: the first one's app opens now
+                handler.removeCallbacks(openPending);
+                openPending.run();
+            }
+            if (twice.isEmpty()) {
+                open(c, pkg, e.getKeyCode());
+            } else if (pendingKey == keyCode && e.getEventTime() - pendingAt < DOUBLE_MS) {
+                handler.removeCallbacks(openPending);
+                pendingKey = 0;
+                pendingContext = null;
+                open(c, twice, e.getKeyCode());
+            } else {
+                pendingKey = keyCode;
+                pendingAt = e.getEventTime();
+                pendingPkg = pkg;
+                pendingContext = c;
+                handler.postDelayed(openPending, DOUBLE_MS);
+            }
         }
         return true;
+    }
+
+    /** Opens `pkg` (our own package: the home screen in use; ALL_APPS: its All Apps). */
+    private static void open(Context c, String pkg, int keyCode) {
+        // Our own package means the home screen in use (Xiaomi's Mi button): ours, or the TV's own after the
+        // watchdog handed it back. Not the settings app our launcher icon opens.
+        Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
+                ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                : launchIntent(c.getPackageManager(), pkg);
+        if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
+        AppLog.w("remote key " + keyCode + " -> " + pkg + (intent == null ? " (not installed)" : ""));
+        if (intent != null) c.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
     /** The app's TV launcher, or its plain one (kept here, not in HomeApps, so the key process stays small). */

@@ -208,6 +208,40 @@ async function shootWellyBloub(browser) {
   return tiles.map((t) => t.file).concat(contact);
 }
 
+// The tvOS-Launcher merge (TVOS-LAUNCHER-MERGE-SPEC.md): web-merge-<theme>-<name>.png. `keys` after load, then `js`
+// (the page's test hooks), then `wait` ms; `saver` sets the screensaver style first.
+const MERGE_SHOTS = [
+  { name: 'topshelf-recess', keys: ['ArrowUp'], wait: 1200 },     // the Dock stays, 36 px lower
+  { name: 'forecast', js: 'FreeMyTV.forecast()', wait: 1200 },
+  { name: 'recents', js: 'Profiles.unlock(Profiles.byId("mahit")); FreeMyTV.recents()', wait: 1400 },
+  { name: 'saver-nature', saver: 'nature', js: 'FreeMyTV.showSaver()', wait: 3500 },
+];
+
+async function shootMerge(browser, theme, shot) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(({ theme, ids, saver }) => {
+    try {
+      localStorage.clear();
+      localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      localStorage.setItem('fmtv.prefs', JSON.stringify(saver ? { theme, saverStyle: saver } : { theme }));
+      ids.forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
+    } catch (e) {}
+  }, { theme, ids: PROFILE_IDS, saver: shot.saver || '' });
+  const page = await context.newPage();
+  await page.goto(PAGE);
+  await page.waitForTimeout(2200);
+  for (const key of shot.keys || []) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(450);
+  }
+  if (shot.js) await page.evaluate(shot.js);
+  await page.waitForTimeout(shot.wait || 900);
+  const file = path.join(OUT, `web-merge-${theme}-${shot.name}.png`);
+  await page.screenshot({ path: file });
+  await context.close();
+  return file;
+}
+
 async function shoot(browser, theme, [name, keys, noPicks]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await context.addInitScript(({ theme, noPicks }) => {
@@ -351,7 +385,13 @@ async function shootAppleWallpapers(browser) {
   BASE = 'http://127.0.0.1:' + server.address().port + '/index.html';
   PAGE = BASE + '?nolock';
   const browser = await chromium.launch();
-  const only = process.argv[2];   // "profiles" shoots only mahitTV's
+  const only = process.argv[2];   // "profiles" shoots only mahitTV's, "merge" only the tvOS-Launcher merge's
+  if (only === 'merge') {
+    for (const theme of ['light', 'dark']) {
+      for (const shot of MERGE_SHOTS) console.log('wrote', path.relative(ROOT, await shootMerge(browser, theme, shot)));
+    }
+    await browser.close(); server.close(); return;
+  }
   if (only === 'welly-bloub') {
     for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
     await browser.close(); server.close(); return;
@@ -381,6 +421,9 @@ async function shootAppleWallpapers(browser) {
   for (const id of ['mahit', 'dhruvin']) console.log('wrote', path.relative(ROOT, await shootWelly(browser, id)));
   for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
   for (const f of await shootAppleWallpapers(browser)) console.log('wrote', path.relative(ROOT, f));
+  for (const theme of ['light', 'dark']) {
+    for (const shot of MERGE_SHOTS) console.log('wrote', path.relative(ROOT, await shootMerge(browser, theme, shot)));
+  }
   await browser.close();
   server.close();
 })().catch((e) => { console.error(e); process.exit(1); });

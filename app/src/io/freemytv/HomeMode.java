@@ -42,6 +42,8 @@ final class HomeMode {
     /** The other copy: an update (ours or the TV's) moves the setting from it, without a notice. */
     private static final String OTHER_DREAM = PKG + "/" + PKG + (DREAM_ALONE ? ".Screensaver" : ".ScreensaverAlone");
     static final String FREE = "free", ORIGINAL = "original";
+    /** Clean Up This TV (Debloat): read this TV and plan, turn off the chosen apps, turn them back on. */
+    static final String CLEAN_SCAN = "cleanscan", CLEAN = "clean", UNCLEAN = "unclean";
 
     /**
      * Fire TV (Fire OS): Amazon's launcher keeps the Home button (`priority=950` on `CATEGORY_HOME`), so the switch
@@ -187,7 +189,7 @@ final class HomeMode {
     private static final Pattern FACTORY = Pattern.compile("(.*\\.)?(factory|factorymenu|facmenu|fac|hkcfac|testpq)(\\..*)?");
 
     /** Checked before every disable: never the protected list, Amazon's packages, Android's own pieces or a factory menu. */
-    private static boolean mayTurnOff(String pkg) {
+    static boolean mayTurnOff(String pkg) {
         return !PROTECTED.contains(pkg) && !pkg.startsWith("com.amazon.")
                 && !CORE.matcher(pkg).matches() && !FACTORY.matcher(pkg).matches();
     }
@@ -223,6 +225,16 @@ final class HomeMode {
     /** Asks the main process to switch (the settings screen calls this). */
     static void request(Context c, String mode) {
         ModeJob.schedule(c, ModeJob.APPLY, mode, 0);
+    }
+
+    /** Clean Up: turns off these apps of the plan (each checked again first), in the main process. */
+    static void requestClean(Context c, List<String> pkgs) {
+        JSONObject s = state(c);
+        try {
+            s.put("cleanChosen", new JSONArray(pkgs));
+        } catch (JSONException ignored) {}
+        save(c, s);
+        request(c, CLEAN);
     }
 
     /** Our home screen crashed 3 times in 5 minutes: give the home screen back to the TV's own (asked by :home). */
@@ -344,7 +356,11 @@ final class HomeMode {
 
     static void applyNow(Context c, String mode) {
         synchronized (RUN) {
-            if (FREE.equals(mode)) applyFree(c); else applyOriginal(c);
+            if (FREE.equals(mode)) applyFree(c);
+            else if (CLEAN_SCAN.equals(mode)) scanClean(c);
+            else if (CLEAN.equals(mode)) applyClean(c);
+            else if (UNCLEAN.equals(mode)) unclean(c);
+            else applyOriginal(c);
         }
     }
 
@@ -484,6 +500,7 @@ final class HomeMode {
             busy(c, Ui.tr("Turning the apps back on…"));
             String home = originalHome(s);
             Set<String> toEnable = new HashSet<>(stringList(s, "disabled"));
+            toEnable.addAll(recorded(adb));   // Clean Up's too, when a reinstall lost the state file
             for (String pkg : targets(home, originalDream(s), true)) {
                 if (!Arrays.asList(DEBLOAT).contains(pkg) && !Arrays.asList(ASSISTANT).contains(pkg)) toEnable.add(pkg);
             }
@@ -531,8 +548,10 @@ final class HomeMode {
                 AppLog.w("now playing: " + e.getMessage());
             }
             s = state(c);
+            List<String> stillDebloated = new ArrayList<>(stringList(s, "debloated"));
+            stillDebloated.retainAll(failed);
             s.put("mode", ORIGINAL).put("since", System.currentTimeMillis()).put("homeReverted", false)
-                    .put("disabled", new JSONArray(failed)).remove("keptOff");
+                    .put("disabled", new JSONArray(failed)).put("debloated", new JSONArray(stillDebloated)).remove("keptOff");
             save(c, s);
             if (failed.isEmpty() && homeOk) {
                 notice(c, Ui.tr("Original mode: the factory home screen, screensaver and apps are back."));
@@ -549,6 +568,182 @@ final class HomeMode {
         } catch (Exception e) {
             done(c, Ui.trf("Couldn't go back to the original: {error}", "error", e.getMessage()));
         }
+    }
+
+    // MARK: - Clean Up This TV (TVOS-LAUNCHER-MERGE-SPEC.md S1)
+
+    /** Refused where the switch is: Amazon keeps its launcher, and the Kalley 43G200 didn't start without its apps. */
+    private static String cleanRefusal() {
+        if (AMAZON) return Ui.tr("Clean Up isn't available on Fire TV: Amazon's apps stay as they are.");
+        if ("R3_GTV".equals(Build.DEVICE)) return Ui.tr("Clean Up isn't available on this TV model: turning apps off kept one from starting.");
+        return null;
+    }
+
+    /**
+     * Reads this TV over ADB, finds its CleanYourTV profile and saves the plan in the state ("clean"): each installed,
+     * enabled package of the profile, with why it stays on (Debloat.why). Nothing is turned off here.
+     */
+    private static void scanClean(Context c) {
+        JSONObject s = state(c);
+        String refused = cleanRefusal();
+        if (refused != null) {
+            saveClean(c, null, null, refused);
+            done(c, null);
+            return;
+        }
+        try (Adb adb = connect(c, s)) {
+            busy(c, Ui.tr("Reading this TV's apps…"));
+            Set<String> installed = packages(adb, "");
+            Set<String> enabled = packages(adb, "-e");
+            Debloat.Match match = Debloat.match(Debloat.load(c), installed);
+            if (match == null) {
+                saveClean(c, null, null, Ui.tr("No CleanYourTV profile fits this TV, so nothing is suggested."));
+                done(c, null);
+                return;
+            }
+            List<String> profile = Debloat.packagesFor(c, match.model);
+            Set<String> candidates = new HashSet<>();
+            for (String pkg : profile) if (enabled.contains(pkg) && mayTurnOff(pkg)) candidates.add(pkg);
+            busy(c, Ui.tr("Checking what the TV's inputs and Wi-Fi need…"));
+            Set<String> needed = neededByTv(adb, candidates);
+            Set<String> owners = wifiOwners(adb);
+            boolean onWifi = !"0".equals(adb.shell("settings get global wifi_on").trim());
+            saveClean(c, match, Debloat.plan(profile, enabled, needed, owners, onWifi, homeOwned(adb, s)), "");
+            done(c, null);
+        } catch (Exception e) {
+            saveClean(c, null, null, Ui.trf("Couldn't read this TV: {error}", "error", e.getMessage()));
+            done(c, null);
+        }
+    }
+
+    private static void saveClean(Context c, Debloat.Match match, List<Debloat.Item> plan, String error) {
+        JSONObject s = state(c);
+        try {
+            JSONObject clean = new JSONObject().put("at", System.currentTimeMillis()).put("error", error);
+            if (match != null) {
+                clean.put("slug", match.model.slug).put("title", match.model.title).put("kind", match.kind);
+            }
+            JSONArray items = new JSONArray();
+            if (plan != null) for (Debloat.Item i : plan) items.put(new JSONObject().put("p", i.pkg).put("w", i.why));
+            s.put("clean", clean.put("items", items));
+        } catch (JSONException ignored) {}
+        save(c, s);
+    }
+
+    /**
+     * Turns off the chosen apps: each checked again against the same rules, only `pm disable-user` (never an
+     * uninstall, never its data), each result checked, and every one added to `disabled` and the TV's record, so
+     * Original (and the watchdog's revert keeps them as they are) turns them back on.
+     */
+    private static void applyClean(Context c) {
+        JSONObject s = state(c);
+        String refused = cleanRefusal();
+        if (refused != null) {
+            done(c, refused);
+            return;
+        }
+        List<String> chosen = stringList(s, "cleanChosen");
+        try (Adb adb = connect(c, s)) {
+            busy(c, Ui.tr("Checking what the TV's inputs and Wi-Fi need…"));
+            Set<String> enabled = packages(adb, "-e");
+            Set<String> check = new HashSet<>();
+            for (String pkg : chosen) if (enabled.contains(pkg) && mayTurnOff(pkg)) check.add(pkg);
+            Set<String> needed = neededByTv(adb, check);
+            Set<String> owners = wifiOwners(adb);
+            boolean onWifi = !"0".equals(adb.shell("settings get global wifi_on").trim());
+            Set<String> home = homeOwned(adb, s);
+            Set<String> disabled = new HashSet<>(stringList(state(c), "disabled"));
+            Set<String> debloated = new HashSet<>(stringList(state(c), "debloated"));
+            List<String> failed = new ArrayList<>();
+            int done = 0, off = 0;
+            for (String pkg : chosen) {
+                done++;
+                busy(c, Ui.trf("Turning off apps ({done}/{total})…", "done", done, "total", chosen.size()));
+                if (!enabled.contains(pkg)) continue;   // already off
+                if (Debloat.why(pkg, needed, owners, onWifi, home) != Debloat.SAFE) {
+                    AppLog.w("clean up: kept on " + pkg);
+                    continue;
+                }
+                String out = adb.shell("pm disable-user --user 0 " + pkg);
+                if (out.contains("disabled-user")) {
+                    off++;
+                    disabled = Debloat.recordOff(disabled, pkg);
+                    debloated = Debloat.recordOff(debloated, pkg);
+                    JSONObject now = state(c);
+                    now.put("disabled", new JSONArray(sorted(disabled))).put("debloated", new JSONArray(sorted(debloated)));
+                    save(c, now);
+                } else {
+                    failed.add(pkg);
+                    AppLog.w("could not turn off " + pkg + ": " + out.trim());
+                }
+            }
+            record(adb, disabled);
+            JSONObject latest = state(c);
+            latest.put("disabled", new JSONArray(sorted(disabled))).put("debloated", new JSONArray(sorted(debloated)))
+                    .remove("cleanChosen");
+            save(c, latest);
+            notice(c, failed.isEmpty()
+                    ? Ui.plural("plural|one:Clean Up turned off {n} app. Original turns it back on.|other:Clean Up turned off {n} apps. Original turns them back on.", off)
+                    : Ui.trf("Clean Up turned off {n} apps, but couldn't turn off: {list}.", "n", off, "list", String.join(", ", failed)));
+            done(c, null);
+            scanClean(c);   // the plan again, as the TV is now (same job: scheduling "apply" now would stop this one)
+        } catch (Exception e) {
+            done(c, Ui.trf("Couldn't clean up: {error}", "error", e.getMessage()));
+        }
+    }
+
+    /** Turns back on only what Clean Up turned off (Original turns back on everything, these too). */
+    private static void unclean(Context c) {
+        JSONObject s = state(c);
+        try (Adb adb = connect(c, s)) {
+            List<String> list = stringList(s, "debloated");
+            Set<String> disabled = new HashSet<>(stringList(s, "disabled"));
+            Set<String> present = packages(adb, "");
+            List<String> failed = new ArrayList<>();
+            int done = 0, on = 0;
+            for (String pkg : list) {
+                done++;
+                busy(c, Ui.trf("Turning apps back on ({done}/{total})…", "done", done, "total", list.size()));
+                if (present.contains(pkg) && !adb.shell("pm enable " + pkg).contains("new state: enabled")) {
+                    failed.add(pkg);
+                    continue;
+                }
+                if (present.contains(pkg)) on++;
+                disabled.remove(pkg);
+            }
+            record(adb, disabled);
+            JSONObject latest = state(c);
+            latest.put("disabled", new JSONArray(sorted(disabled))).put("debloated", new JSONArray(failed));
+            save(c, latest);
+            notice(c, failed.isEmpty() ? Ui.plural("plural|one:Turned {n} app back on.|other:Turned {n} apps back on.", on)
+                    : Ui.trf("Turned {n} apps back on, but not: {list}.", "n", on, "list", String.join(", ", failed)));
+            done(c, null);
+        } catch (Exception e) {
+            done(c, Ui.trf("Couldn't turn them back on: {error}", "error", e.getMessage()));
+            return;
+        }
+        scanClean(c);
+    }
+
+    /**
+     * What only the mahitTV/Original switch may turn off: every home screen (and Google TV's setup app, one of them),
+     * the screensavers, the TV's recorded ones, JmLauncher's and ours.
+     */
+    private static Set<String> homeOwned(Adb adb, JSONObject s) throws IOException {
+        Set<String> out = new HashSet<>();
+        Matcher m = Pattern.compile("([A-Za-z][\\w.]*)/").matcher(adb.shell("cmd package query-activities --brief --user 0"
+                + " -a android.intent.action.MAIN -c android.intent.category.HOME"));
+        while (m.find()) out.add(m.group(1));
+        for (String component : adb.shell("settings get secure screensaver_components").trim().split(",")) {
+            out.add(packageOf(component.trim()));
+        }
+        out.add(packageOf(originalHome(s)));
+        out.add(packageOf(originalDream(s)));
+        out.add(packageOf(defaultDream(adb)));
+        Collections.addAll(out, PKG, GOOGLE_SETUP, TV_LAUNCHER, JM_LAUNCHER, HTC_HOME, packageOf(GOOGLE_HOME));
+        out.remove(null);
+        out.remove("");
+        return out;
     }
 
     /**

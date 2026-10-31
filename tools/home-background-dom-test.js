@@ -103,6 +103,18 @@ function profile(page, zone, app) {
   await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'History only', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); }; });
   result = await profile(page, 'hero', netflix);
   assert.ok(result.media && result.zone === 'hero' && result.title === 'History only', 'history-only Shelf remains Hero');
+  // The Top Shelf's full screen recesses the Dock (36 px lower, 0.75 opacity): it never hides it, nor the tab bar.
+  await page.waitForTimeout(1200);
+  var heroDock = await page.evaluate(function () {
+    var tiles = getComputedStyle(document.querySelector('#tiles')), point = document.elementFromPoint(210, 911);
+    return {zone: FreeMyTV.state.zone, tiles: parseFloat(tiles.opacity), platter: parseFloat(getComputedStyle(document.querySelector('#platter')).opacity),
+      tabs: parseFloat(getComputedStyle(document.querySelector('#tabs')).opacity), onTop: !!(point && point.closest && point.closest('#tiles')),
+      detailsBottom: document.querySelector('#details').getBoundingClientRect().bottom, platterTop: document.querySelector('#platter').getBoundingClientRect().top};
+  });
+  assert.ok(heroDock.zone === 'hero' && heroDock.tiles >= 0.7 && heroDock.platter >= 0.7 && heroDock.onTop,
+    'the Dock stays visible in the Top Shelf, recessed: ' + JSON.stringify(heroDock));
+  assert.ok(heroDock.tabs > 0.9, 'the tab bar stays in the Top Shelf: ' + JSON.stringify(heroDock));
+  assert.ok(heroDock.detailsBottom <= heroDock.platterTop, 'the details sit above the recessed Dock: ' + JSON.stringify(heroDock));
   for (var i = 0; i < 3; i++) {
     result = await profile(page, ['tabs', 'apps', 'settings'][i], netflix);
     assert.ok(result.profile && !result.title, ['tabs', 'grid', 'settings'][i] + ' clears actual hero');

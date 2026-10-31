@@ -51,8 +51,9 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     done
   fi
   android_jar="$(ls -d "$sdk"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)"
-  javac -cp "out/classes:$android_jar" -d "$watch_classes" tools/RecsWatchTest.java
+  javac -cp "out/classes:$android_jar" -d "$watch_classes" tools/RecsWatchTest.java tools/DebloatTest.java
   java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.RecsWatchTest
+  java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.DebloatTest
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then

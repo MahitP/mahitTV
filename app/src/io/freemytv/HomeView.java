@@ -87,9 +87,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The thin ⌃ above the Dock (only when the focused app's pick shows): its centre's y. */
     private static final float TV_CHEVRON_Y = 718;
     // The Top Shelf: the title's logo fitted in 380 × 200 at the top left; full screen (↑): the details at the bottom
-    // left, their bottom at y 1000, and the Dock sliding 300 down.
-    private static final float TV_LOGO_X = 64, TV_LOGO_Y = 44, TV_LOGO_W = 380, TV_LOGO_H = 200, TV_FULL_BOTTOM = 1000;
-    private static final float TV_TITLE_W = 700, TV_TEXT_W = 860, TV_BUTTON_H = 60, TV_FULL_DROP = 300;
+    // left, their bottom 40 above the Dock, which only recesses (36 down, to 0.75: it never leaves, nor do the tab bar
+    // and the status pill; TVOS-LAUNCHER-MERGE-SPEC.md V1).
+    private static final float TV_LOGO_X = 64, TV_LOGO_Y = 44, TV_LOGO_W = 380, TV_LOGO_H = 200, TV_FULL_BOTTOM = 742;
+    private static final float TV_TITLE_W = 700, TV_TEXT_W = 860, TV_BUTTON_H = 60, TV_FULL_DROP = 36, TV_RECESS = 0.75f;
     // The status pill (§1): x up to 1875, y 48–105, the time 24 from its left, the avatar 49 round inset 4 at its right.
     private static final float PILL_RIGHT = 1875, PILL_TOP = 48, PILL_H = 57, PILL_AVATAR = 49;
     /**
@@ -100,6 +101,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Control Center (§4): a floating glass panel on the right, its bento cards in 2 columns, the weather at the bottom.
     private static final float CC_LEFT = 1340, CC_RIGHT = 1860, CC_TOP = 60, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
     private static final float CC_CARD_W = 224, CC_CARD_H = 120, CC_GAP = 16, CC_CARD_RADIUS = 26, CC_WEATHER_H = 210;
+    /** Cards never shrink below this (the rest scroll); the volume slider's row, above the weather. */
+    private static final float CC_CARD_MIN = 96, CC_VOLUME_H = 76;
     private static final float CC_SLIDE = 480;   // the panel slides in from 480 px to the right
     private static final long ROTATE_MS = 8000;
     // Corner capsule.
@@ -153,7 +156,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         @Override public int focused() { return a11yFocused(); }
         @Override public void focus(int id) { a11yFocus(id); }
         @Override public void click(int id) { activate(); }
-        @Override public boolean clickable(int id) { return (id - 1) / 1000 != WIDGETS; }
+        // The weather card opens the forecast; the quotes are only read.
+        @Override public boolean clickable(int id) { return (id - 1) / 1000 != WIDGETS || (id - 1) % 1000 == 0; }
         @Override public boolean holdable(int id) { return (id - 1) / 1000 == GRID && canToggleShelf((id - 1) % 1000); }
         @Override public void hold(int id) { a11yHold(); }
     });
@@ -320,6 +324,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private RectF[] profileRects = new RectF[0];
     private Spring[] profileFocus = new Spring[0];
     private boolean ccOnProfiles;
+    /** Control Center's volume slider has the focus (←/→ change the volume, as the remote's keys do). */
+    private boolean ccOnVolume;
+    private final Spring volumeFocus = new Spring(Spring.SNAPPY_FOCUS, 0), weatherFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
+    private final Spring volumeLevel = new Spring(Spring.SNAPPY_FOCUS, 0);
+    /** The cards scroll when there are more than fit (they keep at least CC_CARD_MIN); how far, px. */
+    private final Spring ccScroll = new Spring(Spring.SPATIAL_SCROLL, 0).px();
+    private float ccScrollMax;
+    private final RectF volumeRect = new RectF(), cardsArea = new RectF();
+    private final Shape volumeShape = new Shape();
+    private String[] drawerDetails = new String[0];
+    private Paint ccDetail;
+    private android.media.AudioManager audio;
+    private int volumeMax;
+    /** The forecast and Recent Apps (TVOS-LAUNCHER-MERGE-SPEC.md S3, S4), over the home and under the lock. */
+    private WeatherOverlay weatherOverlay;
+    private RecentsOverlay recentsOverlay;
     private int profileIndex;
     private int pickIndex, heroSlide = 1;
     private Hero hero, heroFrom;
@@ -590,6 +610,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         welly = new WellyView(a, scene);
         lock = new LockView(a, scene, lockListener);
         intro = new Intro(a, introListener);
+        weatherOverlay = new WeatherOverlay(a, scene);
+        recentsOverlay = new RecentsOverlay(a, scene, item -> {
+            recentsOverlay.hide();
+            if (!HomeApps.open(a, item, null)) showToast(Ui.trf("Couldn't open {app}.", "app", item.label));
+        });
+        audio = (android.media.AudioManager) a.getSystemService(Context.AUDIO_SERVICE);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
         // frame cost more than drawing straight to the screen (measured: focus on the picks 33 → 12 ms a frame, the
@@ -603,6 +629,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
         }
+        addView(weatherOverlay);
+        addView(recentsOverlay);
         addView(lock);
         addView(intro);
         intro.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -676,12 +704,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             closeSheet();
         }
         sheet.snap(sheet.target);
-        // Back from an app or the screensaver: the opening tile's motion is over; the home settles in from 0.98.
+        // Back from an app or the screensaver: the opening tile's motion is over; the home settles in from 1.04
+        // (SPATIAL_SCROLL, the app's window shrinking back into it).
         launch.snap(0);
         launchZone = launchIndex = -1;
         press.snap(0);
         if (!again && !Spring.instant) {
-            wakeScale.snap(0.98f);
+            wakeScale.tune(Spring.SPATIAL_SCROLL);
+            wakeScale.snap(1.04f);
             wakeScale.target = 1;
             wakeAlpha.snap(0);
             wakeAlpha.target = 1;
@@ -959,6 +989,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccTime.setLetterSpacing(-0.01f);
         ccDate = Ui.text(Ui.medium, 25 * k, L_DIM);
         ccLabel = Ui.text(Ui.semibold, 21 * k, L_INK);
+        ccDetail = Ui.text(Ui.medium, 19 * k, L_DIM);
+        ccDetail.setTextAlign(Paint.Align.RIGHT);
         ccTemp = Ui.numbers(Ui.light, 64 * k, L_INK);
         tvName.setTextAlign(Paint.Align.CENTER);
         shadow.setMaskFilter(new BlurMaskFilter(SHADOW_BLUR * k, BlurMaskFilter.Blur.NORMAL));
@@ -1028,7 +1060,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
         if (topMoving) status.invalidate();
         heroMoving |= topMoving | cardsMoving;
-        boolean drawerItemsMoving = step(drawerFocus, dt) | step(profileFocus, dt);
+        boolean drawerItemsMoving = step(drawerFocus, dt) | step(profileFocus, dt) | volumeFocus.step(dt)
+                | weatherFocus.step(dt) | volumeLevel.step(dt) | ccScroll.step(dt);
         boolean scrollMoving = scroll.step(dt);
         boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen);
         boolean drawerMoving = drawer.step(dt);
@@ -1107,8 +1140,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // under the Dock (its first row peeks below it at rest); scrolling the grid takes the Dock along.
         float rise = (sheet.value * TV_GRID_LIFT + scroll.value * GRID_ROW) * k;
         float top = 1 - smoothstep(0, 0.45f, s);
-        // Full screen: the Dock and the grid's peek slide down and fade.
-        float drop = full.value * TV_FULL_DROP * k, away = 1 - smoothstep(0, 0.7f, fs);
+        // Full screen: the Dock and the grid's peek recess (36 px down, to 0.75), never hidden.
+        float drop = full.value * TV_FULL_DROP * k, away = 1 - (1 - TV_RECESS) * smoothstep(0, 0.7f, fs);
         // Control Center: the page behind it steps back (0.975) and dims 30% (the sky darkens too, drawLightSky).
         float dim = 1 - 0.30f * dc, back = 1 - 0.025f * dc;
         // The tabs (TAB_SWAP): the one leaving slides 60 px away and shrinks to 0.96 as it fades (quickly); the one
@@ -1117,11 +1150,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float tvA = tabAlpha(tv, TAB_TV), tvX = tabX(tv, TAB_TV), tvS = (0.96f + 0.04f * tv) * back;
         show(heroLayer, top * dim * tvA, -rise, tvX, tvS);
         show(status, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
-        // The tab bar leaves with the title logo when the grid or full screen owns the screen.
-        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)) * (1 - smoothstep(0, 0.6f, fs)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
+        // The tab bar leaves with the title logo when the grid owns the screen; full screen keeps it.
+        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
         show(platter, dim * away * tvA, -rise + drop, tvX, tvS);
         show(tiles, dim * away * tvA, -rise + drop, tvX, tvS);
-        chevronAlpha = dim * away * tvA * Ui.clamp(chevronShown.value);
+        // The ⌃ points at the Top Shelf: in full screen we're there, so it goes.
+        chevronAlpha = dim * (1 - smoothstep(0, 0.5f, fs)) * tvA * Ui.clamp(chevronShown.value);
         chevronY = -rise + drop;
         show(chevronLayer, chevronAlpha, chevronY + chevronBreath, tvX, 1);
         float hv = Ui.clamp(homeShown.value), wv = Ui.clamp(wellyShown.value);
@@ -2442,23 +2476,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!same) drawerDirty = true;
     }
 
-    /** The panel, its 2-column bento cards (they shrink when there are many) and the weather card at the bottom. */
+    /**
+     * The panel: the profiles, its 2-column bento cards (they shrink when there are many, down to CC_CARD_MIN, then
+     * scroll), the volume slider and the weather card at the bottom.
+     */
     private void layoutDrawer() {
         int n = drawerItems.size();
         panelRect.set(CC_LEFT * k, CC_TOP * k, CC_RIGHT * k, CC_BOTTOM * k);
         snap(panelRect);
-        boolean wx = Prefs.weather();
-        float left = (CC_LEFT + CC_PAD) * k, top = (CC_TOP + CC_PAD + 136) * k;
+        boolean wx = Prefs.weather(), vol = volumeShown();
+        float left = (CC_LEFT + CC_PAD) * k, top = (CC_TOP + CC_PAD + 136) * k, right = (CC_RIGHT - CC_PAD) * k;
         layoutProfiles(left);
-        float bottom = (CC_BOTTOM - CC_PAD - (wx ? CC_WEATHER_H + CC_GAP : 0)) * k, gap = CC_GAP * k;
+        float gap = CC_GAP * k;
+        float bottom = (CC_BOTTOM - CC_PAD - (wx ? CC_WEATHER_H + CC_GAP : 0) - (vol ? CC_VOLUME_H + CC_GAP : 0)) * k;
         int rows = Math.max(1, (n + 1) / 2);
-        float ch = Math.min(CC_CARD_H * k, (bottom - top - (rows - 1) * gap) / rows);
+        float ch = Math.max(CC_CARD_MIN * k, Math.min(CC_CARD_H * k, (bottom - top - (rows - 1) * gap) / rows));
         for (int i = 0; i < n; i++) {
             float x = left + (i % 2) * (CC_CARD_W * k + gap), y = top + (i / 2) * (ch + gap);
             drawerRects[i].set(x, y, x + CC_CARD_W * k, y + ch);
             snap(drawerRects[i]);
         }
-        weatherCard.set(left, (CC_BOTTOM - CC_PAD - CC_WEATHER_H) * k, (CC_RIGHT - CC_PAD) * k, (CC_BOTTOM - CC_PAD) * k);
+        cardsArea.set(panelRect.left, top, panelRect.right, bottom);
+        ccScrollMax = Math.max(0, rows * ch + (rows - 1) * gap - (bottom - top));
+        ccScroll.target = Math.min(ccScroll.target, ccScrollMax);
+        if (vol) {
+            volumeRect.set(left, bottom + gap, right, bottom + gap + CC_VOLUME_H * k);
+            snap(volumeRect);
+        } else {
+            volumeRect.setEmpty();
+        }
+        weatherCard.set(left, (CC_BOTTOM - CC_PAD - CC_WEATHER_H) * k, right, (CC_BOTTOM - CC_PAD) * k);
         snap(weatherCard);
         quotesCard.setEmpty();
         // The names cut to fit once (never while drawing); the symbols at their size (the canvas scales the focused one).
@@ -2467,10 +2514,46 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             String label = drawerItems.get(i).label == null ? "" : drawerItems.get(i).label;
             drawerLabels[i] = TextUtils.ellipsize(label, new TextPaint(ccLabel), (CC_CARD_W - 44) * k, TextUtils.TruncateAt.END).toString();
         }
+        layoutDetails();
         for (HomeApps.Item it : drawerItems) Symbols.warm(getContext(), it.symbol, 34 * k);
         Symbols.warmWeather(getContext(), 44 * k);
         Symbols.warmWeather(getContext(), 26 * k);
         drawerDirty = true;
+    }
+
+    /** The cards' states (Wi-Fi's, Bluetooth's) cut to fit beside their symbol, once (never while drawing). */
+    private void layoutDetails() {
+        int n = drawerItems.size();
+        drawerDetails = new String[n];
+        for (int i = 0; i < n && ccDetail != null; i++) {
+            String d = drawerItems.get(i).detail;
+            if (d != null) drawerDetails[i] = TextUtils.ellipsize(d, new TextPaint(ccDetail), (CC_CARD_W - 44 - 34 - 12) * k,
+                    TextUtils.TruncateAt.END).toString();
+        }
+    }
+
+    /** The volume slider shows when the TV lets apps change the volume (not on a fixed-volume output). */
+    private boolean volumeShown() {
+        return audio != null && !audio.isVolumeFixed() && audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) > 0;
+    }
+
+    /** The volume as the slider shows it (0–1), read again when Control Center opens and after each step. */
+    private void readVolume(boolean snap) {
+        if (audio == null) return;
+        volumeMax = Math.max(1, audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC));
+        volumeLevel.target = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) volumeMax;
+        if (snap) volumeLevel.snap(volumeLevel.target);
+        drawerDirty = true;
+    }
+
+    /** ←/→ on the slider: one step, exactly as the remote's volume keys (no system panel: the slider is the panel). */
+    private boolean stepVolume(int dx) {
+        if (audio == null) return false;
+        int before = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+        audio.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                dx > 0 ? android.media.AudioManager.ADJUST_RAISE : android.media.AudioManager.ADJUST_LOWER, 0);
+        readVolume(false);
+        return audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) != before;
     }
 
     /** Control Center's top row: the profiles' avatars (84 round) and names, cut to fit once. */
@@ -2511,7 +2594,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // On the profiles when there is more than one to switch to; else on the first card. The focus grows in as the
         // panel arrives (retarget), not already there.
         ccOnProfiles = profiles.size() > 1;
+        ccOnVolume = false;
+        ccScroll.target = 0;
+        ccScroll.snap(0);
         profileIndex = ProfileManager.currentIndex(getContext());
+        // Wi-Fi's and Bluetooth's state and the volume as they are now (read once, never while drawing).
+        HomeApps.connectivity(getContext(), drawerItems);
+        layoutDetails();
+        readVolume(true);
         drawerDirty = true;
     }
 
@@ -2566,6 +2656,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (save >= 0) c.restoreToCount(save);
         int top = -1;
         for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
+        // The cards: when they don't all fit they scroll inside their area (the focused one is kept in view).
+        int scrolled = -1;
+        if (ccScrollMax > 0) {
+            scrolled = c.save();
+            c.clipRect(panelRect.left, cardsArea.top - 12 * k, panelRect.right, cardsArea.bottom + 12 * k);
+            c.translate(0, -ccScroll.value);
+        }
         for (int i = 0; i < drawerItems.size(); i++) {
             if (i == top) continue;
             save = rowIn(c, 1 + i / 2, since, panelRect.left, drawerRects[i].top - 30 * k, panelRect.right, drawerRects[i].bottom + 30 * k);
@@ -2573,11 +2670,61 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (save >= 0) c.restoreToCount(save);
         }
         if (top >= 0) drawDrawerTile(c, top);
+        if (scrolled >= 0) c.restoreToCount(scrolled);
+        int rows = (drawerItems.size() + 1) / 2;
+        if (!volumeRect.isEmpty()) {
+            save = rowIn(c, 1 + rows, since, volumeRect.left, volumeRect.top, volumeRect.right, volumeRect.bottom);
+            drawVolume(c);
+            if (save >= 0) c.restoreToCount(save);
+        }
         if (Prefs.weather()) {
-            save = rowIn(c, 2 + (drawerItems.size() + 1) / 2, since, weatherCard.left, weatherCard.top, weatherCard.right, weatherCard.bottom);
+            save = rowIn(c, 2 + rows, since, weatherCard.left, weatherCard.top, weatherCard.right, weatherCard.bottom);
             drawWeatherCard(c, weatherCard);
             if (save >= 0) c.restoreToCount(save);
         }
+    }
+
+    /**
+     * The volume slider: the speaker, then the level as a capsule track. Focused it turns white with ink like the
+     * cards and its track thickens; ←/→ step it. The level glides (SNAPPY_FOCUS) to each new value.
+     */
+    private void drawVolume(Canvas c) {
+        float f = Ui.clamp(volumeFocus.value), s = 1 + 0.03f * volumeFocus.value;
+        RectF r = volumeRect;
+        float rr = CC_CARD_RADIUS * k;
+        c.save();
+        c.translate(bumpX * f, 0);
+        c.scale(s, s, r.centerX(), r.centerY());
+        if (f > 0.01f) {
+            tmp.set(r);
+            tmp.offset(0, 14 * k * f);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.4f * f));
+            shadows.draw(c, tmp, rr, KEY_BLUR * k, shadowSoft);
+        }
+        if (f < 0.99f) drawerCard(c, r, volumeShape, 1 - f);
+        if (f > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+            c.save();
+            c.translate(r.left, r.top);
+            c.drawPath(volumeShape.of(r.width(), r.height(), rr), fill);
+            c.restore();
+        }
+        int ink = blend(tone(L_INK, 0xF2FFFFFF), INK, f);
+        float pad = 22 * k, size = 34 * k, cy = r.centerY();
+        Symbols.draw(getContext(), c, "volume", r.left + pad + size / 2, cy, size, ink);
+        float x0 = r.left + pad + size + 22 * k, x1 = r.right - pad - 8 * k, th = (8 + 4 * f) * k;
+        fill.setShader(null);
+        fill.setColor(blend(tone(0x2E000000, 0x38FFFFFF), 0x26000000, f));
+        tmp.set(x0, cy - th / 2, x1, cy + th / 2);
+        c.drawRoundRect(tmp, th / 2, th / 2, fill);
+        float lv = Ui.clamp(volumeLevel.value);
+        if (lv > 0.001f) {
+            fill.setColor(ink);
+            tmp.set(x0, cy - th / 2, x0 + Math.max(th, (x1 - x0) * lv), cy + th / 2);
+            c.drawRoundRect(tmp, th / 2, th / 2, fill);
+        }
+        c.restore();
     }
 
     /**
@@ -2661,6 +2808,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int ink = blend(tone(off ? 0xFF8E8E93 : L_INK, off ? 0x6BFFFFFF : 0xF2FFFFFF), INK, f);
         float pad = 22 * k, size = 34 * k;
         Symbols.draw(getContext(), c, it.symbol, base.left + pad + size / 2, base.top + pad + size / 2, size, ink);
+        if (i < drawerDetails.length && drawerDetails[i] != null) {
+            // The card's state (Wi-Fi: Connected), level with its symbol on the right.
+            ccDetail.setColor(blend(tone(L_DIM, 0xADFFFFFF), 0x991C1C1E, f));
+            c.drawText(drawerDetails[i], base.right - pad, base.top + pad + size / 2 + Ui.halfCap(ccDetail), ccDetail);
+        }
         ccLabel.setColor(ink);
         if (i < drawerLabels.length && drawerLabels[i] != null) c.drawText(drawerLabels[i], base.left + pad, base.bottom - 20 * k, ccLabel);
         c.restore();
@@ -2668,9 +2820,32 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The weather: the place, now (large), the condition and the day's high and low, and the next 4 hours or days. */
     private void drawWeatherCard(Canvas c, RectF r) {
+        // Focusable: OK opens the forecast; focused it grows a little and a white ring lights around it.
+        float f = Ui.clamp(weatherFocus.value), s = 1 + 0.02f * weatherFocus.value;
+        float rr = CC_CARD_RADIUS * k;
+        c.save();
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, r.centerX(), r.centerY());
+        if (f > 0.01f) {
+            tmp.set(r);
+            tmp.offset(0, 14 * k * f);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.32f * f));
+            shadows.draw(c, tmp, rr, KEY_BLUR * k, shadowSoft);
+        }
         drawerCard(c, r, weatherShape, 1);
         if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), weatherContent);
         else drawWeather(c, r);
+        if (f > 0.01f) {
+            rim.setShader(null);
+            rim.setColor(Ui.alpha(0xFFFFFFFF, f));
+            rim.setStrokeWidth(4 * k);
+            c.save();
+            c.translate(r.left, r.top);
+            c.drawPath(weatherShape.of(r.width(), r.height(), rr), rim);
+            c.restore();
+            rim.setStrokeWidth(2.5f * k);
+        }
+        c.restore();
     }
 
     private final Consumer<Canvas> weatherContent = cc -> drawWeather(cc, weatherCard);
@@ -2802,8 +2977,26 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         pillFocus.target = !sheetOpen && zone == Z_STATUS ? 1 : 0;
         if (snap) pillFocus.snap(pillFocus.target);
         boolean statusChanged = pillChanged;
-        boolean drawerChanged = aim(drawerFocus, !sheetOpen && zone == Z_DRAWER && !ccOnProfiles ? drawerIndex : -1, snap)
+        boolean onCards = !sheetOpen && zone == Z_DRAWER && !ccOnProfiles && !ccOnVolume;
+        boolean drawerChanged = aim(drawerFocus, onCards ? drawerIndex : -1, snap)
                 | aim(profileFocus, !sheetOpen && zone == Z_DRAWER && ccOnProfiles ? profileIndex : -1, snap);
+        float vf = !sheetOpen && zone == Z_DRAWER && ccOnVolume ? 1 : 0, wf = !sheetOpen && zone == WIDGETS && widgetIndex == 0 ? 1 : 0;
+        drawerChanged |= volumeFocus.target != vf || weatherFocus.target != wf;
+        volumeFocus.target = vf;
+        weatherFocus.target = wf;
+        if (snap) {
+            volumeFocus.snap(vf);
+            weatherFocus.snap(wf);
+        }
+        if (onCards && drawerIndex < drawerRects.length) {
+            // The focused card in view: the cards scroll under the profiles and above the volume (only when they don't fit).
+            RectF fr = drawerRects[drawerIndex];
+            float want = ccScroll.target;
+            if (fr.top - want < cardsArea.top) want = fr.top - cardsArea.top;
+            if (fr.bottom - want > cardsArea.bottom) want = fr.bottom - cardsArea.bottom;
+            ccScroll.target = Math.max(0, Math.min(ccScrollMax, want));
+            if (snap) ccScroll.snap(ccScroll.target);
+        }
         boolean heroChanged = heroFocus.target != (!sheetOpen && zone == Z_HERO ? 1 : 0);
         heroFocus.target = !sheetOpen && zone == Z_HERO ? 1 : 0;
         if (snap) heroFocus.snap(heroFocus.target);
@@ -3091,6 +3284,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void gate(boolean withIntro) {
         ProfileManager.lock(getContext());
         if (sheetOpen) closeSheet();
+        weatherOverlay.hide();     // the next profile starts on its own home, not on the last one's forecast
+        recentsOverlay.hide();
         if (withIntro && Prefs.intro()) {
             intro.start();
         } else {
@@ -3121,6 +3316,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         layoutPill();
         reset(false);
         if (!Spring.instant) {
+            wakeScale.tune(Spring.TITLE_SETTLE);
             wakeScale.snap(0.98f);
             wakeScale.target = 1;
             wakeAlpha.snap(0);
@@ -3203,6 +3399,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (intro.showing()) return intro.onKey(e);
         if (lock.showing()) return lock.onKey(e);
         touch();
+        if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
+        if (recentsOverlay.showing()) return recentsOverlay.onKey(e);
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
@@ -3383,6 +3581,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 int at = on.indexOf(widgetIndex);
                 if (dy < 0 || at < 0) {
                     zone = Z_DRAWER;
+                    ccOnVolume = !volumeRect.isEmpty();
+                } else if (dx < 0) {
+                    closeDrawer();
                 } else if (dx != 0 && at + dx >= 0 && at + dx < on.size()) {
                     widgetIndex = on.get(at + dx);
                 } else {
@@ -3413,8 +3614,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     drawerIndex += 2;
                 } else if (drawerIndex / 2 < (n - 1) / 2) {
                     drawerIndex = n - 1;
-                } else if (talkBack() && !widgets().isEmpty()) {
-                    // Only with TalkBack: the weather is there to be read, and this is how it gets to it.
+                } else if (!volumeRect.isEmpty()) {
+                    ccOnVolume = true;   // ↓ from the last row: the volume, then the weather
+                } else if (!widgets().isEmpty()) {
                     zone = WIDGETS;
                     widgetIndex = widgets().get(0);
                 } else {
@@ -3483,7 +3685,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         HomeApps.Item it;
         RectF r;
-        if (!sheetOpen && zone == WIDGETS) return;   // a widget is only read
+        if (!sheetOpen && zone == WIDGETS) {
+            if (widgetIndex != 0) return;   // the quotes are only read
+            click.open();
+            closeDrawer();
+            retarget(false);
+            weatherOverlay.show();
+            return;
+        }
+        if (!sheetOpen && zone == Z_DRAWER && ccOnVolume) return;   // ←/→ move it; OK has nothing to do
         if (!sheetOpen && zone == Z_HOUSE) {
             click.open();
             house.toggle();
@@ -3541,6 +3751,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         click.open();
         if (it.kind == HomeApps.ALL_APPS) {
             openSheet();
+            return;
+        }
+        if (it.kind == HomeApps.RECENTS) {
+            closeDrawer();
+            retarget(false);
+            recentsOverlay.show();
+            return;
+        }
+        if (it.kind == HomeApps.CLOSE_BG) {
+            // Android's own "background" kill: only cached processes of the apps listed, nothing in front, no data.
+            final Context ctx = getContext().getApplicationContext();
+            LOADER.execute(() -> {
+                HomeApps.closeBackgroundApps(ctx);
+                handler.post(() -> showToast(Ui.tr("Background apps closed.")));
+            });
             return;
         }
         if (it.kind == HomeApps.LOCK) {
@@ -3884,7 +4109,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_DRAWER:
                 if (i >= drawerRects.length) return false;
                 a11yRect.set(drawerRects[i]);
-                dy = drawerOpen ? 0 : h;
+                dy = drawerOpen ? -ccScroll.value : h;   // the cards may be scrolled
                 break;
             case WIDGETS:
                 if (!drawerOpen) return false;
@@ -3951,7 +4176,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_DRAWER:
                 if (i >= drawerItems.size()) return;
                 if (!drawerOpen) openDrawer();
-                ccOnProfiles = false;
+                ccOnProfiles = ccOnVolume = false;
                 drawerIndex = i;
                 break;
             case WIDGETS:
@@ -4330,12 +4555,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float fs = Ui.clamp(full.value);
         if (fs > 0.004f && hero != null) {
             if (fullScrim == null) {
-                fullScrim = new LinearGradient(0, h, 0, h * 0.55f, new int[] {0x80000000, 0x40000000, 0x00000000},
+                // Light: just enough under the details for their white text, the art stays bright.
+                fullScrim = new LinearGradient(0, h * 0.82f, 0, h * 0.3f, new int[] {0x59000000, 0x2E000000, 0x00000000},
                         new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP);
             }
             fill.setShader(fullScrim);
             fill.setAlpha(Math.round(255 * fs));
-            c.drawRect(0, h * 0.55f, w, h, fill);
+            c.drawRect(0, h * 0.3f, w, h, fill);
             fill.setShader(null);
             fill.setAlpha(255);
         }
@@ -4708,6 +4934,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 focusTabBar();
                 break;
             case Z_DRAWER:
+                if (ccOnVolume) {
+                    if (dx != 0) {
+                        if (!stepVolume(dx)) deadEnd(dx, 0);   // already at the end
+                        return true;
+                    }
+                    if (dy < 0) {
+                        ccOnVolume = false;   // ↑: back to the last row of cards
+                        drawerIndex = Math.max(0, (drawerItems.size() - 1) / 2 * 2);
+                    } else if (!widgets().isEmpty()) {
+                        zone = WIDGETS;
+                        widgetIndex = widgets().get(0);
+                    } else {
+                        deadEnd(0, dy);
+                        return true;
+                    }
+                    break;
+                }
                 if (!ccOnProfiles) {
                     if (dy < 0 && drawerIndex < 2 && profileRects.length > 0) {
                         // ↑ from the first row of cards: the profiles.

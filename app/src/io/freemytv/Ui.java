@@ -56,6 +56,7 @@ final class Ui {
         if (loaded) return;
         loaded = true;
         AssetManager a = c.getAssets();
+        assets = a;
         thin = font(a, 32, 200);
         light = font(a, 32, 300);
         displayMedium = font(a, 32, 500);
@@ -88,6 +89,22 @@ final class Ui {
     }
 
     private static final String FONT = "fonts/InterVariable.ttf";
+    private static AssetManager assets;
+    private static Typeface clockTall;
+
+    /**
+     * Antonio Light (OFL, assets/fonts/Antonio-OFL.txt): only the nature screensaver's tall glass clock uses it; all
+     * other text is Inter. Loaded on first use; Inter thin if the file is missing.
+     */
+    static synchronized Typeface clockTall() {
+        if (clockTall != null) return clockTall;
+        try {
+            if (assets != null && has(assets, "fonts/Antonio-Light.ttf")) clockTall = Typeface.createFromAsset(assets, "fonts/Antonio-Light.ttf");
+        } catch (RuntimeException ignored) {
+        }
+        if (clockTall == null) clockTall = thin != null ? thin : Typeface.DEFAULT;
+        return clockTall;
+    }
 
     // MARK: - Text in the viewer's language
 

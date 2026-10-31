@@ -58,6 +58,24 @@ final class Scene {
     private final Paint echoPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     // The glass's continuous-curvature ("squircle") outline, as the shaders draw it: made once per size and radius.
     private final android.graphics.Path squircle = new android.graphics.Path();
+    /**
+     * Without AGSL, tvOS-Launcher's lens (Apache-2.0): the backdrop 1.04× larger in a band along the glass's edge, so
+     * the edge bends what's behind it, and a diagonal rim (bright at the top left, fading, brighter again at the
+     * bottom right). The band's outline is cached per size like the squircle; the rim's gradient once per glass size.
+     */
+    private final android.graphics.Path lensPath = new android.graphics.Path();
+    private float lensW = -1, lensH = -1, lensR = -1;
+    private final Paint lensPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint lensRim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix lensMatrix = new Matrix();
+    private final android.util.LongSparseArray<Shader> rimShaders = new android.util.LongSparseArray<>();
+    private static final int[] RIM = {0xD9FFFFFF, 0x40FFFFFF, 0x14FFFFFF, 0x26FFFFFF, 0x8CFFFFFF};
+    /**
+     * The backdrop's mean luminance (0–1): the photo's when the glass reads one, else the wallpaper's palette. Worked
+     * out when the background changes, never per frame; glass() and liquid() make their tint a little more opaque the
+     * more the backdrop differs from it, so the text on the glass keeps its contrast without any scrim.
+     */
+    private float paletteLum = 0.5f, imageLum = 0.5f;
     private float squircleW = -1, squircleH = -1, squircleR = -1;
     /** The corners' superellipse exponent: 4, as in Shaders.LIQUID (DESIGN-TVOS.md §2). */
     private final Matrix softMatrix = new Matrix();
@@ -140,6 +158,10 @@ final class Scene {
             horizonDirty = true;
         }
         if (sizeChanged || !fallbackReady) rebuildFallback();
+        if (sizeChanged) rimShaders.clear();
+        lensPaint.setStyle(Paint.Style.STROKE);
+        lensRim.setStyle(Paint.Style.STROKE);
+        lensRim.setStrokeWidth(Math.max(1, h / 1080f * 1.6f));
         push();
     }
 
@@ -189,6 +211,12 @@ final class Scene {
     /** Rebuilt only when setSize or the selected background/theme changes, never from drawBackground. */
     private void rebuildFallback() {
         if (horizonMode) {
+            int[] p = Wallpaper.palette(horizonDark);
+            paletteLum = (lum(p[0]) + lum(p[1]) + lum(p[2]) + lum(p[3])) / 4;
+        } else {
+            paletteLum = (lum(palette.color(0)) + lum(palette.color(1))) / 2;
+        }
+        if (horizonMode) {
             int[] colors = Wallpaper.palette(horizonDark);
             fallback.setShader(new android.graphics.LinearGradient(0, 0, 0, h,
                     new int[] {colors[0], colors[2], colors[3]}, new float[] {0, 0.56f, 1}, Shader.TileMode.CLAMP));
@@ -237,6 +265,7 @@ final class Scene {
     /** Photo transition: both photos in the glass, blended by setGlassMix (0 = the first one). */
     void setGlassImages(int[] from, int[] to) {
         imageGlass = true;
+        imageLum = meanLum(from);
         glassMix = 0;
         if (liquid == null) {           // no AGSL (Android 8 to 12): the bitmaps path reads small soft copies instead
             if (softPxA == null) softPxA = new int[SW * SH];
@@ -329,6 +358,7 @@ final class Scene {
     void liquid(Canvas c, RectF r, float radius, int tint, float tintAlpha, float lift, float band, float refraction,
                 float specular, float alpha) {
         if (alpha <= 0.004f) return;
+        tintAlpha = adaptive(tint, tintAlpha);
         if (liquid == null) {
             if (imageGlass && softShaderA != null) {
                 // Mapped by what the copy covers: 270 / 8 = 33.75 rows, of which the bitmap holds 33.
@@ -363,6 +393,7 @@ final class Scene {
      */
     void setFrostPair(int[] a, int[] b) {
         imageFrost = true;
+        imageLum = meanLum(a);
         frostMix = 0;
         if (glass == null) {            // as above: small soft copies for the bitmaps path
             if (softPxFrost == null) softPxFrost = new int[SFW * SFH];
@@ -494,6 +525,7 @@ final class Scene {
     /** Same, with an opacity (0 to 1) for the whole glass. */
     void glass(Canvas c, RectF r, float radius, int tint, float tintAlpha, int glow, float glowAlpha, float lift, float body, float alpha) {
         if (alpha <= 0.004f) return;
+        tintAlpha = adaptive(tint, tintAlpha);
         if (glass == null) {
             if (imageFrost && softShaderFrost != null) {
                 bitmapGlass(c, r, radius, softShaderFrost, Backdrop.FW / (float) SOFT_FROST, Backdrop.FH / (float) SOFT_FROST,
@@ -545,6 +577,7 @@ final class Scene {
             int tinted = lift > 0.001f ? blend(tint | 0xFF000000, 0xFFFFFFFF, Math.min(0.25f, lift * 2)) : tint | 0xFF000000;
             flatFill.setColor(Ui.alpha(tinted, tintAlpha * alpha * body));
             shape(c, r, radius, flatFill, curved);
+            lens(c, r, radius, a, aw, ah, alpha * body, curved);
         }
         flatRim.setAlpha(Math.round(0x24 * alpha));
         shape(c, r, radius, flatRim, curved);
@@ -588,6 +621,76 @@ final class Scene {
         squircle.offset(r.left, r.top);
         c.drawPath(squircle, p);
         squircle.offset(-r.left, -r.top);
+    }
+
+    private static float lum(int c) {
+        return (0.2126f * Color.red(c) + 0.7152f * Color.green(c) + 0.0722f * Color.blue(c)) / 255f;
+    }
+
+    /** A picture's mean luminance from ~1,000 of its pixels. */
+    private static float meanLum(int[] px) {
+        if (px == null || px.length == 0) return 0.5f;
+        int step = Math.max(1, px.length / 1024), n = 0;
+        float sum = 0;
+        for (int i = 0; i < px.length; i += step, n++) sum += lum(px[i]);
+        return sum / Math.max(1, n);
+    }
+
+    /** The tint's opacity for this backdrop: up to +0.22 as the backdrop's luminance moves away from the tint's. */
+    private float adaptive(int tint, float tintAlpha) {
+        float back = imageFrost || imageGlass ? imageLum : paletteLum;
+        float far = Math.abs(lum(tint) - back);
+        return Math.min(1, tintAlpha + 0.22f * Math.max(0, Math.min(1, (far - 0.35f) / 0.5f)));
+    }
+
+    /**
+     * Without AGSL: the lens band (the backdrop 1.04× around the glass's centre, through a band along the inside of
+     * its edge) and the diagonal rim over the whole outline. Adapted from tvOS-Launcher's LiquidGlass (Apache-2.0).
+     */
+    private void lens(Canvas c, RectF r, float radius, BitmapShader a, float bw, float bh, float alpha, boolean curved) {
+        float band = Math.max(2, Math.min(Math.min(r.width(), r.height()) * 0.16f, h / 1080f * 18));
+        if (a != null && alpha > 0.004f) {
+            lensMatrix.setScale(w / bw, h / bh);
+            lensMatrix.postTranslate(-offX, -offY);
+            lensMatrix.postScale(1.04f, 1.04f, r.centerX() - offX, r.centerY() - offY);
+            a.setLocalMatrix(lensMatrix);
+            lensPaint.setShader(a);
+            lensPaint.setStrokeWidth(band);
+            lensPaint.setAlpha(Math.round(255 * Math.min(1, alpha) * 0.85f));
+            // The band's centre line, half a band inside the outline (so the stroke stays within the glass).
+            float iw = r.width() - band, ih = r.height() - band, ir = Math.max(0, radius - band / 2);
+            if (curved) {
+                if (iw != lensW || ih != lensH || ir != lensR) {
+                    lensW = iw;
+                    lensH = ih;
+                    lensR = ir;
+                    Corners.continuous(lensPath, iw, ih, ir);
+                }
+                c.save();
+                c.translate(r.left + band / 2, r.top + band / 2);
+                c.drawPath(lensPath, lensPaint);
+                c.restore();
+            } else {
+                sheenRect.set(r.left + band / 2, r.top + band / 2, r.right - band / 2, r.bottom - band / 2);
+                c.drawRoundRect(sheenRect, ir, ir, lensPaint);
+            }
+            lensPaint.setShader(null);
+        }
+        long key = ((long) Math.round(r.width()) << 32) | Math.round(r.height());
+        Shader rim = rimShaders.get(key);
+        if (rim == null) {   // once per glass size (a local matrix per draw would rebuild it on these GPUs)
+            if (rimShaders.size() > 24) rimShaders.clear();
+            rim = new android.graphics.LinearGradient(0, 0, r.width(), r.height(), RIM, null, Shader.TileMode.CLAMP);
+            rimShaders.put(key, rim);
+        }
+        lensRim.setShader(rim);
+        lensRim.setAlpha(Math.round(255 * Math.min(1, alpha)));
+        c.save();
+        c.translate(r.left, r.top);
+        sheenRect.set(0, 0, r.width(), r.height());
+        shape(c, sheenRect, radius, lensRim, curved);
+        c.restore();
+        lensRim.setShader(null);
     }
 
     private static int blend(int a, int b, float t) {

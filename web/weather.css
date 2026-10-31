@@ -1,0 +1,85 @@
+/*
+ * The forecast overlay (weather.js) and Recent Apps (home.js): full-screen layers over the Frosted Horizon (.hz-day /
+ * .hz-night from home.css), with one Liquid Glass panel or a row of cards; dark text by day, white at night, no scrim.
+ * Only transform and opacity animate.
+ */
+
+#forecast, #recents { z-index: 5; color: #1D1D1F; opacity: 0; visibility: hidden; }
+.night #forecast, .night #recents { color: #FFF; }
+
+#forecast .panel {
+  position: absolute;
+  left: 220px;
+  top: 110px;
+  width: 1480px;
+  height: 860px;
+  border-radius: 52px;
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.38));
+  background: linear-gradient(rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.38));
+  box-shadow: 0 40px 90px rgba(22, 33, 45, 0.22), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.night #forecast .panel {
+  background: -webkit-linear-gradient(top, rgba(44, 52, 70, 0.58), rgba(20, 26, 38, 0.48));
+  background: linear-gradient(rgba(44, 52, 70, 0.58), rgba(20, 26, 38, 0.48));
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.35), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+#forecast .empty { position: absolute; left: 0; right: 0; top: 400px; text-align: center; font-size: 34px; font-weight: 600; opacity: 0.72; }
+#forecast .head { font-size: 24px; font-weight: 600; opacity: 0.62; margin-bottom: 12px; white-space: nowrap; }
+
+#forecast .now { position: absolute; left: 64px; top: 56px; width: 520px; }
+#forecast .city { font-size: 30px; font-weight: 600; opacity: 0.72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#forecast .big { height: 150px; margin-top: 4px; white-space: nowrap; }
+#forecast .big .sym { width: 92px; height: 92px; vertical-align: 26px; margin-right: 20px; }
+#forecast .big .temp { font-size: 140px; font-weight: 200; line-height: 150px; letter-spacing: -0.02em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#forecast .cond { font-size: 36px; font-weight: 600; white-space: nowrap; }
+#forecast .range { margin-top: 6px; font-size: 30px; font-weight: 500; opacity: 0.72; white-space: pre; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#forecast .stats { margin-top: 26px; font-size: 0; }
+#forecast .stat { display: inline-block; width: 250px; margin-bottom: 16px; vertical-align: top; }
+#forecast .stat .label { font-size: 22px; font-weight: 600; opacity: 0.6; white-space: nowrap; }
+#forecast .stat .value { margin-top: 4px; font-size: 34px; font-weight: 500; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+
+#forecast .week { position: absolute; left: 640px; top: 56px; width: 776px; }
+#forecast .day { position: relative; height: 56px; border-top: 1px solid rgba(29, 29, 31, 0.1); font-size: 30px; font-weight: 500; line-height: 56px; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+.night #forecast .day { border-top-color: rgba(255, 255, 255, 0.12); }
+#forecast .day > span { position: absolute; top: 0; }
+#forecast .day .name { left: 0; width: 140px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+#forecast .day .icon { left: 150px; }
+#forecast .day .icon .sym { width: 36px; height: 36px; margin-top: 10px; }
+#forecast .day .rain { left: 200px; width: 70px; font-size: 22px; font-weight: 600; color: #0071E3; }
+.night #forecast .day .rain, .night #forecast .hour .r { color: #64D2FF; }
+#forecast .day .min { left: 280px; width: 80px; text-align: right; opacity: 0.6; }
+#forecast .day .track { left: 380px; top: 25px; width: 300px; height: 6px; border-radius: 3px; background: rgba(29, 29, 31, 0.12); }
+.night #forecast .day .track { background: rgba(255, 255, 255, 0.16); }
+#forecast .day .fill {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: -webkit-linear-gradient(left, #64D2FF, #30D158 35%, #FFD60A 65%, #FF9F0A);
+  background: linear-gradient(90deg, #64D2FF, #30D158 35%, #FFD60A 65%, #FF9F0A);
+  background-size: 300px 6px;
+}
+#forecast .day .dot { position: absolute; top: -3px; width: 12px; height: 12px; border-radius: 6px; background: #FFF; box-shadow: 0 0 0 2px rgba(29, 29, 31, 0.35); }
+#forecast .day .max { left: 690px; width: 86px; text-align: right; }
+
+#forecast .hours { position: absolute; left: 64px; right: 64px; bottom: 40px; height: 236px; }
+#forecast .view { position: relative; width: 1344px; height: 190px; overflow: hidden; }
+#forecast .strip { position: absolute; left: 0; top: 0; height: 190px; }
+#forecast .hour { position: absolute; top: 4px; width: 112px; height: 178px; border-radius: 28px; text-align: center; -webkit-transition: background-color 0.15s; transition: background-color 0.15s; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#forecast .hour.focus { background: rgba(255, 255, 255, 0.62); box-shadow: 0 10px 24px rgba(22, 33, 45, 0.14); }
+.night #forecast .hour.focus { background: rgba(255, 255, 255, 0.16); box-shadow: none; }
+#forecast .hour .t { margin-top: 18px; font-size: 22px; font-weight: 600; opacity: 0.7; white-space: nowrap; }
+#forecast .hour .sym { display: block; width: 40px; height: 40px; margin: 14px auto; }
+#forecast .hour .d { font-size: 30px; font-weight: 500; }
+#forecast .hour .r { height: 26px; margin-top: 4px; font-size: 20px; font-weight: 600; color: #0071E3; }
+
+/* Recent Apps: the profile's last apps as a row of cards, centred; the focused one grows (SNAPPY_FOCUS, home.js). */
+#recents h2 { position: absolute; left: 0; right: 0; top: 150px; margin: 0; text-align: center; font-size: 46px; font-weight: 700; letter-spacing: -0.01em; }
+#recents .row { position: absolute; left: 0; top: 380px; height: 330px; }
+#recents .card { position: absolute; top: 0; width: 400px; height: 240px; }
+#recents .card .face { position: absolute; left: 0; top: 0; width: 400px; height: 240px; border-radius: 36px; overflow: hidden; box-shadow: 0 16px 36px rgba(22, 33, 45, 0.26); }
+/* The name shows under the focused card only (its Fx fades it in), as tvOS labels a focused app. */
+#recents .card .label { position: absolute; left: -20px; right: -20px; top: 280px; text-align: center; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
+#recents .empty { position: absolute; left: 0; right: 0; top: 500px; text-align: center; font-size: 34px; font-weight: 600; opacity: 0.72; }
+
+.lite #forecast .hour { -webkit-transition: none; transition: none; }

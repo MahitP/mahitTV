@@ -40,7 +40,12 @@ import java.util.concurrent.Executors;
  * Dark scrims only where there is text, stronger where the photo is bright. Any key exits (as on Apple TV); with Watch
  * from the screensaver on (Prefs.saverWatch), OK first opens the title in its app, and the caption says so.
  * With your own photos on (Photos), those instead, without a caption.
- * Without photos (no TMDB key, or before the first fetch): the big clock over the night aurora.
+ * Without photos (no TMDB key, or before the first fetch): the big clock over the Frosted Horizon (dark ink by day,
+ * white at night, as the lock screen).
+ * Settings → Screensaver style "nature" (Prefs.saverStyle): instead of photos, a depth-layered scene: the photo, a giant
+ * clock in Antonio filled with the scene's frosted glass, and the scene's foreground cut out over the clock (the water
+ * scene redraws a wetter clock below its waterline); the date and weather above it in Inter. A new scene every minute,
+ * cross-fading; each frame is drawn once a minute in the background (adapted from tvOS-Launcher, Apache-2.0).
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
     // The first photo dissolves in over 1.2 s while the whole screen settles from 1.06× (ANIMATIONS-SPEC.md §2.5).
@@ -104,7 +109,6 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         }
     }
 
-    private final Scene scene = new Scene(false);
     private final HomeData data;
     private final Recs recs;
     private final NowPlaying.Watch playing;
@@ -118,7 +122,6 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Recording content = Recording.create("clock");     // without photos: the clock over the aurora
     private final Recording chrome = Recording.create("corner");     // date, weather, prices and the clock's shadow
-    private final float timeOffset = (float) (Math.random() * 300);
     private final Matrix matrix = new Matrix();
     private final float[] placeA = new float[3], placeB = new float[3];
     private final Paint photoPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
@@ -134,11 +137,24 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private Slide current, incoming, prepared;
     private Glass glass;
     private String glassFor = "";
-    private long startedAt, firstAt, lastFrame, lastSky;
+    private long startedAt, firstAt, lastFrame;
     private int w, h;
     private float k = 1;
     private long minute = -1;
     private String clock = "", date = "";
+    // The Horizon behind the clock without photos; the ink over it.
+    private boolean night = true;
+    private int ink = 0xF2FFFFFF;
+    private Bitmap horizon;
+    private final RectF screen = new RectF();
+    private final Paint horizonPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    // Nature: the shown frame, the one fading in over it, which scene, and the scene's pictures (the worker's only).
+    private boolean nature, rendering, natureStale = true;   // stale: the minute, the date or the weather changed
+    private Bitmap natureShown, natureIncoming;
+    private long natureIncomingAt, natureSceneAt;
+    private int natureScene = -1;
+    private String natureFor = "";
+    private Nature.Loaded natureLoaded;
     private Paint datePaint, clockPaint, weatherPaint, weatherDim, quotePaint, stalePaint;
     private Paint cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, metaPaint, hintPaint;
     private TextPaint titlePaint;
@@ -165,9 +181,6 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             fitPlaying();
             onData();
         });
-        Shaders.dream(scene.palette);
-        scene.setMotion(0.4f, 0.32f);
-        scene.applyPalette();
         content.setUseCompositingLayer(true, null);
         try {
             glassShader = new RuntimeShader(Shaders.GLASS_TEXT);
@@ -189,7 +202,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         failed.clear();
-        fallback = photos().isEmpty();
+        nature = "nature".equals(Prefs.saverStyle());
+        night = Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis()));
+        applyInk();
+        natureFor = "";
+        natureStale = true;
+        fallback = !nature && photos().isEmpty();
         data.addListener(this);
         recs.addListener(this);
         data.refreshIfStale();
@@ -220,8 +238,16 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             gone.add(s.image);
             gone.add(s.frost);
         }
+        for (Bitmap b : new Bitmap[] {natureShown, natureIncoming}) if (b != null) gone.add(b);
         if (!gone.isEmpty()) handler.postDelayed(() -> { for (Bitmap b : gone) b.recycle(); }, 1000);
         current = incoming = prepared = null;
+        natureShown = natureIncoming = null;
+        rendering = false;
+        natureScene = -1;
+        if (!worker.isShutdown()) worker.execute(() -> {
+            if (natureLoaded != null) natureLoaded.recycle();
+            natureLoaded = null;
+        });
         glass = null;
         slides = 0;
         glassFor = "";
@@ -234,6 +260,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     @Override public void onData() {
         dirty = true;
+        natureStale = true;
         chromeDirty = true;
         invalidate();
     }
@@ -246,7 +273,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         w = width;
         h = height;
         k = w / 1920f;
-        scene.setSize(w, h);
+        screen.set(0, 0, w, h);
         content.setPosition(0, 0, w, h);
         chrome.setPosition(0, 0, w, h);
         // Without photos (the clock over the aurora).
@@ -277,6 +304,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, titlePaint, metaPaint, barPaint}) {
             p.setShadowLayer(18 * k, 0, 2 * k, 0x66000000);
         }
+        applyInk();
+        natureFor = "";
+        natureStale = true;
         fitPlaying();
         glassFor = "";
         dirty = true;
@@ -293,7 +323,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
     private void prepareNext() {
-        if (!running || decoding || prepared != null) return;
+        if (!running || nature || decoding || prepared != null) return;
         List<Recs.Pick> list = photos();
         if (list.isEmpty()) return;
         Slide last = incoming != null ? incoming : current;
@@ -453,7 +483,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             clock = Ui.clock(now);
             date = Ui.date(now);
             dirty = true;
+            natureStale = true;
             chromeDirty = true;
+        }
+        if (nature) {
+            drawNature(canvas, up);
+            return;
         }
         if (running) advance(up);
         if (!glassFor.equals(clock)) buildGlass(clock);
@@ -815,15 +850,26 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         }
     }
 
-    // MARK: - Without photos: the big clock over the aurora
+    // MARK: - Without photos: the big clock over the Frosted Horizon
+
+    /** The Horizon for the time of day and the ink over it: dark by day, white at night. */
+    private void applyInk() {
+        if (w == 0 || datePaint == null) return;
+        horizon = Horizon.get(w, h, night);
+        int base = night ? 0xFFFFFFFF : 0xFF1C1C1E;
+        ink = base;
+        datePaint.setColor(Ui.alpha(base, 0.85f));
+        clockPaint.setColor(Ui.alpha(base, 0.95f));
+        weatherPaint.setColor(Ui.alpha(base, 0.78f));
+        weatherDim.setColor(Ui.alpha(base, 0.5f));
+        quotePaint.setColor(Ui.alpha(base, 0.6f));
+        stalePaint.setColor(Ui.alpha(base, 0.35f));
+        dirty = true;
+    }
 
     private void drawFallback(Canvas canvas, long up, float alpha) {
         float t = (up - startedAt) / 1000f;
-        if (up - lastSky >= 100) {
-            lastSky = up;
-            scene.advance(timeOffset + t);
-        }
-        scene.drawBackground(canvas);
+        Horizon.draw(canvas, horizon, screen, horizonPaint, 1);
         if (dirty) {
             Canvas rc = content.beginRecording(w, h);
             try {
@@ -867,7 +913,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             float sw = Symbols.width(getContext(), symbol, 32 * k);
             float width = sw + 12 * k + weatherPaint.measureText(now) + 18 * k + weatherDim.measureText(range);
             float x = cx - width / 2;
-            Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(weatherPaint), 32 * k, 0xC7FFFFFF);
+            Symbols.draw(getContext(), c, symbol, x + sw / 2, base - Ui.halfCap(weatherPaint), 32 * k, Ui.alpha(ink, 0.78f));
             x += sw + 12 * k;
             c.drawText(now, x, base, weatherPaint);
             x += weatherPaint.measureText(now) + 18 * k;
@@ -890,7 +936,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         float x = cx - total / 2, base = h - 92 * k;
         for (int i = 0; i < values.length; i++) {
             float gw = Glyphs.width(getContext(), HomeData.COINS[coins[i]], cap);
-            Glyphs.coin(getContext(), c, HomeData.COINS[coins[i]], x + gw / 2, base - cap / 2, cap, 0x80FFFFFF);
+            Glyphs.coin(getContext(), c, HomeData.COINS[coins[i]], x + gw / 2, base - cap / 2, cap, Ui.alpha(ink, 0.5f));
             x += gw + gap;
             c.drawText(values[i], x, base, quotePaint);
             x += quotePaint.measureText(values[i]) + spacing;
@@ -903,6 +949,275 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 staleGeneration = Ui.generation;
             }
             c.drawText(staleLine, cx, base + 38 * k, stalePaint);
+        }
+    }
+
+    // MARK: - Nature: the depth-layered scene clock
+
+    /** A new scene every minute; the frame again when the minute, the date or the weather changes. */
+    private static final long NATURE_SCENE_MS = 60_000, NATURE_FADE_MS = 2_000;
+
+    private void drawNature(Canvas canvas, long up) {
+        if (natureShown == null) Horizon.draw(canvas, horizon, screen, horizonPaint, 1);   // until the first frame
+        else canvas.drawBitmap(natureShown, null, screen, horizonPaint);
+        if (natureIncoming != null) {
+            float e = instant ? 1 : fadeIn(up - natureIncomingAt, natureShown == null ? FIRST_MS : NATURE_FADE_MS);
+            horizonPaint.setAlpha(Math.round(255 * e));
+            canvas.drawBitmap(natureIncoming, null, screen, horizonPaint);
+            horizonPaint.setAlpha(255);
+            if (e >= 1) {
+                final Bitmap old = natureShown;
+                natureShown = natureIncoming;
+                natureIncoming = null;
+                if (old != null) handler.postDelayed(old::recycle, 1000);   // after the last frame that drew it
+            }
+        }
+        if (!running || rendering || natureIncoming != null) return;
+        boolean next = natureScene < 0 || up - natureSceneAt >= NATURE_SCENE_MS;
+        if (!next && !natureStale) return;   // nothing new: no strings made on this frame
+        natureStale = false;
+        String header = natureHeader();
+        String key = clock + "|" + header;
+        if (next || !key.equals(natureFor)) renderNature(next, key, header, up);
+    }
+
+    /** "Friday, October 30  ·  61° Partly Cloudy" (or only the date without the weather). */
+    private String natureHeader() {
+        HomeData.Weather wx = data.weather;
+        if (Double.isNaN(wx.temp) || !Prefs.weather()) return date;
+        return Ui.trf("{date}  ·  {temp} {condition}", "date", date, "temp", HomeData.degrees(wx.temp),
+                "condition", HomeData.condition(wx.code, wx.isDay));
+    }
+
+    /** Draws the next frame in the background (loading the next scene's pictures first when it's time for one). */
+    private void renderNature(boolean next, String key, String header, long up) {
+        rendering = true;
+        int scene = natureScene;
+        if (next) {
+            scene = natureScene < 0 ? Nature.first(System.currentTimeMillis()) : (natureScene + 1) % Nature.SCENES.length;
+            natureScene = scene;
+            natureSceneAt = up;
+        }
+        natureFor = key;
+        final int gen = generation, s = scene, fw = w, fh = h;
+        final String time = clock;
+        final Context c = getContext().getApplicationContext();
+        worker.execute(() -> {
+            Bitmap frame = null;
+            try {
+                if (natureLoaded == null || natureLoaded.index != s) {
+                    if (natureLoaded != null) natureLoaded.recycle();
+                    natureLoaded = Nature.load(c, s);
+                }
+                frame = Nature.render(natureLoaded, fw, fh, time, header);
+            } catch (Exception | OutOfMemoryError e) {
+                AppLog.w("screensaver: nature scene: " + e.getMessage());
+            }
+            final Bitmap ready = frame;
+            handler.post(() -> {
+                rendering = false;
+                if (gen != generation || !running || ready == null) {
+                    if (ready != null) ready.recycle();
+                    return;
+                }
+                natureIncoming = ready;
+                natureIncomingAt = clock();
+                invalidate();
+            });
+        });
+    }
+
+    /**
+     * The five scenes and their drawing (adapted from tvOS-Launcher's Scenes, Apache-2.0): positions in a 960 × 540
+     * frame, scaled to the screen. No dark shade over the photos: only the faintest top fade under the date.
+     */
+    static final class Nature {
+        private Nature() {}
+
+        static final class Spec {
+            final String id;
+            final boolean water, left, darkClock, darkDate;
+            final float clockTop, clockSize, clockLeft, dateTop, dateLeft;
+
+            Spec(String id, boolean water, boolean left, boolean darkClock, boolean darkDate, float clockTop, float clockSize,
+                    float clockLeft, float dateTop, float dateLeft) {
+                this.id = id;
+                this.water = water;
+                this.left = left;
+                this.darkClock = darkClock;
+                this.darkDate = darkDate;
+                this.clockTop = clockTop;
+                this.clockSize = clockSize;
+                this.clockLeft = clockLeft;
+                this.dateTop = dateTop;
+                this.dateLeft = dateLeft;
+            }
+        }
+
+        static final Spec[] SCENES = {
+            new Spec("night", false, false, false, false, 62, 178, 0, 42, 0),
+            new Spec("dawn", false, false, false, false, 115, 200, 0, 88, 0),
+            new Spec("fog", false, true, true, true, 86, 235, 48, 58, 52),
+            new Spec("water", true, false, false, false, 134, 210, 0, 108, 0),
+            new Spec("golden", false, false, false, false, 76, 195, 0, 53, 0),
+        };
+
+        /** The scene that suits the hour to start with: night, dawn, the day ones, golden hour. */
+        static int first(long now) {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.setTimeInMillis(now);
+            int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+            if (hour < 6 || hour >= 20) return 0;
+            if (hour < 10) return 1;
+            if (hour < 16) return hour % 2 == 0 ? 2 : 3;
+            return 4;
+        }
+
+        /** One scene's pictures: the photo, its foreground cut-out (none on the water) and the baked glass textures. */
+        static final class Loaded {
+            final int index;
+            Bitmap bg, fg, glass, wet;
+
+            Loaded(int index) {
+                this.index = index;
+            }
+
+            void recycle() {
+                for (Bitmap b : new Bitmap[] {bg, fg, glass, wet}) if (b != null) b.recycle();
+                bg = fg = glass = wet = null;
+            }
+        }
+
+        static Loaded load(Context c, int index) throws java.io.IOException {
+            Spec sp = SCENES[index];
+            Loaded ls = new Loaded(index);
+            ls.bg = asset(c, "scenes/scene-" + sp.id + ".jpg");
+            if (!sp.water) ls.fg = asset(c, "scenes/scene-" + sp.id + "-fg.webp");
+            Bitmap raw = asset(c, "scenes/scene-" + sp.id + "-glass.jpg");
+            ls.glass = bake(raw, sp.darkClock, false);
+            if (sp.water) ls.wet = bake(raw, false, true);
+            raw.recycle();
+            return ls;
+        }
+
+        private static Bitmap asset(Context c, String path) throws java.io.IOException {
+            try (java.io.InputStream in = c.getAssets().open(path)) {
+                Bitmap b = android.graphics.BitmapFactory.decodeStream(in);
+                if (b == null) throw new java.io.IOException("can't decode " + path);
+                return b;
+            }
+        }
+
+        /** The clock's glass: the scene softly blurred (drawn tiny, then large), saturated, with a 160° sheen. */
+        private static Bitmap bake(Bitmap src, boolean dark, boolean wet) {
+            int w = 480, h = 270, sw = wet ? 60 : 120, sh = wet ? 34 : 68;
+            Bitmap small = Bitmap.createScaledBitmap(src, sw, sh, true);
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas cv = new Canvas(out);
+            android.graphics.ColorMatrix cm = new android.graphics.ColorMatrix();
+            cm.setSaturation(dark ? 0.9f : 1.25f);
+            float b = dark ? 0.46f : 1.08f, o = dark ? 0 : 9;
+            cm.postConcat(new android.graphics.ColorMatrix(new float[] {b, 0, 0, 0, o, 0, b, 0, 0, o, 0, 0, b, 0, o, 0, 0, 0, 1, 0}));
+            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+            p.setColorFilter(new android.graphics.ColorMatrixColorFilter(cm));
+            cv.drawBitmap(small, null, new RectF(0, 0, w, h), p);
+            small.recycle();
+            Paint sheen = new Paint();
+            sheen.setShader(new LinearGradient(0, 0, w * 0.45f, h, new int[] {0x44FFFFFF, 0x1CFFFFFF, 0x0AFFFFFF, 0x1AFFFFFF},
+                    new float[] {0, 0.35f, 0.65f, 1}, Shader.TileMode.CLAMP));
+            cv.drawRect(0, 0, w, h, sheen);
+            return out;
+        }
+
+        /** One frame: photo, glass clock, foreground over it, the date line. Off the UI thread. */
+        static Bitmap render(Loaded ls, int w, int h, String time, String header) {
+            Spec sp = SCENES[ls.index];
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            Paint image = new Paint(Paint.FILTER_BITMAP_FLAG);
+            cover(c, ls.bg, w, h, image);
+            float u = Math.min(w / 960f, h / 540f);
+            if (!sp.darkDate) {   // the faintest fade under the date, nothing more
+                Paint fade = new Paint();
+                fade.setShader(new LinearGradient(0, 0, 0, h * 0.22f, 0x24000000, 0, Shader.TileMode.CLAMP));
+                c.drawRect(0, 0, w, h * 0.22f, fade);
+            }
+
+            // The giant clock: Antonio, filled with the frosted scene, a frost over it and a bright rim.
+            Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+            fill.setTypeface(Ui.clockTall());
+            fill.setTextSize(sp.clockSize * u);
+            fill.setLetterSpacing(-0.02f);
+            android.graphics.Rect bounds = new android.graphics.Rect();
+            fill.getTextBounds("0847", 0, 4, bounds);
+            float cap = Math.max(sp.clockSize * u * 0.68f, -bounds.top);
+            float dateBase = Math.max(65 * u, (sp.dateTop + 19) * u);
+            float top = Math.max((sp.clockTop + 19) * u, dateBase + 14 * u), base = top + cap;
+            float tw = fill.measureText(time);
+            float x = sp.left ? sp.clockLeft * u : (w - tw) / 2;
+            Paint shadow = new Paint(fill);
+            shadow.setColor(0x2A000000);
+            Paint frost = new Paint(fill);
+            frost.setShader(new LinearGradient(0, base - cap, 0, base, sp.darkClock
+                    ? new int[] {0x26FFFFFF, 0x44FFFFFF, 0x76FFFFFF} : new int[] {0x34DAE0FF, 0x56ECE8FF, 0x8AFFF2FC},
+                    new float[] {0, 0.52f, 1}, Shader.TileMode.CLAMP));
+            Paint rim = new Paint(fill);
+            rim.setStyle(Paint.Style.STROKE);
+            rim.setStrokeWidth(Math.max(1.5f, 1.2f * u));
+            rim.setShader(new LinearGradient(0, base - cap, 0, base, new int[] {0xE4F4F8FF, 0xB9E8ECFF, 0xFAFFFFFF},
+                    new float[] {0, 0.5f, 1}, Shader.TileMode.CLAMP));
+            BitmapShader glass = new BitmapShader(ls.glass, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            Matrix m = new Matrix();
+            m.setScale((float) w / ls.glass.getWidth(), (float) h / ls.glass.getHeight());
+            glass.setLocalMatrix(m);
+            fill.setShader(glass);
+            if (sp.water) {
+                float waterline = h * 0.55f;
+                c.save();
+                c.clipRect(0, 0, w, waterline);
+                clock(c, time, x, base, u, shadow, fill, frost, rim, false);
+                c.restore();
+                if (ls.wet != null) {
+                    BitmapShader wet = new BitmapShader(ls.wet, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                    Matrix mw = new Matrix();
+                    mw.setScale((float) w / ls.wet.getWidth(), (float) h / ls.wet.getHeight());
+                    wet.setLocalMatrix(mw);
+                    fill.setShader(wet);
+                }
+                c.save();
+                c.clipRect(0, waterline, w, h);
+                clock(c, time, x, base, u, shadow, fill, frost, rim, true);
+                c.restore();
+            } else {
+                clock(c, time, x, base, u, shadow, fill, frost, rim, false);
+            }
+            if (ls.fg != null) cover(c, ls.fg, w, h, image);   // the ridge, the canopy: in front of the clock
+
+            // The date and weather above the clock, in Inter.
+            Paint date = Ui.text(Ui.medium, 13.5f * u, sp.darkDate ? 0xE1161F1D : 0xF6F8F8FC);
+            date.setLetterSpacing(0.01f);
+            if (!sp.darkDate) date.setShadowLayer(8 * u, 0, 1.5f * u, 0x91000000);
+            float dw = date.measureText(header);
+            c.drawText(header, sp.left ? sp.dateLeft * u : (w - dw) / 2, dateBase, date);
+            return out;
+        }
+
+        private static void clock(Canvas c, String time, float x, float base, float u, Paint shadow, Paint fill, Paint frost,
+                Paint rim, boolean wet) {
+            if (!wet) c.drawText(time, x, base + 4 * u, shadow);
+            fill.setAlpha(wet ? 158 : 255);
+            c.drawText(time, x, base, fill);
+            frost.setAlpha(wet ? 110 : 200);
+            c.drawText(time, x, base, frost);
+            rim.setAlpha(wet ? 60 : 150);
+            c.drawText(time, x, base, rim);
+        }
+
+        /** Centre-crops `b` over the whole frame. */
+        private static void cover(Canvas c, Bitmap b, int w, int h, Paint p) {
+            float s = Math.max(w / (float) b.getWidth(), h / (float) b.getHeight());
+            float bw = b.getWidth() * s, bh = b.getHeight() * s;
+            c.drawBitmap(b, null, new RectF((w - bw) / 2, (h - bh) / 2, (w + bw) / 2, (h + bh) / 2), p);
         }
     }
 }

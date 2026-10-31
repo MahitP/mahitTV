@@ -1,0 +1,18 @@
+Free My TV (mahitTV)
+
+This product includes work from these projects, under their own licences:
+
+- tvOS Launcher (https://github.com/techgenius1/tvOS-Launcher), Copyright 2026 techgenius, Apache License 2.0.
+  Adapted: the Liquid Glass lens and rim fallback, the app icon composer ideas, the weather overlay layout and
+  weather icons, the recent apps carousel, the depth-layered scene clock screensaver and its scene images, the remote
+  button double press, and the CleanYourTV profile matcher. App logos in app/assets/logos come from it and belong to
+  their owners. The screensaver's scene images in app/assets/scenes come from it too; it doesn't state their source.
+  Its own credits: Hume Launcher (https://github.com/petrobot-admin/hume-launcher), Couch TV
+  (https://github.com/Seagey/couch-tv), CleanYourTV (https://github.com/Gathin23/cleanyourtv).
+
+- CleanYourTV (https://github.com/Gathin23/cleanyourtv), by Gathin23, MIT License: the debloat profiles in
+  app/assets/cleanyourtv. mahitTV turns those apps off only through its own safety rules (HomeMode), and the
+  Original mode turns them back on.
+
+- Antonio typeface (app/assets/fonts/Antonio-Light.ttf), SIL Open Font License 1.1: the screensaver's clock only.
+- Inter typeface (app/assets/fonts/InterVariable.ttf), SIL Open Font License 1.1.

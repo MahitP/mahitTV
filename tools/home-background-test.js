@@ -61,4 +61,9 @@ assert.ok(/\.profile-background #watch/.test(css), 'profile wallpaper clears Pla
 assert.ok(/\.profile-background #sky \.veil\s*\{\s*opacity:\s*0/.test(css),
   'profile Horizon is not covered by the legacy white veil');
 
+// The Top Shelf's full screen recesses the Dock (36 px, 0.75 opacity) and keeps the tab bar: it never hides them.
+assert.ok(/RECESS = 36, RECESS_A = 0\.75/.test(source), 'the Dock recesses 36 px to 0.75 in full screen');
+assert.ok(!/300 \* full/.test(source), 'the Dock no longer drops 300 px in full screen');
+assert.ok(!/\.full #tabs/.test(css), 'the tab bar stays in full screen');
+
 console.log('home-background-test: passed');

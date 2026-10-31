@@ -160,9 +160,17 @@ def files(config, made_by):
         with open(os.path.join(ROOT, 'app', 'assets', name + '.json'), encoding='utf-8') as f:
             data = json.load(f)
         out[name + '-data.js'] = ('window.%s = %s;\n' % (var, json.dumps(data, ensure_ascii=False, separators=(',', ':')))).encode('utf-8')
-    for name in ('InterVariable.ttf', 'OFL.txt'):
-        with open(os.path.join(ROOT, 'app', 'assets', 'fonts', name), 'rb') as f:
-            out['fonts/' + name] = f.read()
+    for name in ('InterVariable.ttf', 'OFL.txt', 'Antonio-Light.ttf', 'Antonio-OFL.txt'):
+        path = os.path.join(ROOT, 'app', 'assets', 'fonts', name)
+        if os.path.exists(path) or not name.startswith('Antonio'):
+            with open(path, 'rb') as f:
+                out['fonts/' + name] = f.read()
+    # The nature screensaver's scenes (photo, glass texture, foreground cutout), shared with the Android app.
+    scenes = os.path.join(ROOT, 'app', 'assets', 'scenes')
+    for name in sorted(os.listdir(scenes)) if os.path.isdir(scenes) else []:
+        if name.lower().endswith(('.jpg', '.webp')):
+            with open(os.path.join(scenes, name), 'rb') as f:
+                out['scenes/' + name] = f.read()
     return out
 
 
