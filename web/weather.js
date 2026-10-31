@@ -54,7 +54,7 @@ var Forecast = (function () {
     sym(Data.symbol(w.code, w.isDay), big);
     el('span', 'temp', big, Data.degrees(w.temp));
     el('div', 'cond', now, Data.condition(w.code, w.isDay));
-    el('div', 'range', now, trf('H:{max}', {max: Data.degrees(w.max)}) + '   ' + trf('L:{min}', {min: Data.degrees(w.min)}));
+    el('div', 'range', now, trf('H:{max}  L:{min}', {max: Data.degrees(w.max), min: Data.degrees(w.min)}));
     var stats = el('div', 'stats', now);
     stat(stats, tr('Humidity'), percent(w.humidity) || '—');
     stat(stats, tr('Wind'), Data.wind(w.wind));

@@ -684,7 +684,8 @@ final class HomeMode {
             save(c, latest);
             notice(c, failed.isEmpty()
                     ? Ui.plural("plural|one:Clean Up turned off {n} app. Original turns it back on.|other:Clean Up turned off {n} apps. Original turns them back on.", off)
-                    : Ui.trf("Clean Up turned off {n} apps, but couldn't turn off: {list}.", "n", off, "list", String.join(", ", failed)));
+                    : Ui.plural("plural|one:Clean Up turned off {n} app, but couldn't turn off: {list}.|other:Clean Up turned off {n} apps, but couldn't turn off: {list}.", off)
+                            .replace("{list}", String.join(", ", failed)));
             done(c, null);
             scanClean(c);   // the plan again, as the TV is now (same job: scheduling "apply" now would stop this one)
         } catch (Exception e) {
@@ -716,7 +717,8 @@ final class HomeMode {
             latest.put("disabled", new JSONArray(sorted(disabled))).put("debloated", new JSONArray(failed));
             save(c, latest);
             notice(c, failed.isEmpty() ? Ui.plural("plural|one:Turned {n} app back on.|other:Turned {n} apps back on.", on)
-                    : Ui.trf("Turned {n} apps back on, but not: {list}.", "n", on, "list", String.join(", ", failed)));
+                    : Ui.plural("plural|one:Turned {n} app back on, but not: {list}.|other:Turned {n} apps back on, but not: {list}.", on)
+                            .replace("{list}", String.join(", ", failed)));
             done(c, null);
         } catch (Exception e) {
             done(c, Ui.trf("Couldn't turn them back on: {error}", "error", e.getMessage()));

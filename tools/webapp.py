@@ -171,6 +171,12 @@ def files(config, made_by):
         if name.lower().endswith(('.jpg', '.webp')):
             with open(os.path.join(scenes, name), 'rb') as f:
                 out['scenes/' + name] = f.read()
+    # The credits and licence texts of what's adapted from other projects (tvOS-Launcher, CleanYourTV), shipped with it.
+    licenses = os.path.join(ROOT, 'app', 'assets', 'licenses')
+    for name in sorted(os.listdir(licenses)) if os.path.isdir(licenses) else []:
+        if name.endswith('.txt'):
+            with open(os.path.join(licenses, name), 'rb') as f:
+                out['licences/' + name] = f.read()
     return out
 
 

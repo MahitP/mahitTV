@@ -92,9 +92,10 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         return getVisibility() == VISIBLE && !closing;
     }
 
-    /** Back leaves (on SHEET_CLOSE); ← → scroll the hours; it takes every key while it shows. */
+    /** Back leaves (on SHEET_CLOSE); ← → scroll the hours. Other keys (volume, media, channels) go on to the system. */
     boolean onKey(KeyEvent e) {
         int code = e.getKeyCode();
+        if (!handles(code)) return false;
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
             if (!down) dismiss();
@@ -104,8 +105,19 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         if (code == KeyEvent.KEYCODE_DPAD_RIGHT) scrollBy(1);
         else if (code == KeyEvent.KEYCODE_DPAD_LEFT) scrollBy(-1);
         else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) bump(code == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1, false);
-        else if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER) dismiss();
+        else if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) dismiss();
         return true;
+    }
+
+    private static boolean handles(int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT: case KeyEvent.KEYCODE_DPAD_RIGHT: case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN: case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER: case KeyEvent.KEYCODE_BACK: case KeyEvent.KEYCODE_ESCAPE:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void dismiss() {

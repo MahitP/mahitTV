@@ -65,9 +65,25 @@
 #forecast .hours { position: absolute; left: 64px; right: 64px; bottom: 40px; height: 236px; }
 #forecast .view { position: relative; width: 1344px; height: 190px; overflow: hidden; }
 #forecast .strip { position: absolute; left: 0; top: 0; height: 190px; }
-#forecast .hour { position: absolute; top: 4px; width: 112px; height: 178px; border-radius: 28px; text-align: center; -webkit-transition: background-color 0.15s; transition: background-color 0.15s; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#forecast .hour.focus { background: rgba(255, 255, 255, 0.62); box-shadow: 0 10px 24px rgba(22, 33, 45, 0.14); }
-.night #forecast .hour.focus { background: rgba(255, 255, 255, 0.16); box-shadow: none; }
+#forecast .hour { position: absolute; z-index: 0; top: 4px; width: 112px; height: 178px; border-radius: 28px; text-align: center; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+/* The focused hour's highlight: a layer behind its text that fades in (only opacity animates). */
+#forecast .hour::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 10px 24px rgba(22, 33, 45, 0.14);
+  opacity: 0;
+  -webkit-transition: opacity 0.15s;
+  transition: opacity 0.15s;
+}
+#forecast .hour.focus::before { opacity: 1; }
+.night #forecast .hour::before { background: rgba(255, 255, 255, 0.16); box-shadow: none; }
 #forecast .hour .t { margin-top: 18px; font-size: 22px; font-weight: 600; opacity: 0.7; white-space: nowrap; }
 #forecast .hour .sym { display: block; width: 40px; height: 40px; margin: 14px auto; }
 #forecast .hour .d { font-size: 30px; font-weight: 500; }
@@ -82,4 +98,4 @@
 #recents .card .label { position: absolute; left: -20px; right: -20px; top: 280px; text-align: center; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 #recents .empty { position: absolute; left: 0; right: 0; top: 500px; text-align: center; font-size: 34px; font-weight: 600; opacity: 0.72; }
 
-.lite #forecast .hour { -webkit-transition: none; transition: none; }
+.lite #forecast .hour::before { -webkit-transition: none; transition: none; }

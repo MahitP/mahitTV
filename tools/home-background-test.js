@@ -65,5 +65,7 @@ assert.ok(/\.profile-background #sky \.veil\s*\{\s*opacity:\s*0/.test(css),
 assert.ok(/RECESS = 36, RECESS_A = 0\.75/.test(source), 'the Dock recesses 36 px to 0.75 in full screen');
 assert.ok(!/300 \* full/.test(source), 'the Dock no longer drops 300 px in full screen');
 assert.ok(!/\.full #tabs/.test(css), 'the tab bar stays in full screen');
+assert.ok(!/\.drawer-open #pill/.test(css) && !/\.drawer-open #tabs/.test(css), 'the status pill and the tab bar stay with Control Center open');
+assert.ok(/#drawer \{[^}]*top: 124px/.test(css), 'Control Center starts under the status pill');
 
 console.log('home-background-test: passed');

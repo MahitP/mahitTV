@@ -612,9 +612,10 @@
     A(q('#top'), 1 - p);
     A(q('#blur'), hasClass(body, 'has-photo') ? Math.max(p, away) : 1);
     var lift = q('#sky .lift');
-    A(lift, Math.max(p * (night ? 0.42 : 0.6), d * (night ? 0.42 : 0.32)));
+    // At night the art darkens only a little (the grid 0.25, Control Center 0.12 here plus #dim 0.22): no heavy scrims.
+    A(lift, Math.max(p * (night ? 0.25 : 0.6), d * (night ? 0.12 : 0.32)));
     A(q('#sky .shade'), away * (hasClass(body, 'profile-background') ? (night ? 0.22 : 0.34) : (night ? 0.55 : 0.45)));
-    A(q('#dim'), d * (night ? 0.3 : 0.22));
+    A(q('#dim'), d * (night ? 0.22 : 0.18));
     T(q('#art'), 'translateX(' + r2(mv.par.x) + 'px)');
     // The Dock: its scroll; in full screen it only recesses (36 px lower, 0.75 opacity), it never leaves.
     var rec = RECESS * full, recA = 1 - (1 - RECESS_A) * full;
@@ -661,7 +662,6 @@
       T(weather, 'translateX(' + r2(28 * (1 - wr.x)) + 'px)');
       A(weather, wr.x);
     }
-    var recentRow = q('#recents .row');
     if (recentRow) T(recentRow, 'translateX(' + r2(mv.recents.x) + 'px)');
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
@@ -1193,6 +1193,36 @@
     return Math.floor(t / 10) + (I18N.base === 'en' ? '.' : ',') + t % 10;
   }
 
+  /*
+   * The adaptive glass (TVOS-LAUNCHER-MERGE-SPEC.md V4): how bright a photo is behind the Dock and Control Center,
+   * measured once per photo on a 32 × 18 copy of its bottom band. Bright art gets a light frost with dark ink instead
+   * of the smoky glass, so the glass keeps its contrast without any dark scrim. A TV that won't let the page read the
+   * image (another server, no CORS) keeps the smoky glass.
+   */
+  var artBright = {};
+  function measureArt(url, then) {
+    if (artBright[url] !== undefined) { then(artBright[url]); return; }
+    var probe = new Image();
+    probe.crossOrigin = 'anonymous';
+    probe.onload = function () {
+      var bright = false;
+      try {
+        var c = document.createElement('canvas');
+        c.width = 32;
+        c.height = 18;
+        var g = c.getContext('2d'), w = probe.naturalWidth, h = probe.naturalHeight;
+        g.drawImage(probe, 0, h * 0.62, w, h * 0.38, 0, 0, 32, 18);
+        var px = g.getImageData(0, 0, 32, 18).data, sum = 0;
+        for (var i = 0; i < px.length; i += 4) sum += luminance(px[i], px[i + 1], px[i + 2]);
+        bright = sum / (px.length / 4) > 0.36;
+      } catch (e) {}
+      artBright[url] = bright;
+      then(bright);
+    };
+    probe.onerror = function () { artBright[url] = false; then(false); };
+    probe.src = url;
+  }
+
   /** The Top Shelf's photo, edge to edge, cross-faded. */
   function photo(url) {
     if (url === photoUrl) return;
@@ -1205,9 +1235,13 @@
       setClass($('photoA'), 'on', false);
       setClass($('photoB'), 'on', false);
       setClass(body, 'has-photo', false);
+      setClass(body, 'art-bright', false);
       return;
     }
     var img = new Image();
+    measureArt(url, function (bright) {
+      if (generation === photoGeneration && photoUrl === url) setClass(body, 'art-bright', bright);
+    });
     img.onload = function () {
       if (generation !== photoGeneration || photoUrl !== url) return;
       $(next).style.backgroundImage = 'url(' + url + ')';
@@ -1404,8 +1438,10 @@
 
   // MARK: - Drawer
 
-  var drawerItems = [], drawerInputs = 0, drawerWeather = false, recentList = [];
+  var drawerItems = [], drawerInputs = 0, drawerWeather = false, recentList = [], recentRow = null;
   var DRAWER_KEYS = 10;   // cards in Control Center (five rows of two at most, above the weather card)
+  // The panel's inner height (home.css: 908 minus 28 + 28 padding), where its cards start, and the weather card's height.
+  var DRAWER_BODY = 852, DRAWER_CARDS_TOP = 140, DRAWER_WEATHER = 190;
 
   /** Control Center: the time, a 2-column bento of glass cards (the inputs, All Apps, the settings), the weather. */
   function renderDrawer() {
@@ -1442,13 +1478,17 @@
       hover(who, Z.DRAWER, w);
       fxWho.push(new Fx(faceEl, {grow: 0.12}));
     }
-    // Up to four rows of cards; a fifth makes them all a little shorter, so the weather card still fits under them.
-    var rows = Math.min(DRAWER_KEYS / 2, Math.ceil(drawerItems.length / 2)), compact = rows > 4, pitch = compact ? 108 : 136;
+    // The cards share what's left between the profiles and the weather card (16 px apart, 120 px tall at most);
+    // shorter than 110 px they go compact (a smaller symbol), so five rows still fit under the status pill.
+    var rows = Math.min(DRAWER_KEYS / 2, Math.ceil(drawerItems.length / 2));
+    var room = DRAWER_BODY - (Prefs.weather() ? DRAWER_WEATHER + 16 : 0) - DRAWER_CARDS_TOP;
+    var keyH = Math.min(120, Math.floor((room - 16 * Math.max(0, rows - 1)) / Math.max(1, rows))), compact = keyH < 110;
     drawerItems = drawerItems.slice(0, rows * 2);
     for (var k = 0; k < drawerItems.length; k++) {
       var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : '') + (compact ? ' compact' : ''), d);
       key.style.left = (k % 2) * 240 + 'px';
-      key.style.top = (148 + Math.floor(k / 2) * pitch) + 'px';
+      key.style.top = (DRAWER_CARDS_TOP + Math.floor(k / 2) * (keyH + 16)) + 'px';
+      key.style.height = keyH + 'px';
       if (item.glyph) el('span', item.glyph, key);
       else sym(item.symbol, key);
       el('div', 'label', key, item.label);
@@ -1487,7 +1527,7 @@
     sym(Data.symbol(w.code, w.isDay), now);
     el('span', 'temp', now, Data.degrees(w.temp));
     el('div', 'cond', card, Data.condition(w.code, w.isDay));
-    el('div', 'range', card, trf('H:{max}', {max: Data.degrees(w.max)}) + '  ' + trf('L:{min}', {min: Data.degrees(w.min)}));
+    el('div', 'range', card, trf('H:{max}  L:{min}', {max: Data.degrees(w.max), min: Data.degrees(w.min)}));
     // The next 4 hours (or days, with Home Settings → Forecast).
     var days = Prefs.forecast() === 'days' && w.days && w.days.length > 0, list = days ? w.days : w.hours, n = 4;
     var hours = el('div', 'hours', card), hw = 278 / n;
@@ -1535,15 +1575,29 @@
     return null;
   }
 
+  /**
+   * The installed app a log entry was opened in: its app id (`pkg`, as Android's RecentsOverlay), else, for entries
+   * logged before that was kept, the app whose service key (`appKey`: 'netflix', 'disney'…) matches.
+   */
+  function appForEntry(e) {
+    var app = e.pkg ? appById(e.pkg) : null;
+    if (app || !e.appKey) return app;
+    app = appById(e.appKey);
+    for (var i = 0; !app && i < apps.length; i++) {
+      var key = shelfKey(apps[i]);
+      if (key && key[0] === e.appKey) app = apps[i];
+    }
+    return app;
+  }
+
   /** The profile's last apps, newest first: from mahitTV's own launch log, each once, still installed (12 at most). */
   function recentApps() {
     var log = Profiles.log(), out = [], seen = {};
     for (var i = 0; i < log.length && out.length < 12; i++) {
-      var id = log[i].appKey;
-      if (!id || seen[id]) continue;
-      seen[id] = true;
-      var app = appById(id);
-      if (app) out.push(app);
+      var app = appForEntry(log[i]);
+      if (!app || seen[app.id]) continue;
+      seen[app.id] = true;
+      out.push(app);
     }
     return out;
   }
@@ -1567,7 +1621,7 @@
     el('div', 'hz hz-night', layer);
     el('h2', '', layer, tr('Recent Apps'));
     recentList = recentApps();
-    var row = el('div', 'row', layer);
+    var row = recentRow = el('div', 'row', layer);   // drawPage moves this one (rebuilt on every open)
     for (var i = 0; i < recentList.length; i++) {
       var card = el('div', 'card', row), f = el('div', 'face', card);
       card.style.left = (i * (RECENT_W + RECENT_GAP)) + 'px';
@@ -2347,7 +2401,8 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
-      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.ABOUT))) return;
+      if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.ABOUT ||
+          zone === Z.RECENTS))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER && zone !== Z.SHELF) return;
       if (zone !== Z.DRAWER && st.zone === Z.DRAWER) return;
@@ -2360,6 +2415,7 @@
       else if (zone === Z.SETTINGS) st.row = index;
       else if (zone === Z.EDIT) st.edit = index;
       else if (zone === Z.LANG) st.lang = index;
+      else if (zone === Z.RECENTS) st.recent = index;
       updateFocus();
     };
     node.onclick = function () { node.onmouseover(); activate(); };
@@ -2399,7 +2455,8 @@
   }
 
   function showSaver() {
-    if (Prefs.saverStyle() === 'nature') { showNatureSaver(); return; }
+    // Tizen 2.4 (lite) can't hold the scenes' full-screen canvases: it keeps the Photos screensaver.
+    if (Prefs.saverStyle() === 'nature' && !hasClass(document.documentElement, 'lite')) { showNatureSaver(); return; }
     aerialVideo.hide();
     var photos = saverPhotos();
     saverOn = true;
@@ -2411,8 +2468,12 @@
     var zoom = el('div', 'zoom', s);
     T(zoom, Motion.instant ? '' : 'scale(1.06)');
     setTimeout(function () { T(zoom, ''); }, 30);
+    // Without photos (no TMDB key and none of your own): the Frosted Horizon, day or twilight, never a black screen.
+    el('div', 'hz hz-day', zoom);
+    el('div', 'hz hz-night', zoom);
     var a = el('div', 'photo', zoom), b = el('div', 'photo', zoom);
-    el('div', 'shade', s);
+    setClass(s, 'bare', !photos.length);
+    if (photos.length) el('div', 'shade', s);   // a light shade under the clock, only over photos
     var clock = el('div', 'clock', s);
     el('div', 'time', clock);
     el('div', 'date', clock);
@@ -2464,6 +2525,8 @@
     {id: 'dawn', clockTop: 115, size: 200, left: 0, dateTop: 88, dateLeft: 0}
   ];
   var natureTimer = 0, natureScene = 0, natureImages = {};
+  // The clock's glass, made once and reused every minute (the water scene's wet copy has its own): no canvas per draw.
+  var glassCanvas = null, wetCanvas = null, wetSource = null;
 
   /** A scene's three images (the cutout may be missing: the water scene has none, and old TVs may not read WebP). */
   function sceneImages(sc, then) {
@@ -2488,9 +2551,16 @@
 
   /** The clock's glass: the scene's glass texture screen-sized, a diagonal sheen over it, cut to the digits. */
   function glassDigits(img, text, x, base, px, cap, wet, dark) {
-    var c = document.createElement('canvas'), g = c.getContext('2d');
-    c.width = 1920;
-    c.height = 1080;
+    var c = wet ? wetCanvas : glassCanvas;
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = 1920;
+      c.height = 1080;
+      if (wet) wetCanvas = c; else glassCanvas = c;
+    }
+    var g = c.getContext('2d');
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, 1920, 1080);
     g.font = '300 ' + px + 'px Antonio, Inter, sans-serif';
     g.fillStyle = '#FFF';
     g.fillText(text, x, base);
@@ -2498,9 +2568,12 @@
     if (loaded(img)) {
       var src = img;
       if (wet) {   // blurrier under the water: the texture shrunk to 120 × 68 and stretched back
-        src = document.createElement('canvas');
-        src.width = 120;
-        src.height = 68;
+        if (!wetSource) {
+          wetSource = document.createElement('canvas');
+          wetSource.width = 120;
+          wetSource.height = 68;
+        }
+        src = wetSource;
         src.getContext('2d').drawImage(img, 0, 0, 120, 68);
       }
       g.drawImage(src, 0, 0, 1920, 1080);
@@ -2519,6 +2592,7 @@
     frost.addColorStop(1, dark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 242, 252, 0.64)');
     g.fillStyle = frost;
     g.fillRect(0, base - cap, 1920, cap);
+    g.globalCompositeOperation = 'source-over';
     return c;
   }
 
@@ -2616,9 +2690,16 @@
     natureScene = Math.floor(Math.random() * SCENES.length);
     setClass(s, 'on', true);
     frame();
-    // Antonio may arrive after the first frame: draw again once fonts are in.
+    // Antonio may arrive after the first frame: draw again once fonts are in. Old TVs have no document.fonts and
+    // load a web font only for text on the page: a hidden line in Antonio asks for it, then the clock is drawn again.
+    function redraw() { if (saverOn && front.sc) drawScene(front, front.sc, front.im); }
     if (document.fonts && document.fonts.load) {
-      document.fonts.load('300 100px Antonio').then(function () { if (saverOn && front.sc) drawScene(front, front.sc, front.im); }, function () {});
+      document.fonts.load('300 100px Antonio').then(redraw, function () {});
+    } else {
+      var probe = el('span', 'font-probe', s, '0123456789:');
+      probe.style.fontFamily = 'Antonio';
+      setTimeout(redraw, 1500);
+      setTimeout(redraw, 4000);
     }
   }
 
@@ -2641,6 +2722,15 @@
     clearTimeout(natureTimer);
     setClass(s, 'on', false);
     syncAerialVideo();
+    // Once it has faded, the screensaver lets go of its photos, scenes and canvases (old TVs have little memory).
+    setTimeout(function () {
+      if (saverOn) return;
+      var canvases = s.getElementsByTagName('canvas');
+      for (var i = 0; i < canvases.length; i++) canvases[i].width = canvases[i].height = 0;
+      s.innerHTML = '';
+      natureImages = {};
+      glassCanvas = wetCanvas = wetSource = null;
+    }, 1400);
   }
 
   function poke(ok) {

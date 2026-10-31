@@ -660,14 +660,18 @@ final class Scene {
             // The band's centre line, half a band inside the outline (so the stroke stays within the glass).
             float iw = r.width() - band, ih = r.height() - band, ir = Math.max(0, radius - band / 2);
             if (curved) {
-                if (iw != lensW || ih != lensH || ir != lensR) {
-                    lensW = iw;
-                    lensH = ih;
-                    lensR = ir;
-                    Corners.continuous(lensPath, iw, ih, ir);
+                // Built at the size rounded to 8 px and scaled to the exact one, so glass growing with focus doesn't
+                // rebuild the outline on every frame of its spring.
+                float qw = quant(iw), qh = quant(ih), qr = quant(ir);
+                if (qw != lensW || qh != lensH || qr != lensR) {
+                    lensW = qw;
+                    lensH = qh;
+                    lensR = qr;
+                    Corners.continuous(lensPath, qw, qh, qr);
                 }
                 c.save();
                 c.translate(r.left + band / 2, r.top + band / 2);
+                c.scale(iw / qw, ih / qh);
                 c.drawPath(lensPath, lensPaint);
                 c.restore();
             } else {
@@ -676,11 +680,14 @@ final class Scene {
             }
             lensPaint.setShader(null);
         }
-        long key = ((long) Math.round(r.width()) << 32) | Math.round(r.height());
+        // Once per glass size rounded to 8 px (a local matrix per draw would rebuild it on these GPUs; a few pixels off
+        // the exact size don't show in a diagonal gradient), so a growing glass reuses its shader.
+        float qw = quant(r.width()), qh = quant(r.height());
+        long key = ((long) Math.round(qw) << 32) | Math.round(qh);
         Shader rim = rimShaders.get(key);
-        if (rim == null) {   // once per glass size (a local matrix per draw would rebuild it on these GPUs)
+        if (rim == null) {
             if (rimShaders.size() > 24) rimShaders.clear();
-            rim = new android.graphics.LinearGradient(0, 0, r.width(), r.height(), RIM, null, Shader.TileMode.CLAMP);
+            rim = new android.graphics.LinearGradient(0, 0, qw, qh, RIM, null, Shader.TileMode.CLAMP);
             rimShaders.put(key, rim);
         }
         lensRim.setShader(rim);
@@ -691,6 +698,11 @@ final class Scene {
         shape(c, sheenRect, radius, lensRim, curved);
         c.restore();
         lensRim.setShader(null);
+    }
+
+    /** A size rounded to 8 px (at least 8): the step the lens's cached outline and rim shader use. */
+    private static float quant(float v) {
+        return Math.max(8, Math.round(v / 8f) * 8f);
     }
 
     private static int blend(int a, int b, float t) {

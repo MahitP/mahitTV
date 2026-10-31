@@ -350,7 +350,6 @@ final class HomeApps {
         items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
         items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
-        connectivity(c, items);
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
@@ -387,7 +386,11 @@ final class HomeApps {
      * Wi-Fi's and Bluetooth's state as their cards' detail, read only (Android's own pages change them). Bluetooth's
      * needs BLUETOOTH_CONNECT from Android 12, which mahitTV doesn't ask for: there the card shows no state.
      */
-    static void connectivity(Context c, List<Item> items) {
+    /**
+     * Wi-Fi's and Bluetooth's state as Control Center's cards show it: {wifi, bluetooth}, null where unknown. These are
+     * system calls: HomeView reads them on its loader thread when the panel opens, never on the UI thread.
+     */
+    static String[] connectivity(Context c) {
         String wifi = null, bluetooth = null;
         try {
             android.net.ConnectivityManager cm = (android.net.ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -400,16 +403,21 @@ final class HomeApps {
             AppLog.w("Wi-Fi state: " + e.getMessage());
         }
         try {
-            boolean allowed = android.os.Build.VERSION.SDK_INT < 31
-                    || c.checkSelfPermission("android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_GRANTED;
-            android.bluetooth.BluetoothAdapter bt = allowed ? android.bluetooth.BluetoothAdapter.getDefaultAdapter() : null;
+            // isEnabled needs BLUETOOTH up to Android 11 (in the manifest) and no permission from 12 on; a TV that
+            // refuses anyway (SecurityException) just shows no state.
+            android.bluetooth.BluetoothAdapter bt = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
             if (bt != null) bluetooth = bt.isEnabled() ? Ui.tr("state|On") : Ui.tr("state|Off");
         } catch (RuntimeException e) {
             AppLog.w("Bluetooth state: " + e.getMessage());
         }
+        return new String[] {wifi, bluetooth};
+    }
+
+    /** Puts connectivity()'s states on the cards (on the UI thread). */
+    static void showConnectivity(List<Item> items, String[] state) {
         for (Item it : items) {
-            if (it.kind == WIFI) it.detail = wifi;
-            else if (it.kind == BLUETOOTH) it.detail = bluetooth;
+            if (it.kind == WIFI) it.detail = state[0];
+            else if (it.kind == BLUETOOTH) it.detail = state[1];
         }
     }
 

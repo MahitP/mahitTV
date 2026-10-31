@@ -244,15 +244,17 @@ async function shootMerge(browser, theme, shot) {
 
 async function shoot(browser, theme, [name, keys, noPicks]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-  await context.addInitScript(({ theme, noPicks }) => {
+  await context.addInitScript(({ theme, noPicks, ids }) => {
     try {
       localStorage.clear();
       localStorage.setItem('fmtv.prefs', JSON.stringify({ theme }));
       localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      // The theme is each profile's own now: set it for all of them, or the shots follow the clock.
+      ids.forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
     } catch (e) {}
     // The clock look: the sample picks never arrive.
     if (noPicks) Object.defineProperty(window, 'PREVIEW_PICKS', { get() { return undefined; }, set() {} });
-  }, { theme, noPicks: !!noPicks });
+  }, { theme, noPicks: !!noPicks, ids: PROFILE_IDS });
   const page = await context.newPage();
   await page.goto(PAGE);
   await page.waitForTimeout(2200);   // photos, fades and the first weather answer

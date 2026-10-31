@@ -1351,6 +1351,12 @@ public class SettingsActivity extends Activity {
         private String cleanError = "", cleanModel = "", cleanFrom = "";
         private int cleanKind;
         private TextPaint cleanMeasure;   // made once, for long package names
+        // What the rows show, made again only when the plan, a tick, the armed row or the language changes (not per frame).
+        private String[] cleanLabels = new String[0], cleanValues = new String[0];
+        private int cleanTicks, cleanUndo, cleanCacheTicks = -1, cleanCacheArmed = -1, cleanCacheGen = -1;
+        private long cleanCachePlan = -2;
+        private String cleanTip = "";
+        private int cleanTipPos = -1, cleanTipLen = -1, cleanTipArmed = -1, cleanTipGen = -1;
 
         /** After the manager's PIN: the screen, and this TV read again (the plan comes back through the state). */
         private void openClean() {
@@ -1399,13 +1405,17 @@ public class SettingsActivity extends Activity {
                 JSONObject o = cleanItems.optJSONObject(i);
                 if (o != null && o.optInt("w") == Debloat.SAFE) cleanOff.add(o.optString("p"));
             }
+            cleanUndo = HomeMode.stringList(state, "debloated").size();
             List<Integer> ids = new ArrayList<>();
             if (!cleanOff.isEmpty()) ids.add(CLEAN_APPLY);
-            if (!HomeMode.stringList(state, "debloated").isEmpty()) ids.add(CLEAN_UNDO);
+            if (cleanUndo > 0) ids.add(CLEAN_UNDO);
             for (int i = 0; i < cleanItems.length(); i++) ids.add(i);
             cleanRowIds = new int[ids.size()];
             for (int i = 0; i < cleanRowIds.length; i++) cleanRowIds[i] = ids.get(i);
-            focus = Math.min(focus, Math.max(0, rowCount() - 1));
+            // The new plan can be shorter (apps just turned off drop out): keep the scroll and the focus inside it.
+            int visible = rowCount();
+            pickScroll = Math.max(0, Math.min(pickScroll, cleanRowIds.length - visible));
+            focus = Math.min(focus, Math.max(0, visible - 1));
             whyRows = null;
         }
 
@@ -1416,10 +1426,7 @@ public class SettingsActivity extends Activity {
 
         private String cleanLabel(int id) {
             if (id == CLEAN_APPLY) return Ui.plural("plural|one:Turn Off {n} App|other:Turn Off {n} Apps", cleanOff.size());
-            if (id == CLEAN_UNDO) {
-                return Ui.plural("plural|one:Turn {n} App Back On|other:Turn {n} Apps Back On",
-                        HomeMode.stringList(state, "debloated").size());
-            }
+            if (id == CLEAN_UNDO) return Ui.plural("plural|one:Turn {n} App Back On|other:Turn {n} Apps Back On", cleanUndo);
             return cleanItem(id).optString("p");
         }
 
@@ -1480,10 +1487,47 @@ public class SettingsActivity extends Activity {
                 }
                 String pkg = o.optString("p");
                 if (!cleanOff.remove(pkg)) cleanOff.add(pkg);
+                cleanTicks++;
                 return;
             }
             cleanAskedAt = System.currentTimeMillis();   // the job reads the TV again when it's done
             pendingAt = SystemClock.uptimeMillis();
+        }
+
+        /** The rows' labels (long package names cut in the middle) and values, for the current plan, ticks and language. */
+        private void cleanCache() {
+            if (cleanCachePlan == cleanPlanAt && cleanCacheTicks == cleanTicks && cleanCacheArmed == armed
+                    && cleanCacheGen == Ui.generation && cleanLabels.length == cleanRowIds.length) return;
+            cleanCachePlan = cleanPlanAt;
+            cleanCacheTicks = cleanTicks;
+            cleanCacheArmed = armed;
+            cleanCacheGen = Ui.generation;
+            if (cleanMeasure == null) cleanMeasure = new TextPaint(rowLabel);
+            cleanLabels = new String[cleanRowIds.length];
+            cleanValues = new String[cleanRowIds.length];
+            for (int i = 0; i < cleanRowIds.length; i++) {
+                String label = cleanLabel(cleanRowIds[i]);
+                if (rowLabel.measureText(label) > 540 * k) {
+                    label = TextUtils.ellipsize(label, cleanMeasure, 540 * k, TextUtils.TruncateAt.MIDDLE).toString();
+                }
+                cleanLabels[i] = label;
+                cleanValues[i] = cleanValue(cleanRowIds[i]);
+            }
+        }
+
+        /** The hint under the list: "3 / 40  ·  " and the focused row's hint, made again only when either changes. */
+        private String cleanTip(int shown) {
+            int pos = pickScroll + focus;
+            if (pos != cleanTipPos || cleanRowIds.length != cleanTipLen || armed != cleanTipArmed || Ui.generation != cleanTipGen) {
+                cleanTipPos = pos;
+                cleanTipLen = cleanRowIds.length;
+                cleanTipArmed = armed;
+                cleanTipGen = Ui.generation;
+                String hint = cleanHint(cleanRowIds[pos]);
+                // The counter as the other long lists here write it (numbers only).
+                cleanTip = shown < cleanRowIds.length ? (pos + 1) + " / " + cleanRowIds.length + "  ·  " + hint : hint;
+            }
+            return cleanTip;
         }
 
         private void drawClean(Canvas c, float seconds) {
@@ -1503,6 +1547,7 @@ public class SettingsActivity extends Activity {
                 drawHint(c, text, (LIST_TOP + 60) * k);
                 return;
             }
+            cleanCache();
             int shown = rowCount();
             for (int i = 0; i < shown; i++) {
                 int id = cleanRowIds[pickScroll + i];
@@ -1512,12 +1557,7 @@ public class SettingsActivity extends Activity {
                 boolean safe = id < 0 || cleanItem(id).optInt("w") == Debloat.SAFE;
                 rowLabel.setColor(safe && !waiting ? blend(0xF2FFFFFF, INK, f) : blend(0x73FFFFFF, 0x731C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel), right = rowRect.right - 30 * k;
-                if (cleanMeasure == null) cleanMeasure = new TextPaint(rowLabel);
-                String label = cleanLabel(id);
-                if (rowLabel.measureText(label) > 540 * k) {
-                    label = TextUtils.ellipsize(label, cleanMeasure, 540 * k, TextUtils.TruncateAt.MIDDLE).toString();
-                }
-                c.drawText(label, rowRect.left + 30 * k, base, rowLabel);
+                c.drawText(cleanLabels[pickScroll + i], rowRect.left + 30 * k, base, rowLabel);
                 boolean ticked = id >= 0 && cleanOff.contains(cleanItem(id).optString("p"));
                 if (ticked) {   // going off: a check, as in the pickers
                     float cw = Symbols.width(getContext(), "check", 26 * k);
@@ -1526,12 +1566,10 @@ public class SettingsActivity extends Activity {
                 }
                 rowValue.setColor(armed == ARM_CLEAN && id == CLEAN_APPLY ? blend(AMBER, 0xFFB25000, f)
                         : safe ? blend(0xB3FFFFFF, 0xB31C1C1E, f) : blend(0x59FFFFFF, 0x591C1C1E, f));
-                c.drawText(cleanValue(id), right, base, rowValue);
+                c.drawText(cleanValues[pickScroll + i], right, base, rowValue);
             }
             float hy = (LIST_TOP + 20 + shown * pitch + 36) * k;
-            String where = shown < cleanRowIds.length ? (pickScroll + focus + 1) + " / " + cleanRowIds.length + "  ·  " : "";
-            String tip = busy() ? (busyText().isEmpty() ? Ui.tr("Starting…") : busyText())
-                    : where + cleanHint(cleanRowIds[pickScroll + focus]);
+            String tip = busy() ? (busyText().isEmpty() ? Ui.tr("Starting…") : busyText()) : cleanTip(shown);
             drawHint(c, tip, hy);
             c.drawText(cleanFrom, LIST_X * k + 30 * k, hy + hintLayout.getHeight() + 30 * k, hint);
         }
@@ -2019,17 +2057,42 @@ public class SettingsActivity extends Activity {
         private void setKeyRowApp(int row, String pkg) {
             int key = Prefs.KEYS[keyOfRow(row)];
             if (twiceRow(row)) Prefs.setKeyDoubleApp(key, pkg); else Prefs.setKeyApp(key, pkg);
+            keyVersion++;
         }
 
         /** Back on Remote Buttons at row `row`, scrolled so it shows. */
         private void focusKeyRow(int row) {
             screen = REMOTE_KEYS;
+            keyVersion++;   // read the choices again on the way in
             pickScroll = Math.max(0, Math.min(row - SETTINGS_VISIBLE + 1, keyRowCount() - SETTINGS_VISIBLE));
             pickScroll = Math.max(0, Math.min(pickScroll, row));
             focus = row - pickScroll;
         }
 
+        // Remote Buttons' labels and values, made again only when a choice, the app list or the language changes:
+        // reading a choice checks remote-keys.txt, so not per row per frame.
+        private String[] keyLabelCache, keyValueCache;
+        private int keyVersion, keyCacheVersion = -1, keyCacheGen = -1;
+
+        private void keyCache() {
+            if (keyLabelCache != null && keyCacheVersion == keyVersion && keyCacheGen == Ui.generation) return;
+            keyCacheVersion = keyVersion;
+            keyCacheGen = Ui.generation;
+            keyLabelCache = makeKeyLabels();
+            keyValueCache = makeKeyValues();
+        }
+
         private String[] keyLabels() {
+            keyCache();
+            return keyLabelCache;
+        }
+
+        private String[] keyValues() {
+            keyCache();
+            return keyValueCache;
+        }
+
+        private String[] makeKeyLabels() {
             String[] buttons = buttonLabels();
             if (!RemoteKeys.doublePress()) return buttons;
             String[] out = new String[buttons.length * 2];
@@ -2056,7 +2119,7 @@ public class SettingsActivity extends Activity {
                     Ui.tr("Prime Video button"), Ui.tr("TCL Channel button")};
         }
 
-        private String[] keyValues() {
+        private String[] makeKeyValues() {
             String[] v = new String[keyRowCount()];
             for (int i = 0; i < v.length; i++) {
                 String pkg = keyRowApp(i);
@@ -2091,6 +2154,7 @@ public class SettingsActivity extends Activity {
                 appPkgs.add(f[0]);
                 appLabels.add(f[1]);
             }
+            keyVersion++;
         }
 
         /** Changes the focused row's value one step (OK and → go forward, ← goes back). */

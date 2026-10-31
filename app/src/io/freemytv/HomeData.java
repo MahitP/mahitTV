@@ -188,7 +188,7 @@ final class HomeData {
             String w = cache.getString("weather", null);
             // The cached forecast is for the city it was fetched for; another city means fetch again.
             if (w != null && weatherPlace().equals(cache.getString("weatherPlace", ""))) {
-                weather = parseWeather(w);
+                weather = WeatherJson.parse(w);
                 // Fetched with another query (an older version): shown, and fetched again now.
                 weatherAt = WEATHER_QUERY.equals(cache.getString("weatherQuery", "")) ? cache.getLong("weatherAt", 0) : 0;
                 weatherFor = weatherPlace();
@@ -242,7 +242,7 @@ final class HomeData {
                 try {
                     String place = weatherPlace();
                     String body = get(weatherUrl());
-                    weather = parseWeather(body);
+                    weather = WeatherJson.parse(body);
                     weatherAt = System.currentTimeMillis();
                     weatherFor = place;
                     cache.edit().putString("weather", body).putLong("weatherAt", weatherAt).putString("weatherPlace", place)
@@ -298,78 +298,86 @@ final class HomeData {
         if (found == 0) pricesAt = 0;   // cached in another currency (config changed): fetch again
     }
 
-    private static Weather parseWeather(String body) throws Exception {
-        JSONObject o = new JSONObject(body);
-        // Open-Meteo writes every time at the place's offset of now, even past a DST change (Berlin's sunrise after the
-        // change still reads 07:51 at GMT+2): read them at that offset, as LG and Samsung do, not by the zone's rules.
-        TimeZone zone = o.has("utc_offset_seconds") ? new SimpleTimeZone(o.getInt("utc_offset_seconds") * 1000, "GMT")
-                : TimeZone.getTimeZone(o.optString("timezone", TimeZone.getDefault().getID()));
-        Weather w = new Weather();
-        JSONObject current = o.getJSONObject("current");
-        w.temp = current.getDouble("temperature_2m");
-        w.code = current.getInt("weather_code");
-        w.isDay = current.optInt("is_day", 1) == 1;
-        w.humidity = current.optInt("relative_humidity_2m", -1);
-        w.wind = current.optDouble("wind_speed_10m", Double.NaN);
-        JSONObject daily = o.getJSONObject("daily");
-        w.max = daily.getJSONArray("temperature_2m_max").getDouble(0);
-        w.min = daily.getJSONArray("temperature_2m_min").getDouble(0);
-        w.sunrise = localTime(daily.getJSONArray("sunrise").getString(0), zone);
-        w.sunset = localTime(daily.getJSONArray("sunset").getString(0), zone);
-        JSONObject hourly = o.optJSONObject("hourly");
-        if (hourly != null) {
-            JSONArray times = hourly.getJSONArray("time");
-            JSONArray temps = hourly.getJSONArray("temperature_2m");
-            JSONArray codes = hourly.getJSONArray("weather_code");
-            JSONArray days = hourly.optJSONArray("is_day"), rain = hourly.optJSONArray("precipitation_probability");
-            long now = System.currentTimeMillis();
-            for (int i = 0; i < times.length() && w.hours24.size() < 24; i++) {
-                long at = localTime(times.getString(i), zone);
-                if (at <= now) continue;
-                boolean day = days == null || days.optInt(i, 1) == 1;
-                if (w.hours.size() < 6) {
-                    w.hours.add(at);
-                    w.hourTemp.add(temps.getDouble(i));
-                    w.hourCode.add(codes.getInt(i));
-                    w.hourDay.add(day);
-                }
-                w.hours24.add(at);
-                w.hour24Temp.add(temps.optDouble(i));
-                w.hour24Code.add(codes.optInt(i, -1));
-                w.hour24Day.add(day);
-                w.hour24Rain.add(rain == null ? -1 : rain.optInt(i, -1));
-            }
-        }
-        JSONArray dates = daily.getJSONArray("time"), highs = daily.getJSONArray("temperature_2m_max"),
-                lows = daily.getJSONArray("temperature_2m_min"), codes = daily.optJSONArray("weather_code");
-        JSONArray dayRain = daily.optJSONArray("precipitation_probability_max");
-        long now = System.currentTimeMillis();
-        // The overlay's week: today (until it ends at the city) and the 6 days after it.
-        for (int i = 0; codes != null && i < dates.length() && w.week.size() < 7; i++) {
-            String date = dates.getString(i);
-            if (localTime(date + "T12:00", zone) + 12 * 3600_000L <= now) continue;
-            w.week.add(localTime(date + "T12:00", TimeZone.getDefault()));
-            w.weekMax.add(highs.optDouble(i));
-            w.weekMin.add(lows.optDouble(i));
-            w.weekCode.add(codes.optInt(i, -1));
-            w.weekRain.add(dayRain == null ? -1 : dayRain.optInt(i, -1));
-        }
-        for (int i = 0; codes != null && i < dates.length() && w.days.size() < 5; i++) {
-            String date = dates.getString(i);
-            // Only days that haven't started at the city: today, and past days in a forecast kept offline, are left out.
-            if (localTime(date + "T12:00", zone) - 12 * 3600_000L <= now) continue;
-            w.days.add(localTime(date + "T12:00", TimeZone.getDefault()));   // its noon on the TV's clock: named right anywhere
-            w.dayMax.add(highs.optDouble(i));
-            w.dayMin.add(lows.optDouble(i));
-            w.dayCode.add(codes.optInt(i, -1));
-        }
-        return w;
-    }
+    /**
+     * Open-Meteo's answer → Weather. A class of its own so tools/WeatherParseTest can run it on a plain JVM without
+     * HomeData's static setup. Entries the forecast leaves null (temperatures, highs and lows) are skipped, not NaN.
+     */
+    static final class WeatherJson {
+        private WeatherJson() {}
 
-    private static long localTime(String iso, TimeZone zone) throws ParseException {
-        SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US);
-        f.setTimeZone(zone);
-        return f.parse(iso).getTime();
+        static Weather parse(String body) throws Exception {
+            JSONObject o = new JSONObject(body);
+            // Open-Meteo writes every time at the place's offset of now, even past a DST change (Berlin's sunrise after the
+            // change still reads 07:51 at GMT+2): read them at that offset, as LG and Samsung do, not by the zone's rules.
+            TimeZone zone = o.has("utc_offset_seconds") ? new SimpleTimeZone(o.getInt("utc_offset_seconds") * 1000, "GMT")
+                    : TimeZone.getTimeZone(o.optString("timezone", TimeZone.getDefault().getID()));
+            Weather w = new Weather();
+            JSONObject current = o.getJSONObject("current");
+            w.temp = current.getDouble("temperature_2m");
+            w.code = current.getInt("weather_code");
+            w.isDay = current.optInt("is_day", 1) == 1;
+            w.humidity = current.optInt("relative_humidity_2m", -1);
+            w.wind = current.optDouble("wind_speed_10m", Double.NaN);
+            JSONObject daily = o.getJSONObject("daily");
+            w.max = daily.getJSONArray("temperature_2m_max").getDouble(0);
+            w.min = daily.getJSONArray("temperature_2m_min").getDouble(0);
+            w.sunrise = localTime(daily.getJSONArray("sunrise").getString(0), zone);
+            w.sunset = localTime(daily.getJSONArray("sunset").getString(0), zone);
+            JSONObject hourly = o.optJSONObject("hourly");
+            if (hourly != null) {
+                JSONArray times = hourly.getJSONArray("time");
+                JSONArray temps = hourly.getJSONArray("temperature_2m");
+                JSONArray codes = hourly.getJSONArray("weather_code");
+                JSONArray days = hourly.optJSONArray("is_day"), rain = hourly.optJSONArray("precipitation_probability");
+                long now = System.currentTimeMillis();
+                for (int i = 0; i < times.length() && w.hours24.size() < 24; i++) {
+                    long at = localTime(times.getString(i), zone);
+                    if (at <= now || temps.isNull(i)) continue;
+                    boolean day = days == null || days.optInt(i, 1) == 1;
+                    if (w.hours.size() < 6) {
+                        w.hours.add(at);
+                        w.hourTemp.add(temps.getDouble(i));
+                        w.hourCode.add(codes.getInt(i));
+                        w.hourDay.add(day);
+                    }
+                    w.hours24.add(at);
+                    w.hour24Temp.add(temps.optDouble(i));
+                    w.hour24Code.add(codes.optInt(i, -1));
+                    w.hour24Day.add(day);
+                    w.hour24Rain.add(rain == null || rain.isNull(i) ? -1 : rain.optInt(i, -1));
+                }
+            }
+            JSONArray dates = daily.getJSONArray("time"), highs = daily.getJSONArray("temperature_2m_max"),
+                    lows = daily.getJSONArray("temperature_2m_min"), codes = daily.optJSONArray("weather_code");
+            JSONArray dayRain = daily.optJSONArray("precipitation_probability_max");
+            long now = System.currentTimeMillis();
+            // The overlay's week: today (until it ends at the city) and the 6 days after it.
+            for (int i = 0; codes != null && i < dates.length() && w.week.size() < 7; i++) {
+                String date = dates.getString(i);
+                if (localTime(date + "T12:00", zone) + 12 * 3600_000L <= now || highs.isNull(i) || lows.isNull(i)) continue;
+                w.week.add(localTime(date + "T12:00", TimeZone.getDefault()));
+                w.weekMax.add(highs.optDouble(i));
+                w.weekMin.add(lows.optDouble(i));
+                w.weekCode.add(codes.optInt(i, -1));
+                w.weekRain.add(dayRain == null || dayRain.isNull(i) ? -1 : dayRain.optInt(i, -1));
+            }
+            for (int i = 0; codes != null && i < dates.length() && w.days.size() < 5; i++) {
+                String date = dates.getString(i);
+                // Only days that haven't started at the city: today, and past days in a forecast kept offline, are left out.
+                if (localTime(date + "T12:00", zone) - 12 * 3600_000L <= now || highs.isNull(i) || lows.isNull(i)) continue;
+                w.days.add(localTime(date + "T12:00", TimeZone.getDefault()));   // its noon on the TV's clock: named right anywhere
+                w.dayMax.add(highs.optDouble(i));
+                w.dayMin.add(lows.optDouble(i));
+                w.dayCode.add(codes.optInt(i, -1));
+            }
+            return w;
+        }
+
+        private static long localTime(String iso, TimeZone zone) throws ParseException {
+            SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.US);
+            f.setTimeZone(zone);
+            return f.parse(iso).getTime();
+        }
     }
 
     static List<String[]> findCity(String name) throws Exception {

@@ -125,13 +125,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private final Matrix matrix = new Matrix();
     private final float[] placeA = new float[3], placeB = new float[3];
     private final Paint photoPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
-    private final Paint black = new Paint();
     private final Paint shadowPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint glassPaint = new Paint();
     private final Set<String> failed = new HashSet<>();     // Recs.key: a movie and a series can have the same ID
     private RuntimeShader glassShader;
     private boolean running, dirty = true, chromeDirty = true;
-    private boolean fallback;       // the aurora with the clock (no photos)
+    private boolean fallback;       // the Frosted Horizon with the clock (no photos)
     private boolean decoding;
     private int generation, slides;
     private Slide current, incoming, prepared;
@@ -189,7 +188,6 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             AppLog.w("glass clock unavailable: " + e.getMessage());
             glassShader = null;
         }
-        black.setColor(0xFF000000);
         shadowPaint.setColor(0xFF000000);
     }
 
@@ -302,7 +300,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         Symbols.warmWeather(getContext(), 30 * k);   // the corner's
         Symbols.warmWeather(getContext(), 32 * k);   // under the clock
         for (Paint p : new Paint[] {cornerDate, cornerQuote, cornerStale, cornerClock, labelPaint, titlePaint, metaPaint, barPaint}) {
-            p.setShadowLayer(18 * k, 0, 2 * k, 0x66000000);
+            p.setShadowLayer(18 * k, 0, 2 * k, 0x8C000000);   // with the lighter scrims, a little more shadow
         }
         applyInk();
         natureFor = "";
@@ -463,9 +461,16 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (!running) return;
         if (frameTimeNanos - lastFrame >= 45_000_000L) {
             lastFrame = frameTimeNanos;
-            invalidate();
+            if (!nature || natureWants()) invalidate();
         }
         Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    /** The nature clock is a still picture between fades: a frame only for a fade, a new minute, new data or scene. */
+    private boolean natureWants() {
+        if (natureIncoming != null || natureStale) return true;
+        if (System.currentTimeMillis() / 60_000 != minute) return true;
+        return !rendering && (natureScene < 0 || clock() - natureSceneAt >= NATURE_SCENE_MS);
     }
 
     /** The clock that drives the animations. */
@@ -506,10 +511,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     }
 
     private void drawScene(Canvas canvas, long up, float first) {
-        if (current == null || first < 1) {
-            if (fallback) drawFallback(canvas, up, current == null ? 1 : 1 - first);
-            else canvas.drawRect(0, 0, w, h, black);
-        }
+        // No photos, or the first one still loading: the Frosted Horizon with the clock, never a black screen.
+        if (current == null || first < 1) drawFallback(canvas, up, current == null ? 1 : 1 - first);
         if (current == null) return;
         if (fallback && first >= 1) fallback = false;
 
@@ -601,8 +604,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         return Math.round(Math.max(0, Math.min(1, a)) * 255) << 24;
     }
 
+    /** At most 0.40 black even over the brightest photo: the text carries its own soft shadow (onSizeChanged). */
     private static float scrimStrength(float light, float base) {
-        return Math.max(base - 0.1f, Math.min(0.78f, base + (light - 0.3f) * 0.9f));
+        return Math.min(0.40f, Math.max(base - 0.1f, base + (light - 0.3f) * 0.9f));
     }
 
     // MARK: - Corner: date and weather, glass clock, prices
@@ -1007,7 +1011,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             try {
                 if (natureLoaded == null || natureLoaded.index != s) {
                     if (natureLoaded != null) natureLoaded.recycle();
-                    natureLoaded = Nature.load(c, s);
+                    natureLoaded = Nature.load(c, s, fw);
                 }
                 frame = Nature.render(natureLoaded, fw, fh, time, header);
             } catch (Exception | OutOfMemoryError e) {
@@ -1088,21 +1092,37 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             }
         }
 
-        static Loaded load(Context c, int index) throws java.io.IOException {
+        /** The scene's pictures decoded at the screen's width (`width`): a 720p TV gets 720p pictures. */
+        static Loaded load(Context c, int index, int width) throws java.io.IOException {
             Spec sp = SCENES[index];
             Loaded ls = new Loaded(index);
-            ls.bg = asset(c, "scenes/scene-" + sp.id + ".jpg");
-            if (!sp.water) ls.fg = asset(c, "scenes/scene-" + sp.id + "-fg.webp");
-            Bitmap raw = asset(c, "scenes/scene-" + sp.id + "-glass.jpg");
+            ls.bg = asset(c, "scenes/scene-" + sp.id + ".jpg", width);
+            if (!sp.water) ls.fg = asset(c, "scenes/scene-" + sp.id + "-fg.webp", width);
+            Bitmap raw = asset(c, "scenes/scene-" + sp.id + "-glass.jpg", 480);   // baked down to 120 px anyway
             ls.glass = bake(raw, sp.darkClock, false);
             if (sp.water) ls.wet = bake(raw, false, true);
             raw.recycle();
             return ls;
         }
 
-        private static Bitmap asset(Context c, String path) throws java.io.IOException {
+        /** Decodes an asset no wider than `maxWidth` (scaled while decoding, so the full size is never in memory). */
+        private static Bitmap asset(Context c, String path, int maxWidth) throws java.io.IOException {
+            android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
             try (java.io.InputStream in = c.getAssets().open(path)) {
-                Bitmap b = android.graphics.BitmapFactory.decodeStream(in);
+                android.graphics.BitmapFactory.decodeStream(in, null, bounds);
+            }
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            if (maxWidth > 0 && bounds.outWidth > maxWidth) {
+                int sample = 1;
+                while (bounds.outWidth / (sample * 2) >= maxWidth) sample *= 2;
+                o.inSampleSize = sample;
+                o.inScaled = true;
+                o.inDensity = bounds.outWidth / sample;
+                o.inTargetDensity = maxWidth;
+            }
+            try (java.io.InputStream in = c.getAssets().open(path)) {
+                Bitmap b = android.graphics.BitmapFactory.decodeStream(in, null, o);
                 if (b == null) throw new java.io.IOException("can't decode " + path);
                 return b;
             }

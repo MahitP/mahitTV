@@ -369,7 +369,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Dock: one Liquid Glass bar of 6 tiles, 251 × 150 (5:3), 49 apart; focused, a tile grows 1.23× in place */
 
-.drawer-open #pill, .drawer-open #quotes { opacity: 0; }
+.drawer-open #quotes { opacity: 0; }
 
 #platter {
   position: absolute;
@@ -419,6 +419,28 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .night.has-photo #platter .tint, .night.has-photo #drawer .tint {
   background: -webkit-linear-gradient(top, rgba(40, 40, 40, 0.5), rgba(20, 20, 22, 0.46));
   background: linear-gradient(rgba(40, 40, 40, 0.5), rgba(20, 20, 22, 0.46));
+}
+/* Over bright art (home.js measures it, V4): a light frost with dark ink, so the glass keeps its contrast without a
+ * dark layer. */
+.has-photo.art-bright #platter .tint, .has-photo.art-bright #drawer .tint {
+  background: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.34));
+  background: linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.34));
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.7), inset -1px -1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.has-photo.art-bright #drawer { color: #1D1D1F; }
+/* Control Center sits over the page (Welly's chips, the Dock), not only the wallpaper, and old TVs can't blur what's
+ * behind it: without a photo it gets a solid base under its glass (as Reduce Transparency does), so nothing under it
+ * reads through; over a photo its bleed (the art) is that base. */
+#drawer { background: #EEF1F5; }
+.night #drawer { background: #1B1C21; }
+.has-photo #drawer { background: none; }
+#drawer .tint {
+  background: -webkit-linear-gradient(top, rgba(248, 249, 251, 0.97), rgba(240, 242, 245, 0.95));
+  background: linear-gradient(rgba(248, 249, 251, 0.97), rgba(240, 242, 245, 0.95));
+}
+.night #drawer .tint {
+  background: -webkit-linear-gradient(top, rgba(38, 40, 46, 0.97), rgba(24, 25, 29, 0.95));
+  background: linear-gradient(rgba(38, 40, 46, 0.97), rgba(24, 25, 29, 0.95));
 }
 
 #tiles, #shadows { position: absolute; left: 0; top: 0; }
@@ -488,12 +510,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 
 /* MARK: - Control Center: a floating Liquid Glass panel on the right, the art still showing behind it */
 
+/* Under the status pill (which stays, as tvOS's status does over Control Center): 124 to 1032. */
 #drawer {
   position: absolute;
   left: 1340px;
-  top: 60px;
+  top: 124px;
   width: 520px;
-  height: 960px;
+  height: 908px;
   border-radius: 44px;
   overflow: hidden;
   color: #FFF;
@@ -503,7 +526,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   /* Presented on SHEET_OPEN from +480 px and dismissed on SHEET_CLOSE (home.js); its own layer (it's small). */
   will-change: transform, opacity;
 }
-#drawer .bleed { left: -1340px; top: -60px; }
+#drawer .bleed { left: -1340px; top: -124px; }
 #drawer .body { position: absolute; left: 28px; top: 28px; right: 28px; bottom: 28px; }
 /* Over the bright day Frosted Horizon the panel's glass is light: dark text; over a photo or at night, white. */
 .no-picks #drawer, .profile-background #drawer { color: #1D1D1F; }
@@ -536,11 +559,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .key .label { position: absolute; left: 20px; right: 14px; bottom: 18px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .key.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); z-index: 2; }
 /* Five rows of cards: a little shorter, so the weather card still fits under them. */
-.key.compact { height: 96px; }
 .key.compact .sym { top: 14px; width: 30px; height: 30px; }
 .key.compact .label { bottom: 12px; }
 
-#weather { position: absolute; left: 0; right: 0; bottom: 0; height: 210px; border-radius: 26px; background: rgba(255, 255, 255, 0.12); -webkit-transition: box-shadow 0.3s, background-color 0.14s; transition: box-shadow 0.3s, background-color 0.14s; }
+#weather { position: absolute; left: 0; right: 0; bottom: 0; height: 190px; border-radius: 26px; background: rgba(255, 255, 255, 0.12); -webkit-transition: box-shadow 0.3s, background-color 0.14s; transition: box-shadow 0.3s, background-color 0.14s; }
 /* Focused, as a card: OK opens the forecast. */
 #weather.focus, .night #weather.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); }
 .night #weather { background: rgba(0, 0, 0, 0.22); }
@@ -626,7 +648,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* The nature clock (Settings → Screensaver Style): two scene canvases cross-fading, each drawn once a minute. */
 #saver canvas.scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; opacity: 0; -webkit-transition: opacity 2.4s; transition: opacity 2.4s; }
 #saver canvas.scene.on { opacity: 1; }
-#saver .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55)); }
+#saver .font-probe { position: absolute; left: -2000px; top: 0; font-size: 20px; opacity: 0; }
+#saver .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.35)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.35)); }
 #saver .clock {
   position: absolute;
   left: 80px;
@@ -643,6 +666,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #saver .clock .date { margin-top: 10px; font-size: 34px; font-weight: 500; color: rgba(255, 255, 255, 0.82); }
 #saver .clock .title { margin-top: 18px; font-size: 26px; font-weight: 500; color: rgba(255, 255, 255, 0.65); }
 #saver .clock .hint { margin-top: 8px; font-size: 22px; color: rgba(255, 255, 255, 0.55); }
+/* Over the bright day Horizon (no photos): dark ink and lighter glass, as the lock; white again at night. */
+#saver.bare .clock { color: #1D1D1F; background: rgba(255, 255, 255, 0.42); box-shadow: 0 30px 70px rgba(22, 33, 45, 0.18), inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
+#saver.bare .clock .date { color: rgba(29, 29, 31, 0.78); }
+#saver.bare .clock .title, #saver.bare .clock .hint { color: rgba(29, 29, 31, 0.6); }
+.night #saver.bare .clock { color: #FFF; background: rgba(255, 255, 255, 0.14); box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35), inset 0 1.5px 0 rgba(255, 255, 255, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.night #saver.bare .clock .date { color: rgba(255, 255, 255, 0.82); }
+.night #saver.bare .clock .title, .night #saver.bare .clock .hint { color: rgba(255, 255, 255, 0.6); }
 
 /* MARK: - Tab bar (top centre): TV · Home · Welly in a smoke-glass capsule, as the pill; focusing a tab selects it */
 
@@ -689,7 +719,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #tabs .lens .mid { width: 1px; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
 /* While it moves, the glass catches the light: a soft highlight that runs against the motion. */
 #tabs .lens .shine { position: absolute; left: 0; top: 3px; width: 80px; height: 45px; border-radius: 23px; opacity: 0; background: -webkit-radial-gradient(50% 50%, ellipse, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%); background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 70%); }
-.grid-open #tabs, .drawer-open #tabs { opacity: 0; }
+.grid-open #tabs { opacity: 0; }
 
 /* Home and Welly: the TV tab's content steps aside; the same background stays, frosted and dimmed as under the grid. */
 .tab-home #hero, .tab-home #details, .tab-home #dots, .tab-home #chevron, .tab-home #quotes, .tab-home #platter, .tab-home #tiles, .tab-home #dockname, .tab-home #apps.sheet,

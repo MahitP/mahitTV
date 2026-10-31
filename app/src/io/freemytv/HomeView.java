@@ -99,7 +99,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private static final float TV_GRID_LIFT = 722;
     // Control Center (§4): a floating glass panel on the right, its bento cards in 2 columns, the weather at the bottom.
-    private static final float CC_LEFT = 1340, CC_RIGHT = 1860, CC_TOP = 60, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
+    private static final float CC_LEFT = 1340, CC_RIGHT = 1860, CC_TOP = 128, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
     private static final float CC_CARD_W = 224, CC_CARD_H = 120, CC_GAP = 16, CC_CARD_RADIUS = 26, CC_WEATHER_H = 210;
     /** Cards never shrink below this (the rest scroll); the volume slider's row, above the weather. */
     private static final float CC_CARD_MIN = 96, CC_VOLUME_H = 76;
@@ -336,7 +336,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String[] drawerDetails = new String[0];
     private Paint ccDetail;
     private android.media.AudioManager audio;
-    private int volumeMax;
+    // The volume as last read on LOADER (volumeAvailable: the output isn't fixed), and the step the slider shows.
+    private int volumeMax = 1, volumeIndex;
+    private boolean volumeAvailable;
     /** The forecast and Recent Apps (TVOS-LAUNCHER-MERGE-SPEC.md S3, S4), over the home and under the lock. */
     private WeatherOverlay weatherOverlay;
     private RecentsOverlay recentsOverlay;
@@ -657,6 +659,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         setShelf(HomeApps.shelf(a, false));
         setStatusItems(statusList(a));
         setDrawerItems(drawerList(a));
+        readDrawerState(true);   // the volume slider's row is ready before Control Center first opens
     }
 
     // MARK: - Lifecycle (called by HomeActivity)
@@ -768,6 +771,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Starting state (Home pressed while the home screen is showing): first app focused, drawer and sheet closed. */
     void reset(boolean animated) {
         wake();
+        weatherOverlay.hide();   // Home (and All Apps) leave the forecast and Recent Apps too
+        recentsOverlay.hide();
         cancelReorder(!animated);
         zone = Z_SHELF;
         shelfIndex = 0;
@@ -850,6 +855,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(chevronLayer, Math.round(80 * kk), Math.round(48 * kk));
         measure(house, width, height);
         measure(welly, width, height);
+        measure(weatherOverlay, width, height);
+        measure(recentsOverlay, width, height);
         measure(lock, width, height);
         measure(intro, width, height);
         setMeasuredDimension(width, height);
@@ -876,6 +883,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         place(chevronLayer, (width - chevronLayer.getMeasuredWidth()) / 2, Math.round(TV_CHEVRON_Y * kk) - chevronLayer.getMeasuredHeight() / 2);
         house.layout(0, 0, width, height);
         welly.layout(0, 0, width, height);
+        weatherOverlay.layout(0, 0, width, height);
+        recentsOverlay.layout(0, 0, width, height);
         lock.layout(0, 0, width, height);
         intro.layout(0, 0, width, height);
     }
@@ -1142,16 +1151,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float top = 1 - smoothstep(0, 0.45f, s);
         // Full screen: the Dock and the grid's peek recess (36 px down, to 0.75), never hidden.
         float drop = full.value * TV_FULL_DROP * k, away = 1 - (1 - TV_RECESS) * smoothstep(0, 0.7f, fs);
-        // Control Center: the page behind it steps back (0.975) and dims 30% (the sky darkens too, drawLightSky).
-        float dim = 1 - 0.30f * dc, back = 1 - 0.025f * dc;
+        // Control Center: the page behind it steps back (0.975) and dims 15% (the sky darkens a little too, drawLightSky).
+        float dim = 1 - 0.15f * dc, back = 1 - 0.025f * dc;
         // The tabs (TAB_SWAP): the one leaving slides 60 px away and shrinks to 0.96 as it fades (quickly); the one
         // coming in arrives from 60 px on the other side. Moving right (TV → Home → Welly) the leaving one goes left.
         float tv = 1 - Ui.clamp(tabAway.value);
         float tvA = tabAlpha(tv, TAB_TV), tvX = tabX(tv, TAB_TV), tvS = (0.96f + 0.04f * tv) * back;
         show(heroLayer, top * dim * tvA, -rise, tvX, tvS);
-        show(status, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
-        // The tab bar leaves with the title logo when the grid owns the screen; full screen keeps it.
-        show(tabBar, top * (1 - smoothstep(0, 0.5f, dc)), -sheet.value * TV_GRID_LIFT * k, 0, 1);
+        // The pill and the tab bar stay with Control Center (its panel starts under the pill, CC_TOP) and in full
+        // screen; they leave with the title logo only when the app grid owns the screen.
+        show(status, top, -sheet.value * TV_GRID_LIFT * k, 0, 1);
+        show(tabBar, top, -sheet.value * TV_GRID_LIFT * k, 0, 1);
         show(platter, dim * away * tvA, -rise + drop, tvX, tvS);
         show(tiles, dim * away * tvA, -rise + drop, tvX, tvS);
         // The ⌃ points at the Top Shelf: in full screen we're there, so it goes.
@@ -2516,6 +2526,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         layoutDetails();
         for (HomeApps.Item it : drawerItems) Symbols.warm(getContext(), it.symbol, 34 * k);
+        Symbols.warm(getContext(), "volume", 34 * k);   // the volume row's, at the size drawVolume draws it
         Symbols.warmWeather(getContext(), 44 * k);
         Symbols.warmWeather(getContext(), 26 * k);
         drawerDirty = true;
@@ -2532,28 +2543,67 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** The volume slider shows when the TV lets apps change the volume (not on a fixed-volume output). */
+    /** The volume slider shows when the TV lets apps change the volume (not on a fixed-volume output), as last read. */
     private boolean volumeShown() {
-        return audio != null && !audio.isVolumeFixed() && audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) > 0;
+        return volumeAvailable;
     }
 
-    /** The volume as the slider shows it (0–1), read again when Control Center opens and after each step. */
-    private void readVolume(boolean snap) {
-        if (audio == null) return;
-        volumeMax = Math.max(1, audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC));
-        volumeLevel.target = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) / (float) volumeMax;
-        if (snap) volumeLevel.snap(volumeLevel.target);
-        drawerDirty = true;
+    /**
+     * Control Center's live state, read on LOADER (system calls, never on the UI thread): Wi-Fi's and Bluetooth's state
+     * for their cards and the volume for the slider; `snap` puts the slider there at once (the panel opening).
+     */
+    private void readDrawerState(boolean snap) {
+        final Context c = getContext().getApplicationContext();
+        final android.media.AudioManager am = audio;
+        LOADER.execute(() -> {
+            String[] state = HomeApps.connectivity(c);
+            boolean avail = false;
+            int max = 1, index = 0;
+            if (am != null) {
+                try {
+                    max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+                    avail = !am.isVolumeFixed() && max > 0;
+                    index = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+                } catch (RuntimeException e) {
+                    AppLog.w("volume: " + e.getMessage());
+                }
+            }
+            final boolean available = avail;
+            final int top = Math.max(1, max), level = Math.max(0, Math.min(top, index));
+            post(() -> {
+                HomeApps.showConnectivity(drawerItems, state);
+                volumeMax = top;
+                volumeIndex = level;
+                if (available != volumeAvailable) {
+                    volumeAvailable = available;
+                    if (!available) ccOnVolume = false;
+                    layoutDrawer();   // the slider's row comes or goes
+                } else {
+                    layoutDetails();
+                }
+                volumeLevel.target = level / (float) top;
+                if (snap) volumeLevel.snap(volumeLevel.target);
+                drawerDirty = true;
+                wake();
+            });
+        });
     }
 
-    /** ←/→ on the slider: one step, exactly as the remote's volume keys (no system panel: the slider is the panel). */
+    /**
+     * ←/→ on the slider: one step, exactly as the remote's volume keys (no system panel: the slider is the panel). The
+     * step is counted here; LOADER reads the real level afterwards.
+     */
     private boolean stepVolume(int dx) {
-        if (audio == null) return false;
-        int before = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+        if (audio == null || !volumeAvailable) return false;
+        int next = Math.max(0, Math.min(volumeMax, volumeIndex + (dx > 0 ? 1 : -1)));
+        if (next == volumeIndex) return false;
         audio.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,
                 dx > 0 ? android.media.AudioManager.ADJUST_RAISE : android.media.AudioManager.ADJUST_LOWER, 0);
-        readVolume(false);
-        return audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) != before;
+        volumeIndex = next;
+        volumeLevel.target = next / (float) volumeMax;
+        drawerDirty = true;
+        readDrawerState(false);
+        return true;
     }
 
     /** Control Center's top row: the profiles' avatars (84 round) and names, cut to fit once. */
@@ -2598,10 +2648,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccScroll.target = 0;
         ccScroll.snap(0);
         profileIndex = ProfileManager.currentIndex(getContext());
-        // Wi-Fi's and Bluetooth's state and the volume as they are now (read once, never while drawing).
-        HomeApps.connectivity(getContext(), drawerItems);
-        layoutDetails();
-        readVolume(true);
+        // Wi-Fi's and Bluetooth's state and the volume as they are now (read on LOADER, never while drawing).
+        readDrawerState(true);
         drawerDirty = true;
     }
 
@@ -4047,9 +4095,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             for (int i = shelfFirst; i < Math.min(shelf.size(), shelfFirst + shelfVisible); i++) out.add(a11yId(Z_SHELF, i));
         }
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
+        if (drawerOpen && volumeShown()) out.add(a11yId(WIDGETS, VOLUME_ITEM));
         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
         if (drawerOpen && Prefs.quotes() && HomeData.active().length > 0) out.add(a11yId(WIDGETS, 1));
     }
+
+    /** TalkBack's id for Control Center's volume row, beside the widgets (0 weather, 1 quotes); not a widget itself. */
+    private static final int VOLUME_ITEM = 2;
 
     private String a11yText(int id) {
         int group = (id - 1) / 1000, i = (id - 1) % 1000;
@@ -4069,7 +4121,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 return label(shelf, i);
             case Z_DRAWER: return label(drawerItems, i);
             case Z_STATUS: return clockText + ". " + Ui.tr("Control Center");
-            case WIDGETS: return i == 0 ? weatherText() : quotesText();
+            case WIDGETS:
+                if (i == VOLUME_ITEM) return Ui.trf("Volume, {n}%", "n", Math.round(100f * volumeIndex / Math.max(1, volumeMax)));
+                return i == 0 ? weatherText() : quotesText();
             default: return "";
         }
     }
@@ -4113,7 +4167,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             case WIDGETS:
                 if (!drawerOpen) return false;
-                a11yRect.set(i == 0 ? weatherCard : quotesCard);
+                a11yRect.set(i == VOLUME_ITEM ? volumeRect : i == 0 ? weatherCard : quotesCard);
                 dy = 0;
                 break;
             case Z_STATUS:
@@ -4137,7 +4191,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_TOP: return a11yId(Z_TOP, topIndex);
             case Z_CARDS: return cardIndex < cards.size() ? a11yId(Z_CARDS, cardIndex) : -1;
             case Z_SHELF: return shelf.isEmpty() ? -1 : a11yId(Z_SHELF, shelfIndex);
-            case Z_DRAWER: return drawerItems.isEmpty() || ccOnProfiles ? -1 : a11yId(Z_DRAWER, drawerIndex);
+            case Z_DRAWER:
+                if (ccOnVolume) return a11yId(WIDGETS, VOLUME_ITEM);
+                return drawerItems.isEmpty() || ccOnProfiles ? -1 : a11yId(Z_DRAWER, drawerIndex);
             case Z_STATUS: return a11yId(Z_STATUS, 0);
             case WIDGETS: return a11yId(WIDGETS, widgetIndex);
             default: return -1;
@@ -4180,6 +4236,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 drawerIndex = i;
                 break;
             case WIDGETS:
+                if (i == VOLUME_ITEM) {   // the volume row lives in the cards' zone
+                    if (!drawerOpen || !volumeShown()) return;
+                    ccOnProfiles = false;
+                    ccOnVolume = true;
+                    zone = Z_DRAWER;
+                    retarget(false);
+                    click.move();
+                    return;
+                }
                 if (!widgets().contains(i)) return;
                 widgetIndex = i;
                 break;
@@ -4478,7 +4543,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean fading = bgFadeAt != 0;
         // Drawer or app grid open: the background lightens (by day) or darkens (at night), as a filter on the drawing.
         // (Control Center: the page dims a little behind the panel; the app grid: it lightens or darkens a lot.)
-        float dd = tone(0.18f, 0.30f) * Ui.clamp(drawer.value), ds = tone(0.62f, 0.6f) * Ui.clamp(sheet.value);
+        // Light dims only (the wallpaper stays bright): Control Center 0.18 by day, 0.22 at night; the app grid's
+        // white lift by day, 0.35 black at night.
+        float dd = tone(0.18f, 0.22f) * Ui.clamp(drawer.value), ds = tone(0.62f, 0.35f) * Ui.clamp(sheet.value);
         // Home and Welly: the background dims behind them (0.45 black by day, 0.55 at night).
         float dt = tone(0.45f, 0.55f) * Ui.clamp(tabAway.value);
         android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, 0xFF000000)

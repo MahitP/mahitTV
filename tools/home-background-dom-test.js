@@ -115,6 +115,21 @@ function profile(page, zone, app) {
     'the Dock stays visible in the Top Shelf, recessed: ' + JSON.stringify(heroDock));
   assert.ok(heroDock.tabs > 0.9, 'the tab bar stays in the Top Shelf: ' + JSON.stringify(heroDock));
   assert.ok(heroDock.detailsBottom <= heroDock.platterTop, 'the details sit above the recessed Dock: ' + JSON.stringify(heroDock));
+  // Control Center keeps the status pill and the tab bar (tvOS keeps its status over the panel); the panel starts
+  // under the pill, so they never overlap.
+  await page.evaluate(function () { FreeMyTV.state.zone = 'top'; FreeMyTV.activate(); });
+  await page.waitForTimeout(1200);
+  var drawerOpen = await page.evaluate(function () {
+    var pill = document.querySelector('#pill'), drawer = document.querySelector('#drawer');
+    return {zone: FreeMyTV.state.zone, pill: parseFloat(getComputedStyle(pill).opacity), tabs: parseFloat(getComputedStyle(document.querySelector('#tabs')).opacity),
+      pillBottom: pill.getBoundingClientRect().bottom, drawerTop: drawer.getBoundingClientRect().top, dim: parseFloat(getComputedStyle(document.querySelector('#dim')).opacity)};
+  });
+  assert.ok(drawerOpen.zone === 'drawer' && drawerOpen.pill > 0.9 && drawerOpen.tabs > 0.9,
+    'the status pill and the tab bar stay with Control Center open: ' + JSON.stringify(drawerOpen));
+  assert.ok(drawerOpen.pillBottom <= drawerOpen.drawerTop, 'Control Center starts under the status pill: ' + JSON.stringify(drawerOpen));
+  assert.ok(drawerOpen.dim <= 0.22, 'Control Center only dims the page a little: ' + JSON.stringify(drawerOpen));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
   for (var i = 0; i < 3; i++) {
     result = await profile(page, ['tabs', 'apps', 'settings'][i], netflix);
     assert.ok(result.profile && !result.title, ['tabs', 'grid', 'settings'][i] + ' clears actual hero');

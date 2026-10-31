@@ -36,11 +36,12 @@ trap cleanup EXIT
 
 if [ "$what" = all ] || [ "$what" = android ]; then
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
   java -cp "$wallpaper_classes" io.freemytv.AerialRequestTest
+  java -cp "$wallpaper_classes" io.freemytv.DockRecessTest   # the Top Shelf never hides the Dock
   ./build.sh
   watch_classes="$(mktemp -d)"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -51,13 +52,19 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     done
   fi
   android_jar="$(ls -d "$sdk"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)"
-  javac -cp "out/classes:$android_jar" -d "$watch_classes" tools/RecsWatchTest.java tools/DebloatTest.java
+  javac -cp "out/classes:$android_jar" -d "$watch_classes" tools/RecsWatchTest.java tools/DebloatTest.java tools/WellyBotTest.java
   java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.RecsWatchTest
   java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.DebloatTest
+  java -cp "$watch_classes:out/classes:$android_jar" io.freemytv.WellyBotTest
+  # The weather parser: android.jar's org.json is only stubs on a plain JVM, so tools/testjson's stands in, ahead of it.
+  javac -d "$watch_classes/json" tools/testjson/org/json/*.java
+  javac -cp "$watch_classes/json:out/classes:$android_jar" -d "$watch_classes" tools/WeatherParseTest.java
+  java -cp "$watch_classes:$watch_classes/json:out/classes:$android_jar" io.freemytv.WeatherParseTest
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then
   python3 tools/translate.py --check
+  node tools/test_welly_bot.js
   node tools/wallpaper-web-test.js
   node tools/wallpaper-pref-test.js
   node tools/wallpaper-policy-test.js
