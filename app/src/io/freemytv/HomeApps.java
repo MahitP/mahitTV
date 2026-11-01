@@ -255,6 +255,13 @@ final class HomeApps {
         return HIDDEN.contains(pkg) && gridRank(pkg, label) == GRID_ORDER.length;
     }
 
+    /**
+     * System apps with only a phone launcher entry that still belong in "All Apps". Fire TV's Appstore has no TV banner
+     * (no LEANBACK_LAUNCHER entry), so without this a Fire TV had no way to its app store from this home screen.
+     */
+    private static final Set<String> SYSTEM_SHOWN = new HashSet<>(java.util.Arrays.asList(
+            "com.amazon.venezia"));                 // Amazon Appstore
+
     private static final Map<String, Bitmap> TILES = new HashMap<>();   // key → ready card
     private static final Map<String, Bitmap> LOGOS = new HashMap<>();   // key → colored logo with no background
 
@@ -335,6 +342,14 @@ final class HomeApps {
             if (app[0].equals(c.getPackageName()) || HIDDEN.contains(app[0]) || !seen.add(app[0])) continue;
             more.add(app);
         }
+        // A system app put on the shelf while Show system apps was on keeps its row after it's turned off, so it can come
+        // off again (and doesn't hold a place toward the limit with no row).
+        for (String pkg : shelfPackages(c)) {
+            Intent launch = launchIntent(pm, pkg);
+            if (launch == null || pkg.equals(c.getPackageName()) || !seen.add(pkg)) continue;
+            ResolveInfo ri = pm.resolveActivity(launch, 0);
+            more.add(new String[] {pkg, ri != null ? String.valueOf(ri.loadLabel(pm)) : pkg});
+        }
         Collections.sort(more, (a, b) -> a[1].toLowerCase(Locale.ROOT).compareTo(b[1].toLowerCase(Locale.ROOT)));
         out.addAll(more);
         return out;
@@ -407,7 +422,7 @@ final class HomeApps {
     }
 
     /** Free My TV settings, in the corner of the home screen. */
-    /** The TV's own settings (android.settings.SETTINGS). */
+    /** The TV's own settings (android.settings.SETTINGS; where nothing answers it, Android TV's settings app). */
     static Item tvSettings() {
         return shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings");
     }
@@ -544,7 +559,12 @@ final class HomeApps {
         items.add(shortcut(BRIGHTNESS, "brightness", Ui.tr("Brightness"), "sunny"));
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
-        device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
+        // The Amlogic ones (txhd2) carry the HTC app too, but its keystone crashes there (SurfaceFlinger refuses code
+        // 1050): their own is com.softwinner.tcorrection, so that one wins where it's installed.
+        Intent tcorrection = new Intent().setComponent(new ComponentName("com.softwinner.tcorrection",
+                "com.softwinner.tcorrection.projection.ProjectionSettingActivity"));
+        device(c, items, "keystone", Ui.tr("Keystone"), "keystone",
+                c.getPackageManager().resolveActivity(tcorrection, 0) != null ? tcorrection : new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
         items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
@@ -769,6 +789,8 @@ final class HomeApps {
             return out;
         }
         Collections.sort(list, (a, b) -> a.getId().compareTo(b.getId()));
+        // Allwinner's live TV player (HY300 and HY320 projectors) is the only way to the HDMI input on those boards.
+        boolean allwinner = allwinnerInputs(c);
         Pattern digit = Pattern.compile("(\\d)");
         for (int i = 0; i < list.size(); i++) {
             TvInputInfo info = list.get(i);
@@ -782,7 +804,11 @@ final class HomeApps {
                 state = tim.getInputState(info.getId());
             } catch (RuntimeException ignored) {
             }
-            if (!all && state != TvInputManager.INPUT_STATE_CONNECTED) continue;
+            // An Allwinner projector stays in "connected standby" even with a source on (HY320), and its single port
+            // always works: standby counts as connected there.
+            boolean connected = state == TvInputManager.INPUT_STATE_CONNECTED
+                    || (allwinner && state == TvInputManager.INPUT_STATE_CONNECTED_STANDBY);
+            if (!all && !connected) continue;
             CharSequence custom = null;
             try {
                 custom = info.loadCustomLabel(c);
@@ -790,25 +816,24 @@ final class HomeApps {
             }
             String reported = devices.containsKey(info.getId()) ? devices.get(info.getId()) : "";
             String label = custom != null && custom.length() > 0 ? custom.toString()
-                    : !reported.isEmpty() && state == TvInputManager.INPUT_STATE_CONNECTED ? reported : "HDMI " + number;
-            String symbol = state == TvInputManager.INPUT_STATE_CONNECTED || custom != null
-                    ? deviceSymbol(label) : "hdmi";
+                    : !reported.isEmpty() && connected ? reported : "HDMI " + number;
+            String symbol = connected || custom != null ? deviceSymbol(label) : "hdmi";
             Item it = shortcut(INPUT, "hdmi" + number, label, symbol);
             it.inputId = info.getId();
             it.number = String.valueOf(number);
-            it.connected = state == TvInputManager.INPUT_STATE_CONNECTED;
+            it.connected = connected;
             out.add(it);
         }
         Collections.sort(out, (a, b) -> a.number.compareTo(b.number));
-        // Allwinner's player opens only HDMI 1 (HY300: one port, though the board lists three)
-        if (allwinnerInputs(c)) out.removeIf(it -> !"1".equals(it.number));
+        // Allwinner's player opens only HDMI 1 (HY300 and HY320: one port, though the board lists three)
+        if (allwinner) out.removeIf(it -> !"1".equals(it.number));
         // MIUI TV knows three HDMI ports; a board reporting a fourth leaves it with no way to be opened (a Redmi TV
         // lists HDMI 4 and answers no number for it), so it isn't shown.
         else if (xiaomiInputs(c)) out.removeIf(it -> !xiaomiPort(it));
         return out;
     }
 
-    /** Allwinner's live TV player (HY300 projectors), the stock home screen's way to HDMI: it ignores the input asked for. */
+    /** Allwinner's live TV player (HY300 and HY320 projectors), the stock home screen's way to HDMI. */
     private static final ComponentName ALLWINNER_TV = new ComponentName("com.softwinner.awlivetv", "com.softwinner.awlivetv.MainActivity");
     /** Xiaomi's own source player (MIUI TV, the Chinese firmware): it takes the port as a number of its own. */
     private static final ComponentName XIAOMI_SOURCES = new ComponentName("com.xiaomi.mitv.tvplayer", "com.xiaomi.mitv.tvplayer.ExternalSourceActivity");
@@ -853,10 +878,14 @@ final class HomeApps {
 
     /**
      * How to open an HDMI input: the standard passthrough request, or, where no app answers it, the maker's own
-     * player. Xiaomi's takes the port as its own "input" number.
+     * player. Allwinner's takes the port in "input_source" ("HDMI1"); Xiaomi's takes it as its own "input" number.
      */
     private static Intent inputIntent(Context c, Item it) {
-        if (allwinnerInputs(c)) return new Intent().setComponent(ALLWINNER_TV);
+        if (allwinnerInputs(c)) {
+            // Its own player switches the port when the intent names it ("HDMI1"), as its source picker does. The
+            // HY320 needs it; the HY300 ignores it and opens its only port anyway.
+            return new Intent().setComponent(ALLWINNER_TV).putExtra("input_source", "HDMI" + it.number);
+        }
         if (xiaomiInputs(c) && xiaomiPort(it)) {
             return new Intent(XIAOMI_SOURCES_ACTION).setComponent(XIAOMI_SOURCES)
                     .putExtra("input", XIAOMI_HDMI[port(it) - 1]);
@@ -940,7 +969,8 @@ final class HomeApps {
 
     /** Opens the item; `options` for the transition, or null (the screensaver has no card to grow out of). */
     static boolean open(Context a, Item it, android.os.Bundle options) {
-        Intent intent, plain = null;   // plain: the app's own home, when it won't take the title's address
+        // plain: tried when `intent` finds nothing (the app's own home, when it won't take the title's address)
+        Intent intent, plain = null;
         switch (it.kind) {
             case APP:
                 intent = launchIntent(a.getPackageManager(), it.pkg);
@@ -948,6 +978,11 @@ final class HomeApps {
                 if (plain != null) plain.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
                 if (intent != null && it.uri != null) {
                     intent = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(it.uri)).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(it.pkg);
+                    // Netflix ignores the title's address when it is already open or when no source is named: it opens its own home.
+                    // Like the TV launchers do, name its activity and the source (30) and start it in a fresh task.
+                    if ("com.netflix.ninja".equals(it.pkg) && plain != null && plain.getComponent() != null) {
+                        intent.setComponent(plain.getComponent()).putExtra("source", "30").addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    }
                 }
                 break;
             case LIVE_TV:
@@ -971,6 +1006,9 @@ final class HomeApps {
                 break;
             case ANDROID_SETTINGS:
                 intent = new Intent(Settings.ACTION_SETTINGS);
+                // Where nothing answers it, Android TV's own settings by name: on the HY300 Pro+ the stock home
+                // (com.htc.magcubicos) is the one that does, and Free My TV mode turns it off (#379).
+                plain = new Intent().setComponent(new ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings"));
                 break;
             case WIFI:
                 intent = new Intent(Settings.ACTION_WIFI_SETTINGS);
@@ -1073,6 +1111,12 @@ final class HomeApps {
             // exists(), not resolveActivity: that hands an explicit component back without looking (the sticks have none)
             if (exists(c, dtt)) return new Intent().setComponent(dtt);
         }
+        // Sony: its TV app (the launcher tile's) knows the last input and channel. A tuner's channel list can be an empty
+        // one: a BRAVIA lists DvbOpv1 (the CI+ operator input) beside the satellite and antenna ones (#340).
+        if (RemoteKeys.SONY) {
+            Intent sony = launchIntent(pm, "com.sony.dtv.tvx");
+            if (sony != null) return sony;
+        }
         // MediaTek OneWorld TV Center (KTC/NextStar) has one input per tuner mode (antenna, cable, satellite): tuning one
         // switches the TV to that mode and hides the other channel lists, so it opens as it is, on its own last channel.
         Intent oneWorld = launchIntent(pm, "com.mediatek.tv.oneworld.tvcenter");
@@ -1109,7 +1153,8 @@ final class HomeApps {
                 if (info.getServiceInfo() != null && info.getServiceInfo().applicationInfo != null
                         && (info.getServiceInfo().applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) {
                     // Several hardware tuners (MediaTek: Tuner, Cable, Analog): digital antenna first, analog last.
-                    // Haier H32S80EFX lists AnalogInputService/HW1 first, which opens on no channels in DVB-T2 countries.
+                    // Haier H32S80EFX lists AnalogInputService/HW1 first, which opens on no channels in DVB-T2 countries;
+                    // a Cecotec lists two TunerInputService ones, HW1 (analog) first.
                     if (info.getId().contains("/HW") && (hardware == null || tunerRank(info.getId()) < tunerRank(hardware))) {
                         hardware = info.getId();
                     }
@@ -1122,11 +1167,25 @@ final class HomeApps {
         return hardware != null ? hardware : system != null ? system : fallback;
     }
 
+    /**
+     * Live TV's tuner: the digital antenna first, then cable, then analog, by the input's name (Haier H32S80EFX's
+     * Tuner/Cable/AnalogInputService, #254); between inputs of one name, the lowest hardware number (a Cecotec on a
+     * Vestel base: TunerInputService/HW0 is the antenna and HW1 analog, listed first, #312). "atv" only in the
+     * service's class name (Amlogic's ATVInputService), so a package with it in its name doesn't count as analog.
+     */
     private static int tunerRank(String id) {
-        String s = id.toLowerCase(Locale.ROOT);
-        return s.contains("analog") ? 2 : s.contains("cable") ? 1 : 0;
+        String s = id.toLowerCase(Locale.ROOT), cls = s.substring(Math.max(0, s.indexOf('/')));   // the service's class
+        int kind = s.contains("analog") || cls.contains(".atv") ? 2 : s.contains("cable") ? 1 : 0;
+        Matcher m = HW.matcher(id);
+        int hw = m.find() && m.group(1).length() <= 3 ? Integer.parseInt(m.group(1)) : 999;
+        return kind * 1000 + hw;
     }
 
+    /**
+     * The apps a TV can start: its TV apps (Leanback) first, then the phone ones (projectors and AOSP boxes). The
+     * system apps only come with Settings > Show system apps; off keeps the list as it always was, with the few system apps a TV
+     * needs there (SYSTEM_SHOWN).
+     */
     static List<String[]> launchable(Context c) {
         PackageManager pm = c.getPackageManager();
         List<String[]> out = new ArrayList<>();
@@ -1144,7 +1203,7 @@ final class HomeApps {
             boolean sys = (ri.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             String label = String.valueOf(ri.loadLabel(pm));
             // A system app with a phone-style entry only: with Settings > Show system apps, or when GRID_ORDER names it.
-            boolean wanted = gridRank(pkg, label) < GRID_ORDER.length;
+            boolean wanted = gridRank(pkg, label) < GRID_ORDER.length || SYSTEM_SHOWN.contains(pkg);
             if (sys && ((!system && !wanted) || pkg.equals(c.getPackageName()) || hidden(pkg, label))) continue;
             if (!seen.add(pkg)) continue;
             out.add(new String[] {pkg, label});

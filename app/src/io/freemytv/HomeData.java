@@ -2,6 +2,8 @@ package io.freemytv;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -98,8 +100,14 @@ final class HomeData {
         return i == 3 ? Ui.tr("Dollar") : COIN_NAMES[i];
     }
 
-    /** Binance.com refuses the US (HTTP 451); Binance.US answers the same call in dollars. */
-    private static final String[] PRICE_HOSTS = {"https://api.binance.com", "https://api.binance.us"};
+    /**
+     * Binance.com refuses the US (HTTP 451); Binance.US answers the same call in dollars. data-api.binance.vision is
+     * Binance's own address for public market data, with Binance.com's pairs on another domain and certificate chain: it
+     * answers where a network blocks or intercepts api.binance.com (a TCL and a Mi Box on one network: "Trust anchor for
+     * certification path not found", #375). A refusal skips it: the US keeps Binance.US's dollars.
+     */
+    private static final String VISION = "https://data-api.binance.vision", US = "https://api.binance.us";
+    private static final String[] PRICE_HOSTS = {"https://api.binance.com", VISION, US};
 
     private static String pricesPath() {
         StringBuilder symbols = new StringBuilder();
@@ -111,14 +119,18 @@ final class HomeData {
     private static String getPrices() throws IOException {
         IOException failed = null;
         for (String host : PRICE_HOSTS) {
+            boolean refused = failed != null && "HTTP 451".equals(failed.getMessage());
+            if (refused && host.equals(VISION)) continue;
             try {
                 return get(host + pricesPath());
             } catch (IOException e) {
+                boolean unlisted = "HTTP 400".equals(e.getMessage());
                 // Binance.US has only dollar pairs: its error counts only where Binance.com refuses the US (HTTP 451).
-                // After a timeout or a 5xx there, its HTTP 400 would put the prices in dollars for good.
-                if (failed == null || "HTTP 451".equals(failed.getMessage())) failed = e;
+                // After a timeout or a 5xx there, its HTTP 400 would put the prices in dollars for good. The other two
+                // list the same pairs, so their 400 counts.
+                if (failed == null || refused || (unlisted && !host.equals(US))) failed = e;
                 // A pair Binance doesn't list (HTTP 400) isn't a refusal: the caller falls back to dollars instead.
-                if ("HTTP 400".equals(e.getMessage())) break;
+                if (unlisted) break;
             }
         }
         throw failed;
@@ -195,6 +207,20 @@ final class HomeData {
                 weatherFor = weatherPlace();
             }
         } catch (Exception ignored) {}
+        // As for the picks: a fetch made before the Wi-Fi is up (the TV just started) is tried again when it comes.
+        try {
+            ConnectivityManager cm = c.getSystemService(ConnectivityManager.class);
+            if (cm != null) cm.registerDefaultNetworkCallback(new ConnectivityManager.NetworkCallback() {
+                @Override public void onAvailable(Network network) {
+                    if (pricesFailedAt == 0 && weatherFailedAt == 0) return;
+                    pricesFailedAt = 0;
+                    weatherFailedAt = 0;
+                    main.postDelayed(HomeData.this::refreshIfStale, 2000);
+                }
+            });
+        } catch (RuntimeException e) {
+            AppLog.w("weather: no network callback: " + e.getMessage());
+        }
     }
 
     void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
@@ -551,7 +577,7 @@ final class HomeData {
     }
 
     static String hour(long at) {
-        return Ui.once(Prefs.clock24() ? "hour24" : "hour", at, () -> Ui.datePattern("format|h a").format(at));
+        return Ui.hour(at);
     }
 
     /** "Seg", "Mon", "Lun", "Mo", "Пн": the short day of the week, capitalized and without the abbreviation's dot. */

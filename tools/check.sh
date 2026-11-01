@@ -60,6 +60,8 @@ if [ "$what" = all ] || [ "$what" = android ]; then
   javac -d "$watch_classes/json" tools/testjson/org/json/*.java
   javac -cp "$watch_classes/json:out/classes:$android_jar" -d "$watch_classes" tools/WeatherParseTest.java
   java -cp "$watch_classes:$watch_classes/json:out/classes:$android_jar" io.freemytv.WeatherParseTest
+  bash tools/test-remote.sh
+  bash tools/test-order.sh
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then
@@ -83,7 +85,7 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   python3 tizen/build.py --generic
 
   # webOS 3 and Tizen 3 run a Chromium from 2015 to 2017: web/ has to be ES5, in syntax...
-  for f in web/*.js; do npx --yes acorn@8.14.0 --ecma5 --silent "$f"; done
+  for f in web/*.js webos/service/*.js; do npx --yes acorn@8.14.0 --ecma5 --silent "$f"; done
   # ...and in what it calls. These parse fine but don't exist there (wrap a feature check in try, as strings.js does).
   if grep -nE '\.(includes|startsWith|endsWith|padStart|padEnd|repeat|find|findIndex|closest)\(|Object\.(assign|entries|values)\(|Array\.from\(|\bPromise\b|\bfetch\(|new (Map|Set|WeakMap)\b' web/*.js; then
     echo "web/ calls something older TVs don't have (above)." >&2
@@ -92,6 +94,15 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   # Nor do they have CSS custom properties, grid or backdrop-filter (home.css says why).
   if grep -nE '(^|[{;])[[:space:]]*(--[a-zA-Z-]+[[:space:]]*:|[a-z-]+[[:space:]]*:[^;{}]*var\(|display[[:space:]]*:[[:space:]]*(inline-)?grid([^a-z-]|$)|grid-[a-z-]+[[:space:]]*:|(-webkit-)?backdrop-filter[[:space:]]*:)' web/*.css; then
     echo "web/ uses CSS older TVs don't have (above)." >&2
+    exit 1
+  fi
+  # On screen it's mahitTV: code and catalogues merged from upstream bring the old name back.
+  if grep -nE 'trf?\("[^"]*Free My TV|setContentDescription\("Free My TV|Free My TV</' app/src/io/freemytv/*.java; then
+    echo "On-screen text says Free My TV (above): it's mahitTV here." >&2
+    exit 1
+  fi
+  if grep -l 'Free My TV' app/assets/i18n/*.json; then
+    echo "A catalogue says Free My TV (above): python3 tools/merge_i18n.py rebrands them." >&2
     exit 1
   fi
 fi
