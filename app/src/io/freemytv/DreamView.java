@@ -42,10 +42,16 @@ import java.util.concurrent.Executors;
  * With your own photos on (Photos), those instead, without a caption.
  * Without photos (no TMDB key, or before the first fetch): the big clock over the Frosted Horizon (dark ink by day,
  * white at night, as the lock screen).
- * Settings → Screensaver style "nature" (Prefs.saverStyle): instead of photos, a depth-layered scene: the photo, a giant
- * clock in Antonio filled with the scene's frosted glass, and the scene's foreground cut out over the clock (the water
- * scene redraws a wetter clock below its waterline); the date and weather above it in Inter. A new scene every minute,
- * cross-fading; each frame is drawn once a minute in the background (adapted from tvOS-Launcher, Apache-2.0).
+ * Settings → Screensaver (Prefs.saverStyle) picks the look:
+ *  - "nature": a depth-layered scene: the photo, a giant clock filled with the scene's frosted glass (Antonio, or
+ *    Varela Round with Clock Style "rounded", Prefs.saverClock), and the scene's foreground cut out over the clock (the
+ *    water scene redraws a wetter clock below its waterline); the date and weather above it in Inter. One scene
+ *    (Prefs.saverScene) or a new one every minute, cross-fading; each frame is drawn once a minute in the background
+ *    (adapted from tvOS-Launcher, Apache-2.0);
+ *  - "aurora": the Aurora sky (Android 13+; a still gradient before) with the centered clock, in Liquid Glass on 13+;
+ *  - "aerials": the four stills in assets/aerials through the photos' own pipeline (30 s each, Ken Burns, 3 s
+ *    crossfade, the glass clock in the corner), without a caption;
+ *  - "black": only a dim clock and the date (white at 55%) drifting slowly across a black screen, against burn-in.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
     // The first photo dissolves in over 1.2 s while the whole screen settles from 1.06× (ANIMATIONS-SPEC.md §2.5).
@@ -58,7 +64,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private static final int PW = 2112, PH = 1188;
     private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
     private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
-    private static final double DRIFT_PERIOD_S = 600;
+    private static final double DRIFT_PERIOD_S = 600, BLACK_DRIFT_S = 900;
+    private static final int PHOTOS = 0, NATURE = 1, AURORA = 2, AERIALS = 3, BLACK = 4;
+    /** The Aurora's pace and shade on the screensaver (slower and a little darker than the home screen's). */
+    private static final float AURORA_SPEED = 0.45f, AURORA_DIM = 0.08f;
+    private static final String[] AERIALS_FILES = {"coast", "valley", "earth", "aurora"};
     // The high and low and the stale prices line, made again only when they change (drawn on every frame).
     private String range = "", staleLine = "", staleFor = "";
     private HomeData.Weather rangeWeather;
@@ -147,8 +157,18 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private Bitmap horizon;
     private final RectF screen = new RectF();
     private final Paint horizonPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private int mode = PHOTOS;
+    // Aurora: the sky, and its frosted copy that the glass digits bend (made once a second, off the frame).
+    private Scene sky;
+    private Frost skyFrost;
+    private boolean frostReady;   // the glass shader has the sky's frost (not a photo of an earlier run)
+    // Aerials: the stills, copied once to the cache so they load as your photos do.
+    private final java.util.ArrayList<Recs.Pick> aerials = new java.util.ArrayList<>();
+    private boolean aerialsReady;
     // Nature: the shown frame, the one fading in over it, which scene, and the scene's pictures (the worker's only).
-    private boolean nature, rendering, natureStale = true;   // stale: the minute, the date or the weather changed
+    private boolean rendering, natureStale = true;   // stale: the minute, the date or the weather changed
+    private boolean natureRounded;
+    private int natureFixed = -1;   // Prefs.saverScene's index, or -1: a new scene every minute
     private Bitmap natureShown, natureIncoming;
     private long natureIncomingAt, natureSceneAt;
     private int natureScene = -1;
@@ -169,6 +189,15 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             chromeDirty = true;
             prepareNext();
             handler.postDelayed(this, 60_000);
+        }
+    };
+
+    /** The Aurora's frosted copy for the glass digits, once a second (it moves slowly; never made while drawing). */
+    private final Runnable frostTick = new Runnable() {
+        @Override public void run() {
+            if (!running || mode != AURORA) return;
+            updateFrost();
+            handler.postDelayed(this, 1000);
         }
     };
 
@@ -200,12 +229,19 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         failed.clear();
-        nature = "nature".equals(Prefs.saverStyle());
+        mode = mode(Prefs.saverStyle());
+        natureFixed = Nature.index(Prefs.saverScene());
+        natureRounded = "rounded".equals(Prefs.saverClock());
         night = Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis()));
         applyInk();
         natureFor = "";
         natureStale = true;
-        fallback = !nature && photos().isEmpty();
+        dirty = true;
+        glassFor = "";
+        if (mode == AURORA) startAurora();
+        aerialsReady = false;
+        if (mode == AERIALS) loadAerials();
+        fallback = mode == PHOTOS && photos().isEmpty();
         data.addListener(this);
         recs.addListener(this);
         data.refreshIfStale();
@@ -226,6 +262,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         decoding = false;
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(tick);
+        handler.removeCallbacks(frostTick);
+        frostReady = false;
         playing.stop();
         data.removeListener(this);
         recs.removeListener(this);
@@ -275,6 +313,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         content.setPosition(0, 0, w, h);
         chrome.setPosition(0, 0, w, h);
         // Without photos (the clock over the aurora).
+        if (sky != null) sky.setSize(w, h);
+        if (mode == AURORA && running) updateFrost();
         datePaint = Ui.text(Ui.semibold, 36 * k, 0xD9FFFFFF);
         datePaint.setTextAlign(Paint.Align.CENTER);
         clockPaint = Ui.numbers(Ui.thin, 280 * k, 0xF2FFFFFF);
@@ -314,14 +354,68 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     // MARK: - Photos
 
-    /** Your photos when they are on, otherwise the picks'. */
+    private static int mode(String style) {
+        switch (style) {
+            case "nature": return NATURE;
+            case "aurora": return AURORA;
+            case "aerials": return AERIALS;
+            case "black": return BLACK;
+            default: return PHOTOS;
+        }
+    }
+
+    /** The Aerials' stills when they're the look; else your photos when they are on, otherwise the picks'. */
     private List<Recs.Pick> photos() {
+        if (mode == AERIALS) return aerials;
         return Photos.on(getContext()) ? Photos.picks(getContext()) : recs.showcase();
+    }
+
+    /** Copies the Aerials' stills to the cache once (a file, as your photos), then the first one comes in. */
+    private void loadAerials() {
+        final Context c = getContext().getApplicationContext();
+        final int gen = generation;
+        worker.execute(() -> {
+            final java.util.ArrayList<Recs.Pick> list = new java.util.ArrayList<>();
+            File dir = new File(c.getCacheDir(), "aerials");
+            for (int i = 0; i < AERIALS_FILES.length; i++) {
+                File f = new File(dir, AERIALS_FILES[i] + ".jpg");
+                try {
+                    if (f.length() == 0) copyAsset(c, "aerials/" + AERIALS_FILES[i] + ".jpg", f);
+                    Recs.Pick p = new Recs.Pick();
+                    p.kind = "aerial";
+                    p.id = i;
+                    p.photo = f;
+                    list.add(p);
+                } catch (java.io.IOException e) {
+                    AppLog.w("screensaver: aerial " + AERIALS_FILES[i] + ": " + e.getMessage());
+                }
+            }
+            handler.post(() -> {
+                if (gen != generation || !running) return;
+                aerials.clear();
+                aerials.addAll(list);
+                aerialsReady = true;
+                prepareNext();
+            });
+        });
+    }
+
+    private static void copyAsset(Context c, String asset, File to) throws java.io.IOException {
+        File dir = to.getParentFile();
+        if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new java.io.IOException("can't make " + dir);
+        File part = new File(to.getPath() + ".part");
+        try (java.io.InputStream in = c.getAssets().open(asset); java.io.OutputStream out = new java.io.FileOutputStream(part)) {
+            byte[] buffer = new byte[16384];
+            int n;
+            while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+        }
+        if (!part.renameTo(to)) throw new java.io.IOException("can't write " + to);
     }
 
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
     private void prepareNext() {
-        if (!running || nature || decoding || prepared != null) return;
+        if (!running || (mode != PHOTOS && mode != AERIALS) || decoding || prepared != null) return;
+        if (mode == AERIALS && !aerialsReady) return;
         List<Recs.Pick> list = photos();
         if (list.isEmpty()) return;
         Slide last = incoming != null ? incoming : current;
@@ -459,9 +553,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        if (frameTimeNanos - lastFrame >= 45_000_000L) {
+        // The black screen's clock moves under a pixel a second: 5 frames a second are plenty.
+        if (frameTimeNanos - lastFrame >= (mode == BLACK ? 200_000_000L : 45_000_000L)) {
             lastFrame = frameTimeNanos;
-            if (!nature || natureWants()) invalidate();
+            if (mode != NATURE || natureWants()) invalidate();
         }
         Choreographer.getInstance().postFrameCallback(this);
     }
@@ -470,7 +565,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private boolean natureWants() {
         if (natureIncoming != null || natureStale) return true;
         if (System.currentTimeMillis() / 60_000 != minute) return true;
-        return !rendering && (natureScene < 0 || clock() - natureSceneAt >= NATURE_SCENE_MS);
+        return !rendering && (natureScene < 0 || natureFixed < 0 && clock() - natureSceneAt >= NATURE_SCENE_MS);
     }
 
     /** The clock that drives the animations. */
@@ -491,8 +586,13 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             natureStale = true;
             chromeDirty = true;
         }
-        if (nature) {
+        if (mode == NATURE) {
             drawNature(canvas, up);
+            return;
+        }
+        if (mode == AURORA || mode == BLACK) {
+            if (mode == AURORA && !glassFor.equals(clock)) buildGlass(clock);
+            drawFallback(canvas, up, 1);
             return;
         }
         if (running) advance(up);
@@ -693,19 +793,26 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             chromeDirty = true;
             return;
         }
-        final Paint paint = new Paint(cornerClock);
+        // Aurora: the centered clock's size and baseline (drawContent's), in glass; otherwise the corner's.
+        final boolean centered = mode == AURORA;
+        final Paint paint = new Paint(centered ? clockPaint : cornerClock);
         paint.clearShadowLayer();
+        if (centered) {
+            paint.setTypeface(Ui.displaySemibold);
+            paint.setTextAlign(Paint.Align.LEFT);   // GlassText places the ink itself
+        }
         paint.setColor(0xFFFFFFFF);
-        final float right = RIGHT * k, top = CLOCK_TOP * k, scale = k;
+        final float x = centered ? w / 2f : RIGHT * k, y = centered ? centerBase() : CLOCK_TOP * k, scale = k;
         final int gen = generation;
         worker.execute(() -> {
-            Glass g = makeGlass(text, paint, right, top, scale);
+            Glass g = makeGlass(text, paint, x, y, scale, centered);
             handler.post(() -> {
                 if (gen != generation || !text.equals(glassFor)) return;
                 glass = g;
                 glassShader.setInputShader("slope", nearest(g.slope));
                 glassShader.setInputShader("cover", nearest(g.cover));
                 chromeDirty = true;
+                dirty = true;
                 invalidate();
             });
         });
@@ -717,10 +824,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         return s;
     }
 
-    /** The glass digits (GlassText: the sharp rendering, the surface slope and the shadow), placed right-aligned. */
-    private static Glass makeGlass(String text, Paint paint, float right, float top, float k) {
+    /**
+     * The glass digits (GlassText: the sharp rendering, the surface slope and the shadow): right-aligned to `x` with
+     * their top at `y`, or (`centered`) centered on `x` with their baseline at `y`.
+     */
+    private static Glass makeGlass(String text, Paint paint, float x0, float y0, float k, boolean centered) {
         GlassText.Built b = GlassText.build(text, paint, k);
-        int x = Math.round(right - b.ink.width()) - b.pad, y = Math.round(top) - b.pad;
+        int x = Math.round(centered ? x0 - b.ink.width() / 2f : x0 - b.ink.width()) - b.pad;
+        int y = Math.round(centered ? y0 + b.ink.top : y0) - b.pad;
         return new Glass(text, b.slope, b.cover, b.shadow, x, y, b.pad, Math.max(1, b.ink.height()));
     }
 
@@ -796,14 +907,18 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     // MARK: - Without photos: the big clock over the Frosted Horizon
 
-    /** The Horizon for the time of day and the ink over it: dark by day, white at night. */
+    /**
+     * The Horizon for the time of day and the ink over it: dark by day, white at night. Always white over the Aurora
+     * and on black, where it's dimmed so the clock is white at 55%.
+     */
     private void applyInk() {
         if (w == 0 || datePaint == null) return;
         horizon = Horizon.get(w, h, night);
-        int base = night ? 0xFFFFFFFF : 0xFF1C1C1E;
+        int base = night || mode == AURORA || mode == BLACK ? 0xFFFFFFFF : 0xFF1C1C1E;
+        float f = mode == BLACK ? 0.58f : 1;
         ink = base;
-        datePaint.setColor(Ui.alpha(base, 0.85f));
-        clockPaint.setColor(Ui.alpha(base, 0.95f));
+        datePaint.setColor(Ui.alpha(base, 0.85f * f));
+        clockPaint.setColor(Ui.alpha(base, 0.95f * f));
         weatherPaint.setColor(Ui.alpha(base, 0.78f));
         weatherDim.setColor(Ui.alpha(base, 0.5f));
         quotePaint.setColor(Ui.alpha(base, 0.6f));
@@ -811,9 +926,70 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         dirty = true;
     }
 
+    /** The centered clock's baseline (drawContent's). */
+    private float centerBase() {
+        return h * 0.5f + Ui.cap(clockPaint) / 2 - 10 * k;
+    }
+
+    /** The Aurora screensaver's sky: the night palette, slower and a little darker than on the home screen. */
+    private void startAurora() {
+        if (sky == null) {
+            sky = new Scene(false);
+            if (w > 0) sky.setSize(w, h);
+        }
+        Shaders.dream(sky.palette);
+        sky.setMotion(AURORA_SPEED, AURORA_DIM);
+        sky.applyPalette();
+        if (glassShader != null) {
+            if (skyFrost == null) skyFrost = new Frost();
+            updateFrost();
+            handler.postDelayed(frostTick, 1000);
+        }
+    }
+
+    /** The glass digits bend the Aurora's frosted copy (Frost: the same sky without detail, 48 × 27). */
+    private void updateFrost() {
+        if (skyFrost == null || glassShader == null || w == 0) return;
+        float t = (clock() - startedAt) / 1000f;
+        BitmapShader s = skyFrost.render(t, AURORA_SPEED, AURORA_DIM, sky.palette.c, (float) w / h);
+        glassShader.setInputShader("imageA", s);
+        glassShader.setInputShader("imageB", s);
+        float z = (float) w / Frost.W;
+        glassShader.setFloatUniform("placeA", 0, 0, z);
+        glassShader.setFloatUniform("placeB", 0, 0, z);
+        glassShader.setFloatUniform("mixB", 0);
+        if (!frostReady) dirty = true;   // the text leaves out the plain digits from now on
+        frostReady = true;
+    }
+
+    /** The Aurora's glass clock, moving with the text around it. */
+    private void drawAuroraGlass(Canvas c, float dx, float dy, float alpha) {
+        Glass g = glass;
+        if (g == null || glassShader == null || !frostReady) return;
+        float x = g.x + dx, y = g.y + dy;
+        glassShader.setFloatUniform("origin", x, y);
+        glassShader.setFloatUniform("ink", g.inkTop, g.inkHeight);
+        glassShader.setFloatUniform("refraction", 16 * k);
+        glassShader.setFloatUniform("specular", 1);
+        glassShader.setFloatUniform("alpha", alpha);
+        c.drawRect(x, y, x + g.cover.getWidth(), y + g.cover.getHeight(), glassPaint);
+    }
+
+    /** True once the Aurora's clock is glass (Android 13+): the text then leaves out the plain digits. */
+    private boolean auroraGlass() {
+        return mode == AURORA && glass != null && glassShader != null && frostReady;
+    }
+
     private void drawFallback(Canvas canvas, long up, float alpha) {
         float t = (up - startedAt) / 1000f;
-        Horizon.draw(canvas, horizon, screen, horizonPaint, 1);
+        if (mode == BLACK) {
+            canvas.drawColor(0xFF000000);
+        } else if (mode == AURORA && sky != null) {
+            sky.advance(t);
+            sky.drawBackground(canvas);
+        } else {
+            Horizon.draw(canvas, horizon, screen, horizonPaint, 1);
+        }
         if (dirty) {
             Canvas rc = content.beginRecording(w, h);
             try {
@@ -823,13 +999,23 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             }
             dirty = false;
         }
-        double phase = 2 * Math.PI * t / DRIFT_PERIOD_S;
-        float dx = (float) (40 * k * Math.sin(phase)), dy = (float) (26 * k * Math.sin(2 * phase + 0.7));
+        float dx, dy;
+        if (mode == BLACK) {
+            // Wide and slow, so no pixel stays lit for long.
+            double phase = 2 * Math.PI * t / BLACK_DRIFT_S;
+            dx = (float) (w * 0.24f * Math.sin(phase));
+            dy = (float) (h * 0.17f * Math.sin(2 * phase + 0.7));
+        } else {
+            double phase = 2 * Math.PI * t / DRIFT_PERIOD_S;
+            dx = (float) (40 * k * Math.sin(phase));
+            dy = (float) (26 * k * Math.sin(2 * phase + 0.7));
+        }
         content.setTranslationX(dx);
         content.setTranslationY(dy);
         content.setAlpha(alpha);
         content.draw(canvas);
-        if (playingBottom != null) {
+        if (mode == AURORA) drawAuroraGlass(canvas, dx, dy, alpha);
+        if (playingBottom != null && mode != BLACK) {
             float bars = NowPlaying.barsWidth(bottomCap) + bottomCap * 0.6f;
             drawBars(canvas, w / 2f - (bars + playingBottomWidth) / 2 + dx, h - 92 * k + dy, bottomCap, quotePaint.getColor(), alpha);
         }
@@ -838,9 +1024,16 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private void drawContent(Canvas c) {
         float cx = w / 2f;
         float clockCap = Ui.cap(clockPaint);
-        float clockBase = h * 0.5f + clockCap / 2 - 10 * k;
+        float clockBase = centerBase();
         c.drawText(date, cx, clockBase - clockCap - 34 * k, datePaint);
-        c.drawText(clock, cx, clockBase, clockPaint);
+        if (auroraGlass()) {
+            // The glass digits are drawn over this, live; here only their shadow.
+            shadowPaint.setAlpha(110);
+            c.drawBitmap(glass.shadow, glass.x, glass.y + 6 * k, shadowPaint);
+        } else {
+            c.drawText(clock, cx, clockBase, clockPaint);
+        }
+        if (mode == BLACK) return;   // only the clock and the date on black
 
         // Weather: symbol, temperature, high and low, centered under the clock.
         HomeData.Weather wx = data.weather;
@@ -917,7 +1110,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             }
         }
         if (!running || rendering || natureIncoming != null) return;
-        boolean next = natureScene < 0 || up - natureSceneAt >= NATURE_SCENE_MS;
+        boolean next = natureScene < 0 || natureFixed < 0 && up - natureSceneAt >= NATURE_SCENE_MS;
         if (!next && !natureStale) return;   // nothing new: no strings made on this frame
         natureStale = false;
         String header = natureHeader();
@@ -938,13 +1131,15 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         rendering = true;
         int scene = natureScene;
         if (next) {
-            scene = natureScene < 0 ? Nature.first(System.currentTimeMillis()) : (natureScene + 1) % Nature.SCENES.length;
+            if (natureFixed >= 0) scene = natureFixed;
+            else scene = natureScene < 0 ? Nature.first(System.currentTimeMillis()) : (natureScene + 1) % Nature.SCENES.length;
             natureScene = scene;
             natureSceneAt = up;
         }
         natureFor = key;
         final int gen = generation, s = scene, fw = w, fh = h;
         final String time = clock;
+        final boolean rounded = natureRounded;
         final Context c = getContext().getApplicationContext();
         worker.execute(() -> {
             Bitmap frame = null;
@@ -953,7 +1148,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                     if (natureLoaded != null) natureLoaded.recycle();
                     natureLoaded = Nature.load(c, s, fw);
                 }
-                frame = Nature.render(natureLoaded, fw, fh, time, header);
+                frame = Nature.render(natureLoaded, fw, fh, time, header, rounded);
             } catch (Exception | OutOfMemoryError e) {
                 AppLog.w("screensaver: nature scene: " + e.getMessage());
             }
@@ -1005,6 +1200,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             new Spec("water", true, false, false, false, 134, 210, 0, 108, 0),
             new Spec("golden", false, false, false, false, 76, 195, 0, 53, 0),
         };
+
+        /** The scene with this id (Prefs.saverScene), or -1 ("rotate": a new one every minute). */
+        static int index(String id) {
+            for (int i = 0; i < SCENES.length; i++) if (SCENES[i].id.equals(id)) return i;
+            return -1;
+        }
 
         /** The scene that suits the hour to start with: night, dawn, the day ones, golden hour. */
         static int first(long now) {
@@ -1089,8 +1290,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             return out;
         }
 
-        /** One frame: photo, glass clock, foreground over it, the date line. Off the UI thread. */
-        static Bitmap render(Loaded ls, int w, int h, String time, String header) {
+        /** One frame: photo, glass clock (Antonio, or Varela Round when `rounded`), foreground over it, the date line. Off the UI thread. */
+        static Bitmap render(Loaded ls, int w, int h, String time, String header, boolean rounded) {
             Spec sp = SCENES[ls.index];
             Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
@@ -1103,14 +1304,15 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 c.drawRect(0, 0, w, h * 0.22f, fade);
             }
 
-            // The giant clock: Antonio, filled with the frosted scene, a frost over it and a bright rim.
+            // The giant clock, filled with the frosted scene, a frost over it and a bright rim. Varela Round is about
+            // 40% wider than Antonio: 0.8× its size keeps it inside the scene's frame.
             Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-            fill.setTypeface(Ui.clockTall());
-            fill.setTextSize(sp.clockSize * u);
-            fill.setLetterSpacing(-0.02f);
+            fill.setTypeface(rounded ? Ui.clockRounded() : Ui.clockTall());
+            fill.setTextSize(sp.clockSize * u * (rounded ? 0.8f : 1));
+            fill.setLetterSpacing(rounded ? 0 : -0.02f);
             android.graphics.Rect bounds = new android.graphics.Rect();
             fill.getTextBounds("0847", 0, 4, bounds);
-            float cap = Math.max(sp.clockSize * u * 0.68f, -bounds.top);
+            float cap = Math.max(fill.getTextSize() * 0.68f, -bounds.top);
             float dateBase = Math.max(65 * u, (sp.dateTop + 19) * u);
             float top = Math.max((sp.clockTop + 19) * u, dateBase + 14 * u), base = top + cap;
             float tw = fill.measureText(time);

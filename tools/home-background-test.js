@@ -67,5 +67,15 @@ assert.ok(!/300 \* full/.test(source), 'the Dock no longer drops 300 px in full 
 assert.ok(!/\.full #tabs/.test(css), 'the tab bar stays in full screen');
 assert.ok(!/\.drawer-open #pill/.test(css) && !/\.drawer-open #tabs/.test(css), 'the status pill and the tab bar stay with Control Center open');
 assert.ok(/#drawer \{[^}]*top: 124px/.test(css), 'Control Center starts under the status pill');
+// Control Center floats on the right, 560 wide from x 1300; the Dock's tiles are 244 x 146, 57 apart.
+assert.ok(/#drawer \{[^}]*left: 1300px[^}]*width: 560px/.test(css), 'Control Center is a 560 px panel at x 1300');
+assert.ok(/TILE_W = 244, TILE_H = 146, TILE_GAP = 57/.test(source), 'the Dock lays out 244 x 146 tiles, 57 apart');
+assert.ok(/\.tile, \.cell \.face \{[^}]*width: 244px;[^}]*height: 146px;/.test(css), 'a Dock tile is 244 x 146');
+// One Inputs tile (its sheet lists the ports); All Apps and Recent Apps live on the Dock and the Home key, not here.
+var tiles = source.slice(source.indexOf('function ccTiles'), source.indexOf('function ccIcons'));
+assert.strictEqual((tiles.match(/tr\('Inputs'\)/g) || []).length, 1, 'Control Center has one Inputs tile');
+assert.ok(!/All Apps|Recent Apps|hdmi/.test(tiles), 'Control Center has no All Apps, Recent Apps or per-port tiles');
+// The volume HUD sits on the left edge, clear of the panel on the right.
+assert.ok(/#volhud \{[^}]*left: 56px;[^}]*width: 72px; height: 320px/.test(css), 'the volume HUD is 72 x 320 at x 56');
 
 console.log('home-background-test: passed');

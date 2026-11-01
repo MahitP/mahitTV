@@ -5,8 +5,10 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
+import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -24,9 +26,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Recent apps (TVOS-LAUNCHER-MERGE-SPEC.md S3): a carousel of the current profile's last apps, from mahitTV's own
- * launch history (WatchLog), over the Frosted Horizon. The focused card grows 1.18× (SNAPPY_FOCUS) with its name; ← →
- * move (a bump at the ends); OK opens it; Back closes. ↑ lifts the card 40 px with "Close"; a second ↑ or OK within
+ * Recent apps (TVOS-LAUNCHER-MERGE-SPEC.md S3), as tvOS's app switcher: the current profile's last apps, from mahitTV's
+ * own launch history (WatchLog), over the Frosted Horizon. The focused card is 845×475 in front, its neighbours stacked
+ * behind it, smaller and dimmed (the deck formula, deck()); each card has its app's icon and name above it. ← → move
+ * the stack (SPATIAL_SCROLL, a bump at the ends); OK opens it; Back closes. ↑ lifts the card 40 px with "Close"; a second ↑ or OK within
  * ARM_MS closes that app (HomeMode.forceStop, mahitTV mode only, never a system or home app: Part 2 §4) and the card
  * leaves the row. Guest has no history, so an empty state. HomeView adds it like LockView and sends it keys.
  * The cards are made off the UI thread when it opens; a frame only moves springs.
@@ -40,8 +43,17 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
 
     private static final int MAX = 12, INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;
     private static final int VEIL_DAY = 0x1AFFFFFF, VEIL_NIGHT = 0x24000000;
-    /** Cards, in 1080p px: 5:3 like the Dock's, centred on the focused one. */
-    private static final float CARD_W = 400, CARD_H = 240, GAP = 64, GROW = 0.18f, ROW_Y = 560, TITLE_Y = 250;
+    /** The focused card, in 1080p px (tvOS's switcher, 16:9), centred on the screen; the empty state's title. */
+    private static final float CARD_W = 845, CARD_H = 475, CARD_R = 40, ROW_Y = 590, TITLE_Y = 250;
+    /** A card d places behind the focused one is BACK·d smaller (up to 2) and dimmed up to DIM. */
+    private static final float BACK = 0.08f, DIM = 0.42f;
+    /** The icon (5:3, like the Dock's tiles) and name above each card, LABEL_UP above it; names ellipsized to NAME_W. */
+    private static final float ICON_W = 70, ICON_H = 42, ICON_R = 10, ICON_GAP = 14, LABEL_UP = 34, NAME_W = 420;
+    /**
+     * The cards' bitmaps are made at this share of their size: a banner or a logo is no sharper than that, and twelve
+     * 845×475 cards at full size would hold 20 MB or more.
+     */
+    private static final float CARD_RES = 0.6f, SHADOW_BLUR = 34;
     /** How long a lifted card waits for the second ↑ or OK that closes its app; how far it lifts (1080p px). */
     private static final long ARM_MS = 3000;
     private static final float LIFT = 40;
@@ -49,7 +61,8 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
     private final Listener listener;
     private final Scene scene;
     private final Spring appear = new Spring(Spring.SHEET_OPEN, 0);
-    private final Spring scroll = new Spring(Spring.SPATIAL_SCROLL, 0).px(), nudge = new Spring(Spring.BOUNDARY_BUMP, 0).px();
+    // scroll is in cards (the focused index, gliding); nudge in px.
+    private final Spring scroll = new Spring(Spring.SPATIAL_SCROLL, 0), nudge = new Spring(Spring.BOUNDARY_BUMP, 0).px();
     private Spring[] focus = new Spring[0];
     // Close: the lifted card (or -1), the one leaving after its app closed (or -1), and whether a close is running.
     private final Spring lift = new Spring(Spring.SNAPPY_FOCUS, 0), away = new Spring(Spring.SHEET_CLOSE, 1);
@@ -65,9 +78,11 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         }
     };
     private List<HomeApps.Item> items = new ArrayList<>();
-    private Bitmap[] cards = new Bitmap[0];
+    private Bitmap[] cards = new Bitmap[0], icons = new Bitmap[0];
     private BitmapShader[] shaders = new BitmapShader[0];
     private String[] names = new String[0];
+    private float[] nameW = new float[0];
+    private int[] order = new int[0];   // the drawing order, back to front (sorted in place in onDraw)
     private boolean night = true, posted, closing, loading;
     private int index, generation;
     private long lastNanos;
@@ -78,7 +93,9 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
     private final Path squircle = new Path();
     private final Paint image = new Paint(Paint.FILTER_BITMAP_FLAG), veil = new Paint();
     private final Paint card = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG), ring = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG), dim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint icon = new Paint(Paint.FILTER_BITMAP_FLAG), shadow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Shadows shadows = new Shadows();
     private Paint titleP, nameP, emptyP, closeP;
 
     RecentsOverlay(Activity a, Scene scene, Listener listener) {
@@ -116,8 +133,11 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         index = 0;
         items = new ArrayList<>();
         cards = new Bitmap[0];
+        icons = new Bitmap[0];
         shaders = new BitmapShader[0];
         names = new String[0];
+        nameW = new float[0];
+        order = new int[0];
         focus = new Spring[0];
         closable = new boolean[0];
         removeCallbacks(disarm);
@@ -237,28 +257,33 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         int n = items.size() - 1;
         List<HomeApps.Item> list = new ArrayList<>(items);
         list.remove(gone);
-        Bitmap[] cs = new Bitmap[n];
+        Bitmap[] cs = new Bitmap[n], is = new Bitmap[n];
         BitmapShader[] ss = new BitmapShader[n];
         String[] ns = new String[n];
+        float[] nw = new float[n];
         Spring[] fs = new Spring[n];
         boolean[] cl = new boolean[n];
         for (int i = 0, j = 0; i <= n; i++) {
             if (i == gone) continue;
             cs[j] = cards[i];
+            is[j] = icons[i];
             ss[j] = shaders[i];
             ns[j] = names[i];
+            nw[j] = nameW[i];
             fs[j] = focus[i];
             cl[j] = closable[i];
             j++;
         }
         items = list;
         cards = cs;
+        icons = is;
         shaders = ss;
         names = ns;
+        nameW = nw;
         focus = fs;
         closable = cl;
         index = Math.max(0, Math.min(index, n - 1));
-        scroll.target = index * (CARD_W + GAP) * k;
+        scroll.target = index;
     }
 
     private void move(int dir) {
@@ -270,7 +295,7 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
             return;
         }
         index = next;
-        scroll.target = index * (CARD_W + GAP) * k;
+        scroll.target = index;
         Click c = Click.current();
         if (c != null) c.move();
         wake();
@@ -313,14 +338,17 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         if (w == 0) return;
         final int gen = ++generation;
         final Context c = getContext().getApplicationContext();
-        final int cw = Math.round(CARD_W * k), ch = Math.round(CARD_H * k);
+        final int cw = Math.round(CARD_W * k * CARD_RES), ch = Math.round(CARD_H * k * CARD_RES);
+        final int iw = Math.round(ICON_W * k), ih = Math.round(ICON_H * k);
+        final float ir = ICON_R * k;
         loading = true;
         new Thread(() -> {
             List<HomeApps.Item> list = recents(c);
-            Bitmap[] made = new Bitmap[list.size()];
+            Bitmap[] made = new Bitmap[list.size()], small = new Bitmap[list.size()];
             boolean[] may = new boolean[list.size()];
             for (int i = 0; i < list.size(); i++) {
-                made[i] = cardFor(c, list.get(i), cw, ch);
+                made[i] = cardFor(c, list.get(i), cw, ch, 0.42f, 0.34f);
+                small[i] = rounded(cardFor(c, list.get(i), iw, ih, 0.62f, 0.46f), ir);
                 may[i] = HomeMode.mayForceStop(c, list.get(i).pkg);
             }
             post(() -> {
@@ -328,14 +356,24 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
                 loading = false;
                 items = list;
                 cards = made;
+                icons = small;
                 closable = may;
                 shaders = new BitmapShader[made.length];
                 names = new String[made.length];
+                nameW = new float[made.length];
+                order = new int[made.length];
                 focus = new Spring[made.length];
                 TextPaint tp = new TextPaint(nameP);
                 for (int i = 0; i < made.length; i++) {
-                    shaders[i] = made[i] == null ? null : new BitmapShader(made[i], Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-                    names[i] = TextUtils.ellipsize(list.get(i).label, tp, (CARD_W + GAP - 24) * k, TextUtils.TruncateAt.END).toString();
+                    if (made[i] != null) {
+                        // Drawn at the card's full size: the shader scales the smaller bitmap up.
+                        shaders[i] = new BitmapShader(made[i], Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                        Matrix m = new Matrix();
+                        m.setScale(CARD_W * k / made[i].getWidth(), CARD_H * k / made[i].getHeight());
+                        shaders[i].setLocalMatrix(m);
+                    }
+                    names[i] = TextUtils.ellipsize(list.get(i).label, tp, NAME_W * k, TextUtils.TruncateAt.END).toString();
+                    nameW[i] = tp.measureText(names[i]);
                     focus[i] = new Spring(Spring.SNAPPY_FOCUS, i == index ? 1 : 0);
                 }
                 invalidate();
@@ -344,8 +382,11 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         }, "recents").start();
     }
 
-    /** A 5:3 card: the app's banner, else its composed logo on its colour, else its icon on graphite. */
-    private static Bitmap cardFor(Context c, HomeApps.Item it, int cw, int ch) {
+    /**
+     * A card (or the small icon above it): the app's tile, else its composed logo (at most logoW × logoH of the card) on
+     * its colour, else its banner, else its icon on graphite.
+     */
+    private static Bitmap cardFor(Context c, HomeApps.Item it, int cw, int ch, float logoW, float logoH) {
         try {
             HomeApps.compose(c, it, true);
             Bitmap b = Bitmap.createBitmap(cw, ch, Bitmap.Config.ARGB_8888);
@@ -362,7 +403,7 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
             p.setShader(null);
             Bitmap logo = it.logo;
             if (logo != null) {
-                float s = Math.min(cw * 0.62f / logo.getWidth(), ch * 0.46f / logo.getHeight()) * Math.max(0.5f, it.logoScale);
+                float s = Math.min(cw * logoW / logo.getWidth(), ch * logoH / logo.getHeight()) * Math.max(0.5f, it.logoScale);
                 float lw = logo.getWidth() * s, lh = logo.getHeight() * s;
                 cv.drawBitmap(logo, null, new RectF((cw - lw) / 2, (ch - lh) / 2, (cw + lw) / 2, (ch + lh) / 2), p);
                 return b;
@@ -382,6 +423,23 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         } catch (Throwable e) {
             AppLog.w("recents card: " + e.getMessage());
             return null;
+        }
+    }
+
+    /** `src` with continuous corners of radius `r` (the icon above a card); null stays null. */
+    private static Bitmap rounded(Bitmap src, float r) {
+        if (src == null) return null;
+        try {
+            Bitmap out = Bitmap.createBitmap(src.getWidth(), src.getHeight(), Bitmap.Config.ARGB_8888);
+            Path p = new Path();
+            Corners.continuous(p, src.getWidth(), src.getHeight(), r);
+            Paint pt = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            pt.setShader(new BitmapShader(src, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+            new Canvas(out).drawPath(p, pt);
+            src.recycle();
+            return out;
+        } catch (Throwable e) {
+            return src;
         }
     }
 
@@ -446,18 +504,21 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         screen.set(0, 0, w, h);
         titleP = Ui.text(Ui.displaySemibold, 57 * k, WHITE);
         titleP.setTextAlign(Paint.Align.CENTER);
-        nameP = Ui.text(Ui.semibold, 30 * k, WHITE);
-        nameP.setTextAlign(Paint.Align.CENTER);
+        nameP = Ui.text(Ui.semibold, 30 * k, WHITE);   // left-aligned: it follows the icon
         emptyP = Ui.text(Ui.medium, 32 * k, WHITE);
         emptyP.setTextAlign(Paint.Align.CENTER);
         closeP = Ui.text(Ui.semibold, 28 * k, WHITE);
         closeP.setTextAlign(Paint.Align.CENTER);
         squircle.rewind();
-        Corners.continuous(squircle, CARD_W * k, CARD_H * k, 34 * k);
+        Corners.continuous(squircle, CARD_W * k, CARD_H * k, CARD_R * k);
+        // The focused card's rim: a hairline of light (the cards are opaque, so no glass under them).
         ring.setStyle(Paint.Style.STROKE);
-        ring.setStrokeWidth(5 * k);
-        ring.setColor(0xF2FFFFFF);
-        shade.setColor(0x33000000);
+        ring.setStrokeWidth(2 * k);
+        ring.setColor(0x73FFFFFF);
+        shade.setColor(0xFF2C2C2E);
+        dim.setColor(0xFF000000);
+        shadow.setColor(0x73000000);
+        shadow.setMaskFilter(new BlurMaskFilter(SHADOW_BLUR * k, BlurMaskFilter.Blur.NORMAL));
         theme();
         if (getVisibility() == VISIBLE) load();
     }
@@ -475,53 +536,97 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
 
     // MARK: - Drawing
 
+    /**
+     * How far from the centre a card d places from the focused one sits, in card widths: the deck formula of
+     * tvOS-Launcher's switcher, (1.06·d − (0.12·d + 0.25))·w, past the first neighbour; linear up to it (0.69 w at d = 1).
+     */
+    private static float deck(float d, float cw) {
+        if (d <= 1) return d * 0.69f * cw;
+        return (1.06f * d - (0.12f * d + 0.25f)) * cw;
+    }
+
     @Override protected void onDraw(Canvas c) {
         if (w == 0 || titleP == null) return;
         Horizon.draw(c, horizon, screen, image, 1);
         c.drawRect(screen, veil);
-        c.drawText(title, w / 2, TITLE_Y * k, titleP);
-        if (items.isEmpty()) {
+        int n = Math.min(items.size(), order.length);
+        if (n == 0) {
+            c.drawText(title, w / 2, TITLE_Y * k, titleP);
             if (!loading) c.drawText(empty, w / 2, ROW_Y * k, emptyP);
             return;
         }
-        float cw = CARD_W * k, ch = CARD_H * k, step = (CARD_W + GAP) * k;
-        float x0 = w / 2 - scroll.value - Spring.rubber(nudge.value) * k;
-        for (int i = 0; i < items.size(); i++) {
-            float cx = x0 + i * step;
-            if (cx < -cw || cx > w + cw) continue;
-            float f = i < focus.length ? Ui.clamp(focus[i].value) : 0, z = 1 + GROW * (i < focus.length ? focus[i].value : 0);
-            // The lifted card rises LIFT px; the one whose app closed flies on up and fades (SHEET_CLOSE).
-            float up = i == armed || i == leaving ? Ui.clamp(lift.value) : 0, gone = i == leaving ? 1 - Ui.clamp(away.value) : 0;
-            float a = 1 - gone, cy = ROW_Y * k - LIFT * k * up - 160 * k * gone;
-            if (a <= 0.004f) continue;
-            // The glass under each card, a soft lift for the focused one.
-            tmp.set(cx - cw / 2 * z - 10 * k, cy - ch / 2 * z - 10 * k, cx + cw / 2 * z + 10 * k, cy + ch / 2 * z + 10 * k);
-            scene.glass(c, tmp, 44 * k * z, night ? 0xFF1C1C22 : WHITE, night ? 0.36f : 0.45f, WHITE, 0.05f + 0.1f * f, 0.04f, 1,
-                    (0.55f + 0.45f * f) * a);
-            c.save();
-            c.translate(cx - cw / 2 * z, cy - ch / 2 * z);
-            c.scale(z, z);
-            if (shaders[i] != null) {
-                card.setShader(shaders[i]);
-                card.setAlpha(Math.round(255 * a));
-                c.drawPath(squircle, card);
-                card.setShader(null);
-                card.setAlpha(255);
-            } else {
-                c.drawPath(squircle, shade);
+        // Back to front: the farthest cards first, the focused one last, on top (an insertion sort on a kept array).
+        float pos = scroll.value;
+        for (int i = 0; i < n; i++) order[i] = i;
+        for (int i = 1; i < n; i++) {
+            int o = order[i], j = i - 1;
+            float d = Math.abs(o - pos);
+            while (j >= 0 && Math.abs(order[j] - pos) < d) {
+                order[j + 1] = order[j];
+                j--;
             }
-            if (f > 0.01f) {
-                ring.setAlpha(Math.round(242 * f * a));
-                c.drawPath(squircle, ring);
-            }
-            c.restore();
-            if (up > 0.01f && i == armed) {
-                closeP.setAlpha(Math.round(255 * up * a));
-                c.drawText(closeLabel, cx, cy - ch / 2 * z - 26 * k, closeP);
-            }
-            nameP.setAlpha(Math.round(255 * (0.45f + 0.55f * f) * a));
-            c.drawText(names[i], cx, cy + ch / 2 * z + 58 * k, nameP);
+            order[j + 1] = o;
         }
+        float shift = Spring.rubber(nudge.value) * k;
+        for (int r = 0; r < n; r++) drawCard(c, order[r], pos, shift);
         nameP.setAlpha(255);
+        icon.setAlpha(255);
+    }
+
+    private void drawCard(Canvas c, int i, float pos, float shift) {
+        float cw = CARD_W * k, ch = CARD_H * k, d = i - pos, ad = Math.abs(d);
+        float s = 1 - BACK * Math.min(ad, 2), half = cw / 2 * s;
+        float cx = w / 2 + Math.signum(d) * deck(ad, cw) - shift;
+        if (cx + half < 0 || cx - half > w) return;
+        float f = i < focus.length ? Ui.clamp(focus[i].value) : 0;
+        // The lifted card rises LIFT px; the one whose app closed flies on up and fades (SHEET_CLOSE).
+        float up = i == armed || i == leaving ? Ui.clamp(lift.value) : 0, gone = i == leaving ? 1 - Ui.clamp(away.value) : 0;
+        float a = 1 - gone, cy = ROW_Y * k - LIFT * k * up - 160 * k * gone;
+        if (a <= 0.004f) return;
+        float top = cy - ch / 2 * s, bottom = cy + ch / 2 * s;
+        tmp.set(cx - half, top + 16 * k, cx + half, bottom + 16 * k);
+        shadow.setAlpha(Math.round((70 + 45 * f) * a));
+        shadows.draw(c, tmp, CARD_R * k * s, SHADOW_BLUR * k, shadow);
+        c.save();
+        c.translate(cx - half, top);
+        c.scale(s, s);
+        if (i < shaders.length && shaders[i] != null) {
+            card.setShader(shaders[i]);
+            card.setAlpha(Math.round(255 * a));
+            c.drawPath(squircle, card);
+            card.setShader(null);
+            card.setAlpha(255);
+        } else {
+            shade.setAlpha(Math.round(255 * a));
+            c.drawPath(squircle, shade);
+        }
+        float dark = DIM * (1 - f);   // behind the focused card, the stack is dimmed
+        if (dark > 0.01f) {
+            dim.setAlpha(Math.round(255 * dark * a));
+            c.drawPath(squircle, dim);
+        }
+        if (f > 0.01f) {
+            ring.setAlpha(Math.round(115 * f * a));
+            c.drawPath(squircle, ring);
+        }
+        c.restore();
+        // The app's icon and name above its card, fading out past the first neighbour.
+        float la = (0.5f + 0.5f * f) * a * Ui.clamp(1.6f - ad);
+        if (la > 0.01f && i < names.length && names[i] != null) {
+            float iw = ICON_W * k, ih = ICON_H * k, gap = ICON_GAP * k;
+            float has = i < icons.length && icons[i] != null ? 1 : 0;
+            float lx = cx - (has * (iw + gap) + nameW[i]) / 2, base = top - LABEL_UP * k, mid = base - 11 * k;
+            if (has > 0) {
+                tmp.set(lx, mid - ih / 2, lx + iw, mid + ih / 2);
+                icon.setAlpha(Math.round(255 * la));
+                c.drawBitmap(icons[i], null, tmp, icon);
+            }
+            nameP.setAlpha(Math.round(255 * la));
+            c.drawText(names[i], lx + has * (iw + gap), base, nameP);
+        }
+        if (up > 0.01f && i == armed) {
+            closeP.setAlpha(Math.round(255 * up * a));
+            c.drawText(closeLabel, cx, bottom + 64 * k, closeP);
+        }
     }
 }

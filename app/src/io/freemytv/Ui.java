@@ -47,7 +47,7 @@ final class Ui {
     static volatile String language = "en";
     /** Bumped when the language changes: text cached by the screens is made again. */
     static volatile int generation;
-    static Typeface thin, light, displayMedium, displaySemibold, regular, medium, semibold;
+    static Typeface thin, light, displayMedium, displaySemibold, displayBold, regular, medium, semibold;
     private static boolean loaded;
     private static final Rect BOUNDS = new Rect();
     private static final RectF OVAL = new RectF();
@@ -61,6 +61,7 @@ final class Ui {
         light = font(a, 32, 300);
         displayMedium = font(a, 32, 500);
         displaySemibold = font(a, 32, 600);
+        displayBold = font(a, 32, 700);   // the Settings panes' titles
         regular = font(a, 14, 400);
         medium = font(a, 14, 500);
         semibold = font(a, 14, 600);
@@ -104,6 +105,22 @@ final class Ui {
         }
         if (clockTall == null) clockTall = thin != null ? thin : Typeface.DEFAULT;
         return clockTall;
+    }
+
+    private static Typeface clockRounded;
+
+    /**
+     * Varela Round (OFL, assets/fonts/VarelaRound-OFL.txt): only the screensaver's "Rounded" clock style uses it.
+     * Loaded on first use; the tall clock face if the file is missing.
+     */
+    static synchronized Typeface clockRounded() {
+        if (clockRounded != null) return clockRounded;
+        try {
+            if (assets != null && has(assets, "fonts/VarelaRound-Regular.ttf")) clockRounded = Typeface.createFromAsset(assets, "fonts/VarelaRound-Regular.ttf");
+        } catch (RuntimeException ignored) {
+        }
+        if (clockRounded == null) clockRounded = clockTall();
+        return clockRounded;
     }
 
     // MARK: - Text in the viewer's language

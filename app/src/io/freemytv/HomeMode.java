@@ -277,6 +277,61 @@ final class HomeMode {
         return true;
     }
 
+    /**
+     * Control Center's Power: the screen off now (the TV's standby), the same key the remote's power button sends,
+     * through our own ADB, in mahitTV mode only. Blocking: call it off the UI thread. True if the command ran.
+     */
+    static boolean screenOff(Context c) {
+        if (!FREE.equals(state(c).optString("mode"))) return false;
+        synchronized (RUN) {
+            try (Adb adb = Adb.connect(c, 5_000, null)) {
+                adb.shell("input keyevent KEYCODE_SLEEP");
+                return true;
+            } catch (Exception e) {
+                AppLog.w("couldn't turn the screen off: " + e.getMessage());
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Control Center's Do Not Disturb needs the notification policy access, which a TV has no page to grant: in mahitTV
+     * mode it's allowed once through our own ADB (`cmd notification allow_dnd`); Original and the watchdog's revert take
+     * it back (dnd(…, false)), as they do the Now Playing listener. Blocking: off the UI thread. True if it's allowed.
+     */
+    static boolean allowDnd(Context c) {
+        if (!FREE.equals(state(c).optString("mode"))) return false;
+        synchronized (RUN) {
+            try (Adb adb = Adb.connect(c, 5_000, null)) {
+                dnd(c, adb, true);
+            } catch (Exception e) {
+                AppLog.w("Do Not Disturb access: " + e.getMessage());
+                return false;
+            }
+        }
+        android.app.NotificationManager nm = (android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+        return nm != null && nm.isNotificationPolicyAccessGranted();
+    }
+
+    /**
+     * Allows or takes back the Do Not Disturb access. Taking it back first turns Do Not Disturb off if it's on (a TV
+     * has no page to turn it off; revoking the access alone leaves it on), while the access still allows that.
+     */
+    private static void dnd(Context c, Adb adb, boolean on) throws IOException {
+        if (!on) {
+            try {
+                android.app.NotificationManager nm = (android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null && nm.isNotificationPolicyAccessGranted()
+                        && nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL) {
+                    nm.setInterruptionFilter(android.app.NotificationManager.INTERRUPTION_FILTER_ALL);
+                }
+            } catch (RuntimeException e) {
+                AppLog.w("Do Not Disturb: " + e.getMessage());
+            }
+        }
+        adb.shell("cmd notification " + (on ? "allow_dnd " : "disallow_dnd ") + PKG);
+    }
+
     /** Clean Up: turns off these apps of the plan (each checked again first), in the main process. */
     static void requestClean(Context c, List<String> pkgs) {
         JSONObject s = state(c);
@@ -597,6 +652,11 @@ final class HomeMode {
             } catch (IOException e) {
                 AppLog.w("now playing: " + e.getMessage());
             }
+            try {
+                dnd(c, adb, false);   // Control Center's Do Not Disturb access, if it was allowed
+            } catch (IOException e) {
+                AppLog.w("Do Not Disturb access: " + e.getMessage());
+            }
             s = state(c);
             List<String> stillDebloated = new ArrayList<>(stringList(s, "debloated"));
             stillDebloated.retainAll(failed);
@@ -881,6 +941,7 @@ final class HomeMode {
                 SleepTimer.stop(app);   // its row shows Unavailable from now on
                 try {
                     nowPlaying(app, adb, false);   // and so does Now Playing's
+                    dnd(app, adb, false);          // and Do Not Disturb's access
                 } catch (IOException e) {
                     AppLog.w("now playing: " + e.getMessage());
                 }

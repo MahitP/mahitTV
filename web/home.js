@@ -92,9 +92,9 @@
   // Apps shown at once, as on Android: 8 (today's smallest tiles, 178 wide); the shelf scrolls for the rest. The
   // built-in list keeps 8 too.
   // The Dock shows 5 at once (tvOS's 5:3 tiles, 300 × 180) and scrolls for the rest.
-  // As in Apple's photo (DESIGN-TVOS.md §1): 6 columns of 251 × 150, 49 apart, 85 px margins; the Dock's glass pads them
+  // As in Apple's photo (DESIGN-TVOS.md §1): 6 columns of 244 × 146, 57 apart, 85 px margins; the Dock's glass pads them
   // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
-  var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 251, TILE_H = 150, TILE_GAP = 49, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
+  var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 244, TILE_H = 146, TILE_GAP = 57, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
   var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
   // The Top Shelf's full screen (↑ on a pick) recesses the Dock this far and to this opacity; it never hides it.
   var RECESS = 36, RECESS_A = 0.75;
@@ -522,7 +522,8 @@
     dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
     heroX: spring(P.TITLE_SETTLE).px(), heroA: spring(P.TITLE_SETTLE, 1), heroShow: spring([0.3, 1], 1),
     lensX: spring(P.LIQUID_PILL).px(), lensW: spring(P.LIQUID_PILL, 100).px(), dot: spring(P.SNAPPY_FOCUS).px(),
-    rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL).px()
+    rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL),
+    ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP)
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
@@ -642,27 +643,32 @@
     }
     var cur = $('dots').querySelector('.cur');
     if (cur) T(cur, 'translateX(' + r2(mv.dot.x) + 'px)');
-    // Control Center: in from the right, its rows 25 ms apart.
-    var drawer = q('#drawer'), da = Motion.clamp(d * 2.5, 0, 1);
+    // Control Center: in from the right, its rows 25 ms apart; Inputs slides in over the tiles, which slide away.
+    var drawer = q('#drawer'), da = Motion.clamp(d * 2.5, 0, 1), sub = Motion.clamp(mv.ccSub.x, 0, 1);
     T(drawer, 'translateX(' + r2(480 * (1 - d)) + 'px)');
     A(drawer, da);
     V(drawer, da);
-    var prof = drawer.querySelector('.profiles');
-    if (prof && drawerRows[0]) {
-      T(prof, 'translateX(' + r2(28 * (1 - drawerRows[0].x)) + 'px)');
-      A(prof, drawerRows[0].x);
+    for (var k = 0; k < ccRows.length; k++) {
+      var rx = drawerRows[k] ? drawerRows[k].x : 1, inGroup = ccRows[k].group;
+      T(ccRows[k].node, 'translateX(' + r2(28 * (1 - rx) - (inGroup ? 40 * sub : 0)) + 'px)');
+      A(ccRows[k].node, rx * (inGroup ? 1 - sub : 1));
     }
-    for (var k = 0; k < fxKeys.length; k++) {
-      var row = drawerRows[1 + Math.floor(k / 2)], rx = row ? row.x : 1, fk = fxKeys[k];
-      var ex = 28 * (1 - rx), ea = rx * (hasClass(fk.node, 'off') && !fk.on ? 0.5 : 1);
-      if (ex !== fk.ex || ea !== fk.ea) { fk.ex = ex; fk.ea = ea; fk.draw(); }
+    if (ccInputsNode) {
+      T(ccInputsNode, 'translateX(' + r2(40 * (1 - sub)) + 'px)');
+      A(ccInputsNode, sub);
+      V(ccInputsNode, sub);
     }
-    var weather = $('weather'), wr = drawerRows[drawerRows.length - 1];
-    if (weather && wr) {
-      T(weather, 'translateX(' + r2(28 * (1 - wr.x)) + 'px)');
-      A(weather, wr.x);
+    // The volume: the HUD slides in from the left edge; its fill (and Control Center's) follow the level.
+    var level = Motion.clamp(mv.hudFill.x, 0, 1);
+    if (hud) {
+      var hs = Motion.clamp(mv.hud.x, 0, 1);
+      T(hud.node, 'translateX(' + r2(-40 * (1 - hs)) + 'px) scale(1,' + r4(1 + 0.03 * Motion.clamp(mv.hudBump.x, -1, 1)) + ')');
+      A(hud.node, hs);
+      V(hud.node, hs);
+      T(hud.fill, 'scale(1,' + r4(level) + ')');
     }
-    if (recentRow) T(recentRow, 'translateX(' + r2(mv.recents.x) + 'px)');
+    if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
+    if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
       if (!sheetSprings.hasOwnProperty(id)) continue;
@@ -683,7 +689,7 @@
     TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
   var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
-    recent: 0};
+    recent: 0, ccInput: 0};
   var cards = [];
   var was = {drawer: false, full: false, row: null};
 
@@ -706,15 +712,10 @@
     focusList(fxTiles, st.zone === Z.SHELF, st.shelf);
     revealShelf();
     placeName();
-    var P1 = people().length;
-    focusList(fxWho, st.zone === Z.DRAWER, st.drawer);
-    list = document.querySelectorAll('#drawer .who');
-    for (i = 0; i < list.length; i++) setClass(list[i], 'focus', st.zone === Z.DRAWER && st.drawer === i);
-    focusList(fxKeys, st.zone === Z.DRAWER, st.drawer - P1);
-    if ($('weather')) setClass($('weather'), 'focus', drawerWeather && st.zone === Z.DRAWER && st.drawer === P1 + drawerItems.length);
+    ccFocus();
     focusList(fxRecents, st.zone === Z.RECENTS, st.recent);
-    // Recent Apps: the row follows the focus once it's wider than the screen.
-    mv.recents.set(recentsShift());
+    // Recent Apps: the deck follows the focus (the cards before it stack up behind it).
+    mv.recents.set(st.recent);
     focusList(fxCells, st.zone === Z.APPS, st.grid);
     // The grid shows 2 rows under the risen Dock; past them, the page (Dock and all) scrolls on.
     var rows = Math.max(1, Math.ceil(others.length / COLS)), r = Math.floor(st.grid / COLS), first = Math.max(0, Math.min(rows - 2, r - 1));
@@ -723,7 +724,7 @@
       mv.lift.set(lift);
       for (i = 0; i < rowLag.length; i++) later(rowLag[i], lift, 18 * i);
     }
-    focusRows($('settings'), st.row, st.zone === Z.SETTINGS);
+    if (st.zone === Z.SETTINGS) focusSettings();
     focusRows($('shelfedit'), st.edit, st.zone === Z.EDIT);
     focusRows($('langpick'), st.lang, st.zone === Z.LANG);
     focusRows($('wallpaperpick'), st.wallpaperPane ? st.wallpaperOption : st.wallpaperCategory, st.zone === Z.WALLPAPER);
@@ -797,7 +798,7 @@
       case Z.TABS: return fxTabs[st.tab] || null;
       case Z.TOP: return fxPill;
       case Z.HERO: return fxWatch;
-      case Z.DRAWER: return st.drawer < people().length ? fxWho[st.drawer] || null : fxKeys[st.drawer - people().length] || null;
+      case Z.DRAWER: return ccFocusedFx();
       case Z.RECENTS: return fxRecents[st.recent] || null;
     }
     return null;
@@ -1436,86 +1437,326 @@
     placeTiles();
   }
 
-  // MARK: - Drawer
+  // MARK: - Control Center: a right-hand Liquid Glass panel, as tvOS's
 
-  var drawerItems = [], drawerInputs = 0, drawerWeather = false, recentList = [], recentRow = null;
-  var DRAWER_KEYS = 10;   // cards in Control Center (five rows of two at most, above the weather card)
-  // The panel's inner height (home.css: 908 minus 28 + 28 padding), where its cards start, and the weather card's height.
-  var DRAWER_BODY = 852, DRAWER_CARDS_TOP = 140, DRAWER_WEATHER = 190;
+  // Its rows, top to bottom: the profiles, the weather, a 2-column bento of capsule tiles, the volume and a row of round
+  // buttons. Everything focusable is one entry of ccItems (its row, node, spring, what OK does): ← → walk the row,
+  // ↑ ↓ go to the nearest entry of the next row. OK on Inputs slides a list of the inputs over the tiles (ccSub).
+  var CC = {left: 1300, top: 124, pad: 28, body: 504, gap: 16, col: 260, tileW: 244, tileH: 72, tileGap: 12,
+    profilesH: 104, weatherH: 152, volumeH: 72, iconsH: 114, iconD: 72, inputH: 72, inputGap: 8, headH: 56};
+  var PREVIEW = !!window.PREVIEW_PICKS;
+  // The preview stands in for the Google TV app (what LG and Samsung web apps can't do shows a note); these two only
+  // keep a state there so the tiles can be tried.
+  var previewCC = {dnd: false, sleep: 0};
+  var ccItems = [], ccRows = [], ccGroup = null, ccInputsNode = null, ccInputItems = [], ccSub = false, ccVolume = null;
+  var drawerWeather = false, recentList = [], recentRow = null;
 
-  /** Control Center: the time, a 2-column bento of glass cards (the inputs, All Apps, the settings), the weather. */
+  function lastInput() {
+    try { return localStorage.getItem('fmtv.lastInput') || ''; } catch (e) { return ''; }
+  }
+
+  function setLastInput(id) {
+    try { localStorage.setItem('fmtv.lastInput', id); } catch (e) {}
+  }
+
+  /** The input last opened from here (no TV says which one shows): the first, Live TV, until one is picked. */
+  function currentInput() {
+    var id = lastInput();
+    for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return id;
+    return inputs.length ? inputs[0].id : '';
+  }
+
+  function inputName(x) { return x.label || tr('Live TV'); }
+
+  function googleOnly() { toast(tr('Only on Google TV')); }
+
+  /** The bento's tiles: on LG and Samsung what a web app can do, in the preview the Google TV app's whole set. */
+  function ccTiles() {
+    var t = [];
+    if (PREVIEW) {
+      t.push({label: tr('Power'), symbol: 'power', run: googleOnly});
+      t.push({label: tr('Sleep Timer'), glyph: 'glyph-timer', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
+        active: function () { return !!previewCC.sleep; },
+        detail: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : tr('state|Off'); }});
+    }
+    if (inputs.length) {
+      t.push({label: tr('Inputs'), symbol: 'input', run: openInputsSheet, detail: function () {
+        var id = currentInput();
+        for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return inputName(inputs[i]);
+        return '';
+      }});
+    }
+    if (PREVIEW) {
+      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
+      t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return tr('Connected'); }});
+      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, detail: function () { return tr('state|Off'); }});
+      t.push({label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; },
+        active: function () { return previewCC.dnd; }, detail: function () { return previewCC.dnd ? tr('state|On') : tr('state|Off'); }});
+    }
+    t.push({label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }});
+    return t;
+  }
+
+  /** The round buttons at the bottom. */
+  function ccIcons() {
+    var b = [{label: tr('Lock'), glyph: 'glyph-lock', run: lockNow}];
+    if (PREVIEW) b.push({label: tr('Close Background Apps'), symbol: 'memory', run: googleOnly});
+    b.push({label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }});
+    if (TV.canOpenSettings || PREVIEW) b.push({label: tr('TV Settings'), symbol: 'tv_settings', run: TV.canOpenSettings ? tvSettings : googleOnly});
+    return b;
+  }
+
+  /** A row of the panel, at `top` in `parent` (the panel's body, or the group that the inputs slide over). */
+  function ccRow(parent, top, height, group) {
+    var row = el('div', 'ccrow', parent);
+    row.style.top = top + 'px';
+    row.style.height = height + 'px';
+    ccRows.push({node: row, group: !!group});
+    return row;
+  }
+
+  /** One focusable entry: `cx` is its centre across the panel, for ↑ ↓ to find the nearest one in the next row. */
+  function ccAdd(node, fx, run, kind, cx) {
+    var item = {node: node, fx: fx, run: run, kind: kind, row: ccRows.length - 1, cx: cx};
+    ccItems.push(item);
+    if (fx) (kind === 'who' ? fxWho : fxKeys).push(fx);
+    hover(node, Z.DRAWER, ccItems.length - 1);
+    return item;
+  }
+
+  function ccGlyph(spec, parent) {
+    if (spec.glyph) return el('span', spec.glyph, parent);
+    return sym(spec.symbol, parent);
+  }
+
+  /** Control Center: profiles, weather, the bento, the volume, the round buttons. */
   function renderDrawer() {
     var d = $('drawer').lastChild;
     d.innerHTML = '';
     killFx(fxKeys);
     killFx(fxWho);
-    drawerItems = [];
-    // From tvOS-Launcher's control panel, what an LG or Samsung web app can do: Recent Apps and the screensaver.
-    // (Wi-Fi, Bluetooth, volume and closing apps need the TV's own APIs; only the Google TV app has them.)
-    var fixed = [
-      {label: tr('All Apps'), symbol: 'apps', run: function () { closeDrawer(); openApps(0); }},
-      {label: tr('Recent Apps'), symbol: 'recents', run: openRecents},
-      {label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }},
-      {label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }},
-      {label: tr('Lock'), glyph: 'glyph-lock', run: lockNow}
-    ];
-    if (TV.canOpenSettings) fixed.push({label: tr('TV Settings'), symbol: 'tv_settings', run: tvSettings});
-    for (var i = 0; i < inputs.length && drawerItems.length < DRAWER_KEYS - fixed.length; i++) {
-      var x = inputs[i];
-      drawerItems.push({label: x.label || tr('Live TV'), symbol: x.symbol, off: !x.connected, run: launcher(x.id, x.label, null, true)});
-    }
-    drawerInputs = drawerItems.length;
-    drawerItems = drawerItems.concat(fixed);
+    ccItems = [];
+    ccRows = [];
+    ccVolume = null;
+    var y = 0, row, list = people(), np = list.length, step = Math.min(116, Math.floor(CC.body / Math.max(1, np)));
     // Profiles first, as on tvOS: the avatars, the current one ringed; OK opens the lock on that profile.
-    var row = el('div', 'profiles' + (people().length > 4 ? ' many' : ''), d), list = people(), np = list.length;
-    var step = np > 4 ? Math.floor((464 - 88) / (np - 1)) : 116;   // five or more: smaller faces, spread over the width
+    row = ccRow(d, y, CC.profilesH);
+    row.className += ' profiles';
+    var x0 = Math.round((CC.body - np * step) / 2);
     for (var w = 0; w < np; w++) {
       var who = el('div', 'who' + (list[w].id === person().id ? ' on' : ''), row);
-      who.style.left = (w * step) + 'px';
+      who.style.left = (x0 + w * step) + 'px';
+      who.style.width = step + 'px';
       var faceEl = el('span', 'face', who);
       faceEl.style.backgroundImage = avatarUrl(list[w]);
       el('span', 'name', who, list[w].name);
-      hover(who, Z.DRAWER, w);
-      fxWho.push(new Fx(faceEl, {grow: 0.12}));
+      ccAdd(who, new Fx(faceEl, {grow: 0.12}), profileRun(list[w]), 'who', x0 + w * step + step / 2);
     }
-    // The cards share what's left between the profiles and the weather card (16 px apart, 120 px tall at most);
-    // shorter than 110 px they go compact (a smaller symbol), so five rows still fit under the status pill.
-    var rows = Math.min(DRAWER_KEYS / 2, Math.ceil(drawerItems.length / 2));
-    var room = DRAWER_BODY - (Prefs.weather() ? DRAWER_WEATHER + 16 : 0) - DRAWER_CARDS_TOP;
-    var keyH = Math.min(120, Math.floor((room - 16 * Math.max(0, rows - 1)) / Math.max(1, rows))), compact = keyH < 110;
-    drawerItems = drawerItems.slice(0, rows * 2);
-    for (var k = 0; k < drawerItems.length; k++) {
-      var item = drawerItems[k], key = el('div', 'key' + (item.off ? ' off' : '') + (compact ? ' compact' : ''), d);
-      key.style.left = (k % 2) * 240 + 'px';
-      key.style.top = (DRAWER_CARDS_TOP + Math.floor(k / 2) * (keyH + 16)) + 'px';
-      key.style.height = keyH + 'px';
-      if (item.glyph) el('span', item.glyph, key);
-      else sym(item.symbol, key);
-      el('div', 'label', key, item.label);
-      hover(key, Z.DRAWER, np + k);
-      fxKeys.push(new Fx(key, {grow: 0.06}));
-    }
-    var w = el('div', '', d);
-    w.id = 'weather';
-    // The weather card is the panel's last stop: OK opens the forecast (weather.js).
+    y += CC.profilesH + CC.gap;
+    // The weather, a platter of its own: OK opens the 24-hour / 7-day forecast (weather.js).
     drawerWeather = Prefs.weather();
-    hover(w, Z.DRAWER, np + drawerItems.length);
-    // One spring per row (profiles, each pair of cards, the weather): they come in 25 ms apart.
-    var count = 2 + rows;
-    while (drawerRows.length < count) drawerRows.push(spring(P.SHEET_OPEN, 1));
-    drawerRows.length = count;
+    if (drawerWeather) {
+      row = ccRow(d, y, CC.weatherH);
+      var wc = el('div', '', row);
+      wc.id = 'weather';
+      ccAdd(wc, null, function () { if (Data.weather) openForecast(); }, 'weather', CC.body / 2);
+      y += CC.weatherH + CC.gap;
+    }
+    // The bento, the volume and the round buttons: the group the Inputs list slides over.
+    var grp = ccGroup = el('div', 'ccgroup', d), gy = 0, tiles = ccTiles(), icons = ccIcons();
+    grp.style.top = y + 'px';
+    for (var k = 0; k < tiles.length; k += 2) {
+      row = ccRow(grp, gy, CC.tileH, true);
+      for (var c = 0; c < 2 && k + c < tiles.length; c++) ccTile(row, tiles[k + c], c);
+      gy += CC.tileH + CC.tileGap;
+    }
+    if (tiles.length) gy += CC.gap - CC.tileGap;
+    if (volumeLevel !== null) {
+      row = ccRow(grp, gy, CC.volumeH, true);
+      ccVolumeRow(row);
+      gy += CC.volumeH + CC.gap;
+    }
+    row = ccRow(grp, gy, CC.iconsH, true);
+    for (var b = 0; b < icons.length; b++) ccIcon(row, icons[b], b, icons.length);
+    gy += CC.iconsH;
+    // As tall as what it holds, from under the status pill (the Inputs list may need more than the tiles).
+    var inputsH = CC.headH + inputs.length * (CC.inputH + CC.inputGap) - CC.inputGap;
+    $('drawer').style.height = (y + Math.max(gy, inputsH) + 2 * CC.pad) + 'px';
+    renderInputsSheet(d, y);
+    while (drawerRows.length < ccRows.length) drawerRows.push(spring(P.SHEET_OPEN, 1));
+    drawerRows.length = ccRows.length;
     renderPanels();
+    ccRefresh();
     updateFocus();
+  }
+
+  function profileRun(who) {
+    return function () {
+      closeDrawer();
+      if (who.id !== person().id) showLock({profile: who, pin: true, cancel: true, from: 'switch'});
+    };
+  }
+
+  /** A capsule tile: a round glyph (blue when the thing is on), the name and its state under it. */
+  function ccTile(row, spec, col) {
+    var tile = el('div', 'cctile' + (spec.detail ? '' : ' solo'), row);
+    tile.style.left = (col * CC.col) + 'px';
+    var dot = el('span', 'dot', tile);
+    ccGlyph(spec, dot);
+    el('div', 'label', tile, spec.label);
+    var detail = spec.detail ? el('div', 'detail', tile) : null;
+    var item = ccAdd(tile, new Fx(tile, {grow: 0.05}), function () { spec.run(); ccRefresh(); }, 'tile', col * CC.col + CC.tileW / 2);
+    item.spec = spec;
+    item.detail = detail;
+  }
+
+  /** The tiles' states (a toggle, Inputs' last choice), without building the panel again. */
+  function ccRefresh() {
+    for (var i = 0; i < ccItems.length; i++) {
+      var it = ccItems[i];
+      if (!it.spec) continue;
+      setClass(it.node, 'on', !!(it.spec.active && it.spec.active()));
+      if (it.detail) {
+        var text = it.spec.detail();
+        it.detail.textContent = text;
+        setClass(it.node, 'solo', !text);
+      }
+    }
+  }
+
+  /** The volume: a capsule with the speaker, the level's track and its number; ← → change it, as the remote's keys. */
+  function ccVolumeRow(row) {
+    var v = el('div', 'ccvolume', row);
+    sym('volume', v);
+    var track = el('div', 'track', v);
+    ccVolume = {fill: el('div', 'fill', track), num: el('div', 'num', v)};
+    ccAdd(v, new Fx(v, {grow: 0.03}), function () { stepVolume('mute'); }, 'volume', CC.body / 2);
+    showVolumeLevel();
+  }
+
+  /** A round glass button with its name under it. */
+  function ccIcon(row, spec, i, n) {
+    var cx = Math.round(CC.body * (2 * i + 1) / (2 * n));
+    var b = el('div', 'ccicon', row);
+    b.style.left = (cx - CC.iconD / 2) + 'px';
+    var disc = el('span', 'disc', b);
+    ccGlyph(spec, disc);
+    el('div', 'label', b, spec.label);
+    ccAdd(b, new Fx(disc, {grow: 0.1}), spec.run, 'icon', cx);
+  }
+
+  /** Inputs: the antenna and the HDMI ports, ✓ on the last one opened from here; Back or ← returns to the tiles. */
+  function renderInputsSheet(d, top) {
+    var s = ccInputsNode = el('div', 'ccinputs', d);
+    s.style.top = top + 'px';
+    var head = el('div', 'cchead', s);
+    sym('chevron_right', head).className += ' back';
+    el('span', 'title', head, tr('Inputs'));
+    ccInputItems = [];
+    for (var i = 0; i < inputs.length; i++) {
+      var x = inputs[i], r = el('div', 'inrow' + (x.connected ? '' : ' off'), s);
+      r.style.top = (CC.headH + i * (CC.inputH + CC.inputGap)) + 'px';
+      sym(x.symbol || 'hdmi', el('span', 'dot', r));
+      el('div', 'name', r, inputName(x));
+      if (!x.connected) el('div', 'status', r, tr('No signal'));
+      else setClass(r, 'solo', true);
+      if (x.id === currentInput()) sym('check', r).className += ' check';
+      ccInputItems.push({node: r, fx: new Fx(r, {grow: 0.04}), run: inputRun(x)});
+      fxKeys.push(ccInputItems[i].fx);
+      inputHover(r, i);
+    }
+  }
+
+  function inputRun(x) {
+    return function () {
+      setLastInput(x.id);
+      closeInputsSheet();
+      closeDrawer();
+      launcher(x.id, x.label, null, true)();
+      renderDrawer();
+    };
+  }
+
+  function inputHover(node, i) {
+    node.onmouseover = function () {
+      if (st.zone !== Z.DRAWER || !ccSub) return;
+      st.ccInput = i;
+      updateFocus();
+    };
+    node.onclick = function () { node.onmouseover(); activate(); };
+  }
+
+  function openInputsSheet() {
+    if (!ccInputItems.length) return;
+    ccSub = true;
+    st.ccInput = 0;
+    var id = currentInput();
+    for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) st.ccInput = i;
+    mv.ccSub.tune(P.SHEET_OPEN).set(1);
+    updateFocus();
+  }
+
+  /** Back to the tiles, on Inputs. */
+  function closeInputsSheet(quiet) {
+    if (!ccSub) return;
+    ccSub = false;
+    mv.ccSub.tune(P.SHEET_CLOSE).set(0);
+    for (var i = 0; i < ccItems.length; i++) if (ccItems[i].spec && ccItems[i].spec.run === openInputsSheet) st.drawer = i;
+    if (!quiet) updateFocus();
+  }
+
+  /** The entry next to `it` in its row (dx ±1), or −1. */
+  function ccNeighbour(it, dx) {
+    var row = [], i;
+    for (i = 0; i < ccItems.length; i++) if (ccItems[i].row === it.row) row.push(i);
+    var at = row.indexOf(ccItems.indexOf(it)) + dx;
+    return at >= 0 && at < row.length ? row[at] : -1;
+  }
+
+  /** The entry in the next row that way (dy ±1) nearest under or over `it`, or −1; the weather without data is skipped. */
+  function ccVertical(it, dy) {
+    for (var r = it.row + dy; r >= 0 && r < ccRows.length; r += dy) {
+      var best = -1, dist = 1e9;
+      for (var i = 0; i < ccItems.length; i++) {
+        var c = ccItems[i];
+        if (c.row !== r || (c.kind === 'weather' && !Data.weather)) continue;
+        var dd = Math.abs(c.cx - it.cx);
+        if (dd < dist) { dist = dd; best = i; }
+      }
+      if (best >= 0) return best;
+    }
+    return -1;
+  }
+
+  function ccFocusedFx() {
+    if (ccSub) return ccInputItems[st.ccInput] ? ccInputItems[st.ccInput].fx : null;
+    var it = ccItems[st.drawer];
+    return it ? it.fx : null;
+  }
+
+  /** Focus classes and springs for the panel (updateFocus). */
+  function ccFocus() {
+    var open = st.zone === Z.DRAWER, i;
+    for (i = 0; i < ccItems.length; i++) {
+      var on = open && !ccSub && st.drawer === i;
+      setClass(ccItems[i].node, 'focus', on);
+      if (ccItems[i].fx) ccItems[i].fx.focus(on);
+    }
+    for (i = 0; i < ccInputItems.length; i++) {
+      var o = open && ccSub && st.ccInput === i;
+      setClass(ccInputItems[i].node, 'focus', o);
+      ccInputItems[i].fx.focus(o);
+    }
   }
 
   function renderPanels() {
     var w = $('weather');
     if (!w) return;
     w.innerHTML = '';
-    w.style.display = Prefs.weather() ? '' : 'none';
     if (Prefs.weather()) renderWeather(w);
   }
 
+  /** The weather platter: the city, the temperature and sky on the left (220 px), 4 hours (or days) to the right of it. */
   function renderWeather(card) {
     el('div', 'head', card, Data.city || tr('Weather'));
     var w = Data.weather;
@@ -1528,9 +1769,9 @@
     el('span', 'temp', now, Data.degrees(w.temp));
     el('div', 'cond', card, Data.condition(w.code, w.isDay));
     el('div', 'range', card, trf('H:{max}  L:{min}', {max: Data.degrees(w.max), min: Data.degrees(w.min)}));
-    // The next 4 hours (or days, with Home Settings → Forecast).
+    // The next 4 hours (or days, with Home Settings → Forecast), in their own columns: nothing runs into the temperature.
     var days = Prefs.forecast() === 'days' && w.days && w.days.length > 0, list = days ? w.days : w.hours, n = 4;
-    var hours = el('div', 'hours', card), hw = 278 / n;
+    var hours = el('div', 'hours', card), hw = 252 / n;
     for (var i = 0; list && i < list.length && i < n; i++) {
       var h = el('div', 'hour', hours), x = list[i];
       h.style.left = (hw * i) + 'px';
@@ -1544,18 +1785,156 @@
   var drawerFrom = Z.SHELF;
 
   function openDrawer() {
-    if (!drawerItems.length) return;
+    if (!ccItems.length) return;
     drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
     st.drawer = Profiles.index();
+    if (ccSub) closeInputsSheet(true);
+    ccRefresh();
     renderPill();
     updateFocus();
   }
 
   /** Back where the focus was (the button that opened it, or the Dock). */
   function closeDrawer() {
+    if (ccSub) { ccSub = false; mv.ccSub.snap(0); }
     st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO || drawerFrom === Z.TABS ? drawerFrom : Z.SHELF;
     updateFocus();
+  }
+
+  // MARK: - The volume: the TV's own level, and a Liquid Glass HUD on the left (tvOS's volume, on the leading edge)
+
+  var volumeLevel = null, volumeMuted = false, hud = null, hudTimer = 0, hudPinned = false, HUD_HOLD = 2200;
+
+  /** Reads the TV's volume once at start: where it can't be read (most TVs keep it to themselves), no volume row or HUD. */
+  function readVolume() {
+    TV.volume(0, function (level, muted) {
+      if (level === null) return;
+      var had = volumeLevel !== null;
+      setVolume(level, muted);
+      mv.hudFill.snap(volumeMuted ? 0 : level / 100);
+      if (!had) renderDrawer();
+    });
+  }
+
+  /** + / − (or the TV's volume keys): a step, as the remote's keys; 'mute' toggles mute. The HUD shows the result. */
+  function stepVolume(dir) {
+    var was = volumeLevel;
+    TV.volume(dir, function (level, muted) {
+      if (level === null) return;   // this TV keeps its volume to itself: its own volume bar shows instead
+      var had = was !== null;
+      setVolume(level, muted);
+      if (!had) renderDrawer();
+      // Past either end: a rubber stretch, and it springs back (BOUNDARY_BUMP).
+      if (dir !== 'mute' && level === was && (level === 0 || level === 100)) mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04);
+      showHud();
+    });
+  }
+
+  function setVolume(level, muted) {
+    volumeLevel = level;
+    volumeMuted = !!muted;
+    mv.hudFill.set(volumeMuted ? 0 : level / 100);
+    showVolumeLevel();
+    Motion.kick();
+  }
+
+  /** The HUD's and Control Center's number and glyph for the level (mute, then 1, 2 or 3 arcs). */
+  function showVolumeLevel() {
+    var level = volumeMuted ? 0 : volumeLevel || 0, arcs = level === 0 ? 0 : level < 34 ? 1 : level < 67 ? 2 : 3;
+    if (hud) {
+      hud.num.textContent = volumeMuted ? '' : String(level);
+      hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
+        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+    }
+    if (ccVolume) ccVolume.num.textContent = volumeMuted ? tr('Muted') : String(level);
+  }
+
+  function buildHud() {
+    if (hud) return;
+    var node = el('div', '', $('stage'));
+    node.id = 'volhud';
+    el('div', 'glass', node);
+    var fill = el('div', 'fill', node), num = el('div', 'num', node), spk = el('div', 'spk', node);
+    el('span', 'cone', spk);
+    el('span', 'arc a1', spk);
+    el('span', 'arc a2', spk);
+    el('span', 'arc a3', spk);
+    el('span', 'slash', spk);
+    hud = {node: node, fill: fill, num: num};
+    showVolumeLevel();
+  }
+
+  function showHud() {
+    buildHud();
+    showVolumeLevel();
+    mv.hud.tune(P.SHEET_OPEN).set(1);
+    clearTimeout(hudTimer);
+    if (!hudPinned) hudTimer = setTimeout(hideHud, HUD_HOLD);
+    Motion.kick();
+  }
+
+  function hideHud() {
+    mv.hud.tune(P.SHEET_CLOSE).set(0);
+    Motion.kick();
+  }
+
+  /** V in the preview: the HUD stays (to look at it), V again lets it go. */
+  function pinHud() {
+    if (volumeLevel === null) return;
+    hudPinned = !hudPinned;
+    if (hudPinned) showHud();
+    else { showVolumeLevel(); hideHud(); }
+  }
+
+  /** The volume keys: the TV's own (when it sends them to the app), + and − on a keyboard. */
+  function volumeKey(e, typing) {
+    var k = e.keyCode, key = e.key, dir = 0;
+    if (k === TV.keys.volumeUp || k === 175) dir = 1;
+    else if (k === TV.keys.volumeDown || k === 174) dir = -1;
+    else if (k === TV.keys.mute || k === 173) dir = 'mute';
+    else if (!typing && (k === 187 || k === 107 || key === '+' || key === '=')) dir = 1;
+    else if (!typing && (k === 189 || k === 109 || key === '-' || key === '_')) dir = -1;
+    if (!dir) return false;
+    stepVolume(dir);
+    return true;
+  }
+
+  // MARK: - The Home button (H in a browser): a press goes to the Dock, a hold (450 ms) shows Recent Apps
+
+  var homeTimer = 0, HOME_HOLD = 450;
+
+  function homeDown() {
+    if (homeTimer) return;
+    if (st.zone === Z.RECENTS) { goHome(); return; }   // Home over the switcher takes it away at once
+    homeTimer = setTimeout(function () {
+      homeTimer = 0;
+      if (st.zone !== Z.RECENTS) openRecents();
+    }, HOME_HOLD);
+  }
+
+  function homeUp() {
+    if (homeTimer) { clearTimeout(homeTimer); homeTimer = 0; goHome(); }
+  }
+
+  var homing = false;
+
+  /** Home: the TV tab with the Dock focused, everything else closed (the screensaver, sheets, Recent Apps, the forecast). */
+  function goHome() {
+    if (saverOn) hideSaver();
+    if (Forecast.showing()) { homing = true; Forecast.close(); homing = false; }
+    if (ccSub) closeInputsSheet(true);
+    st.tab = TAB.TV;
+    closeSheets();
+    st.zone = shelf.length ? Z.SHELF : Z.TABS;
+    updateFocus();
+  }
+
+  /** S in a browser: the screensaver now, and S again takes it away. */
+  function toggleSaver() {
+    if (saverOn) { hideSaver(); return; }
+    if (st.zone === Z.DRAWER) closeDrawer();
+    showSaver();
   }
 
   // MARK: - The forecast and Recent Apps (TVOS-LAUNCHER-MERGE-SPEC.md S3, S4)
@@ -1564,7 +1943,7 @@
   function openForecast() {
     var at = st.drawer;
     Forecast.open($('forecast'), function () {
-      if (!saverOn) { openDrawer(); st.drawer = at; updateFocus(); }
+      if (!saverOn && !homing) { openDrawer(); st.drawer = at; updateFocus(); }
     });
     closeDrawer();
   }
@@ -1602,40 +1981,52 @@
     return out;
   }
 
-  var RECENT_W = 400, RECENT_GAP = 64;
+  // Recent Apps as tvOS's switcher: big 16:9 cards (845 × 475), the focused one centred; the ones after it to its right,
+  // 794 apart (6 % overlap); the ones before it stacked up behind its left edge (tvOS-Launcher's deck: the first 313 px
+  // out, then 101 px each). The deck follows a spring on the focus (mv.recents), so it glides between cards.
+  var RECENT_W = 845, RECENT_H = 475, RECENT_STEP = 794, RECENT_X = 538, RECENT_Y = 302;
 
-  /** The row's offset: centred while it fits, then following the focus (the focused card kept inside the screen). */
-  function recentsShift() {
-    var n = recentList.length, total = n * RECENT_W + Math.max(0, n - 1) * RECENT_GAP;
-    if (total <= 1760) return (1920 - total) / 2;
-    var x = 80 - st.recent * (RECENT_W + RECENT_GAP) + Math.min(st.recent, 1) * (RECENT_W + RECENT_GAP);
-    return Math.max(1840 - total, Math.min(80, x));
+  /** Where card i is with the focus at f (fractional while it moves): x, scale, opacity, stacking. */
+  function placeRecents(f) {
+    var cards = recentRow.children;
+    for (var i = 0; i < cards.length; i++) {
+      var d = i - f, a = Math.abs(d), x;
+      if (d >= 0) x = RECENT_X + d * RECENT_STEP;
+      else x = RECENT_X - (a <= 1 ? a * 313 : 313 + (a - 1) * 101);
+      var s = 1 - 0.06 * Math.min(1, a), alpha = d < 0 ? Motion.clamp(4 - a, 0, 1) : Motion.clamp(2.2 - d, 0, 1);
+      T(cards[i], 'translate(' + r2(x) + 'px,0) scale(' + r4(s) + ')');
+      A(cards[i], alpha);
+      cards[i].style.zIndex = String(40 - Math.round(a * 4));
+      A(cards[i].firstChild, Motion.clamp(1 - a * 1.6, 0, 1));   // the app's name above the focused card only
+    }
   }
 
-  /** Recent Apps from Control Center: cards over the Frosted Horizon; OK opens one (logged as any launch). */
+  /** Recent Apps (Home held, or H held in a browser): the deck over the Frosted Horizon; OK opens one (logged). */
   function openRecents() {
     var layer = $('recents');
     layer.innerHTML = '';
     killFx(fxRecents);
     el('div', 'hz hz-day', layer);
     el('div', 'hz hz-night', layer);
-    el('h2', '', layer, tr('Recent Apps'));
     recentList = recentApps();
-    var row = recentRow = el('div', 'row', layer);   // drawPage moves this one (rebuilt on every open)
+    var row = recentRow = el('div', 'row', layer);   // drawPage places its cards (rebuilt on every open)
     for (var i = 0; i < recentList.length; i++) {
-      var card = el('div', 'card', row), f = el('div', 'face', card);
-      card.style.left = (i * (RECENT_W + RECENT_GAP)) + 'px';
-      face(recentList[i], f, wordFit(recentList[i].title, RECENT_W, 44));
-      var label = el('div', 'label', card, recentList[i].title);
+      var app = recentList[i], card = el('div', 'card', row);
+      var hdr = el('div', 'hdr', card), badge = el('span', 'badge', hdr);
+      face(app, badge, 12);
+      el('span', 'name', hdr, app.title);
+      var f = el('div', 'face', card);
+      face(app, f, wordFit(app.title, RECENT_W, 64));
       hover(card, Z.RECENTS, i);
-      fxRecents.push(new Fx(card, {grow: 0.12, tilt: true, label: label}));
+      fxRecents.push(new Fx(f, {grow: 0.02, squish: 0.04}));
     }
     if (!recentList.length) el('div', 'empty', layer, tr('No recent apps yet.'));
     st.recent = 0;
-    mv.recents.snap(recentsShift());
+    mv.recents.snap(0);
     if (st.zone === Z.DRAWER) closeDrawer();
     st.zone = Z.RECENTS;
     setClass(layer, 'open', true);
+    placeRecents(0);
     updateFocus();
   }
 
@@ -1687,18 +2078,31 @@
     updateFocus();
   }
 
-  // MARK: - Home Settings: the sections of MAHITTV-PROFILES-SPEC.md §6, each a list of rows
+  // MARK: - Settings: the sections of MAHITTV-PROFILES-SPEC.md §6, drawn as Apple TV's Settings (settings.js)
 
-  var settingsSection = null, sectionRow = 0;
+  /*
+   * Two panes: the sections on the left (settingsPane 'cats'), the focused section's rows on the right ('rows'); a
+   * choice (Theme, Screensaver…) pushes a list with a check on the current one (settingsChoice). A row: {label, value,
+   * toggle (on or off), choice ({title, options: [[value, label]], current, set(value)}), step() (OK: what it does),
+   * opens (it opens something: a chevron), fixed (it only shows a value), dim}; a section's rows come in groups
+   * {header, rows, footer}.
+   */
+  var settingsSection = null, sectionRow = 0, settingsPane = 'cats', settingsChoice = null, choiceRow = 0, groupsNow = [];
 
   function sections() {
     return [
-      {id: 'profiles', label: tr('Profiles & PINs'), rows: profileRows},
-      {id: 'look', label: tr('Appearance & Startup'), rows: lookRows},
-      {id: 'place', label: tr('Location & Media'), rows: placeRows},
-      {id: 'welly', label: tr('Welly'), rows: wellyRows},
-      {id: 'system', label: tr('System'), rows: systemRows},
-      {id: 'reset', label: tr('Reset & Restore'), rows: resetRows}
+      {id: 'profiles', label: tr('Profiles & PINs'), symbol: 'lock', rows: profileRows,
+        desc: tr("Who's watching, their PINs and their Dock.")},
+      {id: 'look', label: tr('Appearance & Startup'), symbol: 'screensaver', rows: lookRows,
+        desc: tr('Theme, wallpaper, screensaver and the startup.')},
+      {id: 'place', label: tr('Location & Media'), symbol: 'sunny', rows: placeRows,
+        desc: tr('Your city, weather and the Top Shelf\'s picks.')},
+      {id: 'welly', label: tr('Welly'), symbol: 'sparkles', rows: wellyRows,
+        desc: tr("Welly's brain and what it remembers.")},
+      {id: 'system', label: tr('System'), symbol: 'tv', rows: systemRows,
+        desc: tr('Language, the Dock and this TV.')},
+      {id: 'reset', label: tr('Reset & Restore'), symbol: 'sync', rows: resetRows,
+        desc: tr("Start over, or bring back the TV's own home screen.")}
     ];
   }
 
@@ -1708,60 +2112,71 @@
     return null;
   }
 
+  /** The focused section's rows as the focus moves through them (flat), keeping its groups for drawing. */
   function settingRows() {
-    var s = section(settingsSection);
-    if (s) return s.rows();
-    return sections().map(function (x, i) {
-      return {label: x.label, value: '›', step: function (d) { if (d >= 0) enterSection(x.id, i); }};
-    });
-  }
-
-  function enterSection(id, i) {
-    settingsSection = id;
-    sectionRow = i;
-    st.row = 0;
-    renderSettings();
-  }
-
-  function leaveSection() {
-    settingsSection = null;
-    st.row = sectionRow;
-    renderSettings();
+    var s = section(settingsSection) || sections()[0], flat = [];
+    groupsNow = s.rows();
+    for (var g = 0; g < groupsNow.length; g++) for (var r = 0; r < groupsNow[g].rows.length; r++) flat.push(groupsNow[g].rows[r]);
+    return flat;
   }
 
   function status(on) { return on ? tr('status|Set') : tr('status|Not set'); }
 
   function profileRows() {
-    var me = person(), rows = [];
-    rows.push({label: tr('Profile'), value: me.name, opens: true,
-      step: function (d) { if (d >= 0) showLock({from: 'switch', cancel: true}); }});
-    rows.push({label: tr('Lock'), value: '›', step: function (d) { if (d >= 0) lockNow(); }});
-    rows.push({label: tr('Change PIN'), value: '›', dim: me.role === 'guest', step: function (d) { if (d >= 0) changeOwnPin(); }});
-    // The manager sets or removes everyone else's PIN (with the manager's PIN): OK or → sets, ← removes.
+    var me = person(), groups = [{rows: [
+      {label: tr('Profile'), value: me.name, opens: true, step: function () { showLock({from: 'switch', cancel: true}); }},
+      {label: tr('Lock'), step: function () { lockNow(); }},
+      {label: tr('Change PIN'), opens: true, dim: me.role === 'guest', step: function () { changeOwnPin(); }}
+    ]}];
+    // The manager sets or removes everyone else's PIN (each asks for the manager's PIN first).
     if (me.role === 'manager') {
+      var pins = [];
       people().forEach(function (p) {
         if (p.id === me.id || p.role === 'guest') return;
-        rows.push({label: trf("{name}'s PIN", {name: p.name}), value: status(Profiles.needsPin(p)),
-          step: function (d) { if (d < 0) removePin(p); else setPinFor(p); }});
+        var set = Profiles.needsPin(p), options = [['set', tr('Set PIN')]];
+        if (set) options.push(['remove', tr('Remove PIN')]);
+        pins.push({label: trf("{name}'s PIN", {name: p.name}), value: status(set),
+          choice: {title: trf("{name}'s PIN", {name: p.name}), options: options, current: null,
+            set: function (v) { if (v === 'remove') removePin(p); else setPinFor(p); }}});
       });
+      groups.push({header: tr('Family'), rows: pins, footer: tr("Changing someone else's PIN asks for the manager's PIN.")});
     }
-    return rows;
+    return groups;
   }
 
   function lookRows() {
-    var theme = Prefs.theme(), auto = tr('Automatic'), wall = Prefs.wallpaper();
+    var theme = Prefs.theme(), auto = tr('Automatic'), wall = Prefs.wallpaper(), style = Prefs.saverStyle();
     var names = {
       'horizon:auto': auto, 'horizon:light': tr('Light'), 'horizon:dark': tr('Dark'),
       'aerial:yosemite': tr('Valley'), 'aerial:iceland': tr('Coast'),
       'aerial:north-america-aurora': tr('Aurora'), 'aerial:new-york': tr('Earth')
     };
+    var saver = [
+      {label: tr('Screensaver'), choice: {title: tr('Screensaver'), current: style, set: function (v) { Prefs.set('saverStyle', v); },
+        options: [['photos', tr('saver|Photos')], ['nature', tr('Nature Clock')], ['aurora', tr('Aurora')], ['aerials', tr('Apple Aerials')],
+          ['black', tr('saver|Black')]]}}
+    ];
+    if (style === 'nature') {
+      saver.push({label: tr('Scene'), choice: {title: tr('Scene'), current: Prefs.saverScene(), set: function (v) { Prefs.set('saverScene', v); },
+        options: [['shuffle', tr('Change every minute')], ['night', tr('saver|Night')], ['golden', tr('Golden Hour')], ['water', tr('Waterline')],
+          ['fog', tr('Fog')], ['dawn', tr('Rainforest Dawn')]]}});
+      saver.push({label: tr('Clock Style'), choice: {title: tr('Clock Style'), current: Prefs.saverClock(), set: function (v) { Prefs.set('saverClock', v); },
+        options: [['tall', tr('Tall Glass')], ['rounded', tr('Rounded')]]}});
+    }
+    if (style === 'photos') {
+      saver.push({label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
+        step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }});
+    }
+    saver.push({label: tr('Preview'), opens: true, step: function () { showSaver(); }});
     return [
-      {label: tr('Theme'), value: theme === 'light' ? tr('Light') : theme === 'dark' ? tr('Dark') : auto,
-        step: function (d) { cycle('theme', ['auto', 'light', 'dark'], theme, d); checkNight(); }},
-      {label: tr('Wallpaper'), value: names[wall] || wallpaperName(wall), valueId: 'wallpaper',
-        step: function (d) { if (d >= 0) openWallpaperPicker(); }},
-      {label: tr('Startup animation & chime'), toggle: Prefs.intro(),
-        step: function () { Prefs.set('intro', !Prefs.intro()); }}
+      {rows: [
+        {label: tr('Theme'), choice: {title: tr('Theme'), current: theme, options: [['auto', auto], ['light', tr('Light')], ['dark', tr('Dark')]],
+          set: function (v) { Prefs.set('theme', v); checkNight(); }}},
+        {label: tr('Wallpaper'), value: names[wall] || wallpaperName(wall), valueId: 'wallpaper', opens: true,
+          step: function () { openWallpaperPicker(); }},
+        {label: tr('Startup animation & chime'), toggle: Prefs.intro(), step: function () { Prefs.set('intro', !Prefs.intro()); }}
+      ]},
+      {header: tr('Screensaver'), rows: saver, footer: tr('It starts after 5 minutes without a button press.')}
     ];
   }
 
@@ -1835,41 +2250,48 @@
 
   function placeRows() {
     var unit = Prefs.temperature();
-    var rows = [
-      {label: tr('City'), value: Data.city || tr('Unavailable'), fixed: true, step: function () {}},
-      {label: tr('Temperature'), value: unit === 'C' ? '°C' : unit === 'F' ? '°F' : tr('unit|Automatic'),
-        step: function (d) { cycle('temperature', ['auto', 'C', 'F'], unit, d); renderPanels(); }},
-      {label: tr('Weather widget'), toggle: Prefs.weather(),
-        step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
-      {label: tr('Forecast'), value: Prefs.forecast() === 'days' ? tr('Next days') : tr('Next hours'),
-        step: function (d) { cycle('forecast', ['hours', 'days'], Prefs.forecast(), d); renderPanels(); }},
-      {label: tr('Quotes widget'), toggle: Prefs.quotes(),
-        step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
+    var widgets = [
+      {label: tr('Weather widget'), toggle: Prefs.weather(), step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
+      {label: tr('Forecast'), choice: {title: tr('Forecast'), current: Prefs.forecast(), options: [['hours', tr('Next hours')], ['days', tr('Next days')]],
+        set: function (v) { Prefs.set('forecast', v); renderPanels(); }}},
+      {label: tr('Quotes widget'), toggle: Prefs.quotes(), step: function () { Prefs.set('quotes', !Prefs.quotes()); Data.settingsChanged(); }}
     ];
     var names = ['Bitcoin', 'Ethereum', 'Solana', tr('Dollar')];
     var count = Data.currency === 'BRL' ? 4 : 3;
     for (var i = 0; i < count; i++) {
       (function (i) {
-        rows.push({label: names[i], toggle: Prefs.quotes() && Prefs.coin(i), dim: !Prefs.quotes(),
+        widgets.push({label: names[i], toggle: Prefs.quotes() && Prefs.coin(i), dim: !Prefs.quotes(),
           step: function () { if (Prefs.quotes()) { Prefs.setCoin(i, !Prefs.coin(i)); Data.settingsChanged(); } }});
       })(i);
     }
-    rows.push({label: tr('TMDB key'), value: status(!!CONFIG.tmdbKey), fixed: true, step: function () {}});
-    return rows;
+    return [
+      {rows: [
+        {label: tr('City'), value: Data.city || tr('Unavailable'), fixed: true},
+        {label: tr('Temperature'), choice: {title: tr('Temperature'), current: unit, options: [['auto', tr('unit|Automatic')], ['C', '°C'], ['F', '°F']],
+          set: function (v) { Prefs.set('temperature', v); renderPanels(); }}}
+      ]},
+      {header: tr('Home Screen'), rows: widgets},
+      {rows: [{label: tr('TMDB key'), value: status(!!CONFIG.tmdbKey), fixed: true}],
+        footer: tr('Keys live only in config.properties on the computer, never on screen.')}
+    ];
   }
 
   function wellyRows() {
     var me = person(), host = (CONFIG.ollamaUrl || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
     return [
-      {label: tr('Gemini key'), value: status(!!CONFIG.geminiKey), fixed: true, step: function () {}},
-      {label: tr('Ollama'), value: host || tr('status|Not set'), fixed: true, step: function () {}},
-      {label: trf("Clear Welly's memory for {name}", {name: me.name}), value: '›', dim: me.role === 'guest',
-        step: function (d) {
-          if (d < 0 || me.role === 'guest') return;
-          Profiles.clearLog();
-          if (window.Welly && Welly.clearMemory) Welly.clearMemory();
-          toast(trf("Cleared Welly's memory for {name}.", {name: me.name}));
-        }}
+      {rows: [
+        {label: tr('Gemini key'), value: status(!!CONFIG.geminiKey), fixed: true},
+        {label: tr('Ollama'), value: host || tr('status|Not set'), fixed: true}
+      ], footer: tr('Set in config.properties: gemini_key, welly_model and ollama_url.')},
+      {rows: [
+        {label: trf("Clear Welly's memory for {name}", {name: me.name}), dim: me.role === 'guest',
+          step: function () {
+            if (me.role === 'guest') return;
+            Profiles.clearLog();
+            if (window.Welly && Welly.clearMemory) Welly.clearMemory();
+            toast(trf("Cleared Welly's memory for {name}.", {name: me.name}));
+          }}
+      ]}
     ];
   }
 
@@ -1877,23 +2299,20 @@
     var picked = pickedLanguage();
     var rows = [
       {label: tr('Language'), value: picked === 'auto' ? tr('Automatic') : I18N.languageName(picked), opens: true, language: true,
-        step: function (d) { if (d >= 0) openLanguages(); }},
-      {label: tr('Dock'), value: '›', shelf: true, step: function (d) { if (d >= 0) openShelfEdit(); }},
-      {label: tr('Screensaver Style'), value: Prefs.saverStyle() === 'nature' ? tr('Nature Clock') : tr('Photos'),
-        step: function (d) { cycle('saverStyle', ['photos', 'nature'], Prefs.saverStyle(), d); }},
-      {label: tr('Watch from the screensaver'), toggle: Prefs.saverWatch(),
-        step: function () { Prefs.set('saverWatch', !Prefs.saverWatch()); }},
-      {label: tr('About this TV'), value: '›', about: true, step: function (d) { if (d >= 0) openAbout(); }}
+        step: function () { openLanguages(); }},
+      {label: tr('Dock'), opens: true, shelf: true, step: function () { openShelfEdit(); }},
+      {label: tr('About this TV'), opens: true, about: true, step: function () { openAbout(); }}
     ];
-    if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), value: '›', step: function (d) { if (d >= 0) tvSettings(); }});
-    return rows;
+    if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), opens: true, step: function () { tvSettings(); }});
+    return [{rows: rows}];
   }
 
   function resetRows() {
     return [
-      {label: tr('Reset mahitTV Data'), value: '›', step: function (d) { if (d >= 0) resetData(); }},
-      {label: tr('Restore Original TV'), value: tr('Google TV only'), fixed: true, dim: true,
-        step: function () { toast(tr('Restore Original TV is on Google TV only.')); }}
+      {rows: [{label: tr('Reset mahitTV Data'), step: function () { resetData(); }}],
+        footer: tr("Clears every profile's Dock, theme, PIN changes, Welly memory and history. Language, city and remote buttons stay. Asks for the manager's PIN.")},
+      {rows: [{label: tr('Restore Original TV'), value: tr('Google TV only'), fixed: true, dim: true}],
+        footer: tr('Restore Original TV is on Google TV only.')}
     ];
   }
 
@@ -1948,44 +2367,137 @@
     });
   }
 
-  function cycle(name, values, current, d) {
-    var i = values.indexOf(current);
-    Prefs.set(name, values[(i + (d || 1) + values.length) % values.length]);
-  }
-
   var rowsNow = [];
 
-  function renderSettings() {
-    var box = $('settings').firstChild, s = section(settingsSection);
-    box.innerHTML = '';
-    var title = el('div', 'title', box);
-    sym('settings', title);
-    title.appendChild(document.createTextNode(s ? s.label : tr('Home Settings')));
-    var list = el('div', 'list', box), holder = el('div', 'rows', list);
+  /** What settings.js draws: the sections, the emblem, and on the right the section's rows or a choice list. */
+  function settingsModel(fresh) {
+    var list = sections(), s = section(settingsSection) || list[0], title, groups, row;
+    if (settingsChoice) {
+      title = settingsChoice.title;
+      groups = [{rows: settingsChoice.options.map(function (o) { return {label: o[1], check: o[0] === settingsChoice.current}; })}];
+      row = choiceRow;
+    } else {
+      title = s.label;
+      groups = groupsNow.map(function (g) {
+        return {header: g.header, footer: g.footer, rows: g.rows.map(function (r) {
+          var value = r.value;
+          if (value === undefined && r.choice) {
+            for (var i = 0; i < r.choice.options.length; i++) if (r.choice.options[i][0] === r.choice.current) value = r.choice.options[i][1];
+          }
+          return {label: r.label, value: value, toggle: r.toggle, chevron: !!(r.opens || r.choice), dim: r.dim};
+        })};
+      });
+      row = st.row;
+    }
+    return {
+      cats: list.map(function (x) { return {label: x.label, symbol: x.symbol}; }), cat: sectionRow,
+      pane: settingsChoice ? 'choice' : settingsPane, title: title, groups: groups, row: row, fresh: fresh,
+      emblem: {symbol: s.symbol, avatar: s.id === 'profiles' ? Profiles.avatarUrl(person()) : null, title: s.label, desc: s.desc},
+      hover: settingsHover, click: settingsClick
+    };
+  }
+
+  /** Draws Settings again (a value changed, another section, a choice). fresh: the list starts at its top. */
+  function renderSettings(fresh) {
+    if (!section(settingsSection)) { sectionRow = 0; settingsSection = sections()[0].id; }
     rowsNow = settingRows();
     st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row));
-    list.style.height = Math.min(rowsNow.length, 7) * 78 + 'px';
-    for (var i = 0; i < rowsNow.length; i++) {
-      var r = rowsNow[i], row = el('div', 'row' + (r.dim ? ' dim' : ''), holder, r.label);
-      if (r.toggle !== undefined) setClass(el('div', 'toggle', row), 'on', r.toggle);
-      else {
-        var v = el('span', 'value', row);
-        if (r.value === '›' || r.fixed) v.textContent = r.value;
-        else if (r.opens) { v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
-        else { el('span', 'chev', v, '‹'); v.appendChild(document.createTextNode(r.value)); el('span', 'chev', v, '›'); }
-      }
-      hover(row, Z.SETTINGS, i);
-    }
-    var manager = settingsSection === 'profiles' && person().role === 'manager';
-    el('div', 'hint', box, manager ? tr('OK sets a PIN. ← removes it.') : s ? tr('OK or the arrows change the value.') : tr('Back closes.'));
+    Settings.render($('settings'), settingsModel(fresh));
+  }
+
+  /** The focus moved (updateFocus): only the highlight and the scroll. */
+  function focusSettings() {
+    if ($('settings').querySelector('.left')) Settings.focus($('settings'), settingsModel());
+  }
+
+  function openChoice(c) {
+    settingsChoice = c;
+    choiceRow = 0;
+    for (var i = 0; i < c.options.length; i++) if (c.options[i][0] === c.current) choiceRow = i;
+    renderSettings(true);
     updateFocus();
   }
 
-  /** From Control Center: the sections. keep: back from Language, About or the Dock, in the same section. */
+  function closeChoice() {
+    settingsChoice = null;
+    renderSettings();
+    updateFocus();
+  }
+
+  /** The arrows in Settings: ↑ ↓ within a pane, → into the rows, ← back to the sections (or out of a choice). */
+  function settingsMove(dx, dy) {
+    var n, bumped = false;
+    if (settingsChoice) {
+      if (dy) { n = Math.max(0, Math.min(settingsChoice.options.length - 1, choiceRow + dy)); bumped = n === choiceRow; choiceRow = n; }
+      else if (dx < 0) { closeChoice(); return; }
+      else bumped = true;
+    } else if (settingsPane === 'cats') {
+      if (dy) {
+        n = Math.max(0, Math.min(sections().length - 1, sectionRow + dy));
+        if (n === sectionRow) bumped = true;
+        else { sectionRow = n; settingsSection = sections()[n].id; st.row = 0; renderSettings(true); }
+      } else if (dx > 0 && rowsNow.length) { settingsPane = 'rows'; st.row = 0; }
+      else bumped = true;
+    } else if (dy) {
+      n = Math.max(0, Math.min(rowsNow.length - 1, st.row + dy));
+      bumped = n === st.row;
+      st.row = n;
+    } else if (dx < 0) settingsPane = 'cats';
+    else bumped = true;
+    if (bumped) Settings.bump($('settings'), dx, dy);
+  }
+
+  /** OK in Settings: into the rows; a switch flips; a choice opens its list (or picks); a row does what it does. */
+  function settingsOk() {
+    if (settingsChoice) {
+      var c = settingsChoice, o = c.options[choiceRow];
+      settingsChoice = null;
+      if (o) c.set(o[0]);
+      if (st.zone === Z.SETTINGS) { renderSettings(); updateFocus(); }
+      return;
+    }
+    if (settingsPane === 'cats') {
+      if (rowsNow.length) { settingsPane = 'rows'; st.row = 0; updateFocus(); }
+      return;
+    }
+    var r = rowsNow[st.row];
+    if (!r || r.fixed) { Settings.bump($('settings'), 0, 0); return; }
+    if (r.choice) { openChoice(r.choice); return; }
+    if (r.step) r.step();
+    if (st.zone === Z.SETTINGS) { renderSettings(); updateFocus(); }
+  }
+
+  /** Back in Settings: out of a choice, then out of the rows; on the sections, Settings closes (false). */
+  function settingsBack() {
+    if (settingsChoice) { closeChoice(); return true; }
+    if (settingsPane !== 'cats') { settingsPane = 'cats'; updateFocus(); return true; }
+    return false;
+  }
+
+  /** The pointer (the Magic Remote, or a mouse when previewing). */
+  function settingsHover(kind, index) {
+    if (st.zone !== Z.SETTINGS) return;
+    if (kind === 'cat') {
+      if (settingsChoice) return;
+      if (index !== sectionRow) { sectionRow = index; settingsSection = sections()[index].id; st.row = 0; settingsPane = 'cats'; renderSettings(true); }
+      else settingsPane = 'cats';
+    } else if (settingsChoice) choiceRow = index;
+    else { settingsPane = 'rows'; st.row = index; }
+    updateFocus();
+  }
+
+  function settingsClick(kind, index) {
+    settingsHover(kind, index);
+    settingsOk();
+  }
+
+  /** From Control Center: the sections. keep: back from Language, About, the Dock or the wallpapers, in the rows. */
   function openSettings(keep) {
     st.zone = Z.SETTINGS;
-    if (!keep) { settingsSection = null; st.row = 0; }
-    renderSettings();
+    settingsChoice = null;
+    if (!keep) { sectionRow = 0; settingsSection = sections()[0].id; settingsPane = 'cats'; st.row = 0; }
+    else settingsPane = 'rows';
+    renderSettings(!keep);
     setClass($('settings'), 'open', true);
     updateFocus();
   }
@@ -2219,14 +2731,9 @@
         if (shelf[st.shelf]) { launchMotion(fxTiles[st.shelf]); launcher(shelf[st.shelf].id, shelf[st.shelf].title)(); }
         return;
       case Z.DRAWER:
-        if (st.drawer < people().length) {   // a profile: the lock on it (its PIN first, when it has one)
-          var who = people()[st.drawer];
-          closeDrawer();
-          if (who.id !== person().id) showLock({profile: who, pin: true, cancel: true, from: 'switch'});
-          return;
-        }
-        if (drawerItems[st.drawer - people().length]) drawerItems[st.drawer - people().length].run();
-        else if (st.drawer - people().length === drawerItems.length && drawerWeather) openForecast();
+        // A profile (the lock on it, its PIN first), a tile, the weather, a round button; in Inputs, an input.
+        if (ccSub) { if (ccInputItems[st.ccInput]) ccInputItems[st.ccInput].run(); return; }
+        if (ccItems[st.drawer]) ccItems[st.drawer].run();
         return;
       case Z.RECENTS:
         var recent = recentList[st.recent];
@@ -2240,7 +2747,7 @@
         if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
         return;
       case Z.SETTINGS:
-        if (rowsNow[st.row]) { rowsNow[st.row].step(1); if (st.zone === Z.SETTINGS) renderSettings(); }
+        settingsOk();
         return;
       case Z.EDIT:
         editShelf(0);
@@ -2315,25 +2822,23 @@
         else if (dy > 0) enterTab();
         break;
       case Z.DRAWER:
-        // The profiles' row on top, then the bento's two columns: ← from the left edge closes it, as on tvOS.
-        var P = people().length;
-        if (st.drawer < P) {
-          if (dx < 0 && st.drawer === 0) { closeDrawer(); return; }
-          if (dx) st.drawer = Math.max(0, Math.min(P - 1, st.drawer + dx));
-          else if (dy > 0 && drawerItems.length) st.drawer = P;
+        // Inputs: ↑ ↓ through the inputs, ← back to the tiles.
+        if (ccSub) {
+          if (dy) st.ccInput = Math.max(0, Math.min(ccInputItems.length - 1, st.ccInput + dy));
+          else if (dx < 0) closeInputsSheet(true);
           break;
         }
-        var k = st.drawer - P, nk = drawerItems.length;
-        if (k === nk) {   // the weather card: ↑ to the last row of cards
-          if (dx < 0) { closeDrawer(); return; }
-          if (dy < 0 && nk) st.drawer = P + nk - (nk % 2 ? 1 : 2);
-          break;
+        var it = ccItems[st.drawer];
+        if (!it) break;
+        if (it.kind === 'volume' && dx) { stepVolume(dx); return; }   // ← → change the volume, as the remote's keys
+        if (dx) {
+          var nx = ccNeighbour(it, dx);
+          if (nx >= 0) st.drawer = nx;
+          else if (dx < 0) { closeDrawer(); return; }   // ← past the left edge closes it, as on tvOS
+        } else if (dy) {
+          var ny = ccVertical(it, dy);
+          if (ny >= 0) st.drawer = ny;
         }
-        if (dx < 0 && k % 2 === 0) { closeDrawer(); return; }
-        if (dx && k + dx >= 0 && k + dx < nk && Math.floor((k + dx) / 2) === Math.floor(k / 2)) st.drawer += dx;
-        else if (dy < 0 && k < 2) st.drawer = Math.min(P - 1, k % 2 ? P - 1 : 0);
-        else if (dy && k + 2 * dy >= 0 && k + 2 * dy < nk) st.drawer += 2 * dy;
-        else if (dy > 0 && drawerWeather && Data.weather) st.drawer = P + nk;
         break;
       case Z.RECENTS:
         if (dx) st.recent = Math.max(0, Math.min(recentList.length - 1, st.recent + dx));
@@ -2350,11 +2855,7 @@
         if (g >= 0 && g < others.length && (dx === 0 || Math.floor(g / COLS) === Math.floor(st.grid / COLS))) st.grid = g;
         break;
       case Z.SETTINGS:
-        if (dy) st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row + dy));
-        else if (dx && rowsNow[st.row]) {
-          var r = rowsNow[st.row];
-          if (r.value !== '›') { r.step(dx); if (st.zone === Z.SETTINGS) renderSettings(); }
-        }
+        settingsMove(dx, dy);
         break;
       case Z.EDIT:
         if (dy) st.edit = Math.max(0, Math.min(apps.length - 1, st.edit + dy));
@@ -2387,9 +2888,10 @@
     }
     if (st.zone === Z.LANG) { closeLanguages(false); return; }
     if (st.zone === Z.WALLPAPER) { closeWallpaperPicker(); return; }
-    if (st.zone === Z.SETTINGS && settingsSection) { leaveSection(); return; }
+    if (st.zone === Z.SETTINGS && settingsBack()) return;
     if (st.zone === Z.ABOUT) { closeAbout(); return; }
     if (sheetOpen()) { closeSheets(); return; }
+    if (st.zone === Z.DRAWER && ccSub) { closeInputsSheet(); return; }
     if (st.zone === Z.DRAWER) { closeDrawer(); return; }
     // Back from a tab's content goes to the tab bar; on the bar, back to TV.
     if (st.zone === Z.HOUSE || st.zone === Z.WELLY || (st.zone === Z.TOP && st.tab !== TAB.TV)) { st.zone = Z.TABS; updateFocus(); return; }
@@ -2447,269 +2949,22 @@
     try { localStorage.setItem('fmtv.night', night ? 'true' : 'false'); } catch (e) {}   // for index.html, next start
   }
 
-  var saverOn = false, idleAt = Date.now(), saverIndex = 0, saverTimer = 0, saverPick = null, SAVER_AFTER = 5 * 60000;
+  var saverOn = false, idleAt = Date.now(), saverPick = null, SAVER_AFTER = 5 * 60000;
 
   /** The screensaver's photos: picks with an app on the TV. */
   function saverPhotos() {
     return Data.showcase().filter(function (p) { return p.backdrop && Data.appFor(p.app); });
   }
 
-  function showSaver() {
-    // Tizen 2.4 (lite) can't hold the scenes' full-screen canvases: it keeps the Photos screensaver.
-    if (Prefs.saverStyle() === 'nature' && !hasClass(document.documentElement, 'lite')) { showNatureSaver(); return; }
-    aerialVideo.hide();
-    var photos = saverPhotos();
-    saverOn = true;
-    saverPick = null;
-    var s = $('saver');
-    s.innerHTML = '';
-    s.style.webkitTransition = s.style.transition = '';
-    // It comes in over 1.2 s, settling from 1.06 to 1.0.
-    var zoom = el('div', 'zoom', s);
-    T(zoom, Motion.instant ? '' : 'scale(1.06)');
-    setTimeout(function () { T(zoom, ''); }, 30);
-    // Without photos (no TMDB key and none of your own): the Frosted Horizon, day or twilight, never a black screen.
-    el('div', 'hz hz-day', zoom);
-    el('div', 'hz hz-night', zoom);
-    var a = el('div', 'photo', zoom), b = el('div', 'photo', zoom);
-    setClass(s, 'bare', !photos.length);
-    if (photos.length) el('div', 'shade', s);   // a light shade under the clock, only over photos
-    var clock = el('div', 'clock', s);
-    el('div', 'time', clock);
-    el('div', 'date', clock);
-    el('div', 'title', clock);
-    var hint = el('div', 'hint', clock);
-    var front = a;
-    function next() {
-      if (!saverOn) return;
-      var p = photos.length ? photos[saverIndex++ % photos.length] : null;
-      var back = front === a ? b : a;
-      if (p) {
-        back.style.backgroundImage = 'url(' + Data.image(p.backdrop, 'original') + ')';
-        T(back, 'none');
-        clock.children[2].textContent = p.title;
-        saverPick = p;
-        // With Watch from the screensaver on, OK opens this title's app (any other key only closes).
-        var app = Prefs.saverWatch() && Data.appFor(p.app);
-        hint.textContent = app ? trf('Press OK to watch on {app} · any other button to close', {app: app.title}) : '';
-        setTimeout(function () {
-          // Each photo drifts from rest (the reset above has no transition, so the drift runs every time).
-          kenBurns(back, 'opacity 2.4s', 24, 'scale(1.08) translateX(-1.5%)');
-          setClass(back, 'on', true);
-          setClass(front, 'on', false);
-          front = back;
-        }, 60);
-      }
-      tickSaverClock(clock);
-      saverTimer = setTimeout(next, 12000);
-    }
-    setClass(s, 'on', true);
-    next();
-  }
-
-  // MARK: - The nature clock screensaver (TVOS-LAUNCHER-MERGE-SPEC.md S5)
-
-  /*
-   * Depth-layered scenes, adapted from tvOS-Launcher (Apache-2.0), Scenes.java: the photo, then a giant clock filled
-   * with the scene's own blurred glass texture (a soft shadow under it, a light rim on it), then the foreground cutout
-   * over the clock (a ridge, a canopy), so the clock sits inside the landscape; the date and weather in Inter above.
-   * No shade over the photo. The water scene has no cutout: under its waterline the clock is drawn again, wetter.
-   * Each spec is in tvOS-Launcher's units of 1/540 of the height: clock top, clock size, left (0: centred), date top,
-   * date left, then [water line, dark clock, dark date].
+  /**
+   * The screensaver (saver.js): Photos, Nature Clock, Aurora, Apple Aerials or Black, as Settings has it. Here only what
+   * the home screen does around it: the live aerial pauses, OK on a photo can watch it, a key wakes the page from 0.98.
    */
-  var SCENES = [
-    {id: 'night', clockTop: 62, size: 178, left: 0, dateTop: 42, dateLeft: 0},
-    {id: 'golden', clockTop: 76, size: 195, left: 0, dateTop: 53, dateLeft: 0},
-    {id: 'water', clockTop: 134, size: 210, left: 0, dateTop: 108, dateLeft: 0, water: true},
-    {id: 'fog', clockTop: 86, size: 235, left: 48, dateTop: 58, dateLeft: 52, darkClock: true, darkDate: true},
-    {id: 'dawn', clockTop: 115, size: 200, left: 0, dateTop: 88, dateLeft: 0}
-  ];
-  var natureTimer = 0, natureScene = 0, natureImages = {};
-  // The clock's glass, made once and reused every minute (the water scene's wet copy has its own): no canvas per draw.
-  var glassCanvas = null, wetCanvas = null, wetSource = null;
-
-  /** A scene's three images (the cutout may be missing: the water scene has none, and old TVs may not read WebP). */
-  function sceneImages(sc, then) {
-    var got = natureImages[sc.id];
-    if (got) { if (got.ready) then(got); else got.waiting.push(then); return; }
-    got = natureImages[sc.id] = {bg: new Image(), glass: new Image(), fg: sc.water ? null : new Image(), ready: false, waiting: [then]};
-    var left = got.fg ? 3 : 2;
-    function one() {
-      if (--left > 0) return;
-      got.ready = true;
-      for (var i = 0; i < got.waiting.length; i++) got.waiting[i](got);
-      got.waiting = [];
-    }
-    got.bg.onload = got.bg.onerror = one;
-    got.glass.onload = got.glass.onerror = one;
-    got.bg.src = 'scenes/scene-' + sc.id + '.jpg';
-    got.glass.src = 'scenes/scene-' + sc.id + '-glass.jpg';
-    if (got.fg) { got.fg.onload = one; got.fg.onerror = function () { got.fg = null; one(); }; got.fg.src = 'scenes/scene-' + sc.id + '-fg.webp'; }
-  }
-
-  function loaded(img) { return img && img.complete && img.naturalWidth > 0; }
-
-  /** The clock's glass: the scene's glass texture screen-sized, a diagonal sheen over it, cut to the digits. */
-  function glassDigits(img, text, x, base, px, cap, wet, dark) {
-    var c = wet ? wetCanvas : glassCanvas;
-    if (!c) {
-      c = document.createElement('canvas');
-      c.width = 1920;
-      c.height = 1080;
-      if (wet) wetCanvas = c; else glassCanvas = c;
-    }
-    var g = c.getContext('2d');
-    g.globalCompositeOperation = 'source-over';
-    g.clearRect(0, 0, 1920, 1080);
-    g.font = '300 ' + px + 'px Antonio, Inter, sans-serif';
-    g.fillStyle = '#FFF';
-    g.fillText(text, x, base);
-    g.globalCompositeOperation = 'source-in';
-    if (loaded(img)) {
-      var src = img;
-      if (wet) {   // blurrier under the water: the texture shrunk to 120 × 68 and stretched back
-        if (!wetSource) {
-          wetSource = document.createElement('canvas');
-          wetSource.width = 120;
-          wetSource.height = 68;
-        }
-        src = wetSource;
-        src.getContext('2d').drawImage(img, 0, 0, 120, 68);
-      }
-      g.drawImage(src, 0, 0, 1920, 1080);
-    }
-    var sheen = g.createLinearGradient(0, 0, 864, 1080);
-    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.27)');
-    sheen.addColorStop(0.35, 'rgba(255, 255, 255, 0.11)');
-    sheen.addColorStop(0.65, 'rgba(255, 255, 255, 0.04)');
-    sheen.addColorStop(1, 'rgba(255, 255, 255, 0.1)');
-    g.fillStyle = sheen;
-    g.fillRect(0, 0, 1920, 1080);
-    // The frost: airy at the top of the digits, milkier at the bottom, so the glass reads over any sky.
-    var frost = g.createLinearGradient(0, base - cap, 0, base);
-    frost.addColorStop(0, dark ? 'rgba(255, 255, 255, 0.18)' : 'rgba(218, 224, 255, 0.28)');
-    frost.addColorStop(0.52, dark ? 'rgba(255, 255, 255, 0.32)' : 'rgba(236, 232, 255, 0.44)');
-    frost.addColorStop(1, dark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 242, 252, 0.64)');
-    g.fillStyle = frost;
-    g.fillRect(0, base - cap, 1920, cap);
-    g.globalCompositeOperation = 'source-over';
-    return c;
-  }
-
-  /** One scene, drawn whole into `canvas` (once a minute: the clock changes; nothing moves in between). */
-  function drawScene(canvas, sc, im) {
-    var g = canvas.getContext('2d'), u = 2, now = Date.now(), w = Data.weather;
-    g.clearRect(0, 0, 1920, 1080);
-    if (loaded(im.bg)) g.drawImage(im.bg, 0, 0, 1920, 1080);
-    var text = formatDate('format|h:mm', now).replace(/\s?[AaPp]\.?\s?[Mm]\.?$/, ''), px = sc.size * u;
-    g.font = '300 ' + px + 'px Antonio, Inter, sans-serif';
-    // Antonio's digits are tall: its own measure where the browser has one, else 0.86 of the size.
-    var metrics = g.measureText(text), tw = metrics.width, cap = metrics.actualBoundingBoxAscent || px * 0.86;
-    var dateBase = Math.max((46 + 19) * u, (sc.dateTop + 19) * u);
-    var top = Math.max((sc.clockTop + 19) * u, dateBase + 14 * u), base = top + cap;
-    var x = sc.left ? sc.left * u : (1920 - tw) / 2;
-    var waterY = sc.water ? 1080 * 0.55 : 1080;
-    // The clock: its shadow, the glass, the rim (above the waterline); under it, the wet copy.
-    g.save();
-    g.beginPath();
-    g.rect(0, 0, 1920, waterY);
-    g.clip();
-    g.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    g.fillText(text, x, base + 4 * u);
-    g.drawImage(glassDigits(im.glass, text, x, base, px, cap, false, sc.darkClock), 0, 0);
-    var rim = g.createLinearGradient(0, base - cap, 0, base);
-    rim.addColorStop(0, sc.darkClock ? 'rgba(255, 255, 255, 0.82)' : 'rgba(244, 248, 255, 0.9)');
-    rim.addColorStop(0.5, sc.darkClock ? 'rgba(255, 255, 255, 0.63)' : 'rgba(232, 236, 255, 0.73)');
-    rim.addColorStop(1, sc.darkClock ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.98)');
-    g.globalAlpha = 0.85;
-    g.lineWidth = 2.6;
-    g.strokeStyle = rim;
-    g.strokeText(text, x, base);
-    g.globalAlpha = 1;
-    g.restore();
-    if (sc.water) {
-      g.save();
-      g.beginPath();
-      g.rect(0, waterY, 1920, 1080 - waterY);
-      g.clip();
-      g.globalAlpha = 0.62;
-      g.drawImage(glassDigits(im.glass, text, x, base, px, cap, true, sc.darkClock), 0, 0);
-      g.globalAlpha = 1;
-      g.restore();
-    }
-    if (im.fg && loaded(im.fg)) g.drawImage(im.fg, 0, 0, 1920, 1080);
-    // The date and the weather, above the clock.
-    var line = formatDate('format|EEEE, MMMM d', now);
-    if (w) line = trf('{date} · {temp} {sky}', {date: line, temp: Data.degrees(w.temp), sky: Data.condition(w.code, w.isDay)});
-    g.font = '600 ' + Math.round(13.5 * u) + 'px Inter, sans-serif';
-    g.textAlign = sc.dateLeft ? 'left' : 'center';
-    g.fillStyle = sc.darkDate ? 'rgba(22, 32, 29, 0.78)' : 'rgba(240, 242, 248, 0.92)';
-    if (!sc.darkDate) { g.shadowColor = 'rgba(0, 0, 0, 0.45)'; g.shadowBlur = 14; g.shadowOffsetY = 3; }
-    g.fillText(line, sc.dateLeft ? sc.dateLeft * u : 960, dateBase);
-    g.shadowColor = 'rgba(0, 0, 0, 0)';
-    g.textAlign = 'left';
-  }
-
-  function showNatureSaver() {
+  function showSaver() {
     aerialVideo.hide();
     saverOn = true;
     saverPick = null;
-    var s = $('saver');
-    s.innerHTML = '';
-    s.style.webkitTransition = s.style.transition = '';
-    var zoom = el('div', 'zoom nature', s);
-    T(zoom, Motion.instant ? '' : 'scale(1.06)');
-    setTimeout(function () { T(zoom, ''); }, 30);
-    // Under the scenes, the Frosted Horizon: never black while a scene loads, or if one doesn't.
-    el('div', 'hz hz-day', zoom);
-    el('div', 'hz hz-night', zoom);
-    var a = el('canvas', 'scene', zoom), b = el('canvas', 'scene', zoom), front = a;
-    a.width = b.width = 1920;
-    a.height = b.height = 1080;
-    var shown = -1, drawnAt = '';
-    // The scene changes every minute (a 2.4 s cross-fade); in between, the clock is redrawn when the minute turns.
-    function frame() {
-      if (!saverOn) return;
-      var minute = formatDate('format|h:mm', Date.now()), want = Math.floor(Date.now() / 60000) % SCENES.length;
-      if (want !== shown) {
-        var sc = SCENES[(natureScene + want) % SCENES.length], next = shown < 0 ? front : front === a ? b : a;
-        shown = want;
-        sceneImages(sc, function (im) {
-          if (!saverOn) return;
-          drawScene(next, sc, im);
-          drawnAt = minute;
-          next.sc = sc;
-          next.im = im;
-          setClass(next, 'on', true);
-          if (next !== front) setClass(front, 'on', false);
-          front = next;
-        });
-      } else if (minute !== drawnAt && front.sc) {
-        drawScene(front, front.sc, front.im);
-        drawnAt = minute;
-      }
-      natureTimer = setTimeout(frame, 1000);
-    }
-    natureScene = Math.floor(Math.random() * SCENES.length);
-    setClass(s, 'on', true);
-    frame();
-    // Antonio may arrive after the first frame: draw again once fonts are in. Old TVs have no document.fonts and
-    // load a web font only for text on the page: a hidden line in Antonio asks for it, then the clock is drawn again.
-    function redraw() { if (saverOn && front.sc) drawScene(front, front.sc, front.im); }
-    if (document.fonts && document.fonts.load) {
-      document.fonts.load('300 100px Antonio').then(redraw, function () {});
-    } else {
-      var probe = el('span', 'font-probe', s, '0123456789:');
-      probe.style.fontFamily = 'Antonio';
-      setTimeout(redraw, 1500);
-      setTimeout(redraw, 4000);
-    }
-  }
-
-  function tickSaverClock(clock) {
-    var d = new Date();
-    clock.firstChild.textContent = formatDate('format|h:mm', d.getTime());
-    clock.children[1].textContent = formatDate('format|EEEE, MMMM d', d.getTime());
+    Saver.show($('saver'), {photos: saverPhotos(), watch: Prefs.saverWatch(), pick: function (p) { saverPick = p; }});
   }
 
   /** Woken by a key: it dissolves in 320 ms while the home screen settles from 0.98. */
@@ -2721,19 +2976,8 @@
       mv.wake.set(0);
     }
     saverOn = false;
-    clearTimeout(saverTimer);
-    clearTimeout(natureTimer);
-    setClass(s, 'on', false);
+    Saver.hide(s);
     syncAerialVideo();
-    // Once it has faded, the screensaver lets go of its photos, scenes and canvases (old TVs have little memory).
-    setTimeout(function () {
-      if (saverOn) return;
-      var canvases = s.getElementsByTagName('canvas');
-      for (var i = 0; i < canvases.length; i++) canvases[i].width = canvases[i].height = 0;
-      s.innerHTML = '';
-      natureImages = {};
-      glassCanvas = wetCanvas = wetSource = null;
-    }, 1400);
   }
 
   function poke(ok) {
@@ -2804,12 +3048,25 @@
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, now = Date.now();
-    // The intro and the lock take every key while they show.
+    var typing = st.zone === Z.WELLY && window.Welly && Welly.typing();
+    // The volume works over everything (the intro, the lock, the screensaver): the TV's keys, + and − on a keyboard.
+    if (volumeKey(e, typing)) { e.preventDefault(); return; }
+    // The intro and the lock take every other key while they show.
     if (Intro.showing()) { Intro.key(k); e.preventDefault(); return; }
     if (Lock.showing()) { idleAt = now; if (Lock.key(e)) e.preventDefault(); return; }
     // Away longer than the grace: the lock first (the screensaver goes with it).
     if (Profiles.needsLock()) { e.preventDefault(); showLock({from: 'idle'}); return; }
     touch();
+    // A browser's stand-ins for the remote: H is Home (a press: the Dock; held: Recent Apps), S the screensaver (S
+    // again: back), V keeps the volume HUD up in the preview. Not while Welly's text field has the keyboard.
+    if (!typing && (k === 72 || k === 83 || (k === 86 && PREVIEW))) {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (k === 72) homeDown();
+      else if (k === 83) toggleSaver();
+      else pinHud();
+      return;
+    }
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
     if (Forecast.showing()) { if (Forecast.key(k, TV.keys)) e.preventDefault(); return; }
     if (launching) endLaunch(true);
@@ -2848,6 +3105,7 @@
   });
   document.addEventListener('keyup', function (e) {
     var k = e.keyCode;
+    if (k === 72) { homeUp(); return; }
     if (isArrow(k)) { setScrub(false); return; }
     if (k !== TV.keys.ok || !okDown) return;
     if (okDown === 'welly') {
@@ -2959,6 +3217,7 @@
   loadApps(function () {
     renderAll();
     Data.refresh();
+    readVolume();   // where the TV lets the app read its volume: Control Center's volume row and the HUD
   });
   // Power-on: the Liquid Glass startup handing off to "Who's Watching?"; with Startup animation off, the lock at once
   // (preview builds skip both with ?nolock).
@@ -2977,14 +3236,17 @@
     checkNight();
     Data.refresh();
     if (!saverOn && !sheetOpen() && !Forecast.showing() && !Lock.showing() && !Intro.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
-    var saverClock = saverOn && $('saver').querySelector('.clock');   // the nature clock draws its own
-    if (saverClock) tickSaverClock(saverClock);
   }, 30000);
 
   // For the browser preview and tests.
   window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
     lock: lockNow, showLock: showLock, openSettings: openSettings, recents: openRecents, forecast: openForecast,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
+    // Control Center, Home and the volume, for the tests and the screenshots.
+    drawer: openDrawer, inputs: openInputsSheet, home: goHome, toggleSaver: toggleSaver,
+    cc: function () { return ccItems.map(function (it) { return {kind: it.kind, label: it.spec ? it.spec.label : it.node.textContent, row: it.row}; }); },
+    saverOn: function () { return saverOn; },
+    volume: function () { return {level: volumeLevel, muted: volumeMuted, shown: !!hud && mv.hud.to === 1}; },
     // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
     nowPlaying: nowPlaying};
   // Preview-only controller seam for deterministic browser tests.  It calls the

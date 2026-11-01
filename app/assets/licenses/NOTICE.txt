@@ -15,4 +15,6 @@ This product includes work from these projects, under their own licences:
   Original mode turns them back on.
 
 - Antonio typeface (app/assets/fonts/Antonio-Light.ttf), SIL Open Font License 1.1: the screensaver's clock only.
+- Varela Round typeface (app/assets/fonts/VarelaRound-Regular.ttf), SIL Open Font License 1.1: the screensaver's
+  "Rounded" clock only.
 - Inter typeface (app/assets/fonts/InterVariable.ttf), SIL Open Font License 1.1.

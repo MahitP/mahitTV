@@ -193,9 +193,19 @@ final class Prefs {
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it. Off: any key closes it. */
     static boolean saverWatch() { return sp().getBoolean("saverWatch", false); }
     static void setSaverWatch(boolean on) { put("saverWatch", on); }
-    /** The screensaver's look: "photos" (the picks or your photos, the default) or "nature" (the depth-layered clock). */
+    /**
+     * The screensaver's look: "photos" (the picks or your photos, the default), "nature" (the depth-layered clock),
+     * "aurora" (the Aurora sky and a clock), "aerials" (the coast, valley, earth and aurora stills) or "black" (a dim
+     * clock on black).
+     */
     static String saverStyle() { return sp().getString("saverStyle", "photos"); }
     static void setSaverStyle(String style) { put("saverStyle", style); }
+    /** The Nature Clock's scene: "rotate" (a new one every minute, the default), "night", "golden", "water", "fog" or "dawn". */
+    static String saverScene() { return sp().getString("saverScene", "rotate"); }
+    static void setSaverScene(String scene) { put("saverScene", scene); }
+    /** The Nature Clock's face: "tall" (Antonio, the default) or "rounded" (Varela Round). */
+    static String saverClock() { return sp().getString("saverClock", "tall"); }
+    static void setSaverClock(String style) { put("saverClock", style); }
 
     // MARK: - Widgets and coins
 

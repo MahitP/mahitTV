@@ -68,6 +68,12 @@ final class HomeApps {
      * written), Screensaver (starts it now).
      */
     static final int RECENTS = 10, WIFI = 11, BLUETOOTH = 12, SAVER = 13, CLOSE_BG = 14;
+    /**
+     * The decluttered Control Center (Part 3 of the spec): Power (the screen off now, through HomeMode), Audio Output
+     * (the TV's sound output page; the current output as its detail), Do Not Disturb (on/off), and one Inputs card that
+     * opens the inputs' list inside the panel. The home screen handles POWER, DND and INPUT_SHEET.
+     */
+    static final int POWER = 15, AUDIO = 16, DND = 17, INPUT_SHEET = 18;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -339,22 +345,30 @@ final class HomeApps {
         return shortcut(SLEEP, "sleep", Ui.tr("Sleep Timer"), "bedtime");
     }
 
+    /**
+     * Control Center's cards, in pairs (its 2 columns): Power | Sleep Timer, Inputs | Audio Output, Wi-Fi | Bluetooth,
+     * Do Not Disturb | Screensaver, Lock | Close Background Apps, then the TV's extras where it has them, and Home
+     * Settings | TV Settings. All Apps (↓ from the Dock) and Recent Apps (hold Home) left it.
+     */
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
-        items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
-        items.add(shortcut(RECENTS, "recents", Ui.tr("Recent Apps"), "recents"));
+        items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
+        items.add(sleepTimer());
+        items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
+        items.add(shortcut(AUDIO, "audio", Ui.tr("Audio Output"), "speaker"));
         items.add(shortcut(WIFI, "wifi", Ui.tr("Wi-Fi"), "wifi"));
         items.add(shortcut(BLUETOOTH, "bluetooth", Ui.tr("Bluetooth"), "bluetooth"));
+        items.add(shortcut(DND, "dnd", Ui.tr("Do Not Disturb"), "moon"));
         items.add(shortcut(SAVER, "screensaver", Ui.tr("Screensaver"), "screensaver"));
-        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
         items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
-        items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
-        items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
+        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
+        items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
+        items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
         return items;
     }
 
@@ -391,7 +405,7 @@ final class HomeApps {
      * system calls: HomeView reads them on its loader thread when the panel opens, never on the UI thread.
      */
     static String[] connectivity(Context c) {
-        String wifi = null, bluetooth = null;
+        String wifi = null, bluetooth = null, audio = null, dnd = null;
         try {
             android.net.ConnectivityManager cm = (android.net.ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
             android.net.NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
@@ -410,7 +424,47 @@ final class HomeApps {
         } catch (RuntimeException e) {
             AppLog.w("Bluetooth state: " + e.getMessage());
         }
-        return new String[] {wifi, bluetooth};
+        audio = audioOutput(c);
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) {
+                dnd = nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+                        ? Ui.tr("state|On") : Ui.tr("state|Off");
+            }
+        } catch (RuntimeException e) {
+            AppLog.w("Do Not Disturb state: " + e.getMessage());
+        }
+        return new String[] {wifi, bluetooth, audio, dnd};
+    }
+
+    /**
+     * Where the sound goes, read only: Android sends media to a Bluetooth speaker or headphones once one is connected,
+     * else to the HDMI ARC/eARC receiver if there is one, else the TV's speakers. Null when the TV doesn't say.
+     */
+    static String audioOutput(Context c) {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return null;
+            String bt = null;
+            boolean arc = false, speaker = false;
+            for (android.media.AudioDeviceInfo d : am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)) {
+                int t = d.getType();
+                if (t == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP && bt == null) {
+                    CharSequence name = d.getProductName();
+                    bt = name == null || name.length() == 0 ? Ui.tr("Bluetooth") : name.toString();
+                } else if (t == android.media.AudioDeviceInfo.TYPE_HDMI_ARC || t == 29 /* TYPE_HDMI_EARC, API 31 */) {
+                    arc = true;
+                } else if (t == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                    speaker = true;
+                }
+            }
+            if (bt != null) return bt;
+            if (arc) return Ui.tr("HDMI ARC");
+            return speaker ? Ui.tr("TV Speakers") : null;
+        } catch (RuntimeException e) {
+            AppLog.w("audio output: " + e.getMessage());
+            return null;
+        }
     }
 
     /** Puts connectivity()'s states on the cards (on the UI thread). */
@@ -418,6 +472,12 @@ final class HomeApps {
         for (Item it : items) {
             if (it.kind == WIFI) it.detail = state[0];
             else if (it.kind == BLUETOOTH) it.detail = state[1];
+            else if (it.kind == AUDIO) it.detail = state[2];
+            else if (it.kind == DND) it.detail = state[3];
+            // Lit (the symbol on a coloured plate, as tvOS's toggles): Wi-Fi up, Bluetooth on, Do Not Disturb on.
+            if (it.kind == WIFI || it.kind == BLUETOOTH || it.kind == DND) {
+                it.connected = it.detail != null && !it.detail.equals(Ui.tr("state|Off"));
+            }
         }
     }
 
@@ -691,6 +751,11 @@ final class HomeApps {
                 break;
             case BLUETOOTH:
                 intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+                plain = new Intent(Settings.ACTION_SETTINGS);
+                break;
+            case AUDIO:
+                // The TV's sound output page (nothing is changed here); a TV without one: its settings.
+                intent = new Intent(Settings.ACTION_SOUND_SETTINGS);
                 plain = new Intent(Settings.ACTION_SETTINGS);
                 break;
             case SAVER:

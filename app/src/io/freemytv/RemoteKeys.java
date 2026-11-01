@@ -32,6 +32,13 @@ import android.view.KeyEvent;
  * (Apache-2.0)): a button can open a second app when pressed twice within DOUBLE_MS, and a third when held LONG_MS.
  * Only a button with a second app waits DOUBLE_MS before opening its first one; only one with a held app acts on its
  * release instead of its press. Neither on Xiaomi, whose remote already sends one press as a burst.
+ * Home, as the Siri Remote's TV button (TVOS-LAUNCHER-MERGE-SPEC.md Part 3 §B): a press is Home (the system's own,
+ * through the service: the home screen's double press still works), held HOME_LONG_MS it opens Recent Apps. Only while
+ * mahitTV is the home screen; otherwise, or if anything is off, Home passes on untouched.
+ * Volume: a TV's system never gives the volume keys to the app in front (PhoneWindowManager's TV routing), so while the
+ * home screen is in front (RemoteKeyService's window events) the filter takes them, changes the volume itself on
+ * volumeWorker without the system's panel, and the home screen shows its own (ACTION_VOLUME → VolumeHud). Not when the
+ * TV's volume is fixed; anywhere else the keys stay the system's.
  */
 final class RemoteKeys {
     private RemoteKeys() {}
@@ -62,6 +69,38 @@ final class RemoteKeys {
     static final long DOUBLE_MS = 320;
     /** Holding the button this long opens its held app. */
     static final long LONG_MS = 550;
+    /** Holding Home this long opens Recent Apps; a shorter press is Home. */
+    static final long HOME_LONG_MS = 450;
+    private static boolean homeDown, homeFired;
+    private static android.accessibilityservice.AccessibilityService homeService;
+    private static final Runnable openRecents = () -> {
+        android.accessibilityservice.AccessibilityService s = homeService;
+        homeFired = true;
+        homeService = null;
+        if (s == null) return;
+        try {
+            s.startActivity(new Intent(s, HomeActivity.class).putExtra(HomeActivity.EXTRA_RECENTS, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        } catch (RuntimeException e) {
+            AppLog.w("Recent Apps: " + e.getMessage());
+            s.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME);
+        }
+    };
+    // Whether mahitTV is the home screen, checked at most every HOME_CHECK_MS (a package query on a key press).
+    private static final long HOME_CHECK_MS = 10_000;
+    private static long homeCheckedAt;
+    private static boolean homeIsOurs;
+
+    /** The level after a volume key (adjustVolume), for the home screen's HUD: extras index, max, muted, push. */
+    static final String ACTION_VOLUME = "io.freemytv.VOLUME";
+    private static final String HOME_CLASS = HomeActivity.class.getName();
+    // The window in front is the home screen's (RemoteKeyService), the volume key whose press we took, the TV's volume
+    // is fixed (0: not read yet, 1: fixed, -1: not), and the thread that changes it (system calls, off the filter).
+    private static volatile boolean homeInFront;
+    private static boolean volumeDown;
+    private static int volumeFixed;
+    private static java.util.concurrent.ExecutorService volumeWorker;
+
     /** Whether this remote's buttons can have a second and a held app (Settings shows the rows only then). */
     static boolean doublePress() {
         return supported() && !XIAOMI;
@@ -109,6 +148,11 @@ final class RemoteKeys {
         int source = e.getSource();
         if ((source & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
                 || (source & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) return false;
+        if (e.getKeyCode() == KeyEvent.KEYCODE_HOME) {
+            return c instanceof android.accessibilityservice.AccessibilityService
+                    && onHome((android.accessibilityservice.AccessibilityService) c, e);
+        }
+        if (isVolume(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onVolume(c, e);
         int keyCode = e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
         // Sony sends BUTTON_9 for five app buttons (BUTTON_4 for Netflix, BUTTON_8 for Google Play): only the scan code
         // tells them apart.
@@ -146,6 +190,123 @@ final class RemoteKeys {
             if (!heldFired) press(c, keyCode, pkg, e.getEventTime(), e.getKeyCode());
         }
         return true;
+    }
+
+    /**
+     * Home: consumed only while mahitTV is the home screen. Its press goes on as the system's Home (GLOBAL_ACTION_HOME,
+     * so the home screen gets its Home intent and its double press as before); held HOME_LONG_MS, Recent Apps.
+     */
+    private static boolean onHome(android.accessibilityservice.AccessibilityService s, KeyEvent e) {
+        if (handler == null) handler = new Handler(Looper.getMainLooper());
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            if (e.getRepeatCount() > 0) return homeDown;   // the held key repeats: still ours
+            if (!homeIsOurs(s)) return false;              // the TV's own home screen (Original, the watchdog): Home passes
+            homeDown = true;
+            homeFired = false;
+            homeService = s;
+            handler.removeCallbacks(openRecents);
+            handler.postDelayed(openRecents, HOME_LONG_MS);
+            return true;
+        }
+        if (e.getAction() == KeyEvent.ACTION_UP && homeDown) {
+            homeDown = false;
+            handler.removeCallbacks(openRecents);
+            homeService = null;
+            if (!homeFired && !s.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)) {
+                try {   // the system refused its own Home: the home screen directly
+                    s.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (RuntimeException ex) {
+                    AppLog.w("Home: " + ex.getMessage());
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** A window came to the front (RemoteKeyService): whether it's the home screen's. */
+    static void windowChanged(CharSequence pkg, CharSequence cls) {
+        homeInFront = pkg != null && cls != null && HomeMode.PKG.contentEquals(pkg) && HOME_CLASS.contentEquals(cls);
+    }
+
+    static boolean isVolume(int code) {
+        return code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE;
+    }
+
+    /** The AudioManager step a volume key makes. */
+    static int volumeDirection(int code) {
+        return code == KeyEvent.KEYCODE_VOLUME_UP ? android.media.AudioManager.ADJUST_RAISE
+                : code == KeyEvent.KEYCODE_VOLUME_DOWN ? android.media.AudioManager.ADJUST_LOWER
+                : android.media.AudioManager.ADJUST_TOGGLE_MUTE;
+    }
+
+    /** A volume key while the home screen is in front: taken, and the volume changed on volumeWorker. */
+    private static boolean onVolume(Context c, KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_UP) {
+            boolean ours = volumeDown;
+            volumeDown = false;
+            return ours;
+        }
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
+        if (e.getRepeatCount() > 0 && !volumeDown) return false;   // held since before: still the system's
+        if (!homeInFront || !homeIsOurs(c) || volumeFixed(c)) {
+            volumeDown = false;
+            return false;
+        }
+        volumeDown = true;
+        if (e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_MUTE && e.getRepeatCount() > 0) return true;   // one toggle a press
+        final int dir = volumeDirection(e.getKeyCode());
+        final Context app = c.getApplicationContext();
+        if (volumeWorker == null) volumeWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        volumeWorker.execute(() -> adjustVolume(app, dir));
+        return true;
+    }
+
+    private static boolean volumeFixed(Context c) {
+        if (volumeFixed == 0) {
+            try {
+                android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+                volumeFixed = am != null && !am.isVolumeFixed() ? -1 : 1;
+            } catch (RuntimeException ex) {
+                volumeFixed = 1;
+            }
+        }
+        return volumeFixed > 0;
+    }
+
+    /**
+     * One volume step (or mute) without the system's panel (flag 0), then the level to the home screen (ACTION_VOLUME,
+     * only to this app). Off the UI and filter threads: these are calls to the system. push is 1 or −1 for a press past
+     * the top or the bottom.
+     */
+    static void adjustVolume(Context c, int dir) {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+            int s = android.media.AudioManager.STREAM_MUSIC, max = Math.max(1, am.getStreamMaxVolume(s));
+            int before = am.getStreamVolume(s);
+            am.adjustStreamVolume(s, dir, 0);
+            int now = am.getStreamVolume(s);
+            int push = dir == android.media.AudioManager.ADJUST_RAISE && before >= max && now >= max ? 1
+                    : dir == android.media.AudioManager.ADJUST_LOWER && before <= 0 && now <= 0 ? -1 : 0;
+            c.sendBroadcast(new Intent(ACTION_VOLUME).setPackage(HomeMode.PKG).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    .putExtra("index", now).putExtra("max", max).putExtra("muted", am.isStreamMute(s)).putExtra("push", push));
+        } catch (RuntimeException ex) {
+            AppLog.w("volume: " + ex.getMessage());
+        }
+    }
+
+    private static boolean homeIsOurs(Context c) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (homeCheckedAt != 0 && now - homeCheckedAt < HOME_CHECK_MS) return homeIsOurs;
+        homeCheckedAt = now;
+        try {
+            android.content.pm.ResolveInfo r = c.getPackageManager().resolveActivity(
+                    new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY);
+            homeIsOurs = r != null && r.activityInfo != null && HomeMode.PKG.equals(r.activityInfo.packageName);
+        } catch (RuntimeException ex) {
+            homeIsOurs = false;
+        }
+        return homeIsOurs;
     }
 
     /** One press of a button: its app at once, or (with a second app) after DOUBLE_MS unless a second press comes. */

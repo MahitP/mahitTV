@@ -71,6 +71,7 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/aerial-video-web-test.js
   node tools/home-background-test.js
   node tools/home-background-dom-test.js
+  node tools/web-keys-test.js   # H (Dock / Recent Apps), S (screensaver), + and − (volume HUD), one Inputs tile
 
   # The generic LG and Samsung packages land where your own build leaves yours (with your city and TMDB key):
   # keep yours and put them back afterwards, so the next install isn't the generic one.

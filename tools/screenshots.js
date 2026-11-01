@@ -242,6 +242,52 @@ async function shootMerge(browser, theme, shot) {
   return file;
 }
 
+// The tvOS pass (Control Center, Inputs, the volume HUD, Recent Apps, the screensavers, Settings):
+// web-tvos-<theme>-<name>.png. `prefs` go into fmtv.prefs; each step is a key ('x'), {down|up: key}, {js} or {wait}.
+const TVOS_SHOTS = [
+  { name: 'control-center', steps: [{ js: 'FreeMyTV.drawer()' }, { wait: 1000 }] },
+  { name: 'inputs', steps: [{ js: 'FreeMyTV.drawer()' }, { wait: 700 }, { js: 'FreeMyTV.inputs()' }, { wait: 1000 }] },
+  { name: 'volume-hud', steps: ['+', '+', '+', '+', '-', { wait: 500 }] },
+  { name: 'home-dock', steps: [{ js: 'FreeMyTV.tab(1)' }, { wait: 700 }, 'h', { wait: 1100 }] },
+  { name: 'recents', steps: [{ down: 'h' }, { wait: 700 }, { up: 'h' }, { wait: 1100 }] },
+  { name: 'saver-photos', prefs: { saverStyle: 'photos' }, steps: ['s', { wait: 3500 }] },
+  { name: 'saver-nature', prefs: { saverStyle: 'nature', saverScene: 'golden' }, steps: ['s', { wait: 3500 }] },
+  { name: 'saver-nature-rounded', prefs: { saverStyle: 'nature', saverScene: 'water', saverClock: 'rounded' }, steps: ['s', { wait: 3500 }] },
+  { name: 'saver-aurora', prefs: { saverStyle: 'aurora' }, steps: ['s', { wait: 3000 }] },
+  { name: 'saver-aerials', prefs: { saverStyle: 'aerials' }, steps: ['s', { wait: 3500 }] },
+  { name: 'saver-black', prefs: { saverStyle: 'black' }, steps: ['s', { wait: 2000 }] },
+  { name: 'settings', steps: [{ js: 'FreeMyTV.openSettings()' }, { wait: 1000 }] },
+  { name: 'settings-appearance', steps: [{ js: 'FreeMyTV.openSettings()' }, { wait: 700 }, 'ArrowDown', 'ArrowRight', { wait: 900 }] },
+  { name: 'settings-choice', steps: [{ js: 'FreeMyTV.openSettings()' }, { wait: 700 }, 'ArrowDown', 'ArrowRight',
+    'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter', { wait: 900 }] },
+];
+
+async function shootTvos(browser, theme, shot) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(({ theme, ids, prefs }) => {
+    try {
+      localStorage.clear();
+      localStorage.setItem('fmtv.night', theme === 'dark' ? 'true' : 'false');
+      localStorage.setItem('fmtv.prefs', JSON.stringify(Object.assign({ theme }, prefs)));
+      ids.forEach((id) => localStorage.setItem('mahittv.profile.' + id, JSON.stringify({ theme })));
+    } catch (e) {}
+  }, { theme, ids: PROFILE_IDS, prefs: shot.prefs || {} });
+  const page = await context.newPage();
+  await page.goto(PAGE);
+  await page.waitForTimeout(2200);
+  for (const step of shot.steps) {
+    if (typeof step === 'string') { await page.keyboard.press(step); await page.waitForTimeout(350); }
+    else if (step.js) await page.evaluate(step.js);
+    else if (step.down) await page.keyboard.down(step.down);
+    else if (step.up) await page.keyboard.up(step.up);
+    else if (step.wait) await page.waitForTimeout(step.wait);
+  }
+  const file = path.join(OUT, `web-tvos-${theme}-${shot.name}.png`);
+  await page.screenshot({ path: file });
+  await context.close();
+  return file;
+}
+
 async function shoot(browser, theme, [name, keys, noPicks]) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
   await context.addInitScript(({ theme, noPicks, ids }) => {
@@ -387,7 +433,13 @@ async function shootAppleWallpapers(browser) {
   BASE = 'http://127.0.0.1:' + server.address().port + '/index.html';
   PAGE = BASE + '?nolock';
   const browser = await chromium.launch();
-  const only = process.argv[2];   // "profiles" shoots only mahitTV's, "merge" only the tvOS-Launcher merge's
+  const only = process.argv[2];   // "profiles" shoots only mahitTV's, "merge" the tvOS-Launcher merge's, "tvos" the tvOS pass
+  if (only === 'tvos') {
+    for (const theme of ['light', 'dark']) {
+      for (const shot of TVOS_SHOTS) console.log('wrote', path.relative(ROOT, await shootTvos(browser, theme, shot)));
+    }
+    await browser.close(); server.close(); return;
+  }
   if (only === 'merge') {
     for (const theme of ['light', 'dark']) {
       for (const shot of MERGE_SHOTS) console.log('wrote', path.relative(ROOT, await shootMerge(browser, theme, shot)));
@@ -425,6 +477,9 @@ async function shootAppleWallpapers(browser) {
   for (const f of await shootAppleWallpapers(browser)) console.log('wrote', path.relative(ROOT, f));
   for (const theme of ['light', 'dark']) {
     for (const shot of MERGE_SHOTS) console.log('wrote', path.relative(ROOT, await shootMerge(browser, theme, shot)));
+  }
+  for (const theme of ['light', 'dark']) {
+    for (const shot of TVOS_SHOTS) console.log('wrote', path.relative(ROOT, await shootTvos(browser, theme, shot)));
   }
   await browser.close();
   server.close();

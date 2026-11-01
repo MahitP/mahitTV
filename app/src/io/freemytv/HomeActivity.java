@@ -22,6 +22,8 @@ import java.io.File;
 public class HomeActivity extends Activity {
     /** Opens All Apps (a remote's All Apps button, RemoteKeys). */
     static final String EXTRA_ALL_APPS = "io.freemytv.ALL_APPS";
+    /** Opens Recent Apps (Home held, RemoteKeys). */
+    static final String EXTRA_RECENTS = "io.freemytv.RECENTS";
     /** Two Home presses this close together open Recent Apps (tvOS's double press of the TV button). */
     static final long DOUBLE_HOME_MS = 400;
     private long lastHome;
@@ -77,6 +79,7 @@ public class HomeActivity extends Activity {
         setContentView(root);
         getWindow().setBackgroundDrawable(null);
         if (getIntent().getBooleanExtra(EXTRA_ALL_APPS, false)) home.showAllApps();
+        if (getIntent().getBooleanExtra(EXTRA_RECENTS, false)) home.showRecents();
     }
 
     @Override protected void onResume() {
@@ -117,6 +120,11 @@ public class HomeActivity extends Activity {
             home.showAllApps();
             return;
         }
+        if (intent.getBooleanExtra(EXTRA_RECENTS, false)) {
+            lastHome = 0;
+            home.showRecents();
+            return;
+        }
         long now = SystemClock.uptimeMillis();
         boolean twice = lastHome != 0 && now - lastHome < DOUBLE_HOME_MS;
         lastHome = twice ? 0 : now;
@@ -138,6 +146,7 @@ public class HomeActivity extends Activity {
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (RemoteKeys.onKey(this, event)) return true;
+        if (home != null && home.volumeKey(event)) return true;
         if (home != null && home.onKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }

@@ -1,0 +1,242 @@
+/*
+ * mahitTV Settings as Apple TV's Settings (settings.js; the approved plan, Step 2E), and the screensaver's extra modes
+ * (saver.js). Full screen over the Frosted Horizon: dark ink on light glass by day, white on smoky glass at night.
+ * No CSS variables, grid or backdrop-filter (old TVs); only transform and opacity animate.
+ */
+
+/* MARK: - The sheet: the Horizon fills it, so nothing of the home screen (the Dock) shows behind Settings. */
+
+#settings.tvs { background: none; color: #1D1D1F; }
+.night #settings.tvs { color: #FFF; }
+#settings.tvs .veil { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(255, 255, 255, 0.1); }
+.night #settings.tvs .veil { background: rgba(0, 0, 0, 0.14); }
+
+/* MARK: - Left pane: the emblem, the title and a line about the section; the sections as capsules */
+
+#settings .left { position: absolute; left: 96px; top: 120px; width: 568px; }
+#settings .emblem {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 36px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 18px 40px rgba(22, 33, 45, 0.16), inset 0 1.5px 0 rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+.night #settings .emblem {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), inset 0 1.5px 0 rgba(255, 255, 255, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+#settings .emblem .sym { position: absolute; left: 38px; top: 38px; background-color: #1D1D1F; }
+.night #settings .emblem .sym { background-color: #FFF; }
+#settings .emblem .face { position: absolute; left: 0; top: 0; width: 160px; height: 160px; background-size: cover; background-position: center; }
+#settings .etitle { margin-top: 32px; font-size: 44px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.12; }
+#settings .edesc { margin-top: 10px; font-size: 24px; font-weight: 400; line-height: 1.35; color: rgba(60, 60, 67, 0.6); min-height: 66px; }
+.night #settings .edesc { color: rgba(235, 235, 245, 0.6); }
+#settings .cats { margin-top: 36px; }
+#settings .cat {
+  position: relative;
+  height: 64px;
+  margin-bottom: 8px;
+  padding: 0 24px;
+  border-radius: 32px;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 64px;
+  white-space: nowrap;
+  -webkit-transform-origin: 0 50%;
+  transform-origin: 0 50%;
+  -webkit-transition: -webkit-transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s, box-shadow 0.2s;
+  transition: transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s, box-shadow 0.2s;
+}
+#settings .cat .sym { width: 30px; height: 30px; margin-right: 18px; vertical-align: -5px; background-color: currentColor; opacity: 0.8; }
+/* The section shown on the right while the focus is there: a quiet capsule. */
+#settings .cat.current { background: rgba(255, 255, 255, 0.4); }
+.night #settings .cat.current { background: rgba(255, 255, 255, 0.18); }
+#settings .cat.focus, .night #settings .cat.focus {
+  background: #FFF;
+  color: #1D1D1F;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  -webkit-transform: scale(1.04);
+  transform: scale(1.04);
+}
+#settings .cat.focus .sym { opacity: 1; }
+
+/* MARK: - Right pane: the title, then grouped inset glass with 64 px rows */
+
+#settings .right { position: absolute; left: 744px; top: 120px; width: 1080px; height: 904px; }
+#settings .rtitle { height: 64px; font-size: 46px; font-weight: 700; letter-spacing: -0.02em; line-height: 56px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#settings .view { position: absolute; left: -24px; right: -24px; top: 80px; height: 824px; overflow: hidden; }
+#settings .scroll { position: absolute; left: 24px; right: 24px; top: 8px; padding-bottom: 40px; }
+#settings .gh {
+  margin: 30px 24px 10px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(60, 60, 67, 0.6);
+}
+.night #settings .gh { color: rgba(235, 235, 245, 0.6); }
+#settings .gh:first-child { margin-top: 4px; }
+#settings .gbox {
+  position: relative;
+  margin-top: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 10px 30px rgba(22, 33, 45, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+#settings .gh + .gbox { margin-top: 0; }
+.night #settings .gbox {
+  background: rgba(30, 30, 35, 0.55);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+#settings .gf { margin: 12px 24px 0; font-size: 22px; font-weight: 400; line-height: 1.36; color: rgba(60, 60, 67, 0.6); }
+.night #settings .gf { color: rgba(235, 235, 245, 0.6); }
+
+#settings .srow {
+  position: relative;
+  height: 64px;
+  padding: 0 24px;
+  border-radius: 16px;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 64px;
+  white-space: nowrap;
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s, box-shadow 0.2s;
+  transition: transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s, box-shadow 0.2s;
+}
+/* The separators: inset 24 px, not under the focused row or the one after it. */
+#settings .srow + .srow:before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: rgba(60, 60, 67, 0.18);
+}
+.night #settings .srow + .srow:before { background: rgba(255, 255, 255, 0.12); }
+#settings .srow.focus:before, #settings .srow.focus + .srow:before { opacity: 0; }
+#settings .srow .label { display: inline-block; max-width: 640px; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+#settings .srow .end { position: absolute; right: 24px; top: 0; height: 64px; white-space: nowrap; }
+#settings .srow .value { font-size: 26px; font-weight: 400; color: rgba(60, 60, 67, 0.6); }
+.night #settings .srow .value { color: rgba(235, 235, 245, 0.6); }
+#settings .srow .sym { display: inline-block; vertical-align: -3px; margin-left: 12px; background-color: rgba(60, 60, 67, 0.3); }
+.night #settings .srow .sym { background-color: rgba(235, 235, 245, 0.3); }
+#settings .srow .sym:first-child { margin-left: 0; }
+/* Dim the ink, not the row, so a focused dim row still gets a solid platter. */
+#settings .srow.dim .label, #settings .srow.dim .end { opacity: 0.42; }
+#settings .srow.dim.focus .label, #settings .srow.dim.focus .end { opacity: 0.55; }
+/* The focused row: a white platter, dark ink, a little nearer. */
+#settings .srow.focus, .night #settings .srow.focus {
+  background: #FFF;
+  color: #1D1D1F;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  -webkit-transform: scale(1.02);
+  transform: scale(1.02);
+  z-index: 1;
+}
+#settings .srow.focus .value { color: rgba(60, 60, 67, 0.75); }
+#settings .srow.focus .sym { background-color: rgba(60, 60, 67, 0.45); }
+/* The check of a choice list: the system blue. */
+#settings .srow .sym.check, #settings .srow.focus .sym.check { background-color: #0A84FF; }
+
+/* The tvOS switch: 64 × 38, green when on, the knob slides (settings.js). */
+#settings .switch {
+  position: relative;
+  display: inline-block;
+  width: 64px;
+  height: 38px;
+  margin-top: 13px;
+  border-radius: 19px;
+  background: rgba(120, 120, 128, 0.32);
+  -webkit-transition: background-color 0.2s;
+  transition: background-color 0.2s;
+}
+.night #settings .switch { background: rgba(120, 120, 128, 0.36); }
+#settings .switch.on, .night #settings .switch.on { background: #34C759; }
+#settings .switch .knob {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  background: #FFF;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+
+/* Continuous corners where the TV's browser has them. */
+@supports (corner-shape: superellipse(1.39)) {
+  #settings .emblem { corner-shape: superellipse(1.39); border-radius: 46px; }
+  #settings .gbox, #settings .srow { corner-shape: superellipse(1.39); border-radius: 20px; }
+}
+
+/* Reduce Transparency: solid panels. Tizen 2.4 (lite): no shadows or transitions. */
+@media (prefers-reduced-transparency: reduce) {
+  #settings .gbox, #settings .emblem { background: rgba(245, 245, 247, 0.96); }
+  .night #settings .gbox, .night #settings .emblem { background: rgba(22, 22, 26, 0.97); }
+}
+.lite #settings .gbox, .lite #settings .emblem, .lite #settings .cat.focus, .lite #settings .srow.focus { box-shadow: none; }
+
+/* MARK: - The screensaver's extra modes (saver.js): Aurora, Apple Aerials, Black, and the Rounded clock */
+
+@font-face {
+  font-family: 'Varela Round';
+  src: url('fonts/VarelaRound-Regular.ttf') format('truetype');
+  font-weight: 400;
+}
+#saver .aurora { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; background: #071220; }
+#saver .aurora .band {
+  position: absolute;
+  width: 2400px;
+  height: 900px;
+  border-radius: 50%;
+  opacity: 0.78;
+}
+#saver .aurora .b1 {
+  left: -460px;
+  top: -120px;
+  background: -webkit-radial-gradient(center, ellipse, rgba(48, 209, 160, 0.55), rgba(48, 209, 160, 0) 62%);
+  background: radial-gradient(ellipse at center, rgba(48, 209, 160, 0.55), rgba(48, 209, 160, 0) 62%);
+  -webkit-animation: aurora1 38s ease-in-out infinite alternate;
+  animation: aurora1 38s ease-in-out infinite alternate;
+}
+#saver .aurora .b2 {
+  left: -200px;
+  top: 120px;
+  background: -webkit-radial-gradient(center, ellipse, rgba(94, 92, 230, 0.5), rgba(94, 92, 230, 0) 60%);
+  background: radial-gradient(ellipse at center, rgba(94, 92, 230, 0.5), rgba(94, 92, 230, 0) 60%);
+  -webkit-animation: aurora2 46s ease-in-out infinite alternate;
+  animation: aurora2 46s ease-in-out infinite alternate;
+}
+#saver .aurora .b3 {
+  left: -700px;
+  top: 360px;
+  background: -webkit-radial-gradient(center, ellipse, rgba(100, 210, 255, 0.4), rgba(100, 210, 255, 0) 60%);
+  background: radial-gradient(ellipse at center, rgba(100, 210, 255, 0.4), rgba(100, 210, 255, 0) 60%);
+  -webkit-animation: aurora3 54s ease-in-out infinite alternate;
+  animation: aurora3 54s ease-in-out infinite alternate;
+}
+@-webkit-keyframes aurora1 { from { -webkit-transform: translate(0, 0) rotate(-8deg) scale(1); } to { -webkit-transform: translate(420px, 60px) rotate(4deg) scale(1.12); } }
+@keyframes aurora1 { from { transform: translate(0, 0) rotate(-8deg) scale(1); } to { transform: translate(420px, 60px) rotate(4deg) scale(1.12); } }
+@-webkit-keyframes aurora2 { from { -webkit-transform: translate(0, 0) rotate(6deg) scale(1.05); } to { -webkit-transform: translate(-360px, -80px) rotate(-6deg) scale(0.94); } }
+@keyframes aurora2 { from { transform: translate(0, 0) rotate(6deg) scale(1.05); } to { transform: translate(-360px, -80px) rotate(-6deg) scale(0.94); } }
+@-webkit-keyframes aurora3 { from { -webkit-transform: translate(0, 0) rotate(-4deg); } to { -webkit-transform: translate(520px, -120px) rotate(8deg); } }
+@keyframes aurora3 { from { transform: translate(0, 0) rotate(-4deg); } to { transform: translate(520px, -120px) rotate(8deg); } }
+.lite #saver .aurora .band { -webkit-animation: none; animation: none; }
+
+#saver.black { background: #000; }
+#saver.black .clock, .night #saver.black .clock {
+  background: none;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.55);
+  -webkit-transition: -webkit-transform 3s ease-in-out;
+  transition: transform 3s ease-in-out;
+}
+#saver.black .clock .date { color: rgba(255, 255, 255, 0.45); }
+
+/* Over the aurora and the aerials, the clock is the photos' glass. */
+#saver.aurora-on .clock, #saver.aerials-on .clock { color: #FFF; }

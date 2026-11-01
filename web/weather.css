@@ -89,13 +89,20 @@
 #forecast .hour .d { font-size: 30px; font-weight: 500; }
 #forecast .hour .r { height: 26px; margin-top: 4px; font-size: 20px; font-weight: 600; color: #0071E3; }
 
-/* Recent Apps: the profile's last apps as a row of cards, centred; the focused one grows (SNAPPY_FOCUS, home.js). */
-#recents h2 { position: absolute; left: 0; right: 0; top: 150px; margin: 0; text-align: center; font-size: 46px; font-weight: 700; letter-spacing: -0.01em; }
-#recents .row { position: absolute; left: 0; top: 380px; height: 330px; }
-#recents .card { position: absolute; top: 0; width: 400px; height: 240px; }
-#recents .card .face { position: absolute; left: 0; top: 0; width: 400px; height: 240px; border-radius: 36px; overflow: hidden; box-shadow: 0 16px 36px rgba(22, 33, 45, 0.26); }
-/* The name shows under the focused card only (its Fx fades it in), as tvOS labels a focused app. */
-#recents .card .label { position: absolute; left: -20px; right: -20px; top: 280px; text-align: center; font-size: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
+/* Recent Apps: the tvOS app switcher. The focused card, 845 x 475, sits centred; the next one waits to its right and the
+ * earlier ones stack behind it on the left (placeRecents in home.js). Each card carries its app's badge and name above it. */
+#recents .row { position: absolute; left: 0; top: 302px; width: 1920px; height: 475px; }
+#recents .card { position: absolute; left: 0; top: 0; width: 845px; height: 475px; }
+#recents .card .face { position: absolute; left: 0; top: 0; width: 845px; height: 475px; border-radius: 44px; overflow: hidden; box-shadow: 0 24px 60px rgba(22, 33, 45, 0.3); }
+#recents .card.focus .face { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.86), 0 30px 70px rgba(22, 33, 45, 0.36); }
+#recents .face .word { margin-top: -40px; height: 80px; line-height: 80px; }
+#recents .hdr { position: absolute; left: 4px; top: -58px; height: 34px; white-space: nowrap; }
+#recents .badge { position: relative; display: inline-block; vertical-align: top; width: 56px; height: 34px; border-radius: 8px; overflow: hidden; }
+#recents .badge img { position: absolute; left: 50%; top: 50%; max-width: 80%; max-height: 70%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+#recents .badge img.logo { width: 74%; height: 56%; max-width: none; max-height: none; object-fit: contain; }
+#recents .badge .word { position: absolute; left: 2px; right: 2px; top: 0; line-height: 34px; text-align: center; font-weight: 700; color: #FFF; overflow: hidden; white-space: nowrap; }
+#recents .badge .sym { position: absolute; left: 17px; top: 6px; width: 22px; height: 22px; color: #FFF; }
+#recents .name { display: inline-block; vertical-align: top; margin-left: 14px; line-height: 34px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
 #recents .empty { position: absolute; left: 0; right: 0; top: 500px; text-align: center; font-size: 34px; font-weight: 600; opacity: 0.72; }
 
 .lite #forecast .hour::before { -webkit-transition: none; transition: none; }

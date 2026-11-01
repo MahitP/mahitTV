@@ -1,11 +1,111 @@
 # mahitTV × tvOS-Launcher: merge spec
 
+- **Part 3** (implemented and committed 2026-10-31): the tvOS polish pass. It covers the 12-point Apple Design
+  Scorecard, Control Center, the Home key, the volume HUD, the screensavers and Settings.
 - **Part 2** (decided 2026-10-31, waiting for the go-ahead): the Liquid Glass & Prismatic Horizon startup, no black
   backgrounds anywhere, and the re-requested utilities.
 - **Part 1** (below, implemented in f953dcb and 035afad): the merge itself.
 
 Numbers are 1080p pixels (`k = w / 1920` scales them), seconds from the start of the sequence, and springs from
 `Spring.java` / `web/motion.js` as {response s, damping}.
+
+# Part 3 — the tvOS polish pass (2026-10-31, on `tvos-redesign`)
+
+Four workers did the work, each in its own build folder:
+- **A:** Android home.
+- **B:** Android Settings and screensavers.
+- **C:** web home.
+- **D:** web Settings and screensavers.
+
+An integration pass then finished the translations, the screenshots and the checks.
+
+Nothing here has run on a real TV or an emulator yet. §3.5 lists what to look at first.
+
+## 3.1 The 12-point Apple Design Scorecard: flaw → fix
+
+| # | Where | Flaw found | Fix (Android · Web) | Proof |
+|---|---|---|---|---|
+| 1 | Dock | 251×150 tiles, gap 49; the spec asks for 244×146 | 244×146, gap 57 (57.4 on Android), same 1751 px span for 6 across, focus kept at 1.23× · `HomeView.java:86`, `web/home.js:97`, `web/home.css:463` | `DockRecessTest` 14/14; `home-background-test` asserts 244×146 / 57; `web-tvos-*-home-dock.png` |
+| 2 | Control Center weather card | "56°" ran into "12 PM"; the hourly temps crowded the big number | Fixed grid: a 220 px time/temp block, hourly columns from x+240 · `HomeView.drawWeather`, `web/home.js:1760`, `home.css:572`. The web card leaves out the time: the status pill just above already shows it, and both don't fit in 168 px | `web-tvos-*-control-center.png` |
+| 3 | Control Center tiles | 0.12-white cards on a near-white panel had no separation, and 9–12 equal tiles were clutter | Glass platters with a 1 px rim (white .55) and a .6 inner top highlight. Capsule tiles are 244×72, radius 36, label 21/600, detail 19/500. The panel floats at x 1300, 560 wide, and its height follows its content · `HomeView.drawerCard` / `drawDrawerTile`, `web/home.css:520–607` | `web-keys-test` (panel 1300/560); screenshots |
+| 4 | Web Settings | A centred 800 px dark box over the Dock, `‹ Set ›` arrow pickers, a gear-icon title, no groups | Full two-pane tvOS Settings over the Frosted Horizon (new `web/settings.js` / `settings.css`, `home.js:2080–2485`). Left: emblem, title, description, 6 section pills (64 px, r32). Right: grouped glass boxes, 64 px rows, secondary values, chevrons, footers, and choice lists with a ✓ | `home-background-dom-test` (three Backs: list → sections → closed); `web-tvos-*-settings{,-appearance,-choice}.png` |
+| 5 | Android Settings | Rows had no grouped inset, On/Off was text, the emblem was a generic sparkle, values were at .70 | `SettingsActivity` two-pane layout: a 160 px glass squircle emblem (the section's symbol, the avatar for Profiles), 7 capsules, grouped r16 containers with a 1 px rim and inset separators, secondary values at .60, tvOS switches, choice lists | Builds; **not yet seen on screen** |
+| 6 | Toggles | Green `#3FD69B` | Apple green `#34C759`, a 64×38 pill with its knob on SNAPPY_FOCUS, on both platforms | Screenshots (Startup animation & chime) |
+| 7 | Typography | Large titles at 0 tracking; Settings title at 38/700 | Pane titles at −0.02 em (Android 44/600 left, 46/700 right; `Ui.displayBold`), uppercase group headers 20/600 at +0.06 em, labels 28/500, values 26/400 | Screenshots |
+| 8 | Hints | "Back closes." and instruction lines in sheets | Removed on both. Only group footers remain, as on tvOS (e.g. "It starts after 5 minutes without a button press.") | Screenshots |
+| 9 | Recent Apps | A flat row of 400×240 cards; no ↑ close on the web | The tvOS switcher: an 845×475 focused card, neighbours stacked by upstream's `deck()` formula (313 px, then 101 px to the left), the app's icon and name above, a white ring on focus. ↑ closes an app on Android (`RecentsOverlay.java:543`); the web can't close apps (`home.js:1990`) | `web-keys-test` (845×475, centred); `web-tvos-*-recents.png` |
+| 10 | Volume | No HUD, only the system bar | A left Liquid Glass HUD: 72×320 at x 56, vertically centred, filling from the bottom. The speaker glyph changes between mute and 1/2/3 arcs. Levels 0–100 in steps of 5, a stretch at either end, hidden after 2.2 s. Android: `VolumeHud.java`. Web: `home.js:1805–1900`, with `V` pinning it in the preview | `web-keys-test` (30→35→25, auto-hide, cap at 100); `web-tvos-*-volume-hud.png` |
+| 11 | Inputs | Live TV and HDMI 1–3 were 4 separate tiles | One Inputs tile opens a sub-sheet inside the panel: Live TV and HDMI 1–4, "No signal" on empty ports, a ✓ on the current input, Back returns. Android: `layoutInputs` / `openInputs` / `drawInputs`. Web: `openInputsSheet` and `currentInput()` | `web-keys-test` (one tile, one ✓, Back twice); `web-tvos-*-inputs.png` |
+| 12 | Web Control Center | No Wi-Fi, Bluetooth, volume, power or audio tiles | The preview shows the full Android set as a stand-in: tiles LG/Samsung can't do show "Only on Google TV". Real builds show only working tiles: Inputs, Screensaver, volume (where the TV reports it), Lock, Home Settings, TV Settings (where it opens) · `home.js:1474–1501` | Checked by loading the preview without `preview.js` |
+
+Guardrails kept, in code and in tests:
+- Focus never hides the Dock (`DockRecessTest`, `home-background-dom-test`).
+- The Frosted Horizon is under every default screen.
+- Tabs, HouseView, WellyBot and the 5 PIN profiles are untouched.
+
+## 3.2 What changed, by feature
+
+| Feature | Android | Web (LG / Samsung) |
+|---|---|---|
+| **Control Center** | Rows from top to bottom: profiles; the Time & Weather platter; Power / Sleep Timer; Inputs / Audio Output; Wi-Fi / Bluetooth; Do Not Disturb / Screensaver; Lock / Close Background Apps; the volume capsule; then round Home Settings and TV Settings buttons. All Apps and Recent Apps are gone. Power is `HomeMode.screenOff` (KEYCODE_SLEEP over our ADB). DND is `HomeMode.allowDnd` / `dnd` (`cmd notification allow_dnd`; Original and the watchdog take it back), with `ACCESS_NOTIFICATION_POLICY` in the manifest. Audio Output reads `AudioManager` outputs and OK opens the system sound settings | The same layout and glass. The round buttons' labels wrap to two lines ("Close Background Apps" no longer runs into "Home Settings"). New `power`, `input` and `moon` symbols are shared with Android |
+| **Home key** | `RemoteKeys.onHome` (supported brands, mahitTV mode, only while ours is the default home). A press passes on as the system's Home, so double-tap still works; a 450 ms hold starts `HomeActivity` with `EXTRA_RECENTS` | `H`: a press goes to the TV tab with the Dock focused and closes the saver, forecast, sheets, Recent Apps and the Inputs sheet. A 450 ms hold opens Recent Apps; `H`, Back or Esc close it. Key repeats are ignored, and nothing happens while typing to Welly |
+| **Volume HUD** | `RemoteKeys.onVolume` takes the volume keys only while our home screen is in front and the volume isn't fixed. It sets the level on a worker thread (no system panel), then broadcasts `io.freemytv.VOLUME` to show the HUD | `TV.volume`: Samsung `tizen.tvaudiocontrol` (`tv.audio` privilege added to `tizen/config.xml`), LG `com.webos.audio` as a best effort, and a stand-in in the browser. `+`/`=` and `-`/`_` on a keyboard |
+| **Screensavers** | `DreamView` modes: photos, nature, aurora (AGSL glass clock on 13+, a still gradient on 12 and older), aerials (4 stills, 30 s each, Ken Burns) and black (centred clock drifting ±24 % wide over 15 min). Nature scenes: Rotate, Night, Golden Hour, Waterline, Fog, Rainforest Dawn. Clock styles: Tall Glass (Antonio) and Rounded (Varela Round, OFL, used only for the clock; no Bahnschrift). `Prefs` keys: `saverStyle` / `saverScene` / `saverClock` | New `web/saver.js` with the same five modes and scenes; `.lite` TVs fall back from nature to photos. `S` shows the saver and `S` again hides it |
+| **Settings** | Two panes. Appearance & Startup holds three groups: Look, Screensaver (Scene and Clock Style appear only with Nature, then Preview), and Startup & Accessibility. System holds Home Screen, Remote & Power, and TV. Another profile's PIN opens Set / Remove PIN behind the manager's PIN. My Photos is a switch, with a new Remove My Photos row | Two panes with the same groups. The ‹ › pickers and instruction hints are gone. The PIN flows and the wallpaper picker are unchanged |
+
+## 3.3 The integration pass (this session)
+
+- **Translations:** 47 new keys in all 25 catalogues, and 22 obsolete keys pruned. All of it was done by one local script; no API was used. `translate.py --check` reports 554 keys and passes. The six hand-translated catalogues (pt, es, de, ru, th, tr) got AI-drafted text for the 47 new keys only, and none of their existing strings changed. **A person should review those 47 strings before a release.**
+- **Screenshots:** `tools/screenshots.js` `TVOS_SHOTS` now has 15 scenes per theme, giving 30 `previews/web-tvos-{light,dark}-*.png`.
+  - Added `home-dock` (a short `H` press from the Home tab).
+  - The volume shot now uses `+` and `-`.
+  - A full run writes 107 PNGs, and `node tools/screenshots.js tvos` re-shoots only these 30.
+- **Bug found in the visual pass, fixed:** the web Black screensaver's minute drift was centred (±180 px, ±110 px) around a clock that rests 80 px from the left and 90 px from the bottom. Some minutes it pushed the clock off screen (the light shot read "aturday"). It now drifts right and up only, in the same 360×220 box (`web/saver.js` `black`). Over 40 drifts it stayed inside x 145–943, y 499–980. Android was never affected, because there the clock is centred.
+- **`previews/site`** (what `localhost:8765` serves) was regenerated with `tools/preview_site.py`. The old copy came from before this pass and had no `saver.js`.
+
+## 3.4 Verification
+
+- `./build.sh`: **Built FreeMyTV.apk (6.2M)**.
+- `tools/check.sh`: **All checks passed**.
+  - Android tests: WallpaperTest 204, WallpaperPickerTest 36, AerialCacheTest, AerialRequestTest, DockRecessTest 14, RecsWatchTest 30, DebloatTest 382, WellyBot contract, WeatherParseTest 152.
+  - Translations: all catalogues match (554 keys).
+  - Web tests: WellyBot web, wallpaper-web/pref/policy, aerial-video-web, home-background, home-background-dom, web-keys.
+  - Packages and greps: the LG `.ipk` and Samsung `.wgt` build, and the ES5 and CSS greps pass.
+- **Live preview, real key events:**
+  - `S` shows the saver, and `S` again hides it.
+  - `+` / `-` move 35 → 40 → 35 with the HUD up, and `V` pins and unpins it.
+  - A short `H` from the Home tab gives the TV tab with the Dock focused.
+  - A long `H` opens Recent Apps, and `H` again closes it.
+  - No console errors.
+- **Visual pass:** all 30 tvOS shots, in both themes. No layout collisions, no missing icons, and the Dock is never hidden. The one defect found was the Black drift above.
+
+## 3.5 Ready for on-TV testing (and what to watch)
+
+**Google TV / Android TV, in mahitTV mode:**
+1. **Home key.** A press goes to the Dock and a hold to Recent Apps. It only works on brands whose key service runs (TCL, Vestel, KTC, Sony, Xiaomi, Hisense, Formovie); elsewhere Home goes to the system as before. Check that double-tap Home still works.
+2. **Volume HUD.** It appears only on those brands, with our home screen in front and the volume not fixed. Otherwise the system panel shows as before (Android TV never passes volume keys to the app in front).
+3. **Control Center.**
+   - Power (screen off) and DND both need mahitTV mode. Switch to *Original* once and confirm DND access is taken back.
+   - Audio Output only opens the sound settings.
+   - The Inputs sheet should mark the current input.
+4. **Settings.** The two-pane layout, switches and choice lists have **never been seen on a device**: this is the first thing to look at.
+5. **Screensavers.** Check all five modes, both clock styles and the scene picker. The Aurora glass clock (AGSL, Android 13+) is unverified until it's on a TV.
+6. **Recent Apps.** Check the stacked deck, and that ↑ closes an app.
+
+**LG / Samsung:**
+1. **Volume HUD.** On Samsung it needs the new `tv.audio` privilege, so sign and install again. On LG it's a best effort, since LG often keeps the volume keys for its own bar.
+2. **Inputs.** The ✓ marks the last input opened from here, because no TV reports which input is showing.
+3. **Control Center.** Real builds show only the tiles that work on that TV.
+
+**Open items (not blockers):**
+- The android-26 API scan wasn't run (only android-37 is installed here). CI's android-34 build is the backstop.
+- The web Aurora is a quiet, CSS-only gradient (it has to run on 2015 Chromium). It looks much dimmer than the Aerials aurora still, so it's a candidate for later polish.
+- **New files in this commit:**
+  - `web/saver.js`, `web/settings.js`, `web/settings.css`
+  - `app/src/io/freemytv/VolumeHud.java`
+  - `tools/web-keys-test.js`
+  - `app/assets/fonts/VarelaRound-{Regular.ttf,OFL.txt}`
+  - `app/assets/symbols/{input,moon,power}.png`
 
 ## Part 2.0 — Where we are (nothing here is redone)
 

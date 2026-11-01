@@ -373,14 +373,14 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .round.focus { background: #FFF; color: #1D1D1F; }
 .round .tip { display: none; }
 
-/* MARK: - Dock: one Liquid Glass bar of 6 tiles, 251 × 150 (5:3), 49 apart; focused, a tile grows 1.23× in place */
+/* MARK: - Dock: one Liquid Glass bar of 6 tiles, 244 × 146 (5:3), 57 apart; focused, a tile grows 1.23× in place */
 
 .drawer-open #quotes { opacity: 0; }
 
 #platter {
   position: absolute;
   top: 782px;
-  height: 228px;
+  height: 226px;
   border-radius: 64px;
   overflow: hidden;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
@@ -451,7 +451,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 #tiles, #shadows { position: absolute; left: 0; top: 0; }
 /* A focused tile's lift shadow: its own element behind the tile (the tile clips), faded in with the focus. */
-.lift-shadow { position: absolute; width: 251px; height: 150px; border-radius: 24px; box-shadow: 0 28px 46px rgba(0, 0, 0, 0.36); opacity: 0; pointer-events: none; }
+.lift-shadow { position: absolute; width: 244px; height: 146px; border-radius: 24px; box-shadow: 0 28px 46px rgba(0, 0, 0, 0.36); opacity: 0; pointer-events: none; }
 .night .lift-shadow { box-shadow: 0 28px 46px rgba(0, 0, 0, 0.48); }
 .cell .lift-shadow { left: 0; top: 0; }
 
@@ -463,8 +463,8 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .tile, .cell .face {
   position: absolute;
   top: 822px;
-  width: 251px;
-  height: 150px;
+  width: 244px;
+  height: 146px;
   border-radius: 24px;
   overflow: hidden;
   color: #FFF;
@@ -493,7 +493,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   text-overflow: ellipsis;
   color: #FFF;
 }
-.tile .sym.big, .cell .face .sym.big { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; color: #FFF; }
+.tile .sym.big, .cell .face .sym.big, #recents .face .sym.big { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; color: #FFF; }
 /* The one specular sheen, only on focus; it slides against the tilt (home.js). */
 .tile .sheen, .cell .face .sheen {
   position: absolute;
@@ -516,12 +516,12 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* MARK: - Control Center: a floating Liquid Glass panel on the right, the art still showing behind it */
 
-/* Under the status pill (which stays, as tvOS's status does over Control Center): 124 to 1032. */
+/* Under the status pill (which stays, as tvOS's status does over Control Center), from 124; as tall as it needs. */
 #drawer {
   position: absolute;
-  left: 1340px;
+  left: 1300px;
   top: 124px;
-  width: 520px;
+  width: 560px;
   height: 908px;
   border-radius: 44px;
   overflow: hidden;
@@ -532,57 +532,118 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   /* Presented on SHEET_OPEN from +480 px and dismissed on SHEET_CLOSE (home.js); its own layer (it's small). */
   will-change: transform, opacity;
 }
-#drawer .bleed { left: -1340px; top: -124px; }
+#drawer .bleed { left: -1300px; top: -124px; }
 #drawer .body { position: absolute; left: 28px; top: 28px; right: 28px; bottom: 28px; }
 /* Over the bright day Frosted Horizon the panel's glass is light: dark text; over a photo or at night, white. */
 .no-picks #drawer, .profile-background #drawer { color: #1D1D1F; }
 .night #drawer, .has-photo #drawer { color: #FFF; }
-#drawer .profiles { position: absolute; left: 0; right: 0; top: 0; height: 130px; }
-#drawer .who { position: absolute; top: 0; width: 104px; text-align: center; }
-#drawer .who .face { display: block; width: 84px; height: 84px; margin: 0 auto; border-radius: 42px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); -webkit-transition: box-shadow 0.2s; transition: box-shadow 0.2s; }
-#drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.25); }
-#drawer .who .name { display: block; margin-top: 10px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#drawer .profiles.many .who { width: 88px; }
-#drawer .profiles.many .who .face { width: 72px; height: 72px; border-radius: 36px; }
-#drawer .profiles.many .who .name { font-size: 19px; }
-#drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.4); }
-#drawer .time { font-size: 57px; font-weight: 300; line-height: 66px; letter-spacing: -0.01em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#drawer .date { font-size: 25px; font-weight: 500; line-height: 32px; opacity: 0.72; }
+/* Its rows (home.js places them): the profiles, the weather platter, the bento, the volume, the round buttons. */
+#drawer .ccrow, #drawer .ccgroup, #drawer .ccinputs { position: absolute; left: 0; right: 0; }
+#drawer .who { position: absolute; top: 0; text-align: center; }
+#drawer .who .face { display: block; width: 72px; height: 72px; margin: 0 auto; border-radius: 36px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22); }
+#drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.22); }
+#drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.36); }
+#drawer .who .name { display: block; margin-top: 8px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.key {
+/* The platters (the weather, the tiles, the volume, the inputs, the round buttons): a frosted fill with a 1 px specular
+   rim and a soft lift over the panel by day (GLASS:176–188), a faint light fill at night or over a photo. */
+#weather, .cctile, .ccvolume, .inrow, .ccicon .disc {
   position: absolute;
-  width: 224px;
-  height: 120px;
-  border-radius: 26px;
   color: inherit;
-  background: rgba(255, 255, 255, 0.12);
-  -webkit-transition: box-shadow 0.3s, background-color 0.14s;
-  transition: box-shadow 0.3s, background-color 0.14s;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 10px rgba(22, 33, 45, 0.08);
 }
-/* Plain fills, not glass: never glass on the panel's glass. */
-.night .key { background: rgba(0, 0, 0, 0.22); }
-.key .sym { position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; }
-.key .label { position: absolute; left: 20px; right: 14px; bottom: 18px; font-size: 21px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.key.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); z-index: 2; }
-/* Five rows of cards: a little shorter, so the weather card still fits under them. */
-.key.compact .sym { top: 14px; width: 30px; height: 30px; }
-.key.compact .label { bottom: 12px; }
+.night #weather, .night .cctile, .night .ccvolume, .night .inrow, .night .ccicon .disc,
+.has-photo #weather, .has-photo .cctile, .has-photo .ccvolume, .has-photo .inrow, .has-photo .ccicon .disc {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .ccvolume, .has-photo.art-bright .inrow,
+.has-photo.art-bright .ccicon .disc { background: rgba(255, 255, 255, 0.74); }
+/* Focused: white, dark ink, a soft lift (tvOS's focused platter). */
+#weather.focus, .cctile.focus, .ccvolume.focus, .inrow.focus, .ccicon.focus .disc {
+  background: #FFF;
+  color: #1C1C1E;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
+}
+#weather.focus, .cctile.focus, .ccvolume.focus, .inrow.focus, .ccicon.focus { z-index: 2; }
 
-#weather { position: absolute; left: 0; right: 0; bottom: 0; height: 190px; border-radius: 26px; background: rgba(255, 255, 255, 0.12); -webkit-transition: box-shadow 0.3s, background-color 0.14s; transition: box-shadow 0.3s, background-color 0.14s; }
-/* Focused, as a card: OK opens the forecast. */
-#weather.focus, .night #weather.focus { background: #FFF; color: #1C1C1E; box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35); }
-.night #weather { background: rgba(0, 0, 0, 0.22); }
-#weather .head { position: absolute; left: 22px; top: 18px; font-size: 21px; font-weight: 600; opacity: 0.72; white-space: nowrap; }
-#weather .now { position: absolute; left: 22px; top: 52px; height: 70px; white-space: nowrap; }
-#weather .now .sym { width: 44px; height: 44px; vertical-align: 8px; margin-right: 12px; }
-#weather .now .temp { font-size: 64px; font-weight: 300; line-height: 70px; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#weather .cond { position: absolute; left: 22px; top: 128px; font-size: 21px; font-weight: 600; white-space: nowrap; }
-#weather .range { position: absolute; left: 22px; top: 158px; font-size: 21px; font-weight: 500; opacity: 0.72; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#weather .hours { position: absolute; left: 178px; right: 8px; top: 56px; height: 130px; }
+/* The weather: city, temperature and sky in the left 220 px; four hours (or days) in their own columns to its right. */
+#weather { left: 0; top: 0; width: 504px; height: 152px; border-radius: 26px; }
+#weather .head { position: absolute; left: 22px; top: 16px; width: 200px; font-size: 19px; font-weight: 600; opacity: 0.62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#weather .now { position: absolute; left: 20px; top: 40px; height: 58px; white-space: nowrap; }
+#weather .now .sym { width: 36px; height: 36px; vertical-align: 6px; margin-right: 10px; }
+#weather .now .temp { font-size: 52px; font-weight: 300; line-height: 58px; letter-spacing: -0.02em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#weather .cond { position: absolute; left: 22px; top: 100px; width: 200px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#weather .range { position: absolute; left: 22px; top: 124px; font-size: 18px; font-weight: 500; opacity: 0.62; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#weather .hours { position: absolute; left: 240px; top: 22px; width: 252px; height: 110px; }
 #weather .hour { position: absolute; top: 0; text-align: center; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-#weather .hour .t { font-size: 18px; font-weight: 600; opacity: 0.72; white-space: nowrap; }
-#weather .hour .sym { display: block; width: 28px; height: 28px; margin: 16px auto 14px; }
-#weather .hour .d { font-size: 23px; font-weight: 500; }
+#weather .hour .t { font-size: 17px; font-weight: 600; opacity: 0.62; white-space: nowrap; }
+#weather .hour .sym { display: block; width: 28px; height: 28px; margin: 14px auto 12px; }
+#weather .hour .d { font-size: 21px; font-weight: 500; }
+
+/* The bento's capsule tiles: a round glyph (blue when the thing is on), the name, its state under it. */
+.cctile { top: 0; width: 244px; height: 72px; border-radius: 36px; }
+.cctile .dot, .inrow .dot { position: absolute; left: 11px; top: 11px; width: 50px; height: 50px; border-radius: 25px; background: rgba(120, 120, 128, 0.16); }
+.cctile .dot .sym, .inrow .dot .sym { position: absolute; left: 12px; top: 12px; width: 26px; height: 26px; }
+.cctile.on .dot { background: #0A84FF; color: #FFF; }
+.cctile .label { position: absolute; left: 74px; right: 14px; top: 11px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cctile .detail { position: absolute; left: 74px; right: 14px; top: 37px; font-size: 19px; font-weight: 500; opacity: 0.62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cctile.solo .label { top: 23px; }
+.cctile.solo .detail { display: none; }
+
+/* The volume: speaker, track and level in one capsule; ← → change it. */
+.ccvolume { left: 0; top: 0; width: 504px; height: 72px; border-radius: 36px; }
+.ccvolume > .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
+.ccvolume .track { position: absolute; left: 66px; right: 96px; top: 32px; height: 8px; border-radius: 4px; background: rgba(120, 120, 128, 0.24); overflow: hidden; }
+.ccvolume .fill { width: 100%; height: 8px; border-radius: 4px; background: currentColor; -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
+.ccvolume .num { position: absolute; right: 22px; top: 22px; width: 70px; text-align: right; font-size: 21px; font-weight: 600; line-height: 28px; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+
+/* The round buttons, their names under them. */
+.ccicon { position: absolute; top: 0; width: 72px; height: 114px; }
+.ccicon .disc { left: 0; top: 0; width: 72px; height: 72px; border-radius: 36px; }
+.ccicon .disc .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
+/* Two lines at most, as wide as its share of the row (Close Background Apps wraps instead of running into its neighbour). */
+.ccicon .label { position: absolute; left: -25px; right: -25px; top: 80px; max-height: 34px; overflow: hidden; text-align: center; font-size: 14px; line-height: 17px; font-weight: 600; opacity: 0.62; }
+.ccicon.focus .label { opacity: 1; }
+/* Drawn glyphs: the lock (lock.css), power and a timer, at the symbols' size. */
+#drawer .dot .glyph-lock, #drawer .disc .glyph-lock { position: absolute; left: 25px; top: 32px; width: 22px; height: 17px; margin: 0; opacity: 1; }
+#drawer .dot .glyph-lock::before, #drawer .disc .glyph-lock::before { left: 2.5px; top: -12px; width: 11px; height: 13px; border-width: 3px; }
+.glyph-timer { position: absolute; left: 12px; top: 12px; width: 26px; height: 26px; }
+.glyph-timer::before { content: ''; position: absolute; left: 2px; top: 3px; width: 17px; height: 17px; border: 3px solid currentColor; border-radius: 50%; }
+.glyph-timer::after { content: ''; position: absolute; left: 11.5px; top: 7px; width: 3px; height: 9px; border-radius: 2px; background: currentColor; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; -webkit-transform: rotate(40deg); transform: rotate(40deg); }
+
+/* Inputs: a list that slides in over the tiles (OK on Inputs); Back or ← returns. */
+.ccinputs { opacity: 0; visibility: hidden; }
+.cchead { position: absolute; left: 0; top: 0; height: 44px; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; line-height: 40px; }
+.cchead .sym.back { position: absolute; left: 0; top: 10px; width: 20px; height: 20px; opacity: 0.6; -webkit-transform: scaleX(-1); transform: scaleX(-1); }
+.cchead .title { position: absolute; left: 30px; white-space: nowrap; }
+.inrow { left: 0; width: 504px; height: 72px; border-radius: 36px; }
+.inrow .name { position: absolute; left: 76px; right: 64px; top: 12px; font-size: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inrow .status { position: absolute; left: 76px; top: 40px; font-size: 17px; font-weight: 500; opacity: 0.62; white-space: nowrap; }
+.inrow.solo .name { top: 22px; }
+.inrow.off .dot, .inrow.off .name { opacity: 0.6; }
+.inrow .sym.check { position: absolute; right: 24px; top: 24px; width: 24px; height: 24px; color: #0A84FF; }
+
+/* The volume HUD: a Liquid Glass capsule on the left edge, its fill rising from the bottom, the speaker morphing with
+   the level (mute, then 1, 2, 3 arcs) and the number over it; dark ink where the white fill is under it. */
+#volhud { position: absolute; left: 56px; top: 380px; width: 72px; height: 320px; border-radius: 36px; overflow: hidden; z-index: 49; opacity: 0; visibility: hidden; color: #FFF; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28); }
+#volhud .glass { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; background: rgba(60, 60, 67, 0.46); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.night #volhud .glass { background: rgba(30, 30, 35, 0.62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+#volhud .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: #FFF; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; }
+#volhud .num { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-size: 21px; font-weight: 600; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#volhud.numlit .num { color: #1D1D1F; }
+#volhud .spk { position: absolute; left: 20px; bottom: 22px; width: 34px; height: 28px; }
+#volhud.lit .spk { color: #1D1D1F; }
+#volhud .cone { position: absolute; left: 2px; top: 9px; width: 6px; height: 10px; border-radius: 1px; background: currentColor; }
+#volhud .cone::after { content: ''; position: absolute; left: 4px; top: -6px; width: 0; height: 0; border-style: solid; border-width: 11px 9px 11px 0; border-color: transparent currentColor transparent transparent; }
+#volhud .arc { position: absolute; top: 50%; border: 2.5px solid currentColor; border-left-color: transparent; border-top-color: transparent; border-bottom-color: transparent; border-radius: 50%; -webkit-transition: opacity 0.15s; transition: opacity 0.15s; }
+#volhud .a1 { left: 7px; width: 14px; height: 14px; margin-top: -9.5px; }
+#volhud .a2 { left: 2px; width: 24px; height: 24px; margin-top: -14.5px; }
+#volhud .a3 { left: -3px; width: 34px; height: 34px; margin-top: -19.5px; }
+#volhud.arcs0 .a1, #volhud.arcs0 .a2, #volhud.arcs0 .a3, #volhud.arcs1 .a2, #volhud.arcs1 .a3, #volhud.arcs2 .a3, #volhud.muted .arc { opacity: 0; }
+#volhud .slash { position: absolute; left: 18px; top: 3px; width: 2.5px; height: 22px; border-radius: 2px; background: currentColor; opacity: 0; -webkit-transform: rotate(-40deg); transform: rotate(-40deg); }
+#volhud.muted .slash { opacity: 1; }
 
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 
@@ -604,7 +665,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #apps.sheet.open { pointer-events: auto; }
 #apps h2 { display: none; }
 #apps .grid { position: absolute; left: 0; top: 0; width: 1920px; }
-.cell { position: absolute; width: 251px; height: 150px; }
+.cell { position: absolute; width: 244px; height: 146px; }
 .cell .face { top: 0; left: 0; }
 .cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 .night .cell .label, .has-photo .cell .label { color: #FFF; }
@@ -799,7 +860,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   .tile, .cell .face { corner-shape: superellipse(1.39); border-radius: 30px; }
   #platter { corner-shape: superellipse(1.39); border-radius: 80px; }
   #drawer { corner-shape: superellipse(1.39); border-radius: 55px; }
-  .key, #weather { corner-shape: superellipse(1.39); border-radius: 32px; }
+  #weather { corner-shape: superellipse(1.39); border-radius: 32px; }
   #watch { corner-shape: superellipse(1.39); }
 }
 
@@ -807,7 +868,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
    !important so they win over every state rule above. */
 @media (prefers-reduced-motion: reduce) {
   #stage *, #stage *::before, #stage *::after { -webkit-animation: none !important; animation: none !important; }
-  #sky .photo, #sky canvas, #toast, #pill, #watch, #tabs .tab, .tile, .key, #saver, #saver .photo, #saver .zoom, .box .row, #pill .np, #pill .avatar .prev {
+  #sky .photo, #sky canvas, #toast, #pill, #watch, #tabs .tab, .tile, .cctile, #saver, #saver .photo, #saver .zoom, .box .row, #pill .np, #pill .avatar .prev {
     -webkit-transition-duration: 0.15s !important;
     transition-duration: 0.15s !important;
   }

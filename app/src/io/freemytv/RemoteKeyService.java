@@ -13,7 +13,12 @@ public class RemoteKeyService extends AccessibilityService {
         return RemoteKeys.onKey(this, event);
     }
 
-    @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
+    /** Which window is in front (only its package and class): the volume keys are the home screen's while it is. */
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            RemoteKeys.windowChanged(event.getPackageName(), event.getClassName());
+        }
+    }
 
     @Override public void onInterrupt() {}
 }

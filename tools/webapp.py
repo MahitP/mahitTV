@@ -160,9 +160,10 @@ def files(config, made_by):
         with open(os.path.join(ROOT, 'app', 'assets', name + '.json'), encoding='utf-8') as f:
             data = json.load(f)
         out[name + '-data.js'] = ('window.%s = %s;\n' % (var, json.dumps(data, ensure_ascii=False, separators=(',', ':')))).encode('utf-8')
-    for name in ('InterVariable.ttf', 'OFL.txt', 'Antonio-Light.ttf', 'Antonio-OFL.txt'):
+    # Inter for everything; Antonio and Varela Round only for the screensaver's clock (Tall Glass, Rounded).
+    for name in ('InterVariable.ttf', 'OFL.txt', 'Antonio-Light.ttf', 'Antonio-OFL.txt', 'VarelaRound-Regular.ttf', 'VarelaRound-OFL.txt'):
         path = os.path.join(ROOT, 'app', 'assets', 'fonts', name)
-        if os.path.exists(path) or not name.startswith('Antonio'):
+        if os.path.exists(path) or name.startswith('Inter') or name == 'OFL.txt':
             with open(path, 'rb') as f:
                 out['fonts/' + name] = f.read()
     # The nature screensaver's scenes (photo, glass texture, foreground cutout), shared with the Android app.

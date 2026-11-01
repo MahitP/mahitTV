@@ -11,6 +11,7 @@ var TV = (function () {
   var webos = typeof window.PalmServiceBridge !== 'undefined';
   var samsung = !webos && typeof window.tizen !== 'undefined' && !!window.tizen.application;
   var calls = [];   // a bridge is collected if nothing holds it before its reply arrives
+  var previewVolume = 30, volumeMuted = false;   // TV.volume's stand-in in a desktop browser; the last mute state read
   var tizen2 = samsung && /Tizen 2\./.test(navigator.userAgent);
   // Tizen 2 (2016 TVs, WebKit 538) repaints every shadow on every frame of a focus animation: home.css turns them off.
   if (tizen2) document.documentElement.className += ' lite';
@@ -507,6 +508,41 @@ var TV = (function () {
       else this.launch('com.palm.app.settings', null, done);
     },
 
+    /**
+     * The TV's volume, 0–100: done(level, muted), or done(null) where this TV doesn't let a web app read it. `dir`
+     * +1 / −1 steps it as the remote's keys do, 0 only reads it, 'mute' toggles mute. Samsung: tvaudiocontrol (the
+     * tv.audio privilege); LG: com.webos.audio (Developer Mode apps may be refused); a desktop browser: a stand-in.
+     */
+    volume: function (dir, done) {
+      if (samsung) {
+        try {
+          var a = window.tizen.tvaudiocontrol;
+          if (dir === 'mute') a.setMute(!a.isMute());
+          else if (dir > 0) a.setVolumeUp();
+          else if (dir < 0) a.setVolumeDown();
+          done(a.getVolume(), a.isMute());
+        } catch (e) { done(null); }
+        return;
+      }
+      if (webos) {
+        var method = dir === 'mute' ? 'muteVolume' : dir > 0 ? 'volumeUp' : dir < 0 ? 'volumeDown' : 'getVolume';
+        var params = dir === 'mute' ? {muteFlag: !volumeMuted} : {};
+        luna('luna://com.webos.audio/' + method, params, function (res) {
+          if (!res) { done(null); return; }
+          luna('luna://com.webos.audio/getVolume', {}, function (now) {
+            if (!now || typeof now.volume !== 'number') { done(null); return; }
+            volumeMuted = !!now.muted;
+            done(now.volume, volumeMuted);
+          });
+        });
+        return;
+      }
+      // The browser preview: a volume of its own, so the HUD can be tried with + and −.
+      if (dir === 'mute') volumeMuted = !volumeMuted;
+      else if (dir) { previewVolume = Math.max(0, Math.min(100, previewVolume + 5 * dir)); volumeMuted = false; }
+      done(previewVolume, volumeMuted);
+    },
+
     /** The TV's model, firmware, system, IP address and this app's version, for About this TV. */
     about: about,
 
@@ -530,7 +566,7 @@ var TV = (function () {
       try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; }
     },
 
-    /** Key codes: the arrows, OK and the TV's Back (LG 461, Samsung 10009). */
-    keys: {left: 37, up: 38, right: 39, down: 40, ok: 13, back: samsung ? 10009 : 461}
+    /** Key codes: the arrows, OK and the TV's Back (LG 461, Samsung 10009), and the volume keys when the TV sends them. */
+    keys: {left: 37, up: 38, right: 39, down: 40, ok: 13, back: samsung ? 10009 : 461, volumeUp: 447, volumeDown: 448, mute: 449}
   };
 })();

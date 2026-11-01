@@ -76,8 +76,9 @@ function profile(page, zone, app) {
   assert.ok(liveError.horizon && !liveError.background, 'actual web live error falls back to Horizon');
   await page.evaluate(function () { window.Image = window.__PickerImage; delete window.__PickerImage; });
   // The picker is a real sheet over the page now (it was never visible before): Back out of it and out of Settings,
-  // as the remote does, before the Dock's hit tests.
-  await page.evaluate(function () { FreeMyTV.back(); FreeMyTV.back(); });
+  // as the remote does, before the Dock's hit tests. Settings is two panes, as on tvOS: Back from a section's rows
+  // goes to the list of sections first, then closes it.
+  await page.evaluate(function () { FreeMyTV.back(); FreeMyTV.back(); FreeMyTV.back(); });
   await page.waitForTimeout(700);
   var pickerClosed = await page.evaluate(function () {
     return !document.querySelector('#wallpaperpick').classList.contains('open') && !document.querySelector('#settings').classList.contains('open');
