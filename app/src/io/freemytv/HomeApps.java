@@ -378,31 +378,32 @@ final class HomeApps {
 
     /**
      * The cards of the two panels under the top-right cluster (HomeView splits them and lays each out by its kind).
-     * Control Center (the bubble): the 2×2 cluster (Wi-Fi, Bluetooth, Do Not Disturb, Sleep Timer) beside the brightness
-     * and volume sliders, the Appearance and Audio Output pills, and round Power, Close Background Apps and the TV's
-     * extras where it has them. The profile panel (the pill): Inputs, then round Screensaver, Lock, Home Settings and TV
-     * Settings. All Apps (↓ from the Dock) and Recent Apps (hold Home) left them.
+     * Control Center (the bubble): pills two a row in a fixed order, then the volume. The profile panel (the pill): Inputs
+     * and Screensaver pills, then Lock, Home Settings and TV Settings cells. All Apps (↓ from the Dock) and Recent Apps
+     * (hold Home) left them.
      */
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
+        // Control Center, two a row in this order: Power | Audio Output, Wi-Fi | Bluetooth, Dark Mode | Do Not Disturb,
+        // Sleep Timer | Brightness; the projector's extras where it has them; the volume under them.
+        items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
+        items.add(shortcut(AUDIO, "audio", Ui.tr("Audio Output"), "speaker"));
         items.add(shortcut(WIFI, "wifi", Ui.tr("Wi-Fi"), "wifi"));
         items.add(shortcut(BLUETOOTH, "bluetooth", Ui.tr("Bluetooth"), "bluetooth"));
+        items.add(shortcut(APPEARANCE, "appearance", Ui.tr("Dark Mode"), "appearance"));
         items.add(shortcut(DND, "dnd", Ui.tr("Do Not Disturb"), "moon"));
         items.add(sleepTimer());
         items.add(shortcut(BRIGHTNESS, "brightness", Ui.tr("Brightness"), "sunny"));
-        items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
-        items.add(shortcut(APPEARANCE, "appearance", Ui.tr("Appearance"), "appearance"));
-        items.add(shortcut(AUDIO, "audio", Ui.tr("Audio Output"), "speaker"));
-        items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
-        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
-        items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
-        items.add(shortcut(SAVER, "screensaver", Ui.tr("Screensaver"), "screensaver"));
-        items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
+        items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
+        // The profile panel: Inputs | Screensaver, then Lock, Home Settings and TV Settings.
+        items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
+        items.add(shortcut(SAVER, "screensaver", Ui.tr("Screensaver"), "screensaver"));
+        items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
         items.add(shortcut(SETTINGS, "settings", Ui.tr("Home Settings"), "settings"));
         items.add(shortcut(ANDROID_SETTINGS, "tv-settings", Ui.tr("TV Settings"), "tv_settings"));
         return items;

@@ -178,8 +178,8 @@ var browser;
   bright = await page.evaluate(function () { return {level: FreeMyTV.brightness(), dim: parseFloat(getComputedStyle(document.querySelector('#bright')).opacity)}; });
   assert.ok(bright.level === 100 && bright.dim < 0.001, '] brings it back up and stops at 100: ' + JSON.stringify(bright));
 
-  // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (the brightness and volume
-  // sliders take ↑ ↓ there, the Appearance pill switches the theme); the pill opens the profile panel.
+  // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (its pills in a fixed order,
+  // the volume under them); the pill opens the profile panel.
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.tab(2); });
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300);
@@ -192,20 +192,35 @@ var browser;
   await page.waitForTimeout(800);
   s = await state(page);
   assert.strictEqual(s.zone, 'drawer', 'OK on the bubble opens Control Center');
-  var controls = await page.evaluate(function () { return FreeMyTV.cc().map(function (it) { return it.label; }); });
-  assert.ok(controls.indexOf('Wi-Fi') >= 0 && controls.indexOf('Appearance') >= 0 && controls.indexOf('Inputs') < 0 && controls.indexOf('Lock') < 0,
-    'Control Center holds the controls, not Inputs or Lock: ' + JSON.stringify(controls));
-  var sliders = await page.evaluate(function () {
-    return [].map.call(document.querySelectorAll('#drawer .ccslider'), function (e) { var r = e.getBoundingClientRect(); return {w: r.width, h: r.height}; });
+  var controls = await page.evaluate(function () { return FreeMyTV.cc().filter(function (it) { return it.kind === 'tile'; }).map(function (it) { return it.label; }); });
+  assert.deepStrictEqual(controls, ['Power', 'Audio Output', 'Wi-Fi', 'Bluetooth', 'Dark Mode', 'Do Not Disturb', 'Sleep Timer', 'Brightness'],
+    'Control Center: its pills in order, two a row');
+  var grid = await page.evaluate(function () {
+    var t = document.querySelectorAll('#drawer .cctile'), out = [];
+    for (var i = 0; i < t.length; i++) { var r = t[i].getBoundingClientRect(); out.push([Math.round(r.left), Math.round(r.top)]); }
+    var v = document.querySelector('#drawer .ccvolume').getBoundingClientRect();
+    return {tiles: out, volumeTop: v.top, lastBottom: t[t.length - 1].getBoundingClientRect().bottom};
   });
-  assert.ok(sliders.length === 2 && sliders.every(function (r) { return r.h > r.w * 1.5; }), 'two vertical sliders: ' + JSON.stringify(sliders));
-  var themes = await page.evaluate(function () {
-    var cc = FreeMyTV.cc(), out = [], i, k;
-    Prefs.set('theme', 'auto');
-    for (i = 0; i < cc.length; i++) if (cc[i].label === 'Appearance') { FreeMyTV.state.drawer = i; for (k = 0; k < 3; k++) { FreeMyTV.activate(); out.push(Prefs.theme()); } }
+  assert.ok(grid.tiles.every(function (p, i) { return i % 2 === 0 || (Math.abs(p[1] - grid.tiles[i - 1][1]) < 8 && p[0] > grid.tiles[i - 1][0]); }) && grid.volumeTop > grid.lastBottom,
+    'two pills a row, the volume under them: ' + JSON.stringify(grid));
+  var dark = await page.evaluate(function () {
+    var cc = FreeMyTV.cc(), out = [document.body.className.indexOf('night') >= 0], i;
+    for (i = 0; i < cc.length; i++) if (cc[i].label === 'Dark Mode') {
+      FreeMyTV.state.drawer = i;
+      FreeMyTV.activate(); out.push(Prefs.theme(), document.body.className.indexOf('night') >= 0);
+      FreeMyTV.activate(); out.push(Prefs.theme(), document.body.className.indexOf('night') >= 0);
+    }
     return out;
   });
-  assert.deepStrictEqual(themes, ['light', 'dark', 'auto'], 'Appearance cycles Light, Dark, Automatic');
+  // From whatever shows (the preview may start at night): the other look, then back, each set as this profile's theme.
+  assert.deepStrictEqual(dark.slice(1), dark[0] ? ['light', false, 'dark', true] : ['dark', true, 'light', false],
+    'Dark Mode switches the look and back: ' + JSON.stringify(dark));
+  var bright = await page.evaluate(function () {
+    var cc = FreeMyTV.cc(), out = [], i, k;
+    for (i = 0; i < cc.length; i++) if (cc[i].label === 'Brightness') { FreeMyTV.state.drawer = i; for (k = 0; k < 4; k++) { FreeMyTV.activate(); out.push(FreeMyTV.brightness()); } }
+    return out;
+  });
+  assert.deepStrictEqual(bright, [75, 50, 25, 100], 'Brightness steps 75, 50, 25, then back to 100');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.tab(2); FreeMyTV.state.zone = 'top'; FreeMyTV.state.top = 4; });

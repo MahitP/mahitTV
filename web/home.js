@@ -682,8 +682,7 @@
       V(hud.node, hs);
       T(hud.fill, 'scale(1,' + r4(hudMode === 'brightness' ? Motion.clamp(mv.brightFill.x, 0, 1) : level) + ')');
     }
-    if (ccVolume) T(ccVolume.fill, 'scale(1,' + r4(level) + ')');
-    if (ccBright) T(ccBright.fill, 'scale(1,' + r4(Motion.clamp(mv.brightFill.x, 0, 1)) + ')');
+    if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
     drawFolder();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
@@ -1492,16 +1491,15 @@
 
   // MARK: - Control Center: a right-hand Liquid Glass panel, as tvOS's
 
-  // Two panels under the top-right cluster, as tvOS's: Control Center (its bubble) holds the controls — a 2×2 cluster
-  // (Wi-Fi, Bluetooth, Do Not Disturb, Sleep Timer) beside the vertical brightness and volume sliders, the Appearance and
-  // Audio Output pills, and round Power and Close Background Apps buttons; the profile panel (the pill) holds the
-  // profiles, the weather, Inputs (its list slides over what's under the weather, ccSub) and round Screensaver, Lock,
-  // Home Settings and TV Settings buttons. Everything focusable is one entry of ccItems (its row, node, spring, what OK
-  // does): ← → walk the row, ↑ ↓ go to the nearest entry of the next row; the sliders span the cluster's two rows and
-  // ↑ ↓ on them change their level. The tiles inside are flat (the panel is the glass: never glass on glass).
+  // Two panels under the top-right cluster, as tvOS's. Control Center (its bubble) is a 2-column grid of pills in a
+  // fixed order (Power | Audio Output, Wi-Fi | Bluetooth, Dark Mode | Do Not Disturb, Sleep Timer | Brightness) with the
+  // volume slider under it. The profile panel (the pill) holds the profiles, the weather, Inputs | Screensaver and a
+  // row of Lock, Home Settings and TV Settings cells; Inputs' list slides over what's under the weather (ccSub) and the
+  // panel grows to fit it. Everything focusable is one entry of ccItems (its row, node, spring, what OK does): ← → walk
+  // the row (on the volume they change it), ↑ ↓ go to the nearest entry of the next row. The tiles inside are flat (the
+  // panel is the glass: never glass on glass).
   var CC = {left: 1300, top: 124, pad: 28, body: 504, gap: 16, col: 260, tileW: 244, tileH: 72, tileGap: 12,
-    whoH: 104, platterH: 152, cellW: 122, cellH: 96, cellGap: 12, sliderW: 114, sliderGap: 16,
-    iconsH: 114, iconD: 72, inputH: 72, inputGap: 8, headH: 56};
+    whoH: 104, platterH: 152, volumeH: 72, cellH: 92, cellGap: 12, inputH: 60, inputGap: 6, headH: 52};
   /** Which panel is drawn: 'controls' (the bubble) or 'profile' (the pill); how tall it is closed and with Inputs open. */
   var ccMode = 'controls', ccHeights = {closed: 0, open: 0};
 
@@ -1535,53 +1533,69 @@
 
   function googleOnly() { toast(tr('Only on Google TV')); }
 
-  /** The 2×2 cluster's round toggles (blue when on, as iOS): in the preview the Google TV app's; LG and Samsung have none. */
-  function ccCluster() {
-    if (!PREVIEW) return [];
-    return [
-      {label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }},
-      {label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly},
-      {label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; }, active: function () { return previewCC.dnd; }},
-      {label: tr('Sleep Timer'), symbol: 'bedtime', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
-        active: function () { return !!previewCC.sleep; },
-        name: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : tr('Sleep Timer'); }}
-    ];
-  }
+  function darkOn() { return hasClass(body, 'night'); }
 
-  /** Light → Dark → Automatic (sunset), for the whole home screen at once. */
-  var THEMES = ['light', 'dark', 'auto'];
-  function themeName(t) { return t === 'light' ? tr('Light') : t === 'dark' ? tr('Dark') : tr('Automatic'); }
-  function cycleTheme() {
-    Prefs.set('theme', THEMES[(THEMES.indexOf(Prefs.theme()) + 1) % THEMES.length]);
+  /** Dark Mode: this profile's theme, Light or Dark (Settings → Appearance still offers Automatic). */
+  function toggleDark() {
+    Prefs.set('theme', darkOn() ? 'light' : 'dark');
     checkNight();
   }
 
-  /** Control Center's pills: Appearance (◐) and where the sound goes. */
-  function ccPills() {
-    var t = [{label: tr('Appearance'), symbol: 'appearance', run: cycleTheme, detail: function () { return themeName(Prefs.theme()); }}];
-    if (PREVIEW) t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
+  /** Brightness from Control Center: OK steps it down a quarter, and from 25 back to full (the HUD shows the level). */
+  var BRIGHT_STEPS = [100, 75, 50, 25];
+  function cycleBrightness() {
+    var b = Prefs.brightness(), next = 100;
+    for (var i = 0; i < BRIGHT_STEPS.length; i++) if (BRIGHT_STEPS[i] < b) { next = BRIGHT_STEPS[i]; break; }
+    Prefs.set('brightness', next);
+    mv.brightFill.set(next / 100);
+    applyBrightness();
+    showHud('brightness');
+  }
+
+  function onOff(on) { return on ? tr('state|On') : tr('state|Off'); }
+
+  /**
+   * Control Center's pills, in this order (2 columns): Power | Audio Output, Wi-Fi | Bluetooth, Dark Mode | Do Not
+   * Disturb, Sleep Timer | Brightness. On LG and Samsung what a web app can do (Dark Mode, Brightness); the preview shows
+   * the Google TV app's whole set.
+   */
+  function ccControls() {
+    var t = [];
+    if (PREVIEW) {
+      t.push({label: tr('Power'), symbol: 'power', run: googleOnly});
+      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
+      t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return tr('Connected'); }});
+      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, detail: function () { return onOff(false); }});
+    }
+    t.push({label: tr('Dark Mode'), symbol: 'appearance', run: toggleDark, active: darkOn, detail: function () { return onOff(darkOn()); }});
+    if (PREVIEW) {
+      t.push({label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; },
+        active: function () { return previewCC.dnd; }, detail: function () { return onOff(previewCC.dnd); }});
+      t.push({label: tr('Sleep Timer'), glyph: 'glyph-timer', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
+        active: function () { return !!previewCC.sleep; },
+        detail: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : onOff(false); }});
+    }
+    t.push({label: tr('Brightness'), symbol: 'sunny', run: cycleBrightness, detail: function () { return Prefs.brightness() + '%'; }});
     return t;
   }
 
-  /** Control Center's round buttons: Power and Close Background Apps (the Google TV app's; LG and Samsung have neither). */
-  function ccControlIcons() {
-    if (!PREVIEW) return [];
-    return [{label: tr('Power'), symbol: 'power', run: googleOnly}, {label: tr('Close Background Apps'), symbol: 'memory', run: googleOnly}];
+  /** The profile panel's pills: Inputs (the input in use under its name) and the Screensaver. */
+  function ccProfilePills() {
+    var t = [];
+    if (inputs.length) {
+      t.push({label: tr('Inputs'), symbol: 'input', run: openInputsSheet, detail: function () {
+        var id = currentInput();
+        for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return inputName(inputs[i]);
+        return '';
+      }});
+    }
+    t.push({label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }});
+    return t;
   }
 
-  /** The profile panel's Inputs pill, the whole width: the input in use under its name. */
-  function ccInputsPill() {
-    return {label: tr('Inputs'), symbol: 'input', run: openInputsSheet, detail: function () {
-      var id = currentInput();
-      for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return inputName(inputs[i]);
-      return '';
-    }};
-  }
-
-  /** The profile panel's round buttons. */
-  function ccIcons() {
-    var b = [{label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }},
-      {label: tr('Lock'), glyph: 'glyph-lock', run: lockNow},
+  /** The profile panel's last row: Lock, Home Settings and the TV's settings, cells as wide as they can share. */
+  function ccCells() {
+    var b = [{label: tr('Lock'), glyph: 'glyph-lock', run: lockNow},
       {label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }}];
     if (TV.canOpenSettings || PREVIEW) b.push({label: tr('TV Settings'), symbol: 'tv_settings', run: TV.canOpenSettings ? tvSettings : googleOnly});
     return b;
@@ -1632,37 +1646,28 @@
     updateFocus();
   }
 
-  /** Control Center: the cluster beside the sliders, the pills, the round buttons. Returns how tall it is. */
-  function renderControls(d) {
-    var y = 0, row, cluster = ccCluster(), pills = ccPills(), icons = ccControlIcons();
-    var clusterW = cluster.length ? 2 * CC.cellW : 0, sx = cluster.length ? clusterW + CC.gap : 0;
-    var sliderH = 2 * CC.cellH + CC.cellGap;   // full height even without the cluster (LG and Samsung have none)
-    var rowA = ccRow(d, y, CC.cellH), clusterRow = ccRows.length - 1;
-    var rowB = cluster.length > 2 ? ccRow(d, y + CC.cellH + CC.cellGap, CC.cellH) : null;
-    if (cluster.length) {
-      var plate = el('div', 'ccplate', rowA);
-      plate.style.width = clusterW + 'px';
-      plate.style.height = (rowB ? sliderH : CC.cellH) + 'px';
-      for (var c = 0; c < cluster.length; c++) ccCircle(c < 2 ? rowA : rowB, cluster[c], c % 2, c < 2 ? clusterRow : clusterRow + 1);
+  /** Two pills a row in the order given, from `y` in `parent`; returns the y under the last row. */
+  function ccPillRows(parent, y, pills, group) {
+    for (var k = 0; k < pills.length; k += 2) {
+      var row = ccRow(parent, y, CC.tileH, group);
+      for (var c = 0; c < 2 && k + c < pills.length; c++) ccTile(row, pills[k + c], c, pills.length === 1);
+      y += CC.tileH + CC.tileGap;
     }
-    var last = rowB ? clusterRow + 1 : clusterRow;
-    ccBright = ccSlider(rowA, sx, sliderH, 'sunny', function () { return Prefs.brightness(); }, stepBrightness, null, clusterRow, last);
-    if (volumeLevel !== null) ccVolume = ccSlider(rowA, sx + CC.sliderW + CC.sliderGap, sliderH, 'volume', function () { return volumeMuted ? 0 : volumeLevel; },
-      stepVolume, function () { stepVolume('mute'); }, clusterRow, last);
-    y += sliderH + CC.gap;
-    row = ccRow(d, y, CC.tileH);
-    for (var k = 0; k < pills.length; k++) ccTile(row, pills[k], k);
-    y += CC.tileH;
-    if (icons.length) {
+    return pills.length ? y - CC.tileGap : y;
+  }
+
+  /** Control Center: the grid of pills, then the volume. Returns how tall it is. */
+  function renderControls(d) {
+    var y = ccPillRows(d, 0, ccControls(), false);
+    if (volumeLevel !== null) {
       y += CC.gap;
-      row = ccRow(d, y, CC.iconsH);
-      for (var b = 0; b < icons.length; b++) ccIcon(row, icons[b], b, icons.length);
-      y += CC.iconsH;
+      ccVolume = ccVolumeRow(ccRow(d, y, CC.volumeH));
+      y += CC.volumeH;
     }
     return {closed: y, open: y};
   }
 
-  /** The profile panel: the profiles, the weather, Inputs (and its list), the round buttons. Returns how tall it is. */
+  /** The profile panel: the profiles, the weather, Inputs | Screensaver, the cells. Returns how tall it is (and with Inputs open). */
   function renderProfilePanel(d) {
     var y = 0, row, list = people(), np = list.length, step = Math.min(116, Math.floor(CC.body / Math.max(1, np)));
     // The profiles first, the current one ringed; OK opens the lock on that profile.
@@ -1679,28 +1684,26 @@
       ccAdd(who, new Fx(faceEl, {grow: 0.12}), profileRun(list[w]), 'who', x0 + w * step + step / 2);
     }
     y += CC.whoH + CC.gap;
-    // The weather, the whole width: OK opens the floating weather card (weather.js).
+    // The rest is the group the Inputs list slides over: the weather (OK opens the floating weather card), the pills
+    // and the cells, each row filling the panel's width.
+    var sheetTop = y, grp = ccGroup = el('div', 'ccgroup', d), gy = 0;
+    grp.style.top = y + 'px';
     drawerWeather = Prefs.weather();
     if (drawerWeather) {
-      row = ccRow(d, y, CC.platterH);
+      row = ccRow(grp, gy, CC.platterH, true);
       var wc = el('div', '', row);
       wc.id = 'weather';
       ccAdd(wc, null, function () { if (Data.weather) openForecast(); }, 'weather', CC.body / 2);
-      y += CC.platterH + CC.gap;
+      gy += CC.platterH + CC.tileGap;
     }
-    // Under the weather: the group the Inputs list slides over.
-    var grp = ccGroup = el('div', 'ccgroup', d), gy = 0, icons = ccIcons();
-    grp.style.top = y + 'px';
-    if (inputs.length) {
-      row = ccRow(grp, gy, CC.tileH, true);
-      ccTile(row, ccInputsPill(), 0, true);
-      gy += CC.tileH + CC.gap;
-    }
-    row = ccRow(grp, gy, CC.iconsH, true);
-    for (var b = 0; b < icons.length; b++) ccIcon(row, icons[b], b, icons.length);
-    gy += CC.iconsH;
-    renderInputsSheet(d, y);
-    return {closed: y + gy, open: y + Math.max(gy, CC.headH + inputs.length * (CC.inputH + CC.inputGap) - CC.inputGap)};
+    gy = ccPillRows(grp, gy, ccProfilePills(), true) + CC.tileGap;
+    var cells = ccCells(), cw = (CC.body - (cells.length - 1) * CC.cellGap) / cells.length;
+    row = ccRow(grp, gy, CC.cellH, true);
+    for (var b = 0; b < cells.length; b++) ccCell(row, cells[b], b * (cw + CC.cellGap), cw);
+    gy += CC.cellH;
+    renderInputsSheet(d, sheetTop);
+    var sheetH = CC.headH + inputs.length * (CC.inputH + CC.inputGap) - CC.inputGap;
+    return {closed: y + gy, open: y + Math.max(gy, sheetH)};
   }
 
   function profileRun(who) {
@@ -1723,35 +1726,25 @@
     item.detail = detail;
   }
 
-  /** One of the cluster's round toggles, its name under it, in cell `col` of `row` (the panel's row `rowIndex`). */
-  function ccCircle(row, spec, col, rowIndex) {
-    var cell = el('div', 'cccircle', row);
-    cell.style.left = (col * CC.cellW) + 'px';
-    var disc = el('span', 'disc', cell);
-    ccGlyph(spec, disc);
-    var name = el('div', 'label', cell, spec.label);
-    var item = ccAdd(cell, new Fx(disc, {grow: 0.1}), function () { spec.run(); ccRefresh(); }, 'circle', col * CC.cellW + CC.cellW / 2);
-    item.row = rowIndex;
-    item.spec = spec;
-    item.name = name;
+  /** A cell of the profile panel's last row: its glyph over its name, `w` wide at `x`. */
+  function ccCell(row, spec, x, w) {
+    var cell = el('div', 'cccell', row);
+    cell.style.left = Math.round(x) + 'px';
+    cell.style.width = Math.round(w) + 'px';
+    var g = el('span', 'icon', cell);
+    ccGlyph(spec, g);
+    el('div', 'label', cell, spec.label);
+    ccAdd(cell, new Fx(cell, {grow: 0.05}), spec.run, 'cell', x + w / 2);
   }
 
-  /**
-   * A vertical slider (iOS's brightness and volume): a tall glass capsule filled from the bottom, its glyph at the foot
-   * and the level at the top. ↑ ↓ change it (`step(±1)`); OK runs `ok` (the volume mutes). It spans rows `r0`–`r1`.
-   */
-  function ccSlider(row, x, h, glyph, level, step, ok, r0, r1) {
-    var v = el('div', 'ccslider', row);
-    v.style.left = x + 'px';
-    v.style.height = h + 'px';
+  /** The volume: the speaker, the level's track and its number in one capsule; ← → change it, OK mutes. */
+  function ccVolumeRow(row) {
+    var v = el('div', 'ccvolume', row);
+    sym('volume', v);
     var track = el('div', 'track', v), fill = el('div', 'fill', track), num = el('div', 'num', v);
-    var g = sym(glyph, v);
-    g.className += ' glyph';
-    var item = ccAdd(v, new Fx(v, {grow: 0.04}), ok || function () {}, 'vslider', x + CC.sliderW / 2);
-    item.row = r0;
-    item.rowEnd = r1;
-    item.step = step;
-    return {node: v, fill: fill, num: num, level: level};
+    var item = ccAdd(v, new Fx(v, {grow: 0.03}), function () { stepVolume('mute'); }, 'hslider', CC.body / 2);
+    item.step = stepVolume;
+    return {node: v, fill: fill, num: num, h: true};
   }
 
   /** The panel's states (a toggle, a name, Inputs' last choice, the theme), without building it again. */
@@ -1769,23 +1762,9 @@
     }
   }
 
-  /** A slider's number and whether its fill reaches the glyph (then the glyph takes the panel's colour). */
+  /** The volume's number. */
   function sliderLevel(sl, n) {
-    if (!sl) return;
-    sl.num.textContent = String(n);
-    setClass(sl.node, 'lit', n >= 16);
-    setClass(sl.node, 'full', n >= 88);
-  }
-
-  /** A round glass button with its name under it. */
-  function ccIcon(row, spec, i, n) {
-    var cx = Math.round(CC.body * (2 * i + 1) / (2 * n));
-    var b = el('div', 'ccicon', row);
-    b.style.left = (cx - CC.iconD / 2) + 'px';
-    var disc = el('span', 'disc', b);
-    ccGlyph(spec, disc);
-    el('div', 'label', b, spec.label);
-    ccAdd(b, new Fx(disc, {grow: 0.1}), spec.run, 'icon', cx);
+    if (sl) sl.num.textContent = String(n);
   }
 
   /** Inputs: the antenna and the HDMI ports, ✓ on the last one opened from here; Back or ← returns to the tiles. */
@@ -3118,7 +3097,7 @@
         }
         var it = ccItems[st.drawer];
         if (!it) break;
-        if (it.kind === 'vslider' && dy) { it.step(-dy); return; }   // ↑ ↓ change a slider's level, as iOS's
+        if (it.kind === 'hslider' && dx) { it.step(dx); return; }   // ← → change the volume, as the remote's keys
         if (dx) {
           var nx = ccNeighbour(it, dx);
           if (nx >= 0) st.drawer = nx;

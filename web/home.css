@@ -547,24 +547,24 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* The tiles inside the panels (the weather, the pills, the cluster, the inputs, the round buttons): flat, quiet fills.
    The panel is the glass; a rim or highlight on each tile too would be glass on glass. */
-#weather, .cctile, .ccplate, .ccslider, .inrow, .ccicon .disc {
+#weather, .cctile, .cccell, .ccvolume, .inrow {
   position: absolute;
   color: inherit;
   background: rgba(255, 255, 255, 0.62);
 }
-.night #weather, .night .cctile, .night .ccplate, .night .ccslider, .night .inrow, .night .ccicon .disc,
-.has-photo #weather, .has-photo .cctile, .has-photo .ccplate, .has-photo .ccslider, .has-photo .inrow, .has-photo .ccicon .disc {
+.night #weather, .night .cctile, .night .cccell, .night .ccvolume, .night .inrow,
+.has-photo #weather, .has-photo .cctile, .has-photo .cccell, .has-photo .ccvolume, .has-photo .inrow {
   background: rgba(255, 255, 255, 0.09);
 }
-.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .ccplate, .has-photo.art-bright .ccslider,
-.has-photo.art-bright .inrow, .has-photo.art-bright .ccicon .disc { background: rgba(255, 255, 255, 0.62); }
+.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .cccell, .has-photo.art-bright .ccvolume,
+.has-photo.art-bright .inrow { background: rgba(255, 255, 255, 0.62); }
 /* Focused: white, dark ink, a soft lift (tvOS's focused platter). */
-#weather.focus, .cctile.focus, .inrow.focus, .ccicon.focus .disc {
+#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .inrow.focus {
   background: #FFF;
   color: #1C1C1E;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
-#weather.focus, .cctile.focus, .ccslider.focus, .inrow.focus, .ccicon.focus, .cccircle.focus { z-index: 2; }
+#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .inrow.focus { z-index: 2; }
 
 /* The weather: city, temperature and sky in the left 220 px; four hours (or days) in their own columns to its right. */
 #weather { left: 0; top: 0; width: 504px; height: 152px; border-radius: 26px; }
@@ -592,35 +592,21 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .cctile.solo .label { top: 23px; }
 .cctile.solo .detail { display: none; }
 
-/* The 2×2 cluster: one platter, four round toggles with their names (blue #007AFF when on, as iOS). */
-.ccplate { position: absolute; left: 0; top: 0; border-radius: 32px; }
-.cccircle { position: absolute; top: 0; width: 122px; height: 96px; text-align: center; }
-.cccircle .disc { position: absolute; left: 29px; top: 6px; width: 64px; height: 64px; border-radius: 32px; background: rgba(120, 120, 128, 0.2); }
-.cccircle .disc .sym { position: absolute; left: 19px; top: 19px; width: 26px; height: 26px; }
-.cccircle.on .disc { background: #007AFF; color: #FFF; }
-.cccircle.focus .disc { background: #FFF; color: #1C1C1E; box-shadow: 0 12px 26px rgba(0, 0, 0, 0.26); }
-.cccircle.on.focus .disc { background: #007AFF; color: #FFF; box-shadow: 0 0 0 4px #FFF, 0 12px 26px rgba(0, 0, 0, 0.26); }
-.cccircle .label { position: absolute; left: 0; right: 0; top: 74px; font-size: 15px; font-weight: 600; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cccircle.focus .label { opacity: 1; }
+/* The profile panel's last row: Lock, Home Settings, TV Settings, each a cell with its glyph over its name. */
+.cccell { top: 0; height: 92px; border-radius: 26px; }
+.cccell .icon { position: absolute; left: 50%; top: 14px; width: 72px; height: 38px; margin-left: -36px; }
+.cccell .icon .sym { position: absolute; left: 22px; top: 4px; width: 28px; height: 28px; }
+#drawer .cccell .icon .glyph-lock { position: absolute; left: 25px; top: 16px; width: 22px; height: 17px; margin: 0; opacity: 1; }
+#drawer .cccell .icon .glyph-lock::before { left: 2.5px; top: -12px; width: 11px; height: 13px; border-width: 3px; }
+.cccell .label { position: absolute; left: 8px; right: 8px; top: 56px; text-align: center; font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The vertical sliders (brightness, volume): a tall capsule filled from the bottom; ↑ ↓ change them. */
-.ccslider { position: absolute; top: 0; width: 114px; border-radius: 32px; overflow: hidden; }
-.ccslider .track { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; overflow: hidden; }
-/* A grey track with a white fill (iOS), dark ink where the fill is under it; focused, it lifts with a white ring. */
-.ccslider .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: #FFF; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; }
-.ccslider .glyph { position: absolute; left: 41px; bottom: 22px; width: 32px; height: 32px; }
-.ccslider.lit .glyph { background-color: #1C1C1E; }
-.ccslider.full .num { color: #1C1C1E; }
-.ccslider .num { position: absolute; left: 0; right: 0; top: 16px; text-align: center; font-size: 19px; font-weight: 600; opacity: 0.62; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
-.ccslider.focus .num { opacity: 1; }
+/* The volume under Control Center's grid: speaker, track and level in one capsule; ← → change it, OK mutes. */
+.ccvolume { left: 0; top: 0; width: 504px; height: 72px; border-radius: 36px; }
+.ccvolume > .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
+.ccvolume .track { position: absolute; left: 66px; right: 96px; top: 32px; height: 8px; border-radius: 4px; background: rgba(120, 120, 128, 0.24); overflow: hidden; }
+.ccvolume .fill { width: 100%; height: 8px; border-radius: 4px; background: currentColor; -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
+.ccvolume .num { position: absolute; right: 22px; top: 22px; width: 70px; text-align: right; font-size: 21px; font-weight: 600; line-height: 28px; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 
-/* The round buttons, their names under them. */
-.ccicon { position: absolute; top: 0; width: 72px; height: 114px; }
-.ccicon .disc { left: 0; top: 0; width: 72px; height: 72px; border-radius: 36px; }
-.ccicon .disc .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
-/* Two lines at most, as wide as its share of the row (Close Background Apps wraps instead of running into its neighbour). */
-.ccicon .label { position: absolute; left: -25px; right: -25px; top: 80px; max-height: 34px; overflow: hidden; text-align: center; font-size: 14px; line-height: 17px; font-weight: 600; opacity: 0.62; }
-.ccicon.focus .label { opacity: 1; }
 /* Drawn glyphs: the lock (lock.css), power and a timer, at the symbols' size. */
 #drawer .dot .glyph-lock, #drawer .disc .glyph-lock { position: absolute; left: 25px; top: 32px; width: 22px; height: 17px; margin: 0; opacity: 1; }
 #drawer .dot .glyph-lock::before, #drawer .disc .glyph-lock::before { left: 2.5px; top: -12px; width: 11px; height: 13px; border-width: 3px; }
@@ -973,7 +959,3 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 }
 #folder .cell .label { color: inherit; opacity: 0.85; }
 
-/* The sliders' track: darker than the panel by day so the white fill reads; a white ring and a lift when focused. */
-#drawer .ccslider, .has-photo.art-bright #drawer .ccslider { background: rgba(120, 120, 128, 0.24); }
-.night #drawer .ccslider, .has-photo #drawer .ccslider { background: rgba(255, 255, 255, 0.12); }
-#drawer .ccslider.focus { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.26); z-index: 2; }
