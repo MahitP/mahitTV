@@ -409,6 +409,44 @@ var browser = null;
   var source = fs.readFileSync(path.join(root, 'web', 'home.js'), 'utf8');
   assert.ok(/if \(!typing && \(k === 72 \|\| k === 83/.test(source), 'H and S stay with Welly\'s text field while it types');
 
+  // The city and TMDB key sheets: keys type into the field (H, S and A are home screen keys elsewhere), Back leaves the
+  // field, then the sheet.
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await page.evaluate(function () { FreeMyTV.openSettings(); });
+  await page.waitForTimeout(300);
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');   // Location & Media: its rows, City first
+  await page.waitForTimeout(300);
+  async function typeInSheet(id, focusText) {
+    for (var tries = 0; tries < 30; tries++) {
+      var text = await page.evaluate(function () { var f = document.querySelector('#settings .srow.focus'); return f ? f.textContent : ''; });
+      if (text.indexOf(focusText) >= 0) break;
+      await page.keyboard.press('ArrowDown');
+      await page.waitForTimeout(40);
+    }
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    var open = await page.evaluate(function (id) {
+      var f = document.querySelector('#settings .srow.focus');
+      return {sheet: document.querySelector(id).className, tag: document.activeElement.tagName, zone: FreeMyTV.state.zone,
+        row: f ? f.textContent : '', title: (document.querySelector('#settings .rtitle') || {}).textContent};
+    }, id);
+    assert.ok(/\bopen\b/.test(open.sheet), id + ' opens from ' + focusText + ': ' + JSON.stringify(open));
+    assert.strictEqual(open.tag, 'INPUT', id + ': the field takes the keys');
+    await page.keyboard.type('has');
+    assert.strictEqual(await page.evaluate(function (id) { return document.querySelector(id + ' input').value; }, id), 'has', id + ': typed');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    assert.ok(!/\bopen\b/.test(await page.evaluate(function (id) { return document.querySelector(id).className; }, id)), id + ': Back closes it');
+  }
+  await typeInSheet('#citypick', 'City');
+  await typeInSheet('#keypick', 'TMDB key');
+
   assert.deepStrictEqual(errors, [], 'no page errors');
   await browser.close(); server.close();
   console.log('web-keys-test: passed');

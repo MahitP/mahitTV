@@ -264,6 +264,10 @@ var browser = null;
   assert.ok(/neon-meridian/.test(instant.art), 'instant applies the distinct target art');
   assert.strictEqual(instant.photo, 'none', 'instant clears photo transition');
   assert.strictEqual(instant.backdrop, 'none', 'instant clears backdrop transition');
+  // Upstream's night dim uses the same id as Control Center's dimmer: one #dim, and the city and key pickers are there.
+  assert.strictEqual(await page.evaluate(function () { return document.querySelectorAll('#dim').length; }), 1, 'one #dim');
+  assert.ok(await page.evaluate(function () { return !!document.querySelector('#citypick') && !!document.querySelector('#keypick'); }), 'city and key pickers');
+
   await browser.close(); server.close();
   console.log('home-background-dom-test: passed');
 })().catch(async function (err) {
