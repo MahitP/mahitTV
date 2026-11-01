@@ -66,6 +66,25 @@
         <package android:name="com.sony.dtv.tvx" />
         <package android:name="com.smartdevice.livetv" />
         <package android:name="com.mediatek.tv.oneworld.tvcenter" />
+        <!-- Your TV's apps (TCL Google TV): the Dock, the grid's order and the TCL apps; the intents below find any others -->
+        <package android:name="com.amazon.avod.thirdpartyclient" />
+        <package android:name="com.liskovsoft.smarttubetv.beta" />
+        <package android:name="com.mvas.stb.emu.pro" />
+        <package android:name="com.mvas.stb.emu.free" />
+        <package android:name="com.tubitv" />
+        <package android:name="com.google.android.youtube.tvmusic" />
+        <package android:name="com.google.android.youtube.tvunplugged" />
+        <package android:name="tv.twitch.android.app" />
+        <package android:name="com.fgl27.twitch" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.roblox.client" />
+        <package android:name="com.tcl.t_solo" />
+        <package android:name="com.tcl.waterfall.overseas" />
+        <package android:name="com.tcl.dashboard" />
+        <package android:name="com.tcl.ocean.instructions" />
+        <package android:name="com.tcl.exhibit" />
+        <package android:name="com.tcl.browser" />
+        <package android:name="com.google.android.videos" />
         <!-- HY300 projectors: keystone and Miracast (drawer shortcuts), Allwinner's player for HDMI; MIUI TV's source player -->
         <package android:name="com.htc.htcsettings" />
         <package android:name="com.softwinner.miracastReceiver" />

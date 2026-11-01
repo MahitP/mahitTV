@@ -119,18 +119,23 @@ final class HomeApps {
      * art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
      */
     private static final String[][] SHELF = {
+        // The default Dock (DOCK_DEFAULT of them): Netflix, Prime Video, YouTube, Apple TV, Disney+ and StbEmu.
         {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
-        {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
-        {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
         {"prime", "Prime Video", "com.amazon.amazonvideo.livingroom", "1A98FF", "tint", "0.96"},
         {"prime", "Prime Video", "com.amazon.firebat", "1A98FF", "tint", "0.96"},
         {"prime", "Prime Video", "com.amazon.avod", "1A98FF", "tint", "0.96"},
-        {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
-        {"max", "Max", "com.wbd.stream", "6C3BE0", "", "1.32"},
-        {"max", "HBO Max", "com.hbo.hbonow", "6C3BE0", "", "1.32"},
+        {"prime", "Prime Video", "com.amazon.avod.thirdpartyclient", "1A98FF", "tint", "0.96"},   // the phone build, sideloaded
+        {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
+        {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
+        {"youtube", "YouTube", "com.liskovsoft.smarttubetv.beta", "FF0033", "", "1"},          // SmartTube, where it replaces YouTube
         {"appletv", "Apple TV", "com.apple.atve.androidtv.appletv", "B8BCC6", "", "1.1"},
         {"appletv", "Apple TV", "com.apple.atve.sony.appletv", "B8BCC6", "", "1.1"},   // Sony's own build
         {"appletv", "Apple TV", "com.apple.atve.amazon.appletv", "B8BCC6", "", "1.1"},
+        {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
+        {"stbemu", "StbEmu", "com.mvas.stb.emu.pro", "84CC16", "", "1"},          // IPTV set-top box emulator (sideloaded)
+        {"stbemu", "StbEmu", "com.mvas.stb.emu.free", "84CC16", "", "1"},
+        {"max", "Max", "com.wbd.stream", "6C3BE0", "", "1.32"},
+        {"max", "HBO Max", "com.hbo.hbonow", "6C3BE0", "", "1.32"},
         {"hulu", "Hulu", "com.hulu.livingroomplus", "1CE783", "", "1"},
         {"hulu", "Hulu", "com.hulu.plus", "1CE783", "", "1"},
         {"paramount", "Paramount+", "com.cbs.ott", "0064FF", "", "1"},
@@ -152,6 +157,8 @@ final class HomeApps {
      * most, without scrolling: every app on the shelf keeps its logo in memory, at two sizes.
      */
     private static final int SHELF_VISIBLE = 8, FEW_APPS = 8;
+    /** The built-in Dock's length: one row of tvOS's 6 columns (Settings > Shelf, or default_dock_apps, can hold more). */
+    private static final int DOCK_DEFAULT = 6;
 
     /** Low memory (TCL's 1 GB models): every MB counts. */
     static boolean lowRam(Context c) {
@@ -171,10 +178,6 @@ final class HomeApps {
     /** Kept out of "All Apps" (only hidden, still installed). Add the ones your TV shows that you never use. */
     private static final Set<String> HIDDEN = new HashSet<>(java.util.Arrays.asList(
             "com.google.android.play.games",        // Google Play Games
-            "com.tcl.t_solo",                       // TCL: T-Solo
-            "com.tcl.waterfall.overseas",           // TCL Channel
-            "com.tcl.dashboard",                    // TCL Home
-            "com.tcl.ocean.instructions",           // TCL: User Guide
             "com.tcl.guard",                        // TCL: Safety Guard
             "com.homwee.factory",                   // Philco: factory menu
             "com.mstar.android.tv.disclaimercustomization",   // Philco: disclaimer
@@ -183,8 +186,55 @@ final class HomeApps {
             "com.xiaomi.mitv.manualhelp",           // Xiaomi: user manual
             "com.Smartdevice.emanual",              // Skyworth: user manual
             "com.google.android.videos",            // Google Play Movies (discontinued)
-            "com.disney.starplus",                  // Star+ (merged into Disney+)
-            "com.tcl.exhibit"));                    // TCL: T-Exhibition
+            "com.disney.starplus"));                // Star+ (merged into Disney+)
+
+    /**
+     * All Apps' order after the Dock (by package, else by the name the TV shows, so a renamed or regional build still
+     * lands in place); the rest follow by name. An app here is never hidden, and never goes in the utilities folder.
+     */
+    private static final Pattern[][] GRID_ORDER = {
+        order("com\\.apple\\.android\\.music", "^apple music$"),
+        order("youtube\\.tvmusic", "^youtube music$"),
+        order("^com\\.spotify\\.", "^spotify$"),
+        order("crunchyroll", "^crunchyroll$"),
+        order("^com\\.tubitv", "^tubi$"),
+        order("youtube\\.tvunplugged", "^youtube tv$"),
+        order("twitch", "^twitch$"),
+        order("^com\\.hulu\\.", "^hulu$"),
+        order("^com\\.wbd\\.stream$|hbonow|hbomax", "^(hbo )?max$"),
+        order("peacock", "^peacock"),
+        order("^com\\.cbs\\.|paramount", "^paramount"),
+        order("^com\\.instagram\\.", "^instagram$"),
+        order("^com\\.roblox\\.", "^roblox$"),
+        order("alexa", "alexa"),
+        order("^com\\.tcl\\.tv$", "^tv$"),
+        order("tclplus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
+        order("freeplay", "freeplay"),
+        order("mediacenter|mediaplayer|videoplayer", "^media ?player$"),
+        order("instructions|userguide|manual", "^user ?guide$"),
+        order("quickpanel", "^quick ?panel$"),
+        order("t_?solo", "^t-?solo$"),
+        order("^com\\.tcl\\.dashboard$|tclhome", "^tcl home$"),
+        order("exhibit", "^t-?exhibition$"),
+        order("browsehere|com\\.tcl\\.browser|iebrowser", "^browse ?here$"),
+    };
+
+    private static Pattern[] order(String pkg, String label) {
+        return new Pattern[] {Pattern.compile(pkg), Pattern.compile(label, Pattern.CASE_INSENSITIVE)};
+    }
+
+    /** Where an app goes in All Apps (GRID_ORDER's index), or GRID_ORDER.length when it isn't listed. */
+    static int gridRank(String pkg, String label) {
+        for (int i = 0; i < GRID_ORDER.length; i++) {
+            if ((pkg != null && GRID_ORDER[i][0].matcher(pkg).find()) || (label != null && GRID_ORDER[i][1].matcher(label.trim()).find())) return i;
+        }
+        return GRID_ORDER.length;
+    }
+
+    /** Kept out of All Apps: HIDDEN, unless it is one GRID_ORDER names. */
+    private static boolean hidden(String pkg, String label) {
+        return HIDDEN.contains(pkg) && gridRank(pkg, label) == GRID_ORDER.length;
+    }
 
     private static final Map<String, Bitmap> TILES = new HashMap<>();   // key → ready card
     private static final Map<String, Bitmap> LOGOS = new HashMap<>();   // key → colored logo with no background
@@ -247,7 +297,7 @@ final class HomeApps {
         Set<String> keys = new HashSet<>();
         PackageManager pm = c.getPackageManager();
         for (String[] d : SHELF) {
-            if (out.size() < FEW_APPS && !keys.contains(d[0]) && launchIntent(pm, d[2]) != null) {
+            if (out.size() < DOCK_DEFAULT && !keys.contains(d[0]) && launchIntent(pm, d[2]) != null) {
                 keys.add(d[0]);
                 out.add(d[2]);
             }
@@ -366,6 +416,7 @@ final class HomeApps {
         List<Item> util = new ArrayList<>(), rest = new ArrayList<>();
         for (Item it : apps) {
             boolean utility = it.kind == APP && it.pkg != null && !Wallpaper.videoApp(it.pkg)
+                    && gridRank(it.pkg, it.label) == GRID_ORDER.length   // the ones placed in the grid stay there
                     && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()));
             (utility ? util : rest).add(it);
         }
@@ -447,7 +498,18 @@ final class HomeApps {
             android.net.ConnectivityManager cm = (android.net.ConnectivityManager) c.getSystemService(Context.CONNECTIVITY_SERVICE);
             android.net.NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
             android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) c.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-            if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) wifi = Ui.tr("Connected");
+            if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) {
+                // The network's name where Android tells it (it hides it without location access): "Connected" else.
+                String ssid = null;
+                try {
+                    android.net.wifi.WifiInfo info = wm == null ? null : wm.getConnectionInfo();
+                    ssid = info == null ? null : info.getSSID();
+                } catch (RuntimeException e) {
+                    AppLog.w("Wi-Fi name: " + e.getMessage());
+                }
+                if (ssid != null && ssid.startsWith("\"") && ssid.endsWith("\"") && ssid.length() > 2) ssid = ssid.substring(1, ssid.length() - 1);
+                wifi = ssid == null || ssid.isEmpty() || ssid.contains("unknown ssid") ? Ui.tr("Connected") : ssid;
+            }
             else if (nc != null && nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) wifi = Ui.tr("Ethernet");
             else if (wm != null) wifi = wm.isWifiEnabled() ? Ui.tr("state|On") : Ui.tr("state|Off");
         } catch (RuntimeException e) {
@@ -462,6 +524,9 @@ final class HomeApps {
             AppLog.w("Bluetooth state: " + e.getMessage());
         }
         audio = audioOutput(c);
+        // Bluetooth on with headphones or a speaker playing: their name (AirPods…) instead of "On".
+        String btOut = bluetoothOutput(c);
+        if (btOut != null && bluetooth != null) bluetooth = btOut;
         try {
             android.app.NotificationManager nm = (android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
@@ -502,6 +567,22 @@ final class HomeApps {
             AppLog.w("audio output: " + e.getMessage());
             return null;
         }
+    }
+
+    /** The connected Bluetooth headphones' or speaker's name, as the audio system lists them (no permission), or null. */
+    private static String bluetoothOutput(Context c) {
+        try {
+            android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return null;
+            for (android.media.AudioDeviceInfo d : am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (d.getType() != android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) continue;
+                CharSequence name = d.getProductName();
+                if (name != null && name.length() > 0) return name.toString();
+            }
+        } catch (RuntimeException e) {
+            AppLog.w("Bluetooth output: " + e.getMessage());
+        }
+        return null;
     }
 
     /** Puts connectivity()'s states on the cards (on the UI thread). */
@@ -707,15 +788,14 @@ final class HomeApps {
         // A built-in app is skipped only while it is on the shelf: one the person took off must still be listed here.
         List<String> onShelf = shelfPackages(c);
         for (String[] d : SHELF) if (onShelf.contains(d[2])) skip.add(d[2]);
-        skip.addAll(java.util.Arrays.asList(LIVE_TV_APPS));
+        // The TV's live channels app (TCL's "TV") is listed too: Live TV in Control Center's Inputs opens the same.
         skip.add(c.getPackageName());
-        skip.addAll(HIDDEN);
         List<Item> items = new ArrayList<>();
         Set<String> seen = new HashSet<>(), installed = new HashSet<>();
         for (String[] app : launchable(c)) {
             String pkg = app[0];
             installed.add(pkg);
-            if (skip.contains(pkg) || !seen.add(pkg)) continue;
+            if (skip.contains(pkg) || hidden(pkg, app[1]) || !seen.add(pkg)) continue;
             Item it = new Item();
             it.kind = APP;
             it.pkg = pkg;
@@ -727,7 +807,11 @@ final class HomeApps {
         synchronized (COMPOSED) {
             COMPOSED.keySet().removeIf(k -> !installed.contains(k));   // uninstalled apps' icons go
         }
-        Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
+        // GRID_ORDER first, in its order; then the rest by name.
+        Collections.sort(items, (a, b) -> {
+            int ra = gridRank(a.pkg, a.label), rb = gridRank(b.pkg, b.label);
+            return ra != rb ? Integer.compare(ra, rb) : a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT));
+        });
         synchronized (HomeApps.class) {
             TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
         }
@@ -953,9 +1037,12 @@ final class HomeApps {
         for (ResolveInfo ri : pm.queryIntentActivities(phone, 0)) {
             String pkg = ri.activityInfo.packageName;
             boolean sys = (ri.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
-            if (sys && (!system || pkg.equals(c.getPackageName()) || HIDDEN.contains(pkg))) continue;
+            String label = String.valueOf(ri.loadLabel(pm));
+            // A system app with a phone-style entry only: with Settings > Show system apps, or when GRID_ORDER names it.
+            boolean wanted = gridRank(pkg, label) < GRID_ORDER.length;
+            if (sys && ((!system && !wanted) || pkg.equals(c.getPackageName()) || hidden(pkg, label))) continue;
             if (!seen.add(pkg)) continue;
-            out.add(new String[] {pkg, String.valueOf(ri.loadLabel(pm))});
+            out.add(new String[] {pkg, label});
         }
         return out;
     }
@@ -963,7 +1050,7 @@ final class HomeApps {
     /** How many apps mahitTV found on the TV (Settings > About): what All Apps lists, without our own entry. */
     static int count(Context c) {
         int n = 0;
-        for (String[] app : launchable(c)) if (!app[0].equals(c.getPackageName()) && !HIDDEN.contains(app[0])) n++;
+        for (String[] app : launchable(c)) if (!app[0].equals(c.getPackageName()) && !hidden(app[0], app[1])) n++;
         return n;
     }
 

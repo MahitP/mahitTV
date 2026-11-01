@@ -17,7 +17,8 @@ import translate  # noqa: E402  (the catalogues and the keys the web app uses)
 GENERIC = {'tmdbKey': '', 'tmdbRegion': '', 'latitude': '', 'longitude': '', 'city': '', 'language': 'auto',
            'currency': '', 'temperature': 'auto', 'theme': 'auto', 'showCrypto': False, 'hideAnimation': False, 'hideApps': [],
            'shelfApps': [], 'defaultDock': [], 'profiles': [], 'pinSalt': '', 'geminiKey': '', 'wellyModel': 'gemini-3.8-flash',
-           'wellyLiteModel': 'gemini-3.5-flash-lite', 'ollamaUrl': '', 'ollamaModel': 'qwen3:8b'}
+           'wellyLiteModel': 'gemini-3.5-flash-lite', 'ollamaUrl': '', 'ollamaModel': 'qwen3:8b',
+           'previewWifi': '', 'previewBluetooth': []}
 
 
 def config_from_args(args):
@@ -69,6 +70,9 @@ def read_config(path):
                         if s.strip()],
         'profiles': profiles(values.get('profiles', ''), salt),
         'pinSalt': salt,
+        # The browser preview's stand-ins for what a TV reports (Control Center's Wi-Fi, Bluetooth, Audio Output).
+        'previewWifi': values.get('preview_wifi', ''),
+        'previewBluetooth': [s.strip() for s in values.get('preview_bluetooth', '').split(',') if s.strip()],
         # Welly (WELLY-HOME-REMOTE-SPEC.md §3.2). The web build can't reach Kasa (no TCP from a page): no kasa key here.
         'geminiKey': values.get('gemini_key', ''),
         'wellyModel': values.get('welly_model', 'gemini-3.8-flash') or 'gemini-3.8-flash',

@@ -162,16 +162,23 @@ var TV = (function () {
   // Samsung's live TV viewer: it shows whichever source the TV is on (the antenna, or the HDMI picked here).
   var SAMSUNG_VIEWER = 'org.tizen.tv-viewer';
 
+  // The browser preview's apps: the ones on the owner's TCL Google TV (its "Your apps" row), so the Dock and All Apps
+  // show in their real order; Settings and Google Play fill the utilities folder.
   var SAMPLE = [
-    ['netflix', 'Netflix', '#E50914'], ['youtube.leanback.v4', 'YouTube', '#FF0033'], ['amazon', 'Prime Video', '#1A98FF'],
-    ['com.disney.disneyplus-prod', 'Disney+', '#1838C8'], ['com.hbo.hbomax', 'Max', '#6C3BE0'],
-    ['com.apple.appletv', 'Apple TV', '#B8BCC6'], ['globoplaywebos', 'Globoplay', '#FF5A1F'], ['com.apple.music', 'Apple Music', '#1C1C1E'],
-    ['cdp-30', 'Plex', '#E5A00D'], ['com.crunchyroll.webapp', 'Crunchyroll', '#F47521'], ['com.webos.app.browser', 'Web Browser', '#3A7BD5'],
-    ['com.palm.app.settings', 'Settings', '#8E8E93'],
-    // More apps, for the browser preview's app grid (their logos are in web/icons)
-    ['youtube.kids', 'YouTube Kids', '#FF0033'], ['jellyfin', 'Jellyfin', '#00A4DC'], ['steam-link', 'Steam Link', '#1B2838'],
-    ['ted', 'TED', '#E62B1E'], ['redbull.tv', 'Red Bull TV', '#0A1A3D'], ['deezer', 'Deezer', '#A238FF'],
-    ['fox.sports', 'FOX Sports', '#003366'], ['google.play', 'Google Play', '#01875F'], ['spotify-beehive', 'Spotify', '#1DB954']
+    ['netflix', 'Netflix', '#E50914'], ['amazon', 'Prime Video', '#00A8E1'], ['youtube.leanback.v4', 'YouTube', '#FF0033'],
+    ['com.apple.appletv', 'Apple TV', '#1C1C1E'], ['com.disney.disneyplus-prod', 'Disney+', '#0A1D56'],
+    ['com.mvas.stb.emu.pro', 'StbEmu', '#65A30D'],
+    ['com.apple.music', 'Apple Music', '#1C1C1E'], ['com.google.android.youtube.tvmusic', 'YouTube Music', '#212121'],
+    ['spotify-beehive', 'Spotify', '#1DB954'], ['com.crunchyroll.webapp', 'Crunchyroll', '#F47521'], ['com.tubitv', 'Tubi', '#4500B5'],
+    ['com.google.android.youtube.tvunplugged', 'YouTube TV', '#2A2A2A'], ['tv.twitch.android.app', 'Twitch', '#9146FF'],
+    ['com.hulu.livingroomplus', 'Hulu', '#0B0C0F'], ['com.wbd.stream', 'HBO Max', '#1B2A8F'], ['com.peacocktv.peacockandroid', 'Peacock TV', '#000000'],
+    ['com.cbs.ott', 'Paramount+', '#0064FF'], ['com.instagram.android', 'Instagram', '#C13584'], ['com.roblox.client', 'Roblox', '#2563EB'],
+    ['com.tcl.alexa', 'Works with Alexa', '#0091D5'], ['com.tcl.tv', 'TV', '#DC2626'], ['com.tcl.waterfall.overseas', 'TCL TV+', '#D7263D'],
+    ['com.google.android.tv.freeplay', 'Google TV Freeplay', '#4285F4'], ['com.tcl.mediacenter', 'Media Player', '#6D28D9'],
+    ['com.tcl.ocean.instructions', 'User Guide', '#64748B'], ['com.tcl.quickpanel', 'Quick Panel', '#475569'],
+    ['com.tcl.t_solo', 'T-Solo', '#4F46E5'], ['com.tcl.dashboard', 'TCL Home', '#EF4444'], ['com.tcl.exhibit', 'T-Exhibition', '#FB923C'],
+    ['com.tcl.browser', 'BrowseHere', '#1D4ED8'],
+    ['com.palm.app.settings', 'Settings', '#8E8E93'], ['google.play', 'Google Play', '#01875F']
   ];
 
   // Newer webOS (11 tested) denies listLaunchPoints to Developer Mode apps, but still answers getAppLoadStatus for
@@ -418,7 +425,7 @@ var TV = (function () {
       if (!webos) {
         // The browser preview: the sample apps with the logos bundled in web/icons, as a TV would show them.
         var logos = {netflix: 'netflix.svg', 'youtube.leanback.v4': 'youtube.png', amazon: 'prime.png', 'com.hbo.hbomax': 'max.svg',
-          'spotify-beehive': 'spotify.svg', 'com.apple.music': 'applemusic.svg', 'youtube.kids': 'youtubekids.svg', jellyfin: 'jellyfin.svg', 'steam-link': 'steam.svg',
+          'spotify-beehive': 'spotify.svg', 'com.apple.music': 'applemusic.svg', 'com.wbd.stream': 'max.svg', 'youtube.kids': 'youtubekids.svg', jellyfin: 'jellyfin.svg', 'steam-link': 'steam.svg',
           ted: 'ted.svg', 'redbull.tv': 'redbull.svg', deezer: 'deezer.svg', 'fox.sports': 'fox.svg', 'google.play': 'googleplay.svg'};
         done(SAMPLE.map(function (s) { return {id: s[0], title: s[1], icon: logos[s[0]] ? 'icons/' + logos[s[0]] : '', color: s[2]}; }));
         return;

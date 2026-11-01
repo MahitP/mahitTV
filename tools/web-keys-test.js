@@ -241,6 +241,13 @@ var browser = null;
   bright = await page.evaluate(function () { return {level: FreeMyTV.brightness(), dim: parseFloat(getComputedStyle(document.querySelector('#bright')).opacity)}; });
   assert.ok(bright.level === 100 && bright.dim < 0.001, '] brings it back up and stops at 100: ' + JSON.stringify(bright));
 
+  // The owner's TV: its Dock (Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu) and All Apps in their order.
+  var lists = await page.evaluate(function () { localStorage.removeItem('mahittv.profile.' + Profiles.current().id); return FreeMyTV.apps(); });
+  var wantGrid = ['Apple Music', 'YouTube Music', 'Spotify', 'Crunchyroll', 'Tubi', 'YouTube TV', 'Twitch', 'Hulu', 'HBO Max',
+    'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'Works with Alexa', 'TV', 'TCL TV+', 'Google TV Freeplay', 'Media Player',
+    'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition', 'BrowseHere'];
+  assert.deepStrictEqual(lists.grid.slice(0, wantGrid.length), wantGrid, 'All Apps follows the TV\'s order: ' + JSON.stringify(lists.grid));
+  assert.ok(lists.dock.length === 6 && lists.dock.indexOf('Spotify') < 0, 'a Dock of 6, without Spotify: ' + JSON.stringify(lists.dock));
   // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (its pills in a fixed order,
   // the volume under them); the pill opens the profile panel.
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.tab(2); });

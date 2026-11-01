@@ -68,13 +68,15 @@
   // MARK: - Apps on the shelf
 
   /** Shelf apps in this order when installed, like the Android app: key, LG app id, name on the TV, brand gradient. */
+  // The first DOCK_DEFAULT found make the built-in Dock: Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu.
   var SHELF = [
     ['netflix', /^netflix$/, /netflix/i, ['#141414', '#000000']],
-    ['youtube', /youtube/, /^youtube$/i, ['#202020', '#0B0B0B']],
     ['prime', /^amazon$/, /prime video|amazon/i, ['#1FA2FF', '#0A62C9']],
-    ['disney', /disney/, /disney/i, ['#1A3E9A', '#0A1854']],
-    ['max', /hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5B2EEA', '#1F1477']],
+    ['youtube', /youtube\.leanback|^com\.google\.android\.youtube\.tv$/, /^youtube$/i, ['#202020', '#0B0B0B']],
     ['appletv', /appletv|apple\.tv/, /apple tv/i, ['#2C2C2E', '#000000']],
+    ['disney', /disney/, /disney/i, ['#1A3E9A', '#0A1854']],
+    ['stbemu', /stb\.?emu/i, /^stb ?emu$/i, ['#84CC16', '#4D7C0F']],
+    ['max', /(^|\.)hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5B2EEA', '#1F1477']],   // (^|.)hbo: not com.tcl.dasHBOard
     ['hulu', /^hulu/, /hulu/i, ['#1CE783', '#0E9F57']],
     ['paramount', /paramount|cbs/, /paramount/i, ['#0064FF', '#002A86']],
     ['peacock', /peacock/, /peacock/i, ['#1C1C1E', '#000000']],
@@ -95,7 +97,7 @@
   // The Dock shows 5 at once (tvOS's 5:3 tiles, 300 × 180) and scrolls for the rest.
   // As in Apple's photo (DESIGN-TVOS.md §1): 6 columns of 244 × 146, 57 apart, 85 px margins; the Dock's glass pads them
   // 48 × 40 from y 782; the grid's rows are 250 apart, its first row peeking at y 1052 until ↓ lifts the page 722.
-  var SHELF_VISIBLE = 6, FEW_APPS = 8, TILE_W = 244, TILE_H = 146, TILE_GAP = 57, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
+  var SHELF_VISIBLE = 6, FEW_APPS = 8, DOCK_DEFAULT = 6, TILE_W = 244, TILE_H = 146, TILE_GAP = 57, DOCK_PAD_X = 48, DOCK_PAD_Y = 40, DOCK_TOP = 782;
   var COLS = 6, GRID_LIFT = 722, GRID_ROW = 250, GRID_TOP = 330, GRID_LEFT = 85;
   // The Top Shelf's full screen (↑ on a pick) recesses the Dock this far and to this opacity; it never hides it.
   var RECESS = 36, RECESS_A = 0.75;
@@ -359,7 +361,7 @@
       }
       if (!out.length) out = apps.slice(0, FEW_APPS);
     } else {
-      for (var s = 0; s < SHELF.length && out.length < FEW_APPS; s++) {
+      for (var s = 0; s < SHELF.length && out.length < DOCK_DEFAULT; s++) {
         for (var a = 0; a < apps.length; a++) {
           if ((SHELF[s][1].test(apps[a].id) || SHELF[s][2].test(apps[a].title)) && out.indexOf(apps[a]) < 0) { out.push(apps[a]); break; }
         }
@@ -367,7 +369,34 @@
       if (!out.length) out = apps.slice(0, FEW_APPS);
     }
     shelf = out;
-    others = folders(apps.filter(function (x) { return shelf.indexOf(x) < 0; }));
+    others = folders(gridOrder(apps.filter(function (x) { return shelf.indexOf(x) < 0; })));
+  }
+
+  /*
+   * All Apps' order after the Dock (as HomeApps.GRID_ORDER): by app id, else by the name the TV shows; the rest keep the
+   * TV's own order after them. An app here never goes in the utilities folder.
+   */
+  var GRID_ORDER = [
+    [/apple\.?music/i, /^apple music$/i], [/youtube\.?(tv)?music/i, /^youtube music$/i], [/spotify/i, /^spotify$/i],
+    [/crunchyroll/i, /^crunchyroll$/i], [/tubi/i, /^tubi$/i], [/youtube\.?(tv)?unplugged|youtubetv/i, /^youtube tv$/i],
+    [/twitch/i, /^twitch$/i], [/hulu/i, /^hulu$/i], [/(^|\.)hbo|wbd/i, /^(hbo )?max$/i], [/peacock/i, /^peacock/i],
+    [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i], [/alexa/i, /alexa/i],
+    [/^com\.tcl\.tv$/i, /^tv$/i], [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i], [/freeplay/i, /freeplay/i],
+    [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
+    [/quick.?panel/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
+    [/exhibit/i, /^t-?exhibition$/i], [/browse.?here|tcl\.browser/i, /^browse ?here$/i]
+  ];
+
+  function gridRank(app) {
+    for (var i = 0; i < GRID_ORDER.length; i++) if (GRID_ORDER[i][0].test(app.id || '') || GRID_ORDER[i][1].test(app.title || '')) return i;
+    return GRID_ORDER.length;
+  }
+
+  /** The listed apps first, in GRID_ORDER's order; the others after, in the order the TV gave them (a stable sort). */
+  function gridOrder(list) {
+    var ranked = list.map(function (x, i) { return {app: x, rank: gridRank(x), at: i}; });
+    ranked.sort(function (a, b) { return a.rank !== b.rank ? a.rank - b.rank : a.at - b.at; });
+    return ranked.map(function (r) { return r.app; });
   }
 
   // The TV's own utilities (its settings, store, browser, files, inputs…): together in one folder at the end of All Apps.
@@ -375,7 +404,7 @@
 
   /** All Apps' list with the utilities in a "TV & Utilities" folder (two or more of them; one stays an app). */
   function folders(list) {
-    var util = list.filter(function (x) { return !shelfKey(x) && (UTILITY.test(x.id) || UTILITY.test(x.title)); });
+    var util = list.filter(function (x) { return !shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title)); });
     if (util.length < 2) return list;
     var rest = list.filter(function (x) { return util.indexOf(x) < 0; });
     rest.push({id: 'folder:utilities', title: tr('TV & Utilities'), folder: true, apps: util});
@@ -1569,9 +1598,12 @@
     var t = [];
     if (PREVIEW) {
       t.push({label: tr('Power'), symbol: 'power', run: googleOnly});
-      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
-      t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return tr('Connected'); }});
-      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, detail: function () { return onOff(false); }});
+      // preview_wifi / preview_bluetooth (config.properties) stand in for what the TV reports, as Android shows it.
+      var bt = CONFIG.previewBluetooth || [], wifi = CONFIG.previewWifi;
+      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return bt[0] || tr('TV Speakers'); }});
+      t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return wifi || tr('Connected'); }});
+      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, active: function () { return bt.length > 0; },
+        detail: function () { return bt[0] || onOff(false); }});
     }
     t.push({label: tr('Dark Mode'), symbol: 'appearance', run: toggleDark, active: darkOn, detail: function () { return onOff(darkOn()); }});
     if (PREVIEW) {
@@ -3603,6 +3635,8 @@
     inputs: function () { if (ccMode !== 'profile' || st.zone !== Z.DRAWER) openDrawer('profile'); openInputsSheet(); },
     home: goHome, toggleSaver: toggleSaver,
     // All Apps' folder open (the screenshots), and the brightness ([ and ]) for the tests.
+    // The Dock's and All Apps' titles in order (folders as their names), for the tests.
+    apps: function () { return {dock: shelf.map(function (a) { return a.title; }), grid: others.map(function (a) { return a.title; })}; },
     folder: function () {
       for (var i = 0; i < others.length; i++) if (others[i].folder) { openApps(i); openFolder(others[i], fxCells[i]); return true; }
       return false;
