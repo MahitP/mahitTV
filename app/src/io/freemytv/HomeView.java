@@ -267,7 +267,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         TILE_STYLE.put("hulu", new int[] {0xFF1CE783, 0xFF0E9F57, 2});
         TILE_STYLE.put("paramount", new int[] {0xFF0064FF, 0xFF00287F, 1});
         TILE_STYLE.put("peacock", new int[] {0xFF1C1C1E, 0xFF000000, 0});
-        TILE_STYLE.put("applemusic", new int[] {0xFFFA586A, 0xFFFA233B, 1});
+        TILE_STYLE.put("applemusic", new int[] {0xFF3A3A3C, 0xFF000000, 1});   // tvOS 27.2: a white note on black glass
     }
     private final android.graphics.PorterDuffColorFilter whiteLogo =
             new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN);
@@ -459,7 +459,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF pillNow = new RectF();
     /** Control Center's rows come in 25 ms apart from this time. */
     private long drawerOpenedAt;
-    private static final long CC_ROW_MS = 25, CC_ROW_IN_MS = 260;
+    private static final long CC_ROW_MS = 18, CC_ROW_IN_MS = 240;
     /** The grid's lift over the last frames (rows lag 18 ms each behind the one above). */
     private final long[] liftAt = new long[32];
     private final float[] liftValue = new float[32];
@@ -720,6 +720,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        // Text Size changed in Settings (another process): every text again at the new size, as after a resize.
+        float scale = Prefs.textScale();
+        if (scale != Ui.textScale) {
+            Ui.textScale = scale;
+            if (w > 0) onSizeChanged(w, h, w, h);
+        }
         Scene.frosted = "frosted".equals(Prefs.glass());
         applyBrightness();
         // Animations off in the TV's settings (animator duration scale 0): every spring jumps, nothing sways.
@@ -1153,7 +1159,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 | volumeFocus.step(dt)
                 | weatherFocus.step(dt) | volumeLevel.step(dt) | brightLevel.step(dt) | ccScroll.step(dt);
         boolean scrollMoving = scroll.step(dt);
-        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen) | folderShown.step(dt) | step(folderFocus, dt);
+        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen) | folderShown.step(dt) | step(folderFocus, dt) | folderScroll.step(dt);
         boolean drawerMoving = drawer.step(dt);
         boolean sheetMoving = sheet.step(dt);
         if (sheetMoving) {
@@ -2952,10 +2958,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void showAppearance() {
         for (HomeApps.Item it : drawerItems) {
             if (it.kind == HomeApps.APPEARANCE) it.detail = nightTarget ? Ui.tr("state|On") : Ui.tr("state|Off");
-            else if (it.kind == HomeApps.SLEEP) it.detail = sleepOn ? Ui.tr("state|On") : Ui.tr("state|Off");
+            else if (it.kind == HomeApps.SLEEP) {
+                int left = sleepOn ? SleepTimer.minutesLeft(getContext()) : 0;
+                it.detail = left > 0 ? SleepTimer.duration(left) : Ui.tr("state|Off");
+            }
             else if (it.kind == HomeApps.BRIGHTNESS) it.detail = PERCENT[Prefs.brightness()];
         }
     }
+
+    private static final int[] SLEEP_PRESETS = {15, 30, 60, 120};
+
+    /** When Do Not Disturb was pressed (uptime): its moon swings in from −40° over DND_POP_MS once it's on. */
+    private long dndAt;
+    private static final long DND_POP_MS = 700;
+    /** The panel drawn every frame while the moon moves (it's a cached picture otherwise). */
+    private final Runnable dndFrames = new Runnable() {
+        @Override public void run() {
+            drawerDirty = true;
+            wake();
+            if (SystemClock.uptimeMillis() - dndAt < DND_POP_MS + 100) handler.postDelayed(this, 16);
+        }
+    };
 
     /** OK on Dark Mode: this profile's theme, Light or Dark (Home Settings still offers Automatic); the screen fades over. */
     private void toggleDark() {
@@ -3076,7 +3099,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (drawerItems.isEmpty()) return;
         drawerFrom = zone == Z_TOP ? Z_TOP : zone == Z_STATUS ? Z_STATUS : Z_SHELF;
         drawerOpen = true;
-        drawer.tune(Spring.SHEET_OPEN);   // appearing is a little slower than disappearing
+        drawer.tune(Spring.CC_OPEN);   // tvOS 27's quicker Control Center (still a little slower than leaving)
         drawer.target = 1;
         drawerOpenedAt = SystemClock.uptimeMillis();
         motionDirty = true;
@@ -3509,7 +3532,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         fill.setShader(null);
         fill.setColor(lit ? (it.kind == HomeApps.DND ? 0xFF5E5CE6 : 0xFF0A84FF) : blend(tone(0x14000000, 0x24FFFFFF), 0x14000000, f));
         c.drawCircle(px, cy, plate / 2, fill);
-        Symbols.draw(getContext(), c, it.symbol, px, cy, CC_SYMBOL * k, lit ? 0xFFFFFFFF : ink);
+        long pop = SystemClock.uptimeMillis() - dndAt;
+        if (it.kind == HomeApps.DND && lit && pop < DND_POP_MS && !Spring.instant) {
+            // An overshooting ease (cubic-bezier 0.34, 1.56, 0.64, 1, as the web's moonin): rotated in and grown to size.
+            float t = pop / (float) DND_POP_MS, e = 1 + 2.70158f * (float) Math.pow(t - 1, 3) + 1.70158f * (float) Math.pow(t - 1, 2);
+            c.save();
+            c.rotate(-40 * (1 - e), px, cy);
+            float sc = 0.55f + 0.45f * e;
+            c.scale(sc, sc, px, cy);
+            Symbols.draw(getContext(), c, it.symbol, px, cy, CC_SYMBOL * k, 0xFFFFFFFF);
+            c.restore();
+        } else {
+            Symbols.draw(getContext(), c, it.symbol, px, cy, CC_SYMBOL * k, lit ? 0xFFFFFFFF : ink);
+        }
         float tx = base.left + CC_TEXT_X * k;
         ccLabel.setColor(ink);
         boolean detail = i < drawerDetails.length && drawerDetails[i] != null;
@@ -3861,7 +3896,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the grid
 
-    private static final int FOLDER_COLUMNS = 4;
+    // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the apps slide; the card stays put).
+    private static final int FOLDER_COLUMNS = 3, FOLDER_ROWS = 3;
+    private final Spring folderScroll = new Spring(Spring.SPATIAL_SCROLL, 0).px();
+    private int folderTop;
     private static final float FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_RADIUS = 40;
     private HomeApps.Item folderOpen;
     private int folderIndex;
@@ -3923,7 +3961,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void openFolder(HomeApps.Item folder, RectF from) {
         folderOpen = folder;
         folderIndex = 0;
-        int n = folder.children.size(), cols = Math.min(FOLDER_COLUMNS, n), rows = (n + FOLDER_COLUMNS - 1) / FOLDER_COLUMNS;
+        int n = folder.children.size(), cols = Math.min(FOLDER_COLUMNS, n), rows = Math.min(FOLDER_ROWS, (n + FOLDER_COLUMNS - 1) / FOLDER_COLUMNS);
+        folderTop = 0;
+        folderScroll.snap(0);
         float cw = (2 * FOLDER_PAD + cols * GRID_W + (cols - 1) * FOLDER_GAP) * k, ch = (156 + rows * (GRID_H + 70) + 24) * k;
         folderCard.set((w - cw) / 2, (h - ch) / 2, (w + cw) / 2, (h + ch) / 2);
         snap(folderCard);
@@ -3964,13 +4004,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         folderIndex = next;
+        int row = next / FOLDER_COLUMNS;
+        if (row < folderTop) folderTop = row;
+        if (row > folderTop + FOLDER_ROWS - 1) folderTop = row - FOLDER_ROWS + 1;
+        folderScroll.target = folderTop * (GRID_H + 70) * k;
         for (int i = 0; i < folderFocus.length; i++) folderFocus[i].target = i == folderIndex ? 1 : 0;
         gridDirty = true;
         click.move();
         spoken.focusMoved();
     }
 
-    /** The open folder: the grid dims, the card springs from the folder's tile, the white badge, its apps 4 across. */
+    /** The open folder: the grid dims, the card springs from the folder's tile, the white badge, its apps 3 across (9 in view, then they scroll). */
     private void drawFolder(Canvas c) {
         float e = Ui.clamp(folderShown.value);
         fill.setShader(null);
@@ -3990,6 +4034,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccLabel.setColor(Ui.alpha(INK, e));
         c.drawText(folderOpen != null ? folderOpen.label : "", folderBadge.left + 30 * k, folderBadge.centerY() + Ui.halfCap(ccLabel), ccLabel);
         if (folderOpen != null) {
+            // The apps in their window (the rows in view, with room for a focused tile's lift and name), scrolled.
+            c.save();
+            c.clipRect(folderCard.left, folderCard.top + 92 * k, folderCard.right, folderCard.bottom);
+            c.translate(0, -folderScroll.value);
             int top = folderIndex;
             for (int i = 0; i < folderCells.length; i++) if (i != top) drawAppTile(c, folderOpen.children.get(i), folderCells[i], folderFocus[i].value, 0, 0);
             if (top < folderCells.length) {
@@ -4000,6 +4048,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 float bottom = r.bottom + r.height() * TV_FOCUS_HALF * fc - TV_FOCUS_LIFT * k * fc;
                 c.drawText(folderLabels[top], r.centerX(), bottom + 22 * k + nameCap, gridLabel);
             }
+            c.restore();
         }
         c.restore();
     }
@@ -4740,6 +4789,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             cycleBrightness();
             return;
         }
+        if (it.kind == HomeApps.SLEEP && zone == Z_DRAWER) {
+            // tvOS 17's presets in place: Off → 15 min → 30 min → 1 h → 2 h → Off (Settings keeps the long list).
+            int left = SleepTimer.minutesLeft(getContext()), next = 0;
+            for (int m : SLEEP_PRESETS) if (m > left + 1) { next = m; break; }
+            SleepTimer.set(getContext(), next);
+            sleepOn = next > 0;
+            showAppearance();
+            layoutDetails();
+            updateSleep();
+            drawerDirty = true;
+            wake();
+            return;
+        }
         if (it.kind == HomeApps.VOLUME) return;   // ← → change it
         if (it.kind == HomeApps.POWER) {
             // The screen off now, through mahitTV's own ADB (a fixed key command in HomeMode).
@@ -4750,6 +4812,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (it.kind == HomeApps.DND) {
+            dndAt = SystemClock.uptimeMillis();   // its moon swings in if it comes on (drawDrawerTile)
+            handler.removeCallbacks(dndFrames);
+            handler.post(dndFrames);
             // Do Not Disturb on or off; its access is allowed once through mahitTV's ADB (Original takes it back).
             final Context ctx = getContext().getApplicationContext();
             LOADER.execute(() -> {

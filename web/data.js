@@ -54,8 +54,10 @@ var Prefs = (function () {
     weather: function () { return pick('weather', true); },
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it (off by default). */
     saverWatch: function () { return pick('saverWatch', false) === true; },
-    /** The screensaver, for the whole TV: 'photos' (the picks, the default), 'nature', 'aurora', 'aerials' or 'black'. */
-    saverStyle: function () { var s = pick('saverStyle', 'photos'); return /^(nature|aurora|aerials|black)$/.test(s) ? s : 'photos'; },
+    /** Text Size (tvOS 27's, for the whole TV): 'small' (90 %), 'default' or 'large' (115 %). */
+    textSize: function () { var s = pick('textSize', 'default'); return /^(small|large)$/.test(s) ? s : 'default'; },
+    /** The screensaver, for the whole TV: 'photos' (the picks, the default), 'shuffle', 'nature', 'aurora', 'aerials' or 'black'. */
+    saverStyle: function () { var s = pick('saverStyle', 'photos'); return /^(shuffle|nature|aurora|aerials|black)$/.test(s) ? s : 'photos'; },
     /** Nature Clock's scene: 'shuffle' (a new one every minute) or one of saver.js's SCENES ids. */
     saverScene: function () { var s = pick('saverScene', 'shuffle'); return /^(night|golden|water|fog|dawn)$/.test(s) ? s : 'shuffle'; },
     /** Nature Clock's digits: 'tall' (Antonio, Tall Glass) or 'rounded' (Varela Round). */

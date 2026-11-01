@@ -1527,7 +1527,7 @@ public class SettingsActivity extends Activity {
                 R_HOME = 60, R_SCREENSAVER = 61, R_TOP_BUTTONS = 62, R_REMOTE = 63, R_SLEEP = 64, R_TV_SETTINGS = 65,
                 R_LANGUAGE = 66, R_SYSTEM_APPS = 67, R_APP_COUNT = 68, R_SAVER_STYLE = 69, R_CLEAN = 72,
                 R_SAVER_SCENE = 73, R_SAVER_CLOCK = 74, R_PHOTOS_REMOVE = 75,
-                R_GLASS = 17, R_SETTINGS_STYLE = 18, R_SHELF_MODE = 30, R_SETUP = 76,
+                R_GLASS = 17, R_SETTINGS_STYLE = 18, R_TEXT_SIZE = 19, R_SHELF_MODE = 30, R_SETUP = 76,
                 R_RESET = 70, R_RESTORE = 71,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
@@ -1628,7 +1628,7 @@ public class SettingsActivity extends Activity {
                 }
                 case S_APPEARANCE:
                     group(G_LOOK);
-                    add(R_THEME, R_WALLPAPER, R_GLASS, R_SETTINGS_STYLE, R_PHOTOS);
+                    add(R_THEME, R_TEXT_SIZE, R_WALLPAPER, R_GLASS, R_SETTINGS_STYLE, R_PHOTOS);
                     if (!Photos.files(c).isEmpty()) add(R_PHOTOS_REMOVE);
                     group(G_SAVER);
                     add(R_SAVER_STYLE);
@@ -1823,6 +1823,7 @@ public class SettingsActivity extends Activity {
                 case R_CHANGE_PIN: return Ui.tr("Change PIN");
                 case R_DOCK: return Ui.tr("Dock");
                 case R_THEME: return Ui.tr("Theme");
+                case R_TEXT_SIZE: return Ui.tr("Text Size");
                 case R_WALLPAPER: return Ui.tr("Wallpaper");
                 case R_GLASS: return Ui.tr("Glass");
                 case R_SETTINGS_STYLE: return Ui.tr("Settings Style");
@@ -1891,6 +1892,7 @@ public class SettingsActivity extends Activity {
                     String theme = Prefs.theme();
                     return theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
                 }
+                case R_TEXT_SIZE: return textSizeName(Prefs.textSize());
                 case R_GLASS: return glassName(Prefs.glass());
                 case R_SETTINGS_STYLE: return styleName(Prefs.settingsStyle());
                 case R_SHELF_MODE: return shelfModeName(Prefs.topShelf());
@@ -1994,7 +1996,7 @@ public class SettingsActivity extends Activity {
         private static boolean isEnum(int id) {
             switch (id) {
                 case R_THEME: case R_TEMPERATURE: case R_FORECAST: case R_SAVER_STYLE: case R_SAVER_SCENE: case R_SAVER_CLOCK:
-                case R_GLASS: case R_SETTINGS_STYLE: case R_SHELF_MODE:
+                case R_GLASS: case R_SETTINGS_STYLE: case R_SHELF_MODE: case R_TEXT_SIZE:
                     return true;
                 default:
                     return false;
@@ -2022,12 +2024,18 @@ public class SettingsActivity extends Activity {
             }
         }
 
-        private static final String[] SAVER_STYLES = {"photos", "nature", "aurora", "aerials", "black"},
+        private static final String[] SAVER_STYLES = {"shuffle", "photos", "nature", "aurora", "aerials", "black"},
                 SAVER_SCENES = {"rotate", "night", "golden", "water", "fog", "dawn"}, SAVER_CLOCKS = {"tall", "rounded"};
+
+        /** Text Size's choices, as the list names them. */
+        private static String textSizeName(String v) {
+            return v.equals("small") ? Ui.tr("size|Small") : v.equals("large") ? Ui.tr("size|Large") : Ui.tr("size|Default");
+        }
 
         /** The screensaver's looks (Prefs.saverStyle), as the list names them. */
         private static String saverName(String v) {
             switch (v) {
+                case "shuffle": return Ui.tr("saver|Shuffle");
                 case "nature": return Ui.tr("Nature Clock");
                 case "aurora": return Ui.tr("Aurora");
                 case "aerials": return Ui.tr("Apple Aerials");
@@ -2057,6 +2065,9 @@ public class SettingsActivity extends Activity {
         private List<String[]> enumChoices(int id) {
             List<String[]> l = new ArrayList<>();
             switch (id) {
+                case R_TEXT_SIZE:
+                    for (String v : new String[] {"small", "default", "large"}) l.add(new String[] {v, textSizeName(v)});
+                    break;
                 case R_THEME:
                     l.add(new String[] {"auto", Ui.tr("Automatic")});
                     l.add(new String[] {"light", Ui.tr("Light")});
@@ -2099,6 +2110,7 @@ public class SettingsActivity extends Activity {
         private static String enumNow(int id) {
             switch (id) {
                 case R_THEME: return Prefs.theme();
+                case R_TEXT_SIZE: return Prefs.textSize();
                 case R_TEMPERATURE: return Prefs.temperature();
                 case R_FORECAST: return Prefs.forecast();
                 case R_SAVER_STYLE: return Prefs.saverStyle();
@@ -2127,6 +2139,10 @@ public class SettingsActivity extends Activity {
                 return;
             }
             switch (id) {
+                case R_TEXT_SIZE:
+                    Prefs.setTextSize(v);
+                    onSizeChanged(w, h, w, h);   // this screen's text at the new size at once; the home screen on return
+                    break;
                 case R_THEME:
                     Prefs.setTheme(v);
                     SleepOverlay.update(c);   // the pill's glass follows

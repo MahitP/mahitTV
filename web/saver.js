@@ -1,10 +1,13 @@
 /*
  * The screensaver (the approved plan, Step 2D): Photos (the picks, the default), Nature Clock (the depth-layered scenes),
- * Aurora, Apple Aerials and Black, chosen in Settings → Appearance & Startup → Screensaver. home.js decides when it
+ * Aurora, Apple Aerials and Black, chosen in Settings → Appearance & Startup → Screensaver, or Shuffle (tvOS 27.2): one of
+ * Aerials, Nature Clock, Photos and Aurora, a different one every 20 minutes through the day. home.js decides when it
  * shows (idle, Control Center, the S key) and what a key does to it; this file only draws it.
  *
  *   Saver.show(node, {photos, pick(p), watch}): starts the chosen mode in `node` (#saver)
  *   Saver.hide(node): stops it; once faded, lets go of its images and canvases
+ *   Saver.key('left' | 'right' | 'down'): as tvOS 12's Aerials: ← → the previous or next place, ↓ its name in the
+ *     bottom-left corner for 4 s. True when the mode used the key (Aerials and Nature Clock); else it wakes the TV.
  *
  * The nature scenes are adapted from tvOS-Launcher (Apache-2.0), Scenes.java: the photo, then a giant clock filled with
  * the scene's own blurred glass texture (a soft shadow under it, a light rim on it), then the foreground cutout over the
@@ -15,7 +18,9 @@
 var Saver = (function () {
   'use strict';
 
-  var on = false, timer = 0, natureTimer = 0, cleanup = 0;
+  var on = false, timer = 0, natureTimer = 0, cleanup = 0, shuffleTimer = 0, captionTimer = 0;
+  // What the showing mode answers to Saver.key: the place on screen now, and a skip to the previous (−1) or next (+1).
+  var place = null, skip = null, captionNode = null;
 
   function el(tag, cls, parent, text) {
     var e = document.createElement(tag);
@@ -120,6 +125,8 @@ var Saver = (function () {
   }
 
   var AERIALS = ['aerials/coast.jpg', 'aerials/valley.jpg', 'aerials/earth.jpg', 'aerials/aurora.jpg'];
+  // Where each still was filmed (wallpaper.js's titles), for the caption: place names, as Apple shows them.
+  var AERIAL_PLACES = ['Iceland Coast', 'Yosemite Valley', 'New York from Above', 'North America Aurora'];
 
   /** Apple Aerials: the four aerial stills, 30 s each, a slow Ken Burns and a 3 s cross-fade. */
   function aerials(node) {
@@ -127,9 +134,12 @@ var Saver = (function () {
     setClass(node, 'aerials-on', true);
     el('div', 'shade', node);
     var clock = domClock(node);
+    var shown = 0;
     function next() {
       if (!on) return;
+      clearTimeout(timer);
       var back = front === a ? b : a;
+      shown = index % AERIALS.length;
       back.style.backgroundImage = 'url(' + AERIALS[index++ % AERIALS.length] + ')';
       T(back, 'none');
       setTimeout(function () {
@@ -142,6 +152,8 @@ var Saver = (function () {
       timer = setTimeout(next, 30000);
     }
     next();
+    place = function () { return AERIAL_PLACES[shown]; };
+    skip = function (dir) { index = (shown + dir + AERIALS.length) % AERIALS.length; next(); };
     (function minute() {
       if (!on) return;
       tickClock(clock);
@@ -327,11 +339,13 @@ var Saver = (function () {
     // One chosen scene, or Shuffle: a new scene every minute (a 2.4 s cross-fade) from a random start.
     var chosen = Prefs.saverScene(), fixed = -1, startAt = Math.floor(Math.random() * SCENES.length);
     for (var i = 0; i < SCENES.length; i++) if (SCENES[i].id === chosen) fixed = i;
-    var shown = -1, drawnAt = '';
+    var shown = -1, drawnAt = '', offset = 0;
     function frame() {
       if (!on) return;
+      clearTimeout(natureTimer);
       var minute = formatDate('format|h:mm', Date.now());
-      var want = fixed >= 0 ? fixed : (startAt + Math.floor(Date.now() / 60000)) % SCENES.length;
+      var base = fixed >= 0 ? fixed : startAt + Math.floor(Date.now() / 60000);
+      var want = ((base + offset) % SCENES.length + SCENES.length) % SCENES.length;
       if (want !== shown) {
         var sc = SCENES[want], next = shown < 0 ? front : front === a ? b : a;
         shown = want;
@@ -352,6 +366,8 @@ var Saver = (function () {
       natureTimer = setTimeout(frame, 1000);
     }
     frame();
+    place = function () { return shown < 0 ? '' : sceneName(SCENES[shown].id); };
+    skip = function (dir) { offset += dir; frame(); };
     // The clock's font may arrive after the first frame: draw again once it's in. Old TVs have no document.fonts and
     // load a web font only for text on the page: a hidden line in it asks for it, then the clock is drawn again.
     function redraw() { if (on && front.sc) drawScene(front, front.sc, front.im); }
@@ -366,18 +382,62 @@ var Saver = (function () {
     }
   }
 
+  /** A scene's name, as the Scene list in Settings has it. */
+  function sceneName(id) {
+    return id === 'night' ? tr('saver|Night') : id === 'golden' ? tr('Golden Hour') : id === 'water' ? tr('Waterline')
+      : id === 'fog' ? tr('Fog') : tr('Rainforest Dawn');
+  }
+
+  // MARK: - The place's name (tvOS 12): bottom left, 32 px above the safe area, gone after 4 s
+
+  function caption() {
+    var text = place && place();
+    if (!on || !text || !captionNode) return;
+    captionNode.textContent = text;
+    setClass(captionNode, 'on', true);
+    clearTimeout(captionTimer);
+    captionTimer = setTimeout(function () { if (captionNode) setClass(captionNode, 'on', false); }, 4000);
+  }
+
+  function key(which) {
+    if (!on || !place) return false;
+    if ((which === 'left' || which === 'right') && skip) skip(which === 'left' ? -1 : 1);
+    else if (which !== 'down') return false;
+    caption();
+    return true;
+  }
+
   // MARK: - Showing and hiding
+
+  // Shuffle's rotation, as tvOS 27.2's: Aerials, Portraits (our Nature Clock), Memories (the photos) and the Aurora.
+  var SHUFFLE = ['aerials', 'nature', 'photos', 'aurora'], SHUFFLE_MS = 20 * 60000;
+
+  /** The look to show: the chosen one, or Shuffle's for this part of the day. */
+  function styleNow() {
+    var style = Prefs.saverStyle();
+    if (style !== 'shuffle') return style;
+    var list = [];
+    for (var i = 0; i < SHUFFLE.length; i++) if (SHUFFLE[i] !== 'nature' || !lite()) list.push(SHUFFLE[i]);
+    return list[Math.floor(Date.now() / SHUFFLE_MS) % list.length];
+  }
 
   function show(node, o) {
     o = o || {};
     clearTimeout(cleanup);
     clearTimeout(timer);
     clearTimeout(natureTimer);
+    clearTimeout(shuffleTimer);
+    clearTimeout(captionTimer);
     on = true;
+    place = skip = null;
     node.innerHTML = '';
     node.className = node.className.replace(/\s*(bare|black|aurora-on|aerials-on)\b/g, '');
     node.style.webkitTransition = node.style.transition = '';
-    var style = Prefs.saverStyle();
+    var style = styleNow();
+    // Shuffle: when this part of the day ends, the next look takes over.
+    if (Prefs.saverStyle() === 'shuffle') {
+      shuffleTimer = setTimeout(function () { if (on) show(node, o); }, SHUFFLE_MS - Date.now() % SHUFFLE_MS + 500);
+    }
     // Tizen 2.4 (lite) can't hold the scenes' full-screen canvases: it keeps the Photos screensaver.
     if (style === 'nature' && lite()) style = 'photos';
     if (style === 'nature') nature(node);
@@ -385,13 +445,17 @@ var Saver = (function () {
     else if (style === 'aerials') aerials(node);
     else if (style === 'black') black(node);
     else photos(node, o);
+    captionNode = el('div', 'place', node);
     setClass(node, 'on', true);
   }
 
   function hide(node) {
     on = false;
+    place = skip = captionNode = null;
     clearTimeout(timer);
     clearTimeout(natureTimer);
+    clearTimeout(shuffleTimer);
+    clearTimeout(captionTimer);
     setClass(node, 'on', false);
     // Once it has faded, the screensaver lets go of its photos, scenes and canvases (old TVs have little memory).
     cleanup = setTimeout(function () {
@@ -405,5 +469,5 @@ var Saver = (function () {
     }, 1400);
   }
 
-  return {show: show, hide: hide, showing: function () { return on; }, SCENES: SCENES};
+  return {show: show, hide: hide, key: key, showing: function () { return on; }, SCENES: SCENES};
 })();

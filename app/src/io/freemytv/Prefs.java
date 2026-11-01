@@ -72,6 +72,7 @@ final class Prefs {
         app = c.getApplicationContext();
         migrateKeys();   // before anything reads the button choices
         Ui.applyLanguage();   // the language picked on the TV, now that it can be read
+        Ui.textScale = textScale();
     }
 
     /** The TV's own 12/24-hour setting (Settings → System → Date & time). */
@@ -98,6 +99,7 @@ final class Prefs {
         app.getSharedPreferences("settings", Context.MODE_MULTI_PROCESS);
         version++;
         if (!language().equals(before)) Ui.applyLanguage();
+        Ui.textScale = textScale();
     }
 
     private static void put(String key, String value) {
@@ -175,6 +177,23 @@ final class Prefs {
 
     static void setTheme(String v) { putOwn("theme", v); }
 
+    /** Text Size (tvOS 27's, for the whole TV): "small", "default" or "large". */
+    static String textSize() {
+        String v = sp().getString("textSize", "default");
+        return v.equals("small") || v.equals("large") ? v : "default";
+    }
+
+    static void setTextSize(String v) {
+        put("textSize", v);
+        Ui.textScale = textScale();
+    }
+
+    /** What Text Size scales text by: 90 %, 100 % or 115 %. */
+    static float textScale() {
+        String v = textSize();
+        return v.equals("small") ? 0.9f : v.equals("large") ? 1.15f : 1f;
+    }
+
     // MARK: - City
 
     static String city() { return sp().getString("city", Place.city()).trim(); }
@@ -194,7 +213,8 @@ final class Prefs {
     static boolean saverWatch() { return sp().getBoolean("saverWatch", false); }
     static void setSaverWatch(boolean on) { put("saverWatch", on); }
     /**
-     * The screensaver's look: "photos" (the picks or your photos, the default), "nature" (the depth-layered clock),
+     * The screensaver's look: "photos" (the picks or your photos, the default), "shuffle" (tvOS 27.2: Aerials, Nature
+     * Clock, the photos and the Aurora in turn through the day), "nature" (the depth-layered clock),
      * "aurora" (the Aurora sky and a clock), "aerials" (the coast, valley, earth and aurora stills) or "black" (a dim
      * clock on black).
      */

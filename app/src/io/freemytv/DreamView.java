@@ -69,6 +69,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     /** The Aurora's pace and shade on the screensaver (slower and a little darker than the home screen's). */
     private static final float AURORA_SPEED = 0.45f, AURORA_DIM = 0.08f;
     private static final String[] AERIALS_FILES = {"coast", "valley", "earth", "aurora"};
+    /** Where each still was filmed (Wallpaper's titles), for the caption: place names, as Apple shows them. */
+    private static final String[] AERIAL_PLACES = {"Iceland Coast", "Yosemite Valley", "New York from Above", "North America Aurora"};
+    /** Shuffle (tvOS 27.2): Aerials, Portraits (our Nature Clock), Memories (the photos) and the Aurora, 20 minutes each. */
+    private static final long SHUFFLE_MS = 20 * 60_000L;
+    private long shuffleSlot = -1;
+    /** The place's name (tvOS 12): bottom left for 4 s after ↓, ← or →; when it was asked for (uptime), 0 for never. */
+    private long placeAt;
+    private Paint placePaint;
     // The high and low and the stale prices line, made again only when they change (drawn on every frame).
     private String range = "", staleLine = "", staleFor = "";
     private HomeData.Weather rangeWeather;
@@ -181,6 +189,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!running) return;
+            if (shuffleSlot >= 0 && System.currentTimeMillis() / SHUFFLE_MS != shuffleSlot) {
+                // Shuffle: this part of the day is over, the next look takes over (start() posts the next tick).
+                stop();
+                start();
+                return;
+            }
             playing.start();   // the listener allowed after the screensaver started (a no-op once watching)
             data.refreshIfStale();
             recs.refreshIfStale();
@@ -229,7 +243,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         failed.clear();
-        mode = mode(Prefs.saverStyle());
+        String style = Prefs.saverStyle();
+        shuffleSlot = "shuffle".equals(style) ? System.currentTimeMillis() / SHUFFLE_MS : -1;
+        mode = shuffleSlot >= 0 ? shuffleMode(shuffleSlot) : mode(style);
+        placeAt = 0;
+        handler.removeCallbacks(tick);
+        Choreographer.getInstance().removeFrameCallback(this);
         natureFixed = Nature.index(Prefs.saverScene());
         natureRounded = "rounded".equals(Prefs.saverClock());
         night = Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis()));
@@ -353,6 +372,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     }
 
     // MARK: - Photos
+
+    /** Shuffle's look for this part of the day. */
+    private static int shuffleMode(long slot) {
+        int[] looks = {AERIALS, NATURE, PHOTOS, AURORA};
+        return looks[(int) (slot % looks.length)];
+    }
 
     private static int mode(String style) {
         switch (style) {
@@ -556,9 +581,76 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         // The black screen's clock moves under a pixel a second: 5 frames a second are plenty.
         if (frameTimeNanos - lastFrame >= (mode == BLACK ? 200_000_000L : 45_000_000L)) {
             lastFrame = frameTimeNanos;
-            if (mode != NATURE || natureWants()) invalidate();
+            if (mode != NATURE || natureWants() || placeShown()) invalidate();
         }
         Choreographer.getInstance().postFrameCallback(this);
+    }
+
+    // MARK: - The place's name (tvOS 12's Aerials): ← → the previous or next place, ↓ only its name
+
+    /** A key from the screensaver: true when this look used it (Aerials and Nature Clock); else it wakes the TV. */
+    boolean key(int code) {
+        if (!running || (mode != NATURE && mode != AERIALS)) return false;
+        boolean left = code == android.view.KeyEvent.KEYCODE_DPAD_LEFT, right = code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+        if (!left && !right && code != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
+        if (left || right) skip(left ? -1 : 1);
+        placeAt = clock();
+        invalidate();
+        return true;
+    }
+
+    /** The previous or next scene now; Aerials go on to the next still (the one already prepared). */
+    private void skip(int dir) {
+        int n = Nature.SCENES.length;
+        if (mode == NATURE) {
+            if (natureFixed >= 0) natureFixed = ((natureFixed + dir) % n + n) % n;
+            else natureScene = natureScene < 0 ? -1 : ((natureScene + dir - 1) % n + n) % n;
+            if (natureFixed >= 0) natureScene = -1;
+            natureSceneAt = 0;
+            natureStale = true;
+        } else if (current != null && incoming == null) {
+            current.startedAt = clock() - SHOW_MS;
+        }
+    }
+
+    private boolean placeShown() {
+        return placeAt != 0 && clock() - placeAt < PLACE_MS + 600;
+    }
+
+    private static final long PLACE_MS = 4_000;
+
+    /** The place on screen: the scene's name, or where the still was filmed. */
+    private String placeName() {
+        if (mode == NATURE && natureScene >= 0) return sceneName(Nature.SCENES[natureScene].id);
+        if (mode == AERIALS && current != null && current.pick != null && current.pick.id >= 0 && current.pick.id < AERIAL_PLACES.length) {
+            return AERIAL_PLACES[(int) current.pick.id];
+        }
+        return null;
+    }
+
+    private static String sceneName(String id) {
+        switch (id) {
+            case "night": return Ui.tr("saver|Night");
+            case "golden": return Ui.tr("Golden Hour");
+            case "water": return Ui.tr("Waterline");
+            case "fog": return Ui.tr("Fog");
+            default: return Ui.tr("Rainforest Dawn");
+        }
+    }
+
+    /** Bottom left, 32 px above the 60 px safe area: in over 0.4 s, 4 s on screen, out over 0.6 s. */
+    private void drawPlace(Canvas c) {
+        if (!placeShown()) return;
+        String name = placeName();
+        if (name == null) return;
+        long t = clock() - placeAt;
+        float a = t < 400 ? t / 400f : t < PLACE_MS ? 1 : Math.max(0, 1 - (t - PLACE_MS) / 600f);
+        if (placePaint == null || placePaint.getTextSize() != 30 * k * Ui.textScale) {
+            placePaint = Ui.text(Ui.semibold, 30 * k, 0xFFFFFFFF);
+            placePaint.setShadowLayer(14 * k, 0, 2 * k, 0x73000000);
+        }
+        placePaint.setAlpha(Math.round(255 * a));
+        c.drawText(name, 80 * k, h - 92 * k, placePaint);
     }
 
     /** The nature clock is a still picture between fades: a frame only for a fade, a new minute, new data or scene. */
@@ -576,6 +668,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     @Override protected void onDraw(Canvas canvas) {
         if (w == 0) return;
+        drawFrame(canvas);
+        drawPlace(canvas);
+    }
+
+    private void drawFrame(Canvas canvas) {
         long up = clock();
         long now = System.currentTimeMillis();
         if (now / 60_000 != minute) {

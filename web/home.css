@@ -586,6 +586,10 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .cctile .dot, .inrow .dot { position: absolute; left: 11px; top: 11px; width: 50px; height: 50px; border-radius: 25px; background: rgba(120, 120, 128, 0.16); }
 .cctile .dot .sym, .inrow .dot .sym { position: absolute; left: 12px; top: 12px; width: 26px; height: 26px; }
 .cctile.on .dot { background: #007AFF; color: #FFF; }
+/* Do Not Disturb turned on: the moon swings in from −40° and grows to size (transform only). */
+.cctile .dot.pop .sym { -webkit-animation: moonin 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); animation: moonin 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@-webkit-keyframes moonin { 0% { -webkit-transform: rotate(-40deg) scale(0.55); } 100% { -webkit-transform: none; } }
+@keyframes moonin { 0% { transform: rotate(-40deg) scale(0.55); } 100% { transform: none; } }
 .cctile.wide { width: 504px; }
 .cctile .label { position: absolute; left: 74px; right: 14px; top: 11px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cctile .detail { position: absolute; left: 74px; right: 14px; top: 37px; font-size: 19px; font-weight: 500; opacity: 0.62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -771,6 +775,9 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 /* The nature clock (Settings → Screensaver Style): two scene canvases cross-fading, each drawn once a minute. */
 #saver canvas.scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; opacity: 0; -webkit-transition: opacity 2.4s; transition: opacity 2.4s; }
 #saver canvas.scene.on { opacity: 1; }
+/* The place's name (tvOS 12's Aerials): bottom left, 32 px above the 60 px safe area, in and out in half a second. */
+#saver .place { position: absolute; left: 80px; bottom: 92px; font-size: 30px; font-weight: 600; letter-spacing: -0.005em; color: #FFF; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.45); opacity: 0; -webkit-transition: opacity 0.5s; transition: opacity 0.5s; }
+#saver .place.on { opacity: 1; }
 #saver .font-probe { position: absolute; left: -2000px; top: 0; font-size: 20px; opacity: 0; }
 #saver .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 520px; background: -webkit-linear-gradient(top, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.35)); background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.35)); }
 #saver .clock {
@@ -958,4 +965,27 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   transform: translateX(-50%);
 }
 #folder .cell .label { color: inherit; opacity: 0.85; }
+/* The scrolling window: the rows in view; the grid inside it slides a row at a time. */
+#folder .view { position: absolute; left: 0; right: 0; top: 92px; overflow: hidden; }
+#folder .grid { position: absolute; left: 0; top: 0; right: 0; }
 
+
+/* Text Size (Settings → Appearance, tvOS 27): the text at 90 % or 115 % (no CSS variables on old TVs). */
+.text-small .cctile .label { font-size: 19px; }
+.text-small .cctile .detail { font-size: 17px; }
+.text-small .cccell .label { font-size: 16px; }
+.text-small #drawer .who .name { font-size: 17px; }
+.text-small .inrow .name { font-size: 20px; }
+.text-small .inrow .status { font-size: 15px; }
+.text-small .cchead { font-size: 22px; }
+.text-small .cell .label { font-size: 22px; }
+.text-small #tabs .tab { font-size: 23px; }
+.text-large .cctile .label { font-size: 24px; }
+.text-large .cctile .detail { font-size: 22px; }
+.text-large .cccell .label { font-size: 21px; }
+.text-large #drawer .who .name { font-size: 22px; }
+.text-large .inrow .name { font-size: 25px; }
+.text-large .inrow .status { font-size: 20px; }
+.text-large .cchead { font-size: 28px; }
+.text-large .cell .label { font-size: 29px; }
+.text-large #tabs .tab { font-size: 30px; }

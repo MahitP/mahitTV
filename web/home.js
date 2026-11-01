@@ -81,7 +81,8 @@
     ['nfl', /nfl/, /^nfl/i, ['#013369', '#00163D']],
     ['globoplay', /globoplay/, /globoplay/i, ['#FF8A1F', '#FF2D5A']],
     ['jellyfin', /jellyfin/i, /jellyfin/i, ['#AA5CC3', '#00A4DC']],
-    ['applemusic', /apple.?music|com\.apple\.music/i, /apple music/i, ['#FA586A', '#FA233B']],
+    // tvOS 27.2's Music icon: a white note on black glass (it was red), in light and dark alike.
+    ['applemusic', /apple.?music|com\.apple\.music/i, /apple music/i, ['#3A3A3C', '#000000']],
     ['spotify', /spotify/, /spotify/i, ['#202020', '#050505']],
     ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']],
     ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']]
@@ -537,7 +538,7 @@
     rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL),
     ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP),
     // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
-    brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN)
+    brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px()
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
@@ -658,7 +659,7 @@
     }
     var cur = $('dots').querySelector('.cur');
     if (cur) T(cur, 'translateX(' + r2(mv.dot.x) + 'px)');
-    // Control Center: in from the right, its rows 25 ms apart; Inputs slides in over the tiles, which slide away.
+    // Control Center: in from the right, its rows 18 ms apart; Inputs slides in over the tiles, which slide away.
     var drawer = q('#drawer'), da = Motion.clamp(d * 2.5, 0, 1), sub = Motion.clamp(mv.ccSub.x, 0, 1);
     T(drawer, 'translateX(' + r2(480 * (1 - d)) + 'px)');
     A(drawer, da);
@@ -762,9 +763,9 @@
     setClass(body, 'drawer-profile', ccMode === 'profile');   // which button opened it lights up
     if (drawerOpen !== was.drawer) {
       was.drawer = drawerOpen;
-      mv.drawer.tune(drawerOpen ? P.SHEET_OPEN : P.SHEET_CLOSE).set(drawerOpen ? 1 : 0);
+      mv.drawer.tune(drawerOpen ? P.CC_OPEN : P.SHEET_CLOSE).set(drawerOpen ? 1 : 0);
       for (i = 0; i < drawerRows.length; i++) {
-        if (drawerOpen) { drawerRows[i].snap(0); later(drawerRows[i], 1, 25 * i, P.SHEET_OPEN); }
+        if (drawerOpen) { drawerRows[i].snap(0); later(drawerRows[i], 1, 18 * i, P.CC_OPEN); }
         else { cancel(drawerRows[i]); drawerRows[i].snap(1); }
       }
     }
@@ -1554,6 +1555,11 @@
 
   function onOff(on) { return on ? tr('state|On') : tr('state|Off'); }
 
+  var SLEEP_PRESETS = [0, 15, 30, 60, 120];
+
+  /** 15 min, 1 h, 2 h (as Android's SleepTimer.duration). */
+  function sleepName(m) { return m < 60 ? trf('{n} min', {n: m}) : trf('{n} h', {n: m / 60}); }
+
   /**
    * Control Center's pills, in this order (2 columns): Power | Audio Output, Wi-Fi | Bluetooth, Dark Mode | Do Not
    * Disturb, Sleep Timer | Brightness. On LG and Samsung what a web app can do (Dark Mode, Brightness); the preview shows
@@ -1569,11 +1575,12 @@
     }
     t.push({label: tr('Dark Mode'), symbol: 'appearance', run: toggleDark, active: darkOn, detail: function () { return onOff(darkOn()); }});
     if (PREVIEW) {
-      t.push({label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; },
+      t.push({label: tr('Do Not Disturb'), symbol: 'moon', pop: true, run: function () { previewCC.dnd = !previewCC.dnd; },
         active: function () { return previewCC.dnd; }, detail: function () { return onOff(previewCC.dnd); }});
-      t.push({label: tr('Sleep Timer'), glyph: 'glyph-timer', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
+      // tvOS 17's presets: Off, 15 min, 30 min, 1 h, 2 h.
+      t.push({label: tr('Sleep Timer'), glyph: 'glyph-timer', run: function () { previewCC.sleep = SLEEP_PRESETS[(SLEEP_PRESETS.indexOf(previewCC.sleep) + 1) % SLEEP_PRESETS.length]; },
         active: function () { return !!previewCC.sleep; },
-        detail: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : onOff(false); }});
+        detail: function () { return previewCC.sleep ? sleepName(previewCC.sleep) : onOff(false); }});
     }
     t.push({label: tr('Brightness'), symbol: 'sunny', run: cycleBrightness, detail: function () { return Prefs.brightness() + '%'; }});
     return t;
@@ -1721,9 +1728,18 @@
     ccGlyph(spec, dot);
     el('div', 'label', tile, spec.label);
     var detail = spec.detail ? el('div', 'detail', tile) : null;
-    var item = ccAdd(tile, new Fx(tile, {grow: wide ? 0.03 : 0.05}), function () { spec.run(); ccRefresh(); }, 'tile', wide ? CC.body / 2 : col * CC.col + CC.tileW / 2);
+    var item = ccAdd(tile, new Fx(tile, {grow: wide ? 0.03 : 0.05}), function () { spec.run(); ccRefresh(); if (spec.pop) popGlyph(tile, dot); }, 'tile', wide ? CC.body / 2 : col * CC.col + CC.tileW / 2);
     item.spec = spec;
     item.detail = detail;
+  }
+
+  /** Do Not Disturb turned on: its moon swings in (tvOS's micro-animation); off, it only fades back to grey. */
+  function popGlyph(tile, dot) {
+    if (Motion.instant || !hasClass(tile, 'on')) return;
+    setClass(dot, 'pop', false);
+    void dot.offsetWidth;
+    setClass(dot, 'pop', true);
+    setTimeout(function () { setClass(dot, 'pop', false); }, 700);
   }
 
   /** A cell of the profile panel's last row: its glyph over its name, `w` wide at `x`. */
@@ -2232,7 +2248,9 @@
 
   // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the home screen
 
-  var FOLDER_COLS = 4, FOLDER_GAP = 40, FOLDER_PAD = 60, folderOpen = null, folderCard = null, folderFrom = {x: 0, y: 0};
+  // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the grid slides; the card stays put).
+  var FOLDER_COLS = 3, FOLDER_ROWS = 3, FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_ROW = TILE_H + 70;
+  var folderOpen = null, folderCard = null, folderGrid = null, folderTop = 0, folderFrom = {x: 0, y: 0};
 
   /** The folder's tile: frosted glass, its first four apps as a 2×2 of little tiles. */
   function folderFace(folder, box) {
@@ -2248,21 +2266,26 @@
   /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
   function openFolder(folder, fromFx) {
     folderOpen = folder;
-    var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.ceil(n / FOLDER_COLS);
+    var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.min(FOLDER_ROWS, Math.ceil(n / FOLDER_COLS));
     layer.innerHTML = '';
     killFx(fxFolder);
     el('div', 'veil', layer);
-    var w = 2 * FOLDER_PAD + cols * TILE_W + (cols - 1) * FOLDER_GAP, h = 156 + rows * (TILE_H + 70) + 24;
+    var w = 2 * FOLDER_PAD + cols * TILE_W + (cols - 1) * FOLDER_GAP, h = 156 + rows * FOLDER_ROW + 24;
     var card = folderCard = el('div', 'card', layer);
     card.style.width = w + 'px';
     card.style.height = h + 'px';
     card.style.left = Math.round((1920 - w) / 2) + 'px';
     card.style.top = Math.round((1080 - h) / 2) + 'px';
     el('div', 'badge', card, folder.title);
+    // The apps scroll inside a window as tall as the rows in view (with room for a focused tile's lift and name).
+    var view = el('div', 'view', card);
+    view.style.height = (h - 92) + 'px';
+    folderGrid = el('div', 'grid', view);
+    folderTop = 0;
     for (var i = 0; i < n; i++) {
-      var cell = el('div', 'cell', card);
+      var cell = el('div', 'cell', folderGrid);
       cell.style.left = (FOLDER_PAD + (i % FOLDER_COLS) * (TILE_W + FOLDER_GAP)) + 'px';
-      cell.style.top = (132 + Math.floor(i / FOLDER_COLS) * (TILE_H + 70)) + 'px';
+      cell.style.top = (40 + Math.floor(i / FOLDER_COLS) * FOLDER_ROW) + 'px';
       var sh = el('div', 'lift-shadow', cell), f = el('div', 'face', cell);
       face(folder.apps[i], f, wordFit(folder.apps[i].title, TILE_W, 34));
       var sheen = el('span', 'sheen', f), label = el('div', 'label', cell, folder.apps[i].title);
@@ -2272,6 +2295,7 @@
     // From the folder's tile: the card starts there, small, and springs to the middle.
     var from = fromFx && fromFx.node ? fromFx.node.getBoundingClientRect() : null;
     folderFrom = from ? {x: (from.left + from.right) / 2 - 960, y: (from.top + from.bottom) / 2 - 540} : {x: 0, y: 0};
+    mv.folderScroll.snap(0);
     st.zone = Z.FOLDER;
     st.folder = 0;
     fitLogos(layer);
@@ -2293,7 +2317,17 @@
     node.onclick = function () { node.onmouseover(); activate(); };
   }
 
+  /** Keeps the focused app's row in view: the grid slides a row at a time (SPATIAL_SCROLL, through mv.folderScroll). */
+  function folderScroll() {
+    if (!folderGrid) return;
+    var row = Math.floor(st.folder / FOLDER_COLS);
+    if (row < folderTop) folderTop = row;
+    if (row > folderTop + FOLDER_ROWS - 1) folderTop = row - FOLDER_ROWS + 1;
+    mv.folderScroll.set(-folderTop * FOLDER_ROW);
+  }
+
   function drawFolder() {
+    if (folderGrid) T(folderGrid, 'translateY(' + r2(mv.folderScroll.x) + 'px)');
     var a = Motion.clamp(mv.folder.x, 0, 1), layer = $('folder');
     A(layer, a);
     V(layer, a);
@@ -2395,10 +2429,12 @@
       'aerial:yosemite': tr('Valley'), 'aerial:iceland': tr('Coast'),
       'aerial:north-america-aurora': tr('Aurora'), 'aerial:new-york': tr('Earth')
     };
+    var size = Prefs.textSize();
+    var sizes = [['small', tr('size|Small')], ['default', tr('size|Default')], ['large', tr('size|Large')]];
     var saver = [
       {label: tr('Screensaver'), choice: {title: tr('Screensaver'), current: style, set: function (v) { Prefs.set('saverStyle', v); },
-        options: [['photos', tr('saver|Photos')], ['nature', tr('Nature Clock')], ['aurora', tr('Aurora')], ['aerials', tr('Apple Aerials')],
-          ['black', tr('saver|Black')]]}}
+        options: [['shuffle', tr('saver|Shuffle')], ['photos', tr('saver|Photos')], ['nature', tr('Nature Clock')], ['aurora', tr('Aurora')],
+          ['aerials', tr('Apple Aerials')], ['black', tr('saver|Black')]]}}
     ];
     if (style === 'nature') {
       saver.push({label: tr('Scene'), choice: {title: tr('Scene'), current: Prefs.saverScene(), set: function (v) { Prefs.set('saverScene', v); },
@@ -2416,6 +2452,8 @@
       {rows: [
         {label: tr('Theme'), choice: {title: tr('Theme'), current: theme, options: [['auto', auto], ['light', tr('Light')], ['dark', tr('Dark')]],
           set: function (v) { Prefs.set('theme', v); checkNight(); }}},
+        {label: tr('Text Size'), choice: {title: tr('Text Size'), current: size, options: sizes,
+          set: function (v) { Prefs.set('textSize', v); checkNight(); }}},
         {label: tr('Wallpaper'), value: names[wall] || wallpaperName(wall), valueId: 'wallpaper', opens: true,
           step: function () { openWallpaperPicker(); }},
         {label: tr('Glass'), choice: {title: tr('Glass'), current: Prefs.glass(), options: [['liquid', tr('Liquid Glass')], ['frosted', tr('Frosted Glass')]],
@@ -2753,6 +2791,7 @@
 
   /** From Control Center: the sections. keep: back from Language, About, the Dock or the wallpapers, in the rows. */
   function openSettings(keep) {
+    applyTextSize();
     st.zone = Z.SETTINGS;
     settingsChoice = null;
     if (!keep) { sectionRow = 0; settingsSection = sections()[0].id; settingsPane = 'cats'; st.row = 0; }
@@ -3126,7 +3165,10 @@
         break;
       case Z.FOLDER:
         var fg = st.folder + dx + dy * FOLDER_COLS, fn = folderOpen ? folderOpen.apps.length : 0;
+        // ↓ from a row whose next row is shorter: the last app.
+        if (dy > 0 && fg >= fn && Math.floor(st.folder / FOLDER_COLS) < Math.floor((fn - 1) / FOLDER_COLS)) fg = fn - 1;
         if (fg >= 0 && fg < fn && (dx === 0 || Math.floor(fg / FOLDER_COLS) === Math.floor(st.folder / FOLDER_COLS))) st.folder = fg;
+        folderScroll();
         break;
       case Z.EDIT:
         if (dy) st.edit = Math.max(0, Math.min(apps.length - 1, st.edit + dy));
@@ -3210,7 +3252,14 @@
 
   var lastNight = null;
 
+  /** Text Size (tvOS 27): the text styles in home.css and settings.css at 90 % or 115 %. */
+  function applyTextSize() {
+    setClass(body, 'text-small', Prefs.textSize() === 'small');
+    setClass(body, 'text-large', Prefs.textSize() === 'large');
+  }
+
   function checkNight() {
+    applyTextSize();
     var night = Wallpaper.dark(Prefs.wallpaper(), Data.isNight(Date.now()));
     setClass(body, 'night', night);
     setClass(body, 'frosted', Prefs.glass() === 'frosted');
@@ -3362,6 +3411,12 @@
       if (k === 72) homeDown();
       else if (k === 83) toggleSaver();
       else pinHud();
+      return;
+    }
+    // Over Aerials or Nature Clock, as tvOS 12: ← → the previous or next place, ↓ its name; the others wake the TV.
+    if (saverOn && Saver.key(k === TV.keys.left ? 'left' : k === TV.keys.right ? 'right' : k === TV.keys.down ? 'down' : '')) {
+      idleAt = now;
+      e.preventDefault();
       return;
     }
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)

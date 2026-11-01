@@ -347,10 +347,13 @@ final class Ui {
         }
     }
 
+    /** Settings → Appearance → Text Size (tvOS 27): 0.9, 1 or 1.15 × every text the app draws (Prefs.textScale). */
+    static volatile float textScale = 1f;
+
     static Paint text(Typeface face, float size, int color) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
         p.setTypeface(face);
-        p.setTextSize(size);
+        p.setTextSize(size * textScale);
         p.setColor(color);
         return p;
     }

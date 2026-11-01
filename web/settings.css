@@ -272,3 +272,27 @@
 #settings.sidebar.on-cats .right, #settings.sidebar .left { opacity: 0; visibility: hidden; }
 #settings.sidebar.on-cats .left { opacity: 1; visibility: visible; }
 .sheet#settings.sidebar { background: rgba(22, 33, 45, 0.18); }
+
+/* Text Size (Settings → Appearance, tvOS 27): the text at 90 % or 115 % (no CSS variables on old TVs). */
+.text-small #settings .etitle { font-size: 40px; }
+.text-small #settings .edesc { font-size: 22px; }
+.text-small #settings .cat { font-size: 25px; }
+.text-small #settings .rtitle { font-size: 41px; }
+.text-small #settings .gh { font-size: 18px; }
+.text-small #settings .gf { font-size: 20px; }
+.text-small #settings .srow { font-size: 25px; }
+.text-small #settings .srow .value { font-size: 23px; }
+.text-small #settings.sidebar .etitle { font-size: 32px; }
+.text-small #settings.sidebar .edesc { font-size: 19px; }
+.text-small #settings.sidebar .rtitle { font-size: 34px; }
+.text-large #settings .etitle { font-size: 51px; }
+.text-large #settings .edesc { font-size: 28px; }
+.text-large #settings .cat { font-size: 32px; }
+.text-large #settings .rtitle { font-size: 53px; }
+.text-large #settings .gh { font-size: 23px; }
+.text-large #settings .gf { font-size: 25px; }
+.text-large #settings .srow { font-size: 32px; }
+.text-large #settings .srow .value { font-size: 30px; }
+.text-large #settings.sidebar .etitle { font-size: 41px; }
+.text-large #settings.sidebar .edesc { font-size: 24px; }
+.text-large #settings.sidebar .rtitle { font-size: 44px; }

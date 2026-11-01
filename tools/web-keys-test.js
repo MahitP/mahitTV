@@ -133,6 +133,68 @@ var browser;
   s = await state(page);
   assert.ok(!s.saver, 'S again hides the screensaver');
 
+  // tvOS 12's Aerials: ↓ shows the place's name bottom left (the screensaver stays), → the next place; others wake.
+  await page.evaluate(function () { Prefs.set('saverStyle', 'aerials'); });
+  await page.keyboard.press('s');
+  await page.waitForTimeout(700);
+  var place = async function () {
+    return page.evaluate(function () {
+      var n = document.querySelector('#saver .place'), r = n ? n.getBoundingClientRect() : null;
+      return {saver: FreeMyTV.saverOn(), text: n ? n.textContent : '', on: !!n && n.className.indexOf('on') >= 0, left: r && r.left, bottom: r && r.bottom};
+    });
+  };
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(600);
+  var pl = await place();
+  assert.ok(pl.saver && pl.on && pl.text && Math.abs(pl.left - 80) < 2 && pl.bottom <= 1080 - 92 + 1 && pl.bottom > 900,
+    '↓ shows the place bottom left, 32 px above the safe area: ' + JSON.stringify(pl));
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  var pl2 = await place();
+  assert.ok(pl2.saver && pl2.on && pl2.text !== pl.text, '→ goes to the next place and names it: ' + JSON.stringify([pl, pl2]));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert.ok(!(await place()).saver, 'another key wakes the TV');
+  // Shuffle: a real choice, first in the list, and the screensaver shows one of its looks.
+  var shuffle = await page.evaluate(function () { Prefs.set('saverStyle', 'shuffle'); return Prefs.saverStyle(); });
+  assert.strictEqual(shuffle, 'shuffle', 'Shuffle is kept as the screensaver');
+  await page.keyboard.press('s');
+  await page.waitForTimeout(500);
+  assert.ok((await state(page)).saver, 'Shuffle shows a screensaver');
+  await page.keyboard.press('s');
+  await page.waitForTimeout(500);
+  await page.evaluate(function () { Prefs.set('saverStyle', 'photos'); });
+
+  // Control Center's Sleep Timer: tvOS 17's presets, Off → 15 min → 30 min → 1 h → 2 h → Off.
+  var sleeps = await page.evaluate(function () {
+    FreeMyTV.drawer();
+    var cc = FreeMyTV.cc(), out = [], i, k;
+    for (i = 0; i < cc.length; i++) if (cc[i].label === 'Sleep Timer') {
+      FreeMyTV.state.drawer = i;
+      for (k = 0; k < 5; k++) { FreeMyTV.activate(); out.push(document.querySelectorAll('#drawer .cctile')[i].querySelector('.detail').textContent); }
+    }
+    return out;
+  });
+  assert.deepStrictEqual(sleeps, ['15 min', '30 min', '1 h', '2 h', 'Off'], 'the Sleep Timer steps through tvOS\'s presets');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+
+  // Text Size (tvOS 27): Large makes Settings' rows 115 %, Small 90 %.
+  var sizes = await page.evaluate(function () {
+    var out = {};
+    ['small', 'default', 'large'].forEach(function (v) {
+      Prefs.set('textSize', v);
+      FreeMyTV.openSettings();
+      var row = document.querySelector('#settings .cat');
+      out[v] = row ? parseFloat(getComputedStyle(row).fontSize) : 0;
+      FreeMyTV.home();
+    });
+    Prefs.set('textSize', 'default');
+    return out;
+  });
+  assert.ok(Math.abs(sizes.small - sizes['default'] * 0.9) < 1.1 && Math.abs(sizes.large - sizes['default'] * 1.15) < 1.1,
+    'Text Size scales Settings\' text: ' + JSON.stringify(sizes));
+
   // + and −: the volume (the preview starts at 30, in steps of 5) on the left HUD, which hides itself after 2.2 s.
   s = await state(page);
   assert.strictEqual(s.volume.level, 30, 'the preview volume starts at 30');
