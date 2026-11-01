@@ -639,7 +639,6 @@ final class Prefs {
     private static final String[] keyLongs = new String[KEYS.length];
     private static long keysStamp = Long.MIN_VALUE;
     /** Every button saved as Nothing (the key service off): a button added since stays Nothing too, not its default. */
-    private static boolean keysAllOff;
 
     /** A temporary file per process (two can start together after an update), synced before it replaces the old one. */
     private static boolean writeKeys(String text) {
@@ -676,7 +675,6 @@ final class Prefs {
         java.util.Arrays.fill(keyApps, null);
         java.util.Arrays.fill(keyDoubles, null);
         java.util.Arrays.fill(keyLongs, null);
-        keysAllOff = false;
         if (stamp == 0) return;
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
             String line;
@@ -690,9 +688,6 @@ final class Prefs {
             }
         } catch (IOException ignored) {
         }
-        boolean saved = false, on = false;
-        for (String v : keyApps) if (v != null) { saved = true; on |= !v.isEmpty(); }
-        keysAllOff = saved && !on;
     }
 
     /** Package the key opens ("" = nothing). */
@@ -700,7 +695,7 @@ final class Prefs {
         synchronized (keyApps) {
             readKeys();
             for (int i = 0; i < KEYS.length; i++) if (KEYS[i] == keyCode && keyApps[i] != null) return keyApps[i];
-            return keysAllOff ? "" : defaultApp(keyCode);
+            return defaultApp(keyCode);
         }
     }
 

@@ -40,6 +40,21 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     echo "RemoteKeys.serviceWanted turns the key service off with the buttons: Home hold and volume need it." >&2
     exit 1
   fi
+  # Upstream's "all buttons off" state would leave TCL's Settings button dead: its default opens TV Settings.
+  if grep -n 'keysAllOff' app/src/io/freemytv/Prefs.java; then
+    echo "Prefs: keysAllOff drops a key's default, and the Settings button stops working." >&2
+    exit 1
+  fi
+  # SoundPool's calls can wait on the audio server: 5 to 16 ms per key on a MediaTek TV, so never in the key handler.
+  if grep -n 'pool\.play(' app/src/io/freemytv/Click.java; then
+    echo "Click: sounds play on the UI thread (above)." >&2
+    exit 1
+  fi
+  # Left leaves the key screen as Back does: its page on the network and the kept-on screen must stop too.
+  if ! sed -n '/private void toSidebar/,/^        }/p' app/src/io/freemytv/SettingsActivity.java | grep -q 'stopKeyPage'; then
+    echo "SettingsActivity.toSidebar leaves the key page running." >&2
+    exit 1
+  fi
   wallpaper_classes="$(mktemp -d)"
   javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest

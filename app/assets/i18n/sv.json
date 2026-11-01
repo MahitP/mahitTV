@@ -292,6 +292,7 @@
  "Nothing yet. Open something and I’ll keep your place.": "Inget än. Öppna något så sparar jag din plats.",
  "Now": "Nu",
  "Now Playing widget": "Spelas nu-widget",
+ "Now playing: {what}": "Spelas nu: {what}",
  "OK adds or removes (up to {n}). ← → change the order.": "OK lägger till eller tar bort (upp till {n}). ← → ändrar ordningen.",
  "OK adds or removes a button. ← → change the order.": "OK lägger till eller tar bort en knapp. ← → ändrar ordningen.",
  "OK adds or removes an app. ← → change the order.": "OK lägger till eller tar bort en app. ← → ändrar ordningen.",

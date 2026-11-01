@@ -62,6 +62,24 @@ final class Recs {
         int mine;               // Trakt: PROGRESS, LIKED (watchlist, recommended) or 0 (TMDB's)
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
+
+        /** What a new list keeps of the same title in the one before: the Top Shelf's details too. */
+        void copyDetails(Pick k) {
+            title = k.title;
+            backdrop = k.backdrop;
+            poster = k.poster;
+            app = k.app;
+            pkg = k.pkg;
+            servicePkg = k.servicePkg;
+            link = k.link;
+            service = k.service;
+            year = k.year;
+            overview = k.overview;
+            rating = k.rating;
+            cert = k.cert;
+            logo = k.logo;
+            badges = k.badges;
+        }
     }
 
     interface Listener { void onRecs(); }
@@ -941,13 +959,7 @@ final class Recs {
     private static boolean reuse(Pick p, Map<String, Pick> known) {
         Pick k = known.get(key(p));
         if (k == null) return false;
-        p.title = k.title;
-        p.backdrop = k.backdrop;
-        p.poster = k.poster;
-        p.app = k.app;
-        p.pkg = k.pkg;
-        p.servicePkg = k.servicePkg;
-        p.link = k.link;
+        p.copyDetails(k);
         String meta = k.meta == null ? "" : k.meta;
         if (k.tag != null && meta.startsWith(k.tag)) meta = meta.substring(k.tag.length()).replaceFirst("^ · ", "");
         p.meta = p.tag == null ? meta : meta.isEmpty() ? p.tag : p.tag + " · " + meta;

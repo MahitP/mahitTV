@@ -292,6 +292,7 @@
  "Nothing yet. Open something and I’ll keep your place.": "Noch nichts da. Öffne etwas, dann merke ich mir deine Stelle.",
  "Now": "Jetzt",
  "Now Playing widget": "Wiedergabe-Widget",
+ "Now playing: {what}": "Läuft gerade: {what}",
  "OK adds or removes (up to {n}). ← → change the order.": "OK fügt hinzu oder entfernt (bis zu {n}). ← → ändern die Reihenfolge.",
  "OK adds or removes a button. ← → change the order.": "OK fügt eine Taste hinzu oder entfernt sie. ← → ändern die Reihenfolge.",
  "OK adds or removes an app. ← → change the order.": "OK fügt eine App hinzu oder entfernt sie. ← → ändern die Reihenfolge.",

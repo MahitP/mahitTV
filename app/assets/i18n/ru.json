@@ -292,6 +292,7 @@
  "Nothing yet. Open something and I’ll keep your place.": "Пока пусто. Откройте что-нибудь, и я запомню место.",
  "Now": "Сейчас",
  "Now Playing widget": "Виджет «Сейчас играет»",
+ "Now playing: {what}": "Сейчас играет: {what}",
  "OK adds or removes (up to {n}). ← → change the order.": "OK — добавить или убрать (до {n}). ← → — изменить порядок.",
  "OK adds or removes a button. ← → change the order.": "OK — добавить или убрать кнопку. ← → — изменить порядок.",
  "OK adds or removes an app. ← → change the order.": "OK — добавить или убрать приложение. ← → — изменить порядок.",

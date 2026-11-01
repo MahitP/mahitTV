@@ -1204,7 +1204,8 @@ final class HomeApps {
             String label = String.valueOf(ri.loadLabel(pm));
             // A system app with a phone-style entry only: with Settings > Show system apps, or when GRID_ORDER names it.
             boolean wanted = gridRank(pkg, label) < GRID_ORDER.length || SYSTEM_SHOWN.contains(pkg);
-            if (sys && ((!system && !wanted) || pkg.equals(c.getPackageName()) || hidden(pkg, label))) continue;
+            if (sys && (!SystemApps.listed(system, wanted, HomeMode.factoryMenu(pkg)) || pkg.equals(c.getPackageName())
+                    || hidden(pkg, label))) continue;
             if (!seen.add(pkg)) continue;
             out.add(new String[] {pkg, label});
         }

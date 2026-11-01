@@ -1611,6 +1611,7 @@ public class SettingsActivity extends Activity {
         /** ← from the rows: the focus goes to the section's capsule on the left (→ or OK comes back in). */
         private void toSidebar() {
             if (screen == WALLPAPER_PICKER) wallpaperPicker.close();
+            if (screen == TMDB_KEY) stopKeyPage();   // as Back: the phone's page answers only while its code shows
             armed = 0;
             pickScroll = 0;
             focus = section;

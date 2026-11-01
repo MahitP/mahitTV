@@ -32,6 +32,11 @@ import java.util.concurrent.Executors;
  * notification and asks the system to unbind it at once, so no process stays up for it.
  */
 public class NowPlaying extends NotificationListenerService {
+    /** Only a new title counts (bars, TalkBack): not a subtitle some players rewrite every second, nor the screen showing again. */
+    static boolean newTitle(String title, String line, boolean showing, String shown) {
+        return title != null && line != null && showing && !title.equals(shown);
+    }
+
 
     @Override public void onListenerConnected() {
         requestUnbind();

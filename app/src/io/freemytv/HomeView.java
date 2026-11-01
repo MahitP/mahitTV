@@ -649,13 +649,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         this.aerialCache = aerialCache;
         data = HomeData.get(a);
         recs = Recs.get(a);
-        playing = new NowPlaying.Watch(a, () -> {
-            fitPlaying();
-            heroDirty = statusDirty = true;
-            pillWide.target = HomeView.this.playing.text != null ? 1 : 0;   // the pill widens for its equalizer
-            wake();
-            bounceBars();
-        });
+        playing = new NowPlaying.Watch(a, this::onPlaying);
         click = new Click(a);
         shelfVisible = Math.min((int) TV_DOCK_SHOWN, HomeApps.shelfVisible(a));
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
@@ -1151,7 +1145,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         border.setStrokeWidth(2 * k);
         rim.setStyle(Paint.Style.STROKE);
         rim.setStrokeWidth(2.5f * k);
-        fitPlaying();
+        onPlaying();   // the line fits the new size; a title that came before the first layout bounces and is said now
     }
 
     // MARK: - Frames: 60 per second while something moves; nothing is redrawn when still
@@ -2274,6 +2268,33 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (playingTab == null) return;
         barsUntil = SystemClock.uptimeMillis() + BARS_BOUNCE_MS;
         wake();
+    }
+
+    private String shownTitle;   // kept while the screen is hidden: showing it again with the same title is no change
+
+    /** What's playing changed (or stopped). */
+    private void onPlaying() {
+        fitPlaying();
+        heroDirty = statusDirty = true;
+        pillWide.target = playing.text != null ? 1 : 0;   // the pill widens for its equalizer
+        wake();
+        String title = playing.title, now = playing.text;
+        if (NowPlaying.newTitle(title, now, running, shownTitle)) {
+            shownTitle = title;
+            bounceBars();
+            if (readerOn()) announceForAccessibility(Ui.trf("Now playing: {what}", "what", now.replace(" · ", ", ")));
+        }
+    }
+
+    /**
+     * A screen reader is on (TalkBack, or another service that speaks): only then is a new title announced. Other
+     * accessibility services (a button mapper, a sleep timer) would get the announcement too, for nothing.
+     */
+    private boolean readerOn() {
+        android.view.accessibility.AccessibilityManager am =
+                getContext().getSystemService(android.view.accessibility.AccessibilityManager.class);
+        return am != null && am.isEnabled() && !am.getEnabledAccessibilityServiceList(
+                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_SPOKEN).isEmpty();
     }
 
     private void fitPlaying() {

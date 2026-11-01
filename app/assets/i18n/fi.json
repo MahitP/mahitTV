@@ -292,6 +292,7 @@
  "Nothing yet. Open something and I’ll keep your place.": "Ei vielä mitään. Avaa jotain, niin muistan kohdan.",
  "Now": "Nyt",
  "Now Playing widget": "Nyt soi -widget",
+ "Now playing: {what}": "Nyt soi: {what}",
  "OK adds or removes (up to {n}). ← → change the order.": "OK lisää tai poistaa (enintään {n}). ← → muuttavat järjestystä.",
  "OK adds or removes a button. ← → change the order.": "OK lisää tai poistaa painikkeen. ← → muuttavat järjestystä.",
  "OK adds or removes an app. ← → change the order.": "OK lisää tai poistaa sovelluksen. ← → muuttavat järjestystä.",
