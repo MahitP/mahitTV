@@ -395,8 +395,14 @@ var Saver = (function () {
     if (!on || !text || !captionNode) return;
     captionNode.textContent = text;
     setClass(captionNode, 'on', true);
+    // The clock rests in the same corner: it steps aside while the name shows (Apple's shows only the name there).
+    setClass(captionNode.parentNode, 'placing', true);
     clearTimeout(captionTimer);
-    captionTimer = setTimeout(function () { if (captionNode) setClass(captionNode, 'on', false); }, 4000);
+    captionTimer = setTimeout(function () {
+      if (!captionNode) return;
+      setClass(captionNode, 'on', false);
+      setClass(captionNode.parentNode, 'placing', false);
+    }, 4000);
   }
 
   function key(which) {
@@ -431,7 +437,7 @@ var Saver = (function () {
     on = true;
     place = skip = null;
     node.innerHTML = '';
-    node.className = node.className.replace(/\s*(bare|black|aurora-on|aerials-on)\b/g, '');
+    node.className = node.className.replace(/\s*(bare|black|aurora-on|aerials-on|placing)\b/g, '');
     node.style.webkitTransition = node.style.transition = '';
     var style = styleNow();
     // Shuffle: when this part of the day ends, the next look takes over.
