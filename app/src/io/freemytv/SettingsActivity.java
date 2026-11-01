@@ -145,6 +145,14 @@ public class SettingsActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
+    /** Settings Style changed: Settings opens again in it (the sidebar over the home screen, or full screen). */
+    void restyle() {
+        Intent next = new Intent(this, "sidebar".equals(Prefs.settingsStyle()) ? SettingsSidebar.class : SettingsActivity.class);
+        startActivity(next.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        finish();
+        overridePendingTransition(0, 0);
+    }
+
     void showPreview() {
         preview = new DreamView(this);
         setContentView(preview);
@@ -170,10 +178,17 @@ public class SettingsActivity extends Activity {
         // tvOS Settings' two panes (px at 1920 × 1080). Left, 96–664: the emblem (a 160 px glass squircle), the title
         // and the description, then the sections as 64 px capsules. Right, 744–1824: the title, then the rows (64 tall)
         // in grouped inset containers with an uppercase header above and a footer under; a long section scrolls.
-        private static final float LEFT_X = 96, LEFT_R = 664, LEFT_CX = 380, EMBLEM = 160, EMBLEM_TOP = 112,
-                PILL_TOP = 486, PILL_H = 64, PILL_PITCH = 72;
-        private static final float LIST_X = 744, LIST_R = 1824, TITLE_BASE = 150, CONTENT_TOP = 196, CONTENT_BOTTOM = 1048,
+        // The Floating Sidebar (Appearance & Startup → Settings Style, SettingsSidebar): one column in a glass panel at
+        // x 1080–1840, y 124–1040, over the home screen, which stays behind it; the sections (MAIN), or a section's rows.
+        // The panes' geometry is set for the style in the constructor.
+        private float LEFT_X = 96, LEFT_R = 664, LEFT_CX = 380, EMBLEM = 160, EMBLEM_TOP = 112, PILL_TOP = 486;
+        private float LIST_X = 744, LIST_R = 1824, TITLE_BASE = 150, CONTENT_TOP = 196, CONTENT_BOTTOM = 1048;
+        private static final float PILL_H = 64, PILL_PITCH = 72,
                 ROW_H = 64, HEADER_H = 46, FOOTER_GAP = 12, GROUP_GAP = 30, INSET = 28, RADIUS = 16;
+        private static final float SIDE_L = 1080, SIDE_T = 124, SIDE_R = 1840, SIDE_B = 1040, SIDE_RADIUS = 40;
+        private final boolean sidebar;
+        private final RectF sidePanel = new RectF();
+        private final Paint sideFill = new Paint(Paint.ANTI_ALIAS_FLAG), sideRim = new Paint(Paint.ANTI_ALIAS_FLAG), sideVeil = new Paint();
         /** Rows on screen at once in the pushed lists (apps, cities, languages); a longer list scrolls. */
         private static final int PICK_VISIBLE = 9;
         private static final int AMBER = 0xFFFFC266, INK = 0xFF1C1C1E, GREEN = 0xFF34C759;
@@ -272,6 +287,23 @@ public class SettingsActivity extends Activity {
         SettingsView(SettingsActivity a) {
             super(a);
             activity = a;
+            sidebar = a instanceof SettingsSidebar;
+            if (sidebar) {
+                LEFT_X = 1128;
+                LEFT_R = 1792;
+                LEFT_CX = 1460;
+                EMBLEM = 120;
+                EMBLEM_TOP = 164;
+                PILL_TOP = 470;
+                LIST_X = 1128;
+                LIST_R = 1792;
+                TITLE_BASE = 214;
+                CONTENT_TOP = 256;
+                CONTENT_BOTTOM = 1016;
+                PAD_KEY = 58;
+                PAD_GAP = 7;
+            }
+            PAD_X = LIST_X + (LIST_R - LIST_X - 10 * PAD_KEY - 9 * PAD_GAP) / 2;
             aerialPreviewCache = new AerialCache(new File(a.getCacheDir(), "aerial-previews"));
             wallpaperPicker = new WallpaperPicker((aerial, callback) -> aerialPreviewCache.fetch(aerial.preview, file -> {
                 if (!callback.current()) return;
@@ -305,6 +337,7 @@ public class SettingsActivity extends Activity {
             trackOff = dark ? 0x52787880 : 0x29787880;
             // A light veil over the day sky; the twilight a touch deeper.
             tint.setColor(dark ? 0x2616212D : 0x1FFFFFFF);
+            sideVeil.setColor(dark ? 0x52000000 : 0x38162130);
             setFocusable(true);
             setContentDescription(Ui.tr("mahitTV Settings"));
             // TalkBack: one item per row, id = row + 1.
@@ -581,11 +614,25 @@ public class SettingsActivity extends Activity {
                 lastSky = up;
                 scene.advance(seconds);
             }
-            scene.drawBackground(c);
-            c.drawRect(0, 0, w, h, tint);
+            if (sidebar) {
+                // The home screen shows through the window, a little dimmed; the panel is frosted (a flat glass: a
+                // translucent window can't read what's under it).
+                c.drawRect(0, 0, w, h, sideVeil);
+                sidePanel.set(SIDE_L * k, SIDE_T * k, SIDE_R * k, SIDE_B * k);
+                sideFill.setColor(dark ? 0xF21E2330 : 0xF2F6F7FA);
+                c.drawRoundRect(sidePanel, SIDE_RADIUS * k, SIDE_RADIUS * k, sideFill);
+                sideRim.setStyle(Paint.Style.STROKE);
+                sideRim.setStrokeWidth(Math.max(1, k));
+                sideRim.setColor(dark ? 0x24FFFFFF : 0x8CFFFFFF);
+                c.drawRoundRect(sidePanel, SIDE_RADIUS * k, SIDE_RADIUS * k, sideRim);
+            } else {
+                scene.drawBackground(c);
+                c.drawRect(0, 0, w, h, tint);
+            }
             if (screen == CLEAN) syncClean();
             if (cellsDirty) refreshCells();
-            drawLeftPane(c);
+            if (!sidebar || screen == MAIN) drawLeftPane(c);
+            if (sidebar && screen == MAIN) return;   // the sidebar: the sections alone, a section's rows on their own
             if (screen == MAIN) drawOverview(c, seconds);
             else if (screen == WALLPAPER_PICKER) drawWallpaperPicker(c);
             else if (screen == PIN_PAD) drawPinPad(c, dt);
@@ -1480,6 +1527,7 @@ public class SettingsActivity extends Activity {
                 R_HOME = 60, R_SCREENSAVER = 61, R_TOP_BUTTONS = 62, R_REMOTE = 63, R_SLEEP = 64, R_TV_SETTINGS = 65,
                 R_LANGUAGE = 66, R_SYSTEM_APPS = 67, R_APP_COUNT = 68, R_SAVER_STYLE = 69, R_CLEAN = 72,
                 R_SAVER_SCENE = 73, R_SAVER_CLOCK = 74, R_PHOTOS_REMOVE = 75,
+                R_GLASS = 17, R_SETTINGS_STYLE = 18, R_SHELF_MODE = 30, R_SETUP = 76,
                 R_RESET = 70, R_RESTORE = 71,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
@@ -1580,7 +1628,7 @@ public class SettingsActivity extends Activity {
                 }
                 case S_APPEARANCE:
                     group(G_LOOK);
-                    add(R_THEME, R_WALLPAPER, R_PHOTOS);
+                    add(R_THEME, R_WALLPAPER, R_GLASS, R_SETTINGS_STYLE, R_PHOTOS);
                     if (!Photos.files(c).isEmpty()) add(R_PHOTOS_REMOVE);
                     group(G_SAVER);
                     add(R_SAVER_STYLE);
@@ -1596,7 +1644,7 @@ public class SettingsActivity extends Activity {
                     add(R_PLAYING, R_QUOTES);
                     for (int i = 0; i < (dollar() ? 4 : 3); i++) add(R_COIN + i);
                     group(G_MEDIA);
-                    add(R_SAVER, R_TMDB, R_WATCHMODE, R_TOP_SHELF);
+                    add(R_SHELF_MODE, R_SAVER, R_TMDB, R_WATCHMODE, R_TOP_SHELF);
                     break;
                 case S_SMART_HOME:
                     group(G_LIGHTS);
@@ -1611,7 +1659,7 @@ public class SettingsActivity extends Activity {
                     break;
                 case S_SYSTEM:
                     group(G_HOME);
-                    add(R_HOME, R_DOCK, R_TOP_BUTTONS);
+                    add(R_HOME, R_DOCK, R_TOP_BUTTONS, R_SETUP);
                     group(G_REMOTE);
                     add(R_REMOTE, R_SLEEP, R_CLEAN);
                     group(G_TV);
@@ -1776,6 +1824,10 @@ public class SettingsActivity extends Activity {
                 case R_DOCK: return Ui.tr("Dock");
                 case R_THEME: return Ui.tr("Theme");
                 case R_WALLPAPER: return Ui.tr("Wallpaper");
+                case R_GLASS: return Ui.tr("Glass");
+                case R_SETTINGS_STYLE: return Ui.tr("Settings Style");
+                case R_SHELF_MODE: return Ui.tr("Top Shelf");
+                case R_SETUP: return Ui.tr("Run Setup Again");
                 case R_PHOTOS: return Ui.tr("My Photos");
                 case R_INTRO: return Ui.tr("Startup animation & chime");
                 case R_SOUNDS: return Ui.tr("Navigation sounds");
@@ -1839,6 +1891,9 @@ public class SettingsActivity extends Activity {
                     String theme = Prefs.theme();
                     return theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
                 }
+                case R_GLASS: return glassName(Prefs.glass());
+                case R_SETTINGS_STYLE: return styleName(Prefs.settingsStyle());
+                case R_SHELF_MODE: return shelfModeName(Prefs.topShelf());
                 case R_WALLPAPER: {
                     return wallpaperName(Prefs.wallpaper());
                 }
@@ -1901,7 +1956,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
-                case R_CLEAN: case R_CITY: case R_SCREENSAVER:
+                case R_CLEAN: case R_CITY: case R_SCREENSAVER: case R_SETUP:
                     return true;
                 default:
                     return id >= R_OTHER && id < R_COIN;
@@ -1939,9 +1994,31 @@ public class SettingsActivity extends Activity {
         private static boolean isEnum(int id) {
             switch (id) {
                 case R_THEME: case R_TEMPERATURE: case R_FORECAST: case R_SAVER_STYLE: case R_SAVER_SCENE: case R_SAVER_CLOCK:
+                case R_GLASS: case R_SETTINGS_STYLE: case R_SHELF_MODE:
                     return true;
                 default:
                     return false;
+            }
+        }
+
+        private static final String[] GLASSES = {"liquid", "frosted"}, STYLES = {"full", "sidebar"},
+                SHELF_MODES = {"app", "picks", "all", "off"};
+
+        private static String glassName(String v) {
+            return "frosted".equals(v) ? Ui.tr("Frosted Glass") : Ui.tr("Liquid Glass");
+        }
+
+        private static String styleName(String v) {
+            return "sidebar".equals(v) ? Ui.tr("Floating Sidebar") : Ui.tr("Full Screen (tvOS)");
+        }
+
+        /** The Top Shelf's modes (Prefs.topShelf), as the list and the welcome setup name them. */
+        static String shelfModeName(String v) {
+            switch (v) {
+                case "picks": return Ui.tr("Recommendations & News");
+                case "all": return Ui.tr("All Continue Watching");
+                case "off": return Ui.tr("Off (Wallpaper Only)");
+                default: return Ui.tr("App-Specific Continue Watching");
             }
         }
 
@@ -2003,6 +2080,15 @@ public class SettingsActivity extends Activity {
                 case R_SAVER_CLOCK:
                     for (String v : SAVER_CLOCKS) l.add(new String[] {v, clockName(v)});
                     break;
+                case R_GLASS:
+                    for (String v : GLASSES) l.add(new String[] {v, glassName(v)});
+                    break;
+                case R_SETTINGS_STYLE:
+                    for (String v : STYLES) l.add(new String[] {v, styleName(v)});
+                    break;
+                case R_SHELF_MODE:
+                    for (String v : SHELF_MODES) l.add(new String[] {v, shelfModeName(v)});
+                    break;
                 default:   // another profile's PIN
                     l.add(new String[] {"set", Ui.tr("Set PIN")});
                     l.add(new String[] {"remove", Ui.tr("Remove PIN")});
@@ -2018,6 +2104,9 @@ public class SettingsActivity extends Activity {
                 case R_SAVER_STYLE: return Prefs.saverStyle();
                 case R_SAVER_SCENE: return Prefs.saverScene();
                 case R_SAVER_CLOCK: return Prefs.saverClock();
+                case R_GLASS: return Prefs.glass();
+                case R_SETTINGS_STYLE: return Prefs.settingsStyle();
+                case R_SHELF_MODE: return Prefs.topShelf();
                 default: return "";
             }
         }
@@ -2051,6 +2140,15 @@ public class SettingsActivity extends Activity {
                 case R_SAVER_STYLE: Prefs.setSaverStyle(v); break;   // Scene and Clock Style come and go with it
                 case R_SAVER_SCENE: Prefs.setSaverScene(v); break;
                 case R_SAVER_CLOCK: Prefs.setSaverClock(v); break;
+                case R_GLASS:
+                    Prefs.setGlass(v);
+                    Scene.frosted = "frosted".equals(v);
+                    break;
+                case R_SETTINGS_STYLE:
+                    Prefs.setSettingsStyle(v);
+                    activity.restyle();   // Settings opens again in its new style, on this row
+                    return;
+                case R_SHELF_MODE: Prefs.setTopShelf(v); break;
                 default: break;
             }
             openSection(section, id);
@@ -2124,6 +2222,11 @@ public class SettingsActivity extends Activity {
                 case R_SCREENSAVER:
                     pause();
                     activity.showPreview();
+                    return false;
+                case R_SETUP:
+                    // The welcome setup: the home screen shows it as it comes back (Prefs.setupDone false).
+                    Prefs.setSetupDone(false);
+                    activity.finish();
                     return false;
                 case R_CLEAN:
                     if (busy()) return false;
@@ -2375,8 +2478,9 @@ public class SettingsActivity extends Activity {
         private static final int PIN_OLD = 0, PIN_NEW = 1, PIN_CONFIRM = 2, PIN_MANAGER = 3;
         /** What the manager's PIN was asked for. */
         private static final int THEN_SET = 1, THEN_REMOVE = 2, THEN_RESET = 3, THEN_ORIGINAL = 4, THEN_RESTORE = 5, THEN_CLEAN = 6;
-        private static final float PAD_KEY = 72, PAD_GAP = 11, PAD_X = LIST_X + (LIST_R - LIST_X - 10 * PAD_KEY - 9 * PAD_GAP) / 2,
-                PAD_KEYS_TOP = 560, PAD_DOTS_Y = 420, PAD_DOT_R = 13, PAD_DOT_GAP = 58;
+        // The pad's keys: 72 apart on the full screen, smaller in the sidebar so the ten fit its column (constructor).
+        private float PAD_KEY = 72, PAD_GAP = 11, PAD_X;
+        private static final float PAD_KEYS_TOP = 560, PAD_DOTS_Y = 420, PAD_DOT_R = 13, PAD_DOT_GAP = 58;
         private static final String[] DIGITS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
 
         private int pinStep, pinThen, pinFromScreen, pinFromRow;

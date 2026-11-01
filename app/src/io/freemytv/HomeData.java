@@ -21,6 +21,7 @@ import java.text.NumberFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
 import java.util.SimpleTimeZone;
@@ -330,9 +331,15 @@ final class HomeData {
                 JSONArray codes = hourly.getJSONArray("weather_code");
                 JSONArray days = hourly.optJSONArray("is_day"), rain = hourly.optJSONArray("precipitation_probability");
                 long now = System.currentTimeMillis();
+                // The night the clocks go back has one hour twice (1 AM EDT, then 1 AM EST): keep the first, so no label repeats.
+                Calendar local = Calendar.getInstance();
+                int lastHour = -1;
                 for (int i = 0; i < times.length() && w.hours24.size() < 24; i++) {
                     long at = localTime(times.getString(i), zone);
                     if (at <= now || temps.isNull(i)) continue;
+                    local.setTimeInMillis(at);
+                    if (local.get(Calendar.HOUR_OF_DAY) == lastHour) continue;
+                    lastHour = local.get(Calendar.HOUR_OF_DAY);
                     boolean day = days == null || days.optInt(i, 1) == 1;
                     if (w.hours.size() < 6) {
                         w.hours.add(at);

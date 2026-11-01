@@ -62,6 +62,16 @@ var Prefs = (function () {
     saverClock: function () { return pick('saverClock', 'tall') === 'rounded' ? 'rounded' : 'tall'; },
     /** The weather card's forecast: 'hours' (the next 6 hours) or 'days' (the next 5 days). */
     forecast: function () { return pick('forecast', 'hours') === 'days' ? 'days' : 'hours'; },
+    /** The screen's brightness, 0–100 (Control Center's slider, [ and ]): a dimmer over everything below 100. */
+    brightness: function () { var b = +pick('brightness', 100); return isNaN(b) ? 100 : Math.max(0, Math.min(100, b)); },
+    /** The glass: 'liquid' (refractive rims and highlights, the default) or 'frosted' (a plain soft blur). */
+    glass: function () { return pick('glass', 'liquid') === 'frosted' ? 'frosted' : 'liquid'; },
+    /** The Top Shelf: 'app' (the focused app's Continue Watching), 'picks', 'all' (any app's) or 'off'. */
+    topShelf: function () { var s = pick('topShelf', 'app'); return /^(picks|all|off)$/.test(s) ? s : 'app'; },
+    /** Settings: 'full' (tvOS's two panes) or 'sidebar' (a Liquid Glass sidebar over the home screen). */
+    settingsStyle: function () { return pick('settingsStyle', 'full') === 'sidebar' ? 'sidebar' : 'full'; },
+    /** The welcome setup has run (false on a new TV, and after Run Setup Again). */
+    setupDone: function () { return pick('setupDone', false) === true; },
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     /** The current profile's Dock: its own, else default_dock_apps, else null (the built-in list). */
@@ -153,16 +163,19 @@ var Data = (function () {
       // The forecast overlay's: humidity (%), wind (km/h), 24 hours from this one, and 7 days from today.
       humidity: o.current.relative_humidity_2m, wind: o.current.wind_speed_10m, hours24: [], days7: []
     };
-    var hr = o.hourly;
+    var hr = o.hourly, lastHour = -1, lastHour24 = -1;
+    // The night the clocks go back has one hour twice (1 AM EDT, then 1 AM EST): keep the first, so no label repeats.
     for (var i = 0; hr && i < hr.time.length && w.hours.length < 6; i++) {
       var at = localTime(hr.time[i], off);
-      if (at <= now) continue;
+      if (at <= now || new Date(at).getHours() === lastHour) continue;
+      lastHour = new Date(at).getHours();
       w.hours.push({at: at, temp: hr.temperature_2m[i], code: hr.weather_code[i], day: !hr.is_day || hr.is_day[i] !== 0});
     }
     var hourStart = now - 3600000;
     for (var h = 0; hr && h < hr.time.length && w.hours24.length < 24; h++) {
       var hat = localTime(hr.time[h], off);
-      if (hat <= hourStart) continue;
+      if (hat <= hourStart || new Date(hat).getHours() === lastHour24) continue;
+      lastHour24 = new Date(hat).getHours();
       w.hours24.push({at: hat, temp: hr.temperature_2m[h], code: hr.weather_code[h], day: !hr.is_day || hr.is_day[h] !== 0,
         rain: hr.precipitation_probability ? hr.precipitation_probability[h] : null, now: w.hours24.length === 0});
     }

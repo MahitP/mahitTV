@@ -71,10 +71,17 @@ assert.ok(/#drawer \{[^}]*top: 124px/.test(css), 'Control Center starts under th
 assert.ok(/#drawer \{[^}]*left: 1300px[^}]*width: 560px/.test(css), 'Control Center is a 560 px panel at x 1300');
 assert.ok(/TILE_W = 244, TILE_H = 146, TILE_GAP = 57/.test(source), 'the Dock lays out 244 x 146 tiles, 57 apart');
 assert.ok(/\.tile, \.cell \.face \{[^}]*width: 244px;[^}]*height: 146px;/.test(css), 'a Dock tile is 244 x 146');
-// One Inputs tile (its sheet lists the ports); All Apps and Recent Apps live on the Dock and the Home key, not here.
-var tiles = source.slice(source.indexOf('function ccTiles'), source.indexOf('function ccIcons'));
-assert.strictEqual((tiles.match(/tr\('Inputs'\)/g) || []).length, 1, 'Control Center has one Inputs tile');
+// One Inputs pill (the profile panel's; its sheet lists the ports); All Apps and Recent Apps live on the Dock and the Home key.
+var tiles = source.slice(source.indexOf('function ccCluster'), source.indexOf('function ccIcons'));
+assert.strictEqual((tiles.match(/tr\('Inputs'\)/g) || []).length, 1, 'Control Center has one Inputs pill');
 assert.ok(!/All Apps|Recent Apps|hdmi/.test(tiles), 'Control Center has no All Apps, Recent Apps or per-port tiles');
+assert.ok(/tr\('Appearance'\)/.test(tiles), 'Control Center has the Appearance (Light / Dark / Automatic) pill');
+// The modular Control Center: vertical brightness and volume sliders, the bubble beside the pill, a dimmer.
+assert.ok(/ccSlider\(rowA, sx, sliderH, 'sunny'/.test(source) && /\.ccslider \{[^}]*width: 114px/.test(css), 'a 114 px vertical brightness slider');
+assert.ok(/#ccbtn \{[^}]*width: 48px;[^}]*height: 48px;/.test(css), "Control Center's bubble is a 48 px circle");
+assert.ok(/#pill \{[^}]*right: 45px/.test(css) && /\$\('ccbtn'\)\.style\.right = \(45 \+ pill\.offsetWidth \+ 14\)/.test(source),
+  "the pill ends the cluster, Control Center's bubble 14 px left of it");
+assert.ok(/#bright \{[^}]*pointer-events: none/.test(css), 'the brightness dimmer never takes the pointer');
 // The volume HUD sits on the left edge, clear of the panel on the right.
 assert.ok(/#volhud \{[^}]*left: 56px;[^}]*width: 72px; height: 320px/.test(css), 'the volume HUD is 72 x 320 at x 56');
 

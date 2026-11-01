@@ -1,14 +1,15 @@
 /*
- * The forecast overlay (TVOS-LAUNCHER-MERGE-SPEC.md S4): the city's weather now, the next 24 hours and 7 days, in one
- * Liquid Glass panel over the Frosted Horizon (day, or its twilight at night). Opened with OK on Control Center's
- * weather card; Back closes it, ← → move along the hours. Its layout follows tvOS-Launcher's WeatherView (adapted from
- * tvOS-Launcher (Apache-2.0)): the hours in a row, the days as a list with temperature-range bars across the week.
- * Only transform and opacity animate; everything is built when it opens, nothing while it moves.
+ * The weather card (Control Center's weather platter → OK): Apple Weather's card, floating in Liquid Glass over the
+ * home screen (x 140–860, y 120–960, radius 40), the home dimmed behind it. The city, the temperature now (64 px light),
+ * the sky and the day's range; the next 6 hours (Now and 5 more, rain in sky blue); then 7 days, each with its range as
+ * a yellow-to-orange bar on the week's scale, a white dot at the temperature now on Today. Back or OK closes it, ← →
+ * move along the hours. Adapted from tvOS-Launcher's WeatherView (Apache-2.0). Only transform and opacity animate;
+ * everything is built when it opens, nothing while it moves.
  */
 var Forecast = (function () {
   'use strict';
 
-  var HOUR_W = 112, HOURS_SHOWN = 12, BAR_W = 300;
+  var HOUR_W = 104, HOURS_SHOWN = 6, BAR_W = 196;
   var layer = null, panel = null, strip = null, cols = [], focus = 0, first = 0, open = false;
   var show = null, scroll = null, onClose = null;
 
@@ -38,8 +39,7 @@ var Forecast = (function () {
 
   function build() {
     layer.innerHTML = '';
-    el('div', 'hz hz-day', layer);
-    el('div', 'hz hz-night', layer);
+    el('div', 'veil', layer);
     panel = el('div', 'panel', layer);
     var w = Data.weather;
     if (!w) {
@@ -47,7 +47,7 @@ var Forecast = (function () {
       cols = [];
       return;
     }
-    // Now: the city, the temperature, the sky, the day's range, then humidity, wind, sunrise and sunset.
+    // Now: the city, the temperature, the sky and the day's range; humidity, wind, sunrise and sunset to the right.
     var now = el('div', 'now', panel);
     el('div', 'city', now, Data.city || tr('Weather'));
     var big = el('div', 'big', now);
@@ -55,15 +55,31 @@ var Forecast = (function () {
     el('span', 'temp', big, Data.degrees(w.temp));
     el('div', 'cond', now, Data.condition(w.code, w.isDay));
     el('div', 'range', now, trf('H:{max}  L:{min}', {max: Data.degrees(w.max), min: Data.degrees(w.min)}));
-    var stats = el('div', 'stats', now);
+    var stats = el('div', 'stats', panel);
     stat(stats, tr('Humidity'), percent(w.humidity) || '—');
     stat(stats, tr('Wind'), Data.wind(w.wind));
     stat(stats, tr('Sunrise'), w.sunrise ? Data.time(w.sunrise) : '—');
     stat(stats, tr('Sunset'), w.sunset ? Data.time(w.sunset) : '—');
-    // 7 days: each a row with its range as a bar on the week's scale (cool to warm, as Apple's Weather).
+    // The next 6 hours: Now and the 5 after it (one label each, also the night the clocks go back: data.js).
+    var hours = el('div', 'hours', panel);
+    el('div', 'head', hours, tr('Hourly Forecast'));
+    var view = el('div', 'view', hours);
+    strip = el('div', 'strip', view);
+    cols = [];
+    var list = (w.hours24 || []).slice(0, HOURS_SHOWN), i;
+    for (i = 0; i < list.length; i++) {
+      var h = list[i], col = el('div', 'hour', strip);
+      col.style.left = (i * HOUR_W) + 'px';
+      el('div', 't', col, h.now ? tr('Now') : Data.hour(h.at));
+      sym(Data.symbol(h.code, h.day), col);
+      el('div', 'r', col, h.rain >= 20 ? percent(h.rain) : '');
+      el('div', 'd', col, Data.degrees(h.temp));
+      cols.push(col);
+    }
+    // 7 days: each its range as a bar on the week's scale, yellow to orange (#FACC15 → #FB923C), as Apple's Weather.
     var week = el('div', 'week', panel);
     el('div', 'head', week, tr('7-Day Forecast'));
-    var days = w.days7 || [], lo = Infinity, hi = -Infinity, i;
+    var days = w.days7 || [], lo = Infinity, hi = -Infinity;
     for (i = 0; i < days.length; i++) { lo = Math.min(lo, days[i].min); hi = Math.max(hi, days[i].max); }
     var span = Math.max(1, hi - lo);
     for (i = 0; i < days.length; i++) {
@@ -74,31 +90,14 @@ var Forecast = (function () {
       el('span', 'rain', row, d.rain >= 20 ? percent(d.rain) : '');
       el('span', 'min', row, Data.degrees(d.min));
       var track = el('span', 'track', row), fill = el('span', 'fill', track);
-      var left = (d.min - lo) / span * BAR_W, width = Math.max(10, (d.max - d.min) / span * BAR_W);
+      var left = (d.min - lo) / span * BAR_W, width = Math.max(12, (d.max - d.min) / span * BAR_W);
       fill.style.left = Math.round(left) + 'px';
       fill.style.width = Math.round(width) + 'px';
-      fill.style.backgroundPosition = -Math.round(left) + 'px 0';   // the gradient spans the whole track
       if (d.today && w.temp !== undefined) {
         var dot = el('span', 'dot', track);
         dot.style.left = Math.round(Math.max(0, Math.min(BAR_W, (w.temp - lo) / span * BAR_W)) - 6) + 'px';
       }
       el('span', 'max', row, Data.degrees(d.max));
-    }
-    // The next 24 hours: twelve show at once, ← → move the highlight and the row follows.
-    var hours = el('div', 'hours', panel);
-    el('div', 'head', hours, tr('Next 24 Hours'));
-    var view = el('div', 'view', hours);
-    strip = el('div', 'strip', view);
-    cols = [];
-    var list = w.hours24 || [];
-    for (i = 0; i < list.length; i++) {
-      var h = list[i], col = el('div', 'hour', strip);
-      col.style.left = (i * HOUR_W) + 'px';
-      el('div', 't', col, h.now ? tr('Now') : Data.hour(h.at));
-      sym(Data.symbol(h.code, h.day), col);
-      el('div', 'd', col, Data.degrees(h.temp));
-      el('div', 'r', col, h.rain >= 20 ? percent(h.rain) : '');
-      cols.push(col);
     }
   }
 
@@ -121,7 +120,7 @@ var Forecast = (function () {
     var a = show.x;
     layer.style.opacity = a;
     layer.style.visibility = a > 0.002 ? 'visible' : 'hidden';
-    if (panel) Motion.transform(panel, 'scale(' + (1.04 - 0.04 * a).toFixed(4) + ')');
+    if (panel) Motion.transform(panel, 'translateX(' + (60 * (1 - a)).toFixed(1) + 'px) scale(' + (0.94 + 0.06 * a).toFixed(4) + ')');
     if (strip) Motion.transform(strip, 'translateX(' + scroll.x.toFixed(1) + 'px)');
   }
 

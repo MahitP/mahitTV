@@ -207,6 +207,36 @@ final class Prefs {
     static String saverClock() { return sp().getString("saverClock", "tall"); }
     static void setSaverClock(String style) { put("saverClock", style); }
 
+    // MARK: - Brightness, glass, the Top Shelf, Settings' style and the welcome setup
+
+    /**
+     * The screen's brightness, 0–100 (Control Center's slider): the TV's own screen_brightness where mahitTV mode can set
+     * it (HomeMode.brightness, put back by Original), and a dimmer over mahitTV's screens below 100 (0.78 black at 0).
+     */
+    static int brightness() { return Math.max(0, Math.min(100, sp().getInt("brightness", 100))); }
+    static void setBrightness(int v) {
+        sp().edit().putInt("brightness", Math.max(0, Math.min(100, v))).apply();
+        version++;
+    }
+    /** The glass: "liquid" (refractive, the default) or "frosted" (a plain soft blur, no lensing). */
+    static String glass() { return "frosted".equals(sp().getString("glass", "liquid")) ? "frosted" : "liquid"; }
+    static void setGlass(String v) { put("glass", v); }
+    /**
+     * The Top Shelf: "app" (the focused streaming app's Continue Watching, the Frosted Horizon elsewhere; the default),
+     * "picks" (the recommendations whatever is focused), "all" (a Continue Watching title whatever is focused) or "off".
+     */
+    static String topShelf() {
+        String v = sp().getString("topShelf", "app");
+        return v.equals("picks") || v.equals("all") || v.equals("off") ? v : "app";
+    }
+    static void setTopShelf(String v) { put("topShelf", v); }
+    /** Settings: "full" (tvOS's two panes, the default) or "sidebar" (a Liquid Glass sidebar over the home screen). */
+    static String settingsStyle() { return "sidebar".equals(sp().getString("settingsStyle", "full")) ? "sidebar" : "full"; }
+    static void setSettingsStyle(String v) { put("settingsStyle", v); }
+    /** The welcome setup has run (false on a new TV, and after Run Setup Again). */
+    static boolean setupDone() { return sp().getBoolean("setupDone", false); }
+    static void setSetupDone(boolean on) { put("setupDone", on); }
+
     // MARK: - Widgets and coins
 
     static boolean weather() { return sp().getBoolean("weather", true); }

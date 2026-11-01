@@ -74,6 +74,13 @@ final class HomeApps {
      * opens the inputs' list inside the panel. The home screen handles POWER, DND and INPUT_SHEET.
      */
     static final int POWER = 15, AUDIO = 16, DND = 17, INPUT_SHEET = 18;
+    /**
+     * The modular Control Center: the vertical brightness and volume sliders (↑ ↓ change them) and Appearance (Light,
+     * Dark, Automatic). The home screen handles all three.
+     */
+    static final int BRIGHTNESS = 19, VOLUME = 20, APPEARANCE = 21;
+    /** All Apps' folder ("TV & Utilities"): its apps in `children`; the home screen opens it over the grid. */
+    static final int FOLDER = 22;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -96,6 +103,7 @@ final class HomeApps {
         int[] style;        // the composed backdrop (top, bottom colour, logo mode) when the app has no brand style
         float emblemHeight; // > 0: the emblem's height as a share of the tile's (an icon); 0: sized by its ink (a logo)
         boolean connected = true;
+        List<Item> children;   // FOLDER: the apps in it
 
         void setTile(Bitmap b) {
             tile = b;
@@ -345,23 +353,51 @@ final class HomeApps {
         return shortcut(SLEEP, "sleep", Ui.tr("Sleep Timer"), "bedtime");
     }
 
+    /** The TV's own utilities, by package or name: its settings, store, browser, files, players, inputs and the maker's apps. */
+    private static final Pattern UTILITY = Pattern.compile(
+            "settings|vending|store|browser|chrome|files|filemanager|explorer|mediaplayer|gallery|help|manual|guide|update|account"
+                    + "|tcl|tvcenter|livetv|tv\\.input|hdmi|usb|miracast|keystone|smartthings", Pattern.CASE_INSENSITIVE);
+
     /**
-     * Control Center's cards, in pairs (its 2 columns): Power | Sleep Timer, Inputs | Audio Output, Wi-Fi | Bluetooth,
-     * Do Not Disturb | Screensaver, Lock | Close Background Apps, then the TV's extras where it has them, and Home
-     * Settings | TV Settings. All Apps (↓ from the Dock) and Recent Apps (hold Home) left it.
+     * All Apps' list with the TV's utilities (two or more) in one "TV & Utilities" folder at its end; a video app never
+     * goes in it, and a single utility stays an app.
+     */
+    static List<Item> folders(List<Item> apps) {
+        List<Item> util = new ArrayList<>(), rest = new ArrayList<>();
+        for (Item it : apps) {
+            boolean utility = it.kind == APP && it.pkg != null && !Wallpaper.videoApp(it.pkg)
+                    && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()));
+            (utility ? util : rest).add(it);
+        }
+        if (util.size() < 2) return apps;
+        Item folder = shortcut(FOLDER, "folder:utilities", Ui.tr("TV & Utilities"), "folder");
+        folder.children = util;
+        rest.add(folder);
+        return rest;
+    }
+
+    /**
+     * The cards of the two panels under the top-right cluster (HomeView splits them and lays each out by its kind).
+     * Control Center (the bubble): the 2×2 cluster (Wi-Fi, Bluetooth, Do Not Disturb, Sleep Timer) beside the brightness
+     * and volume sliders, the Appearance and Audio Output pills, and round Power, Close Background Apps and the TV's
+     * extras where it has them. The profile panel (the pill): Inputs, then round Screensaver, Lock, Home Settings and TV
+     * Settings. All Apps (↓ from the Dock) and Recent Apps (hold Home) left them.
      */
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
-        items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
-        items.add(sleepTimer());
-        items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
-        items.add(shortcut(AUDIO, "audio", Ui.tr("Audio Output"), "speaker"));
         items.add(shortcut(WIFI, "wifi", Ui.tr("Wi-Fi"), "wifi"));
         items.add(shortcut(BLUETOOTH, "bluetooth", Ui.tr("Bluetooth"), "bluetooth"));
         items.add(shortcut(DND, "dnd", Ui.tr("Do Not Disturb"), "moon"));
+        items.add(sleepTimer());
+        items.add(shortcut(BRIGHTNESS, "brightness", Ui.tr("Brightness"), "sunny"));
+        items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
+        items.add(shortcut(APPEARANCE, "appearance", Ui.tr("Appearance"), "appearance"));
+        items.add(shortcut(AUDIO, "audio", Ui.tr("Audio Output"), "speaker"));
+        items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
+        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
+        items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
         items.add(shortcut(SAVER, "screensaver", Ui.tr("Screensaver"), "screensaver"));
         items.add(shortcut(LOCK, "lock", Ui.tr("Lock"), "lock"));
-        items.add(shortcut(CLOSE_BG, "close-bg", Ui.tr("Close Background Apps"), "memory"));
         // HY300 projectors (Hotack, Allwinner H713): keystone and focus live in the maker's settings app, and the
         // stock home screen was the only way to its Miracast receiver. Each shows only where the TV has it.
         device(c, items, "keystone", Ui.tr("Keystone"), "keystone", new Intent("action.htcsettings.prjsettings"));
@@ -735,8 +771,9 @@ final class HomeApps {
                 if (HomeMode.AMAZON && fireInput(a, it)) return true;
                 intent = inputIntent(a, it);
                 break;
-            case SETTINGS:
-                intent = new Intent().setComponent(new ComponentName(a, SettingsActivity.class));
+            case SETTINGS:   // full screen, or the Floating Sidebar over the home screen (Settings Style)
+                intent = new Intent().setComponent(new ComponentName(a,
+                        "sidebar".equals(Prefs.settingsStyle()) ? SettingsSidebar.class : SettingsActivity.class));
                 break;
             case SLEEP:
                 intent = new Intent().setComponent(new ComponentName(a, SettingsActivity.class))
@@ -983,7 +1020,7 @@ final class HomeApps {
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         String key = file.getName().substring(0, file.getName().lastIndexOf('-', file.getName().lastIndexOf("-v") - 1));
-        File[] old = dir.listFiles((d, name) -> name.matches(java.util.regex.Pattern.quote(key) + "-\\d+-v\\d+\\.png(\\.none|\\.color)?"));
+        File[] old = dir.listFiles((d, name) -> name.matches(Pattern.quote(key) + "-\\d+-v\\d+\\.png(\\.none|\\.color)?"));
         if (old != null) {
             for (File f : old) {
                 //noinspection ResultOfMethodCallIgnored

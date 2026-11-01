@@ -352,6 +352,12 @@ final class Scene {
     }
 
     /**
+     * Frosted Glass (Settings → Appearance & Startup → Glass, or the welcome setup): the plain soft blur everywhere, no
+     * refraction, lens band or specular rims; Liquid Glass (false, the default) as before. HomeView sets it from Prefs.
+     */
+    static volatile boolean frosted;
+
+    /**
      * Liquid Glass in rectangle `r` (screen coordinates). band and refraction in px (the thick rim and how much it
      * bends the image), specular = rim highlight, alpha = opacity of the whole glass.
      */
@@ -359,7 +365,7 @@ final class Scene {
                 float specular, float alpha) {
         if (alpha <= 0.004f) return;
         tintAlpha = adaptive(tint, tintAlpha);
-        if (liquid == null) {
+        if (liquid == null || frosted) {   // no AGSL, or Frosted Glass picked: the soft blur without the lensing
             if (imageGlass && softShaderA != null) {
                 // Mapped by what the copy covers: 270 / 8 = 33.75 rows, of which the bitmap holds 33.
                 bitmapGlass(c, r, radius, softShaderA, Backdrop.GW / (float) SOFT, Backdrop.GH / (float) SOFT, softShaderB,
@@ -577,7 +583,7 @@ final class Scene {
             int tinted = lift > 0.001f ? blend(tint | 0xFF000000, 0xFFFFFFFF, Math.min(0.25f, lift * 2)) : tint | 0xFF000000;
             flatFill.setColor(Ui.alpha(tinted, tintAlpha * alpha * body));
             shape(c, r, radius, flatFill, curved);
-            lens(c, r, radius, a, aw, ah, alpha * body, curved);
+            if (!frosted) lens(c, r, radius, a, aw, ah, alpha * body, curved);
         }
         flatRim.setAlpha(Math.round(0x24 * alpha));
         shape(c, r, radius, flatRim, curved);

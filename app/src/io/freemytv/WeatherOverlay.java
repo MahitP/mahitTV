@@ -10,50 +10,54 @@ import android.graphics.Shader;
 import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.View;
-
 import java.util.Calendar;
 
 /**
- * The full-screen forecast (TVOS-LAUNCHER-MERGE-SPEC.md S4): the next 24 hours and 7 days over the Frosted Horizon.
- * One Liquid Glass panel: on the left the city, now (a big temperature, the condition, high and low, humidity and wind)
- * and the next 24 hours (← → scroll them); on the right 7 days with temperature-range bars, blue to orange, as Apple's
- * Weather draws them. Dark text by day, white at night (as LockView). It comes in from 1.04× on SHEET_OPEN and leaves on
- * SHEET_CLOSE with Back. HomeView adds it like LockView and sends it keys while it shows.
+ * The weather card (Control Center's weather platter → OK): Apple Weather's card floating in Liquid Glass over the home
+ * screen (x 140–860, y 120–960, radius 40), the home dimmed behind it and blurred through the glass. The city, now (64
+ * light), the condition, high and low, humidity, wind, sunrise and sunset; the next 6 hours (Now and 5 more, the chance
+ * of rain in sky blue #5AC8FA, each label once: HomeData drops the clocks-back night's repeated hour); then 7 days, each
+ * with its range as a bar on the week's scale, yellow to orange (#FACC15 → #FB923C), a white dot at the temperature now
+ * on Today. Dark text by day, white at night (as LockView). It springs in from the right and 0.94× on SHEET_OPEN and
+ * leaves on SHEET_CLOSE with Back or OK. HomeView adds it like LockView and sends it keys while it shows.
  * Everything is measured and every string made in show()/onSizeChanged: a frame only moves springs.
- * Layout ideas adapted from tvOS-Launcher (Apache-2.0).
+ * Layout ideas adapted from tvOS-Launcher's WeatherView (Apache-2.0).
  */
 final class WeatherOverlay extends View implements Choreographer.FrameCallback {
     private static final int INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;
-    private static final int VEIL_DAY = 0x1AFFFFFF, VEIL_NIGHT = 0x24000000;
-    /** The range bars: cool to warm across the week's lowest to highest. */
-    private static final int[] BAR = {0xFF5AC8FA, 0xFF34C759, 0xFFFFCC00, 0xFFFF9500};
-    /** Layout, in 1080p px. */
-    private static final float PANEL_L = 200, PANEL_T = 130, PANEL_R = 1720, PANEL_B = 950, RADIUS = 56;
-    private static final float LEFT_X = 268, LEFT_W = 780, SPLIT_X = 1092, RIGHT_X = 1136, RIGHT_R = 1656;
-    private static final float CELL = 112, HOURS_TOP = 640, ROW_TOP = 278, ROW_H = 92;
-    private static final int STEP = 3;   // hours scrolled by ← →
+    private static final int VEIL_DAY = 0x52162130, VEIL_NIGHT = 0x66000000;
+    /** The range bars: yellow to orange across the week's lowest to highest. */
+    private static final int[] BAR = {0xFFFACC15, 0xFFFB923C};
+    private static final int RAIN = 0xFF5AC8FA;
+    /** Layout, in 1080p px: the card, then each part from its left (L) and top (T). */
+    private static final float L = 140, T = 120, R = 860, B = 960, RADIUS = 40, PAD = 48;
+    private static final float STATS_X = 424, HOURS_TOP = 256, CELL = 104, WEEK_TOP = 450, ROW_H = 50;
+    private static final float BAR_L = 332, BAR_W = 196;
+    private static final int HOURS = 6;
 
     private final Scene scene;
-    private final Spring appear = new Spring(Spring.SHEET_OPEN, 0);
-    private final Spring scroll = new Spring(Spring.SPATIAL_SCROLL, 0).px(), nudge = new Spring(Spring.BOUNDARY_BUMP, 0).px();
+    private final Spring appear = new Spring(Spring.SHEET_OPEN, 0), nudge = new Spring(Spring.BOUNDARY_BUMP, 0).px();
     private boolean night = true, posted, closing;
     private long lastNanos;
     private float w, h, k = 1;
-    private int first, visible = 6;
-    private Bitmap horizon, nowIcon;
+    private Bitmap nowIcon;
     private final RectF screen = new RectF(), panel = new RectF(), tmp = new RectF();
     private final Paint image = new Paint(Paint.FILTER_BITMAP_FLAG), veil = new Paint(), line = new Paint();
     private final Paint barTrack = new Paint(Paint.ANTI_ALIAS_FLAG), barFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private Paint cityP, condP, tempP, detailP, headP, hourP, hourTempP, rainP, dayP, lowP, highP, emptyP;
+    private final Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG), dotRim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint cityP, condP, tempP, rangeP, statLabelP, statP, headP, hourP, hourTempP, rainP, dayP, lowP, highP, emptyP;
 
     // What's shown, made on show(): strings and icons for every hour and day.
     private boolean hasData;
-    private String city = "", condition = "", temp = "", highLow = "", details = "", hoursHead = "", weekHead = "", empty = "";
+    private String city = "", condition = "", temp = "", highLow = "", hoursHead = "", weekHead = "", empty = "";
+    private final String[] statLabel = new String[4], statValue = new String[4];
     private String[] hourLabel = new String[0], hourTemp = new String[0], hourRain = new String[0];
     private Bitmap[] hourIcon = new Bitmap[0];
     private String[] dayLabel = new String[0], dayLow = new String[0], dayHigh = new String[0], dayRain = new String[0];
     private Bitmap[] dayIcon = new Bitmap[0];
     private float[] dayFrom = new float[0], dayTo = new float[0];
+    private float nowAt = -1;   // where the temperature now sits on Today's bar (0..1), −1 without one
+    private int todayRow = -1;
 
     WeatherOverlay(Activity a, Scene scene) {
         super(a);
@@ -67,8 +71,6 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         HomeData data = HomeData.get(getContext());
         night = Wallpaper.dark(Prefs.wallpaper(), data.isNight(System.currentTimeMillis()));
         closing = false;
-        first = 0;
-        scroll.snap(0);
         nudge.snap(0);
         appear.tune(Spring.SHEET_OPEN);
         appear.snap(0);
@@ -92,7 +94,7 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         return getVisibility() == VISIBLE && !closing;
     }
 
-    /** Back leaves (on SHEET_CLOSE); ← → scroll the hours. Other keys (volume, media, channels) go on to the system. */
+    /** Back or OK leaves (on SHEET_CLOSE); the arrows only nudge it. Other keys (volume, media) go on to the system. */
     boolean onKey(KeyEvent e) {
         int code = e.getKeyCode();
         if (!handles(code)) return false;
@@ -102,9 +104,8 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
             return true;
         }
         if (!down) return true;
-        if (code == KeyEvent.KEYCODE_DPAD_RIGHT) scrollBy(1);
-        else if (code == KeyEvent.KEYCODE_DPAD_LEFT) scrollBy(-1);
-        else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) bump(code == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1, false);
+        if (code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_LEFT) bump(code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+        else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) bump(0);
         else if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) dismiss();
         return true;
     }
@@ -128,21 +129,9 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         wake();
     }
 
-    private void scrollBy(int dir) {
-        int max = Math.max(0, hourLabel.length - visible), next = Math.max(0, Math.min(max, first + dir * STEP));
-        if (next == first) {
-            bump(dir, true);
-            return;
-        }
-        first = next;
-        scroll.target = first * CELL * k;
-        Click c = Click.current();
-        if (c != null) c.move();
-        wake();
-    }
-
-    private void bump(int dir, boolean sideways) {
-        if (sideways) nudge.impulse(dir * Spring.BUMP_VELOCITY);
+    /** Nothing that way: the card tugs toward the press and springs back. */
+    private void bump(int dir) {
+        if (dir != 0) nudge.impulse(dir * Spring.BUMP_VELOCITY);
         Click.boundary();
         wake();
     }
@@ -161,7 +150,7 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         if (getVisibility() != VISIBLE) return;
         float dt = lastNanos == 0 ? 1 / 60f : Math.min(1 / 30f, (frameTimeNanos - lastNanos) / 1e9f);
         lastNanos = frameTimeNanos;
-        boolean moving = appear.step(dt) | scroll.step(dt) | nudge.step(dt);
+        boolean moving = appear.step(dt) | nudge.step(dt);
         apply();
         invalidate();
         if (closing && appear.target == 0 && (appear.settled() || appear.value <= 0.004f)) {
@@ -175,12 +164,9 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         }
     }
 
-    /** 1.04 → 1 and fading in (SHEET_OPEN), the reverse leaving. */
+    /** The veil fades in (the view's alpha); the card comes from 60 px right and 0.94× (drawn in onDraw). */
     private void apply() {
-        float v = Ui.clamp(appear.value), z = 1.04f - 0.04f * v;
-        setScaleX(z);
-        setScaleY(z);
-        setAlpha(v);
+        setAlpha(Ui.clamp(appear.value));
     }
 
     // MARK: - Layout (never while drawing)
@@ -189,50 +175,52 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         w = width;
         h = height;
         k = w / 1920f;
-        setPivotX(w / 2);
-        setPivotY(h / 2);
         screen.set(0, 0, w, h);
-        panel.set(PANEL_L * k, PANEL_T * k, PANEL_R * k, PANEL_B * k);
-        cityP = Ui.text(Ui.displaySemibold, 44 * k, WHITE);
-        condP = Ui.text(Ui.medium, 30 * k, WHITE);
-        tempP = Ui.numbers(Ui.thin, 168 * k, WHITE);
-        detailP = Ui.text(Ui.medium, 25 * k, WHITE);
-        headP = Ui.text(Ui.semibold, 22 * k, WHITE);
-        hourP = Ui.numbers(Ui.medium, 22 * k, WHITE);
+        panel.set(L * k, T * k, R * k, B * k);
+        cityP = Ui.text(Ui.displaySemibold, 28 * k, WHITE);
+        condP = Ui.text(Ui.semibold, 24 * k, WHITE);
+        tempP = Ui.numbers(Ui.light, 64 * k, WHITE);
+        rangeP = Ui.numbers(Ui.medium, 22 * k, WHITE);
+        statLabelP = Ui.text(Ui.semibold, 17 * k, WHITE);
+        statP = Ui.numbers(Ui.medium, 24 * k, WHITE);
+        headP = Ui.text(Ui.semibold, 19 * k, WHITE);
+        headP.setLetterSpacing(0.06f);
+        hourP = Ui.numbers(Ui.semibold, 19 * k, WHITE);
         hourP.setTextAlign(Paint.Align.CENTER);
-        hourTempP = Ui.numbers(Ui.semibold, 28 * k, WHITE);
+        hourTempP = Ui.numbers(Ui.medium, 24 * k, WHITE);
         hourTempP.setTextAlign(Paint.Align.CENTER);
-        rainP = Ui.numbers(Ui.semibold, 19 * k, 0xFF2F8FE0);
+        rainP = Ui.numbers(Ui.semibold, 16 * k, RAIN);
         rainP.setTextAlign(Paint.Align.CENTER);
-        dayP = Ui.text(Ui.semibold, 28 * k, WHITE);
-        lowP = Ui.numbers(Ui.medium, 27 * k, WHITE);
+        dayP = Ui.text(Ui.semibold, 24 * k, WHITE);
+        lowP = Ui.numbers(Ui.medium, 24 * k, WHITE);
         lowP.setTextAlign(Paint.Align.RIGHT);
-        highP = Ui.numbers(Ui.semibold, 27 * k, WHITE);
+        highP = Ui.numbers(Ui.medium, 24 * k, WHITE);
         highP.setTextAlign(Paint.Align.RIGHT);
-        emptyP = Ui.text(Ui.medium, 30 * k, WHITE);
+        emptyP = Ui.text(Ui.medium, 28 * k, WHITE);
         emptyP.setTextAlign(Paint.Align.CENTER);
-        line.setStrokeWidth(Math.max(1, 1.5f * k));
-        float barL = (RIGHT_R - 250) * k, barR = (RIGHT_R - 76) * k;
+        line.setStrokeWidth(Math.max(1, k));
+        float barL = (L + BAR_L) * k, barR = (L + BAR_L + BAR_W) * k;
         barFill.setShader(new LinearGradient(barL, 0, barR, 0, BAR, null, Shader.TileMode.CLAMP));
-        visible = Math.max(1, (int) (LEFT_W / CELL));
+        dot.setColor(WHITE);
+        dotRim.setStyle(Paint.Style.STROKE);
+        dotRim.setStrokeWidth(2 * k);
         theme();
         if (getVisibility() == VISIBLE) measure(HomeData.get(getContext()).weather);
     }
 
-    /** The Horizon and the ink for the time of day. */
+    /** The ink for the time of day. */
     private void theme() {
         if (w == 0 || cityP == null) return;
-        horizon = Horizon.get((int) w, (int) h, night);
         int ink = night ? WHITE : INK;
-        for (Paint p : new Paint[] {cityP, tempP, hourTempP, dayP, highP, emptyP}) p.setColor(ink);
-        condP.setColor(Ui.alpha(ink, 0.8f));
-        detailP.setColor(Ui.alpha(ink, 0.72f));
+        for (Paint p : new Paint[] {cityP, condP, tempP, statP, hourTempP, dayP, highP, emptyP}) p.setColor(ink);
+        rangeP.setColor(Ui.alpha(ink, 0.62f));
+        statLabelP.setColor(Ui.alpha(ink, 0.55f));
         headP.setColor(Ui.alpha(ink, 0.55f));
-        hourP.setColor(Ui.alpha(ink, 0.72f));
-        lowP.setColor(Ui.alpha(ink, 0.6f));
-        rainP.setColor(night ? 0xFF64D2FF : 0xFF1E7FD6);
-        line.setColor(Ui.alpha(ink, 0.12f));
+        hourP.setColor(Ui.alpha(ink, 0.62f));
+        lowP.setColor(Ui.alpha(ink, 0.55f));
+        line.setColor(Ui.alpha(ink, night ? 0.12f : 0.1f));
         barTrack.setColor(Ui.alpha(ink, night ? 0.16f : 0.12f));
+        dotRim.setColor(Ui.alpha(INK, 0.3f));
         veil.setColor(night ? VEIL_NIGHT : VEIL_DAY);
     }
 
@@ -240,19 +228,24 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
     private void measure(HomeData.Weather wx) {
         if (cityP == null) return;
         city = Prefs.city();
-        hoursHead = Ui.tr("Next 24 Hours");
-        weekHead = Ui.tr("7-Day Forecast");
+        hoursHead = Ui.tr("Hourly Forecast").toUpperCase(Ui.locale());
+        weekHead = Ui.tr("7-Day Forecast").toUpperCase(Ui.locale());
         empty = Ui.tr("The forecast isn't here yet. It comes with the internet.");
         hasData = !Double.isNaN(wx.temp);
         if (!hasData) return;
         condition = HomeData.condition(wx.code, wx.isDay);
         temp = HomeData.degrees(wx.temp);
-        highLow = HomeData.highLow(wx, "   ");
-        String hum = wx.humidity >= 0 ? Ui.trf("Humidity {n}%", "n", wx.humidity) : "";
-        String wind = Double.isNaN(wx.wind) ? "" : Ui.trf("Wind {speed}", "speed", HomeData.wind(wx.wind));
-        details = hum.isEmpty() ? wind : wind.isEmpty() ? hum : Ui.trf("{a}  ·  {b}", "a", hum, "b", wind);
-        nowIcon = WeatherIcons.get(wx.code, wx.isDay, Math.round(170 * k));
-        int n = wx.hours24.size();
+        highLow = HomeData.highLow(wx, "  ");
+        statLabel[0] = Ui.tr("Humidity");
+        statValue[0] = wx.humidity >= 0 ? Ui.trf("{n}%", "n", wx.humidity) : "—";
+        statLabel[1] = Ui.tr("Wind");
+        statValue[1] = Double.isNaN(wx.wind) ? "—" : HomeData.wind(wx.wind);
+        statLabel[2] = Ui.tr("Sunrise");
+        statValue[2] = wx.sunrise != 0 ? Ui.time(wx.sunrise) : "—";
+        statLabel[3] = Ui.tr("Sunset");
+        statValue[3] = wx.sunset != 0 ? Ui.time(wx.sunset) : "—";
+        nowIcon = WeatherIcons.get(wx.code, wx.isDay, Math.round(48 * k));
+        int n = Math.min(HOURS, wx.hours24.size());
         hourLabel = new String[n];
         hourTemp = new String[n];
         hourRain = new String[n];
@@ -262,7 +255,7 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
             hourTemp[i] = HomeData.degrees(wx.hour24Temp.get(i));
             int r = wx.hour24Rain.get(i);
             hourRain[i] = r >= 20 ? Ui.trf("{n}%", "n", r) : null;
-            hourIcon[i] = WeatherIcons.get(wx.hour24Code.get(i), wx.hour24Day.get(i), Math.round(60 * k));
+            hourIcon[i] = WeatherIcons.get(wx.hour24Code.get(i), wx.hour24Day.get(i), Math.round(34 * k));
         }
         int d = wx.week.size();
         dayLabel = new String[d];
@@ -272,6 +265,8 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
         dayIcon = new Bitmap[d];
         dayFrom = new float[d];
         dayTo = new float[d];
+        nowAt = -1;
+        todayRow = -1;
         double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE;
         for (int i = 0; i < d; i++) {
             lo = Math.min(lo, wx.weekMin.get(i));
@@ -289,9 +284,13 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
             dayHigh[i] = HomeData.degrees(wx.weekMax.get(i));
             int r = wx.weekRain.get(i);
             dayRain[i] = r >= 20 ? Ui.trf("{n}%", "n", r) : null;
-            dayIcon[i] = WeatherIcons.get(wx.weekCode.get(i), true, Math.round(52 * k));
+            dayIcon[i] = WeatherIcons.get(wx.weekCode.get(i), true, Math.round(30 * k));
             dayFrom[i] = (float) ((wx.weekMin.get(i) - lo) / span);
             dayTo[i] = (float) ((wx.weekMax.get(i) - lo) / span);
+            if (isToday) {
+                nowAt = (float) Math.max(0, Math.min(1, (wx.temp - lo) / span));
+                todayRow = i;
+            }
         }
     }
 
@@ -299,59 +298,66 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
 
     @Override protected void onDraw(Canvas c) {
         if (w == 0 || cityP == null) return;
-        Horizon.draw(c, horizon, screen, image, 1);
         c.drawRect(screen, veil);
-        scene.glass(c, panel, RADIUS * k, night ? 0xFF1C1C22 : WHITE, night ? 0.42f : 0.5f, WHITE, 0.06f, 0.04f, 1);
-        float x = LEFT_X * k;
-        c.drawText(city, x, 222 * k, cityP);
+        float v = Ui.clamp(appear.value), z = 0.94f + 0.06f * v;
+        c.save();
+        c.translate(60 * k * (1 - v) + Spring.rubber(nudge.value) * k * 0.4f, 0);
+        c.scale(z, z, panel.centerX(), panel.centerY());
+        scene.glass(c, panel, RADIUS * k, night ? 0xFF1E2330 : 0xFFF6F7FA, night ? 0.9f : 0.88f, WHITE, 0.06f, 0.04f, 1);
+        float x = (L + PAD) * k, right = (R - PAD) * k;
+        c.drawText(city, x, (T + 70) * k, cityP);
         if (!hasData) {
             c.drawText(empty, panel.centerX(), panel.centerY(), emptyP);
+            c.restore();
             return;
         }
-        c.drawText(condition, x, 268 * k, condP);
-        c.drawText(temp, x - 6 * k, 452 * k, tempP);
-        if (nowIcon != null) c.drawBitmap(nowIcon, (LEFT_X + LEFT_W - 180) * k, 270 * k, image);
-        c.drawText(highLow, x, 512 * k, detailP);
-        c.drawText(details, x, 552 * k, detailP);
-
-        // The next 24 hours: a row of cells clipped to the left column, scrolled by ← →.
-        c.drawText(hoursHead, x, (HOURS_TOP - 20) * k, headP);
-        c.drawLine(x, (HOURS_TOP - 4) * k, (LEFT_X + LEFT_W) * k, (HOURS_TOP - 4) * k, line);
-        c.save();
-        c.clipRect(x - 4 * k, HOURS_TOP * k, (LEFT_X + LEFT_W + 4) * k, (PANEL_B - 30) * k);
-        float off = scroll.value - Spring.rubber(nudge.value) * k;
-        for (int i = 0; i < hourLabel.length; i++) {
-            float cx = x + (i + 0.5f) * CELL * k - off;
-            if (cx < x - CELL * k || cx > (LEFT_X + LEFT_W + CELL) * k) continue;
-            c.drawText(hourLabel[i], cx, (HOURS_TOP + 44) * k, hourP);
-            Bitmap b = hourIcon[i];
-            if (b != null) c.drawBitmap(b, cx - b.getWidth() / 2f, (HOURS_TOP + 62) * k, image);
-            c.drawText(hourTemp[i], cx, (HOURS_TOP + 166) * k, hourTempP);
-            if (hourRain[i] != null) c.drawText(hourRain[i], cx, (HOURS_TOP + 200) * k, rainP);
+        // Now: the symbol and the temperature, the condition, high and low; the four stats to the right.
+        if (nowIcon != null) c.drawBitmap(nowIcon, x, (T + 96) * k, image);
+        c.drawText(temp, x + 60 * k, (T + 146) * k, tempP);
+        c.drawText(condition, x, (T + 186) * k, condP);
+        c.drawText(highLow, x, (T + 218) * k, rangeP);
+        for (int i = 0; i < 4; i++) {
+            float sx = (L + STATS_X + (i % 2) * 130) * k, sy = (T + 76 + (i / 2) * 70) * k;
+            c.drawText(statLabel[i], sx, sy, statLabelP);
+            c.drawText(statValue[i], sx, sy + 30 * k, statP);
         }
-        c.restore();
-
-        // A hairline between the columns.
-        c.drawLine(SPLIT_X * k, (PANEL_T + 60) * k, SPLIT_X * k, (PANEL_B - 60) * k, line);
-
-        // 7 days: name, symbol (and the chance of rain), low, the range bar, high.
-        float rx = RIGHT_X * k, rr = RIGHT_R * k;
-        c.drawText(weekHead, rx, 222 * k, headP);
-        float barL = (RIGHT_R - 250) * k, barR = (RIGHT_R - 76) * k, bh = 8 * k;
+        // The next 6 hours.
+        float ht = (T + HOURS_TOP) * k;
+        c.drawLine(x, ht - 16 * k, right, ht - 16 * k, line);
+        c.drawText(hoursHead, x, ht + 16 * k, headP);
+        for (int i = 0; i < hourLabel.length; i++) {
+            float cx = x + (i + 0.5f) * CELL * k;
+            c.drawText(hourLabel[i], cx, ht + 58 * k, hourP);
+            Bitmap b = hourIcon[i];
+            if (b != null) c.drawBitmap(b, cx - b.getWidth() / 2f, ht + 70 * k, image);
+            if (hourRain[i] != null) c.drawText(hourRain[i], cx, ht + 126 * k, rainP);
+            c.drawText(hourTemp[i], cx, ht + 156 * k, hourTempP);
+        }
+        // 7 days: name, symbol (and the chance of rain), low, the range bar (the dot: now, on Today), high.
+        float wt = (T + WEEK_TOP) * k;
+        c.drawLine(x, wt - 16 * k, right, wt - 16 * k, line);
+        c.drawText(weekHead, x, wt + 16 * k, headP);
+        float barL = (L + BAR_L) * k, barR = barL + BAR_W * k, bh = 8 * k;
         for (int i = 0; i < dayLabel.length; i++) {
-            float top = ROW_TOP * k + i * ROW_H * k, mid = top + ROW_H * k / 2;
-            if (i > 0) c.drawLine(rx, top, rr, top, line);
-            c.drawText(dayLabel[i], rx, mid + Ui.halfCap(dayP), dayP);
+            float mid = wt + (34 + ROW_H / 2 + i * ROW_H) * k;
+            c.drawText(dayLabel[i], x, mid + Ui.halfCap(dayP), dayP);
             Bitmap b = dayIcon[i];
-            float ix = rx + 150 * k;
-            if (b != null) c.drawBitmap(b, ix, mid - b.getHeight() / 2f - (dayRain[i] != null ? 9 * k : 0), image);
-            if (dayRain[i] != null) c.drawText(dayRain[i], ix + 26 * k, mid + 34 * k, rainP);
-            c.drawText(dayLow[i], barL - 16 * k, mid + Ui.halfCap(lowP), lowP);
+            float ix = x + 104 * k;
+            if (b != null) c.drawBitmap(b, ix, mid - b.getHeight() / 2f, image);
+            if (dayRain[i] != null) c.drawText(dayRain[i], ix + 66 * k, mid + Ui.halfCap(rainP), rainP);
+            c.drawText(dayLow[i], barL - 20 * k, mid + Ui.halfCap(lowP), lowP);
             tmp.set(barL, mid - bh / 2, barR, mid + bh / 2);
             c.drawRoundRect(tmp, bh / 2, bh / 2, barTrack);
-            tmp.set(barL + (barR - barL) * dayFrom[i], mid - bh / 2, barL + (barR - barL) * Math.max(dayTo[i], dayFrom[i] + 0.04f), mid + bh / 2);
+            tmp.set(barL + (barR - barL) * dayFrom[i], mid - bh / 2,
+                    barL + (barR - barL) * Math.max(dayTo[i], dayFrom[i] + 0.06f), mid + bh / 2);
             c.drawRoundRect(tmp, bh / 2, bh / 2, barFill);
-            c.drawText(dayHigh[i], rr, mid + Ui.halfCap(highP), highP);
+            if (i == todayRow && nowAt >= 0) {
+                float dx = barL + (barR - barL) * nowAt;
+                c.drawCircle(dx, mid, 6 * k, dot);
+                c.drawCircle(dx, mid, 7 * k, dotRim);
+            }
+            c.drawText(dayHigh[i], right, mid + Ui.halfCap(highP), highP);
         }
+        c.restore();
     }
 }

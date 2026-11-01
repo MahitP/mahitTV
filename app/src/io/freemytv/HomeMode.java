@@ -19,6 +19,9 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -292,6 +295,51 @@ final class HomeMode {
                 return false;
             }
         }
+    }
+
+    private static final ExecutorService BRIGHTNESS = Executors.newSingleThreadExecutor();
+    private static final AtomicInteger BRIGHTNESS_WANTED = new AtomicInteger(-1);
+
+    /**
+     * Control Center's brightness on the TV itself: screen_brightness (0–255, manual) through our own ADB, in mahitTV
+     * mode only. The TV's own value is kept the first time (originalBrightness and originalBrightnessMode in the state
+     * file) and Original and the watchdog's revert put it back (restoreBrightness). Many TCL panels keep the backlight in
+     * their own picture menu and ignore it: the dimmer over mahitTV's screens (HomeActivity) is what always works.
+     * Steps coalesce: only the last level asked for is written. Returns at once.
+     */
+    static void brightness(Context context, int percent) {
+        final Context c = context.getApplicationContext();
+        if (BRIGHTNESS_WANTED.getAndSet(Math.max(0, Math.min(100, percent))) >= 0) return;   // one write already waits
+        BRIGHTNESS.execute(() -> {
+            int want = BRIGHTNESS_WANTED.getAndSet(-1);
+            if (want < 0 || !FREE.equals(state(c).optString("mode"))) return;
+            synchronized (RUN) {
+                try (Adb adb = Adb.connect(c, 5_000, null)) {
+                    JSONObject s = state(c);
+                    if (!s.has("originalBrightness")) {
+                        s.put("originalBrightness", adb.shell("settings get system screen_brightness").trim())
+                                .put("originalBrightnessMode", adb.shell("settings get system screen_brightness_mode").trim());
+                        save(c, s);
+                    }
+                    adb.shell("settings put system screen_brightness_mode 0");
+                    adb.shell("settings put system screen_brightness " + Math.max(1, Math.round(want * 255 / 100f)));
+                } catch (Exception e) {
+                    AppLog.w("couldn't set the brightness: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    /** Original and the watchdog's revert: the TV's own brightness and its mode, as they were before Control Center. */
+    private static void restoreBrightness(Context c, Adb adb) throws IOException {
+        JSONObject s = state(c);
+        String value = s.optString("originalBrightness", ""), mode = s.optString("originalBrightnessMode", "");
+        if (value.isEmpty() && mode.isEmpty()) return;
+        if (value.matches("\\d+")) adb.shell("settings put system screen_brightness " + value);
+        if (mode.matches("\\d")) adb.shell("settings put system screen_brightness_mode " + mode);
+        s.remove("originalBrightness");
+        s.remove("originalBrightnessMode");
+        save(c, s);
     }
 
     /**
@@ -656,6 +704,11 @@ final class HomeMode {
                 dnd(c, adb, false);   // Control Center's Do Not Disturb access, if it was allowed
             } catch (IOException e) {
                 AppLog.w("Do Not Disturb access: " + e.getMessage());
+            }
+            try {
+                restoreBrightness(c, adb);   // the TV's own brightness, if Control Center changed it
+            } catch (IOException e) {
+                AppLog.w("brightness: " + e.getMessage());
             }
             s = state(c);
             List<String> stillDebloated = new ArrayList<>(stringList(s, "debloated"));

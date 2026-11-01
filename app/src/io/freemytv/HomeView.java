@@ -92,16 +92,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // and the status pill; TVOS-LAUNCHER-MERGE-SPEC.md V1).
     private static final float TV_LOGO_X = 64, TV_LOGO_Y = 44, TV_LOGO_W = 380, TV_LOGO_H = 200, TV_FULL_BOTTOM = 742;
     private static final float TV_TITLE_W = 700, TV_TEXT_W = 860, TV_BUTTON_H = 60, TV_FULL_DROP = 36, TV_RECESS = 0.75f;
-    // The status pill (§1): x up to 1875, y 48–105, the time 24 from its left, the avatar 49 round inset 4 at its right.
-    private static final float PILL_RIGHT = 1875, PILL_TOP = 48, PILL_H = 57, PILL_AVATAR = 49;
+    // The status pill (§1): x up to 1875, y 48–105, the time 24 from its left, the avatar 49 round inset 4 at its right;
+    // Control Center's bubble 14 left of it, a 48 px glass circle (Apple's two toggles). The bubble opens Control Center,
+    // the pill the profile panel.
+    private static final float PILL_RIGHT = 1875, PILL_TOP = 48, PILL_H = 57, PILL_AVATAR = 49, BUBBLE_GAP = 14, BUBBLE_D = 48;
     /**
      * How far the page glides up when the app grid opens: the Dock to y = 60, the grid's first row (peeking at y 1052
      * at rest) to 330.
      */
     private static final float TV_GRID_LIFT = 722;
-    // Control Center (tvOS's, decluttered: TVOS-LAUNCHER-MERGE-SPEC.md Part 3): a floating glass panel on the right,
-    // under the status pill; the profiles, a Time & Weather platter, then capsule cards 244 × 64 in 2 columns (16 apart
-    // across, 12 down) and the volume at the bottom. The panel's inside is 504 wide.
+    // The two panels under the top-right cluster (tvOS's): floating glass on the right, 504 wide inside. Control Center
+    // (the bubble) holds the controls; the profile panel (the pill) the profiles, the weather, Inputs and the rest
+    // (layoutDrawer). Capsule cards are 244 × 64, 16 apart across.
     private static final float CC_LEFT = 1300, CC_RIGHT = 1860, CC_TOP = 128, CC_BOTTOM = 1020, CC_RADIUS = 44, CC_PAD = 28;
     private static final float CC_CARD_W = 244, CC_CARD_H = 64, CC_GAP = 16, CC_ROW_GAP = 12, CC_CARD_RADIUS = 32;
     private static final float CC_WEATHER_H = 150, CC_SECTION = 14;
@@ -147,6 +149,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final int Z_HOUSE = 10, Z_WELLY = 11;
 
     private final Activity activity;
+    private final View dimmer;
+    private final WelcomeView welcome;
     private final Scene scene = new Scene();
     private final HomeData data;
     private final Recs recs;
@@ -211,7 +215,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     // tvOS: the Top Shelf's text, the status pill and the app names under the focused tile.
-    private Paint tvLabel, tvMeta, tvBadge, tvButton, tvPill, tvName, ccName;
+    private Paint tvLabel, tvMeta, tvBadge, tvButton, tvPill, tvName, ccName, ccSmall, ccNum;
     private TextPaint tvTitle, tvOverview;
     private final RectF pillRect = new RectF(), badgeRect = new RectF();
     private String pillTemp = "", pillSymbol;
@@ -317,7 +321,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private String officialStillLoaded;
     private final AerialPlayback aerialPlayback;
     // The status pill: its focus, and the current profile's avatar at its size.
-    private final Spring pillFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
+    private final Spring pillFocus = new Spring(Spring.SNAPPY_FOCUS, 0), bubbleFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
+    /** In Z_STATUS: the focus is on Control Center's bubble (else on the pill). */
+    private boolean onBubble;
+    private final RectF bubbleRect = new RectF();
     private Bitmap pillAvatar;
     private int pillFrom = Z_SHELF;          // where ↓ from the pill goes back to
     private float pillTimeW;
@@ -334,6 +341,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean ccOnVolume;
     private final Spring volumeFocus = new Spring(Spring.SNAPPY_FOCUS, 0), weatherFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
     private final Spring volumeLevel = new Spring(Spring.SNAPPY_FOCUS, 0);
+    /** Control Center's brightness slider (0..1, Prefs.brightness), and whether the Sleep Timer runs (its circle lit). */
+    private final Spring brightLevel = new Spring(Spring.SNAPPY_FOCUS, 1);
+    private boolean sleepOn;
+    /** The sliders' levels as text, made once (never while drawing). */
+    private static final String[] PERCENT = new String[101];
+    static { for (int i = 0; i <= 100; i++) PERCENT[i] = Integer.toString(i); }
+
     /** The cards scroll when there are more than fit (they keep at least CC_CARD_MIN); how far, px. */
     private final Spring ccScroll = new Spring(Spring.SPATIAL_SCROLL, 0).px();
     private float ccScrollMax;
@@ -500,7 +514,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int textPrefs = -1;
     private boolean clock24;
     private String textLanguage;
-    private String weatherTitle, nowTemp, highLow, platterDate, platterSky, platterHighLow, noWeather;
+    private String weatherTitle, nowTemp, highLow, platterDate, platterSky, platterHighLow, noWeather, platterCity;
     private final String[] hourText = new String[6], hourTempText = new String[6];
     private final String[] dayText = new String[5], dayMaxText = new String[5], dayMinText = new String[5];
     private boolean textDays;   // the weather card shows the next days (Home Settings → Forecast) and has them
@@ -632,6 +646,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         house = new HouseView(a);
         welly = new WellyView(a, scene);
         lock = new LockView(a, scene, lockListener);
+        welcome = new WelcomeView(a, scene, welcomeListener);
         intro = new Intro(a, introListener);
         weatherOverlay = new WeatherOverlay(a, scene);
         recentsOverlay = new RecentsOverlay(a, scene, item -> {
@@ -639,6 +654,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (!HomeApps.open(a, item, null)) showToast(Ui.trf("Couldn't open {app}.", "app", item.label));
         });
         volumeHud = new VolumeHud(a, scene);
+        // Control Center's brightness below 100: black over everything in the home window (the lock and the intro too).
+        dimmer = new View(a);
+        dimmer.setBackgroundColor(0xFF000000);
+        dimmer.setFocusable(false);
+        dimmer.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         audio = (android.media.AudioManager) a.getSystemService(Context.AUDIO_SERVICE);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
@@ -657,11 +677,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         addView(recentsOverlay);
         addView(volumeHud);
         addView(lock);
+        addView(welcome);
         addView(intro);
+        addView(dimmer);
+        dimmer.setTranslationZ(3);
         // The volume shows over the forecast and Recent Apps (which come to the front when they open), never over the
         // lock or the intro: drawn in this order whatever bringToFront does.
         volumeHud.setTranslationZ(1);
         lock.setTranslationZ(2);
+        welcome.setTranslationZ(2);
         intro.setTranslationZ(2);
         intro.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         house.setVisibility(INVISIBLE);
@@ -696,6 +720,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        Scene.frosted = "frosted".equals(Prefs.glass());
+        applyBrightness();
         // Animations off in the TV's settings (animator duration scale 0): every spring jumps, nothing sways.
         Spring.instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
@@ -768,6 +794,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (!lock.showing() && !intro.showing() && ProfileManager.needsLock(getContext())) {
             gate(false);
         }
+        // Settings → Run Setup Again: the welcome setup now (on a new TV it comes after the intro instead).
+        if (!Prefs.setupDone() && !intro.showing() && !welcome.showing() && !lock.showing()) welcome.show(false);
     }
 
     void pause() {
@@ -897,7 +925,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(recentsOverlay, width, height);
         measure(volumeHud, Math.round(VolumeHud.VIEW_W * kk), Math.round(VolumeHud.VIEW_H * kk));
         measure(lock, width, height);
+        measure(welcome, width, height);
         measure(intro, width, height);
+        measure(dimmer, width, height);
         setMeasuredDimension(width, height);
     }
 
@@ -926,7 +956,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recentsOverlay.layout(0, 0, width, height);
         place(volumeHud, 0, (height - volumeHud.getMeasuredHeight()) / 2);
         lock.layout(0, 0, width, height);
+        welcome.layout(0, 0, width, height);
         intro.layout(0, 0, width, height);
+        dimmer.layout(0, 0, width, height);
     }
 
     private static void place(View v, int x, int y) {
@@ -1033,6 +1065,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tabLayoutGeneration = -1;
         ccName = Ui.text(Ui.semibold, 21 * k, L_INK);
         ccName.setTextAlign(Paint.Align.CENTER);
+        ccSmall = Ui.text(Ui.semibold, 15 * k, L_INK);   // the cluster's and the round buttons' names
+        ccSmall.setTextAlign(Paint.Align.CENTER);
+        ccNum = Ui.numbers(Ui.semibold, 19 * k, L_INK);   // the sliders' levels, the weather's hours
+        ccNum.setTextAlign(Paint.Align.CENTER);
         fullScrim = null;
         tvName = Ui.text(Ui.semibold, 26 * k, 0xFFFFFFFF);
         ccTime = Ui.numbers(Ui.light, 57 * k, L_INK);
@@ -1105,7 +1141,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (ccStagger) drawerLayer.invalidate();
         boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
-        boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt);
+        boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt) | bubbleFocus.step(dt);
         boolean fullMoving = full.step(dt);
         boolean heroMoving = heroFocus.step(dt) | fullMoving;
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
@@ -1113,9 +1149,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         heroMoving |= topMoving | cardsMoving;
         boolean drawerItemsMoving = step(drawerFocus, dt) | step(profileFocus, dt) | step(inputFocus, dt) | inputsShown.step(dt)
                 | volumeFocus.step(dt)
-                | weatherFocus.step(dt) | volumeLevel.step(dt) | ccScroll.step(dt);
+                | weatherFocus.step(dt) | volumeLevel.step(dt) | brightLevel.step(dt) | ccScroll.step(dt);
         boolean scrollMoving = scroll.step(dt);
-        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen);
+        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen) | folderShown.step(dt) | step(folderFocus, dt);
         boolean drawerMoving = drawer.step(dt);
         boolean sheetMoving = sheet.step(dt);
         if (sheetMoving) {
@@ -1292,6 +1328,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             for (Spring f : group) f.tune(preset);
         }
         pillFocus.tune(preset);
+        bubbleFocus.tune(preset);
         wake();
     }
 
@@ -1412,8 +1449,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * Tabs, the app grid, Settings and music all return to the profile background immediately.
      */
     private void syncBackgroundFocus(boolean animate) {
+        // The Top Shelf (Settings, or the welcome setup): "app" the focused video app's Continue Watching (the
+        // default), "all" a Continue Watching title whatever is focused (the Dock's first video app's when it isn't
+        // one), "picks" the recommendations whatever is focused, "off" only the wallpaper.
+        String mode = Prefs.topShelf();
         String pkg = shelf.isEmpty() || shelfIndex >= shelf.size() ? null : shelf.get(shelfIndex).pkg;
-        boolean media = tab == TAB_TV && !sheetOpen && Wallpaper.media(zone == Z_HERO ? "hero" : zone == Z_SHELF ? "shelf" : "", Wallpaper.videoApp(pkg));
+        if (mode.equals("all") && !Wallpaper.videoApp(pkg)) pkg = firstVideoApp();
+        String where = zone == Z_HERO ? "hero" : zone == Z_SHELF ? "shelf" : "";
+        boolean onTv = tab == TAB_TV && !sheetOpen;
+        boolean media = !mode.equals("off") && onTv
+                && Wallpaper.media(where, mode.equals("picks") ? !picks.isEmpty() : Wallpaper.videoApp(pkg));
+        if (mode.equals("picks")) pkg = PICKS_KEY;
         if (media && backgroundMode == BACKGROUND_MEDIA && pkg.equals(backgroundPackage)) return;
         if (!media && backgroundMode == BACKGROUND_PROFILE) return;
         final String profileId = ProfileManager.current(getContext()).id;
@@ -1432,15 +1478,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         backgroundMode = BACKGROUND_MEDIA;
         heroVisibility.media();
+        if (PICKS_KEY.equals(pkg)) {   // Recommendations & News: this hour's picks, whatever app is focused
+            appPicks = new ArrayList<>(picks);
+            refreshHero(animate);
+            updateBackground();
+            handler.removeCallbacks(rotate);
+            handler.postDelayed(rotate, ROTATE_MS);
+            return;
+        }
         refreshHero(animate);       // no stale title while the profile log resolves
-        recs.resolveWatch(pkg, generation, (callbackGeneration, watched) -> {
+        final String watchPkg = pkg;
+        recs.resolveWatch(watchPkg, generation, (callbackGeneration, watched) -> {
             if (!backgroundFocus.current(callbackGeneration, profileId)
                     || !Wallpaper.current(callbackGeneration, backgroundGeneration)
-                    || backgroundMode != BACKGROUND_MEDIA || !pkg.equals(backgroundPackage)) return;
+                    || backgroundMode != BACKGROUND_MEDIA || !watchPkg.equals(backgroundPackage)) return;
             resolvedPick = watched;
             List<Recs.Pick> mediaPicks = new ArrayList<>();
             if (watched != null) mediaPicks.add(watched);
-            else for (Recs.Pick p : picks) if (pkg.equals(p.pkg)) mediaPicks.add(p);
+            else for (Recs.Pick p : picks) if (watchPkg.equals(p.pkg)) mediaPicks.add(p);
             if (mediaPicks.isEmpty()) {
                 backgroundMode = BACKGROUND_PROFILE;
                 backgroundPackage = null;
@@ -1456,6 +1511,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             handler.removeCallbacks(rotate);
             handler.postDelayed(rotate, ROTATE_MS);
         });
+    }
+
+    /** backgroundPackage while the Top Shelf shows Recommendations & News (no app owns it). */
+    private static final String PICKS_KEY = "picks:";
+
+    /** The Dock's first video app (All Continue Watching shows its title on any other Dock app), or null. */
+    private String firstVideoApp() {
+        for (HomeApps.Item it : shelf) if (Wallpaper.videoApp(it.pkg)) return it.pkg;
+        return null;
     }
 
     /** Profile entry is a state boundary, not a hero fade: clear every text/dot source before the next draw. */
@@ -1787,6 +1851,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Day or night right now (from the sun at your location); `animate`: with the transition. */
     private void checkNight(boolean animate) {
+        Scene.frosted = "frosted".equals(Prefs.glass());
         boolean want = data.isNight(System.currentTimeMillis());
         if (want == nightTarget) return;
         nightTarget = want;
@@ -2510,6 +2575,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void setDrawerItems(List<HomeApps.Item> list) {
+        allDrawer = list;
+        list = panelItems(list);
         int inputs = 0;
         for (HomeApps.Item it : list) if (it.kind == HomeApps.INPUT || it.kind == HomeApps.LIVE_TV) inputs++;
         boolean same = list.size() == drawerItems.size();
@@ -2542,49 +2609,222 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void layoutDrawer() {
         int n = drawerItems.size();
-        panelRect.set(CC_LEFT * k, CC_TOP * k, CC_RIGHT * k, CC_BOTTOM * k);
-        snap(panelRect);
         boolean vol = volumeShown();
-        float left = (CC_LEFT + CC_PAD) * k, right = (CC_RIGHT - CC_PAD) * k, section = CC_SECTION * k;
-        layoutProfiles(left, right);
-        float platterTop = (CC_TOP + CC_PAD + 132) * k;
-        weatherCard.set(left, platterTop, right, platterTop + CC_WEATHER_H * k);
-        snap(weatherCard);
-        float top = weatherCard.bottom + section, gap = CC_GAP * k, rowGap = CC_ROW_GAP * k;
-        float bottom = (CC_BOTTOM - CC_PAD - (vol ? CC_VOLUME_H + CC_SECTION : 0)) * k;
-        int rows = Math.max(1, (n + 1) / 2);
-        float ch = Math.max(CC_CARD_MIN * k, Math.min(CC_CARD_H * k, (bottom - top - (rows - 1) * rowGap) / rows));
-        for (int i = 0; i < n; i++) {
-            float x = left + (i % 2) * (CC_CARD_W * k + gap), y = top + (i / 2) * (ch + rowGap);
-            drawerRects[i].set(x, y, x + CC_CARD_W * k, y + ch);
-            snap(drawerRects[i]);
-        }
-        cardsArea.set(panelRect.left, top, panelRect.right, bottom);
-        ccScrollMax = Math.max(0, rows * ch + (rows - 1) * rowGap - (bottom - top));
-        ccScroll.target = Math.min(ccScroll.target, ccScrollMax);
-        if (vol) {
-            volumeRect.set(left, bottom + section, right, bottom + section + CC_VOLUME_H * k);
-            snap(volumeRect);
+        float left = (CC_LEFT + CC_PAD) * k, right = (CC_RIGHT - CC_PAD) * k, body = right - left, gap = CC_GAP * k;
+        float top = (CC_TOP + CC_PAD) * k;
+        // The profile panel: the profiles, then the weather the whole width; Control Center starts with its cluster.
+        if (ccProfile) {
+            layoutProfiles(left, right);
+            float platterTop = top + CC_HEAD_H * k;
+            weatherCard.set(left, platterTop, right, platterTop + CC_PLATTER_H * k);
+            snap(weatherCard);
+            top = weatherCard.bottom + gap;
         } else {
-            volumeRect.setEmpty();
+            clearProfiles();
+            weatherCard.setEmpty();
         }
+        // Control Center: the 2×2 cluster beside the two sliders, then the pills, then the round buttons. The profile
+        // panel: Inputs the whole width, then the round buttons.
+        boolean cluster = false;
+        for (HomeApps.Item it : drawerItems) if (ccShape(it.kind) == CC_CIRCLE) cluster = true;
+        float sliderH = (2 * CC_CELL_H + CC_CELL_GAP) * k, clusterTop = top;
+        float sx = left + (cluster ? 2 * CC_CELL_W * k + gap : 0);
+        float pillTop = ccProfile ? top : clusterTop + sliderH + gap;
+        int rounds = 0, pills = 0, circle = 0, pill = 0, round = 0;
+        for (HomeApps.Item it : drawerItems) {
+            if (ccShape(it.kind) == CC_ROUND) rounds++;
+            if (ccShape(it.kind) == CC_PILL) pills++;
+        }
+        float roundTop = pills > 0 ? pillTop + CC_CARD_H * k + gap : pillTop;
+        clusterPlate.setEmpty();
+        for (int i = 0; i < n; i++) {
+            HomeApps.Item it = drawerItems.get(i);
+            RectF r = drawerRects[i];
+            switch (ccShape(it.kind)) {
+                case CC_CIRCLE: {
+                    float x = left + (circle % 2) * CC_CELL_W * k, y = clusterTop + (circle / 2) * (CC_CELL_H + CC_CELL_GAP) * k;
+                    r.set(x, y, x + CC_CELL_W * k, y + CC_CELL_H * k);
+                    clusterPlate.union(r);
+                    circle++;
+                    break;
+                }
+                case CC_SLIDER: {
+                    boolean on = it.kind != HomeApps.VOLUME || vol;
+                    float x = it.kind == HomeApps.VOLUME ? sx + (CC_SLIDER_W + CC_GAP) * k : sx;
+                    if (on) r.set(x, clusterTop, x + CC_SLIDER_W * k, clusterTop + sliderH);
+                    else r.setEmpty();
+                    break;
+                }
+                case CC_PILL: {
+                    float x = left + pill * (CC_CARD_W * k + gap), w = pills == 1 ? body : CC_CARD_W * k;   // alone: the whole width
+                    r.set(x, pillTop, x + w, pillTop + CC_CARD_H * k);
+                    pill++;
+                    break;
+                }
+                default: {
+                    float cx = left + body * (2 * round + 1) / (2f * Math.max(1, rounds)), d = CC_ROUND_D * k;
+                    r.set(cx - d / 2, roundTop, cx + d / 2, roundTop + d);
+                    round++;
+                    break;
+                }
+            }
+            snap(r);
+        }
+        float bottom = (rounds > 0 ? roundTop + (CC_ROUND_D + 42) * k : pills > 0 ? pillTop + CC_CARD_H * k : clusterTop + sliderH) + CC_PAD * k;
+        panelRect.set(CC_LEFT * k, CC_TOP * k, CC_RIGHT * k, Math.min(CC_BOTTOM * k, bottom));
+        snap(panelRect);
+        cardsArea.set(panelRect.left, top, panelRect.right, panelRect.bottom);
+        ccScrollMax = 0;
+        ccScroll.target = 0;
+        volumeRect.setEmpty();
         quotesCard.setEmpty();
-        // The names cut to fit once (never while drawing): beside the round symbol (14 in, 40 round, 12 after it).
+        // The names cut to fit once (never while drawing): a pill's beside its plate, a circle's or round button's under it.
         drawerLabels = new String[n];
         for (int i = 0; i < n && ccLabel != null; i++) {
-            String label = drawerItems.get(i).label == null ? "" : drawerItems.get(i).label;
-            drawerLabels[i] = TextUtils.ellipsize(label, new TextPaint(ccLabel), CC_TEXT_W * k, TextUtils.TruncateAt.END).toString();
+            HomeApps.Item it = drawerItems.get(i);
+            String label = it.label == null ? "" : it.label;
+            int shape = ccShape(it.kind);
+            TextPaint paint = new TextPaint(shape == CC_PILL ? ccLabel : ccSmall);
+            float room = shape == CC_PILL ? drawerRects[i].width() - CC_TEXT_X * k - 18 * k
+                    : shape == CC_CIRCLE ? (CC_CELL_W - 8) * k : body / Math.max(1, rounds) + 8 * k;
+            drawerLabels[i] = TextUtils.ellipsize(label, paint, room, TextUtils.TruncateAt.END).toString();
         }
         layoutDetails();
         layoutInputs();
+        // The Inputs list open: the panel as tall as it.
+        int inputCount = inputItems.size();
+        if (ccInputs && inputCount > 0 && inputRects.length >= inputCount) {
+            panelRect.bottom = Math.min(CC_BOTTOM * k, Math.max(panelRect.bottom, inputRects[inputCount - 1].bottom + CC_PAD * k));
+            cardsArea.bottom = panelRect.bottom;
+        }
         for (HomeApps.Item it : drawerItems) Symbols.warm(getContext(), it.symbol, CC_SYMBOL * k);
-        Symbols.warm(getContext(), "volume", 30 * k);   // the volume capsule's, at the size drawVolume draws it
         Symbols.warm(getContext(), "hdmi", CC_SYMBOL * k);
         Symbols.warm(getContext(), "tv", CC_SYMBOL * k);
         Symbols.warm(getContext(), "check", 24 * k);
         Symbols.warm(getContext(), "chevron_right", 24 * k);
+        Symbols.warm(getContext(), "sunny", 30 * k);
+        Symbols.warm(getContext(), "volume", 30 * k);
         Symbols.warmWeather(getContext(), 40 * k);
+        Symbols.warmWeather(getContext(), 28 * k);
         drawerDirty = true;
+    }
+
+    /** Control Center has no profiles row: none to draw or reach. */
+    private void clearProfiles() {
+        if (profileRects.length == 0) return;
+        profileRects = new RectF[0];
+        profileFocus = new Spring[0];
+        profileAvatars = new Bitmap[0];
+        profileNames = new String[0];
+    }
+
+    // The modular Control Center (iOS 18's, made for a TV): the shapes the cards take by kind, and their sizes.
+    private static final int CC_CIRCLE = 2, CC_SLIDER = 3, CC_PILL = 4, CC_ROUND = 5;
+    /** Control Center's rows under the weather, by the shapes in them (drawDrawer). */
+    private static final int[][] CC_ROWS = {{CC_CIRCLE, CC_SLIDER}, {CC_PILL}, {CC_ROUND}};
+    private static final float CC_HEAD_H = 128, CC_PLATTER_H = 152;
+    private static final float CC_CELL_W = 122, CC_CELL_H = 96, CC_CELL_GAP = 12, CC_CIRCLE_D = 64, CC_SLIDER_W = 114, CC_ROUND_D = 72;
+    private final RectF clusterPlate = new RectF();
+    private final Shape plateShape = new Shape(), sliderShape = new Shape(), wideShape = new Shape();
+
+    private static int ccShape(int kind) {
+        switch (kind) {
+            case HomeApps.WIFI: case HomeApps.BLUETOOTH: case HomeApps.DND: case HomeApps.SLEEP: return CC_CIRCLE;
+            case HomeApps.BRIGHTNESS: case HomeApps.VOLUME: return CC_SLIDER;
+            case HomeApps.APPEARANCE: case HomeApps.AUDIO: case HomeApps.INPUT_SHEET: return CC_PILL;
+            default: return CC_ROUND;
+        }
+    }
+
+    /** ccNearest's answers besides a card's index: nothing that way, the weather, a profile (PROFILE_STOP − its index). */
+    private static final int NO_STOP = -1, WEATHER_STOP = -2, PROFILE_STOP = -100;
+
+    /**
+     * Control Center's next stop from `from` that way (dx or dy ±1): of the cards (not `skip`), the weather and the
+     * profiles, the one whose near edge lies that way past `from`'s centre, nearest along the move plus 2.5× how far it
+     * sits off the move's line. NO_STOP when nothing does.
+     */
+    private int ccNearest(RectF from, int dx, int dy, int skip) {
+        float fx = from.centerX(), fy = from.centerY(), best = Float.MAX_VALUE;
+        int pick = NO_STOP;
+        for (int i = 0; i < drawerItems.size(); i++) {
+            if (i == skip || drawerRects[i].isEmpty()) continue;
+            float score = ccScore(fx, fy, drawerRects[i], dx, dy);
+            if (score < best) {
+                best = score;
+                pick = i;
+            }
+        }
+        if (zone != WIDGETS && !widgets().isEmpty() && !weatherCard.isEmpty()) {
+            float score = ccScore(fx, fy, weatherCard, dx, dy);
+            if (score < best) {
+                best = score;
+                pick = WEATHER_STOP;
+            }
+        }
+        for (int j = 0; j < profileRects.length; j++) {
+            if (zone == Z_DRAWER && ccOnProfiles) break;
+            float score = ccScore(fx, fy, profileRects[j], dx, dy);
+            if (score < best) {
+                best = score;
+                pick = PROFILE_STOP - j;
+            }
+        }
+        return pick;
+    }
+
+    private static float ccScore(float fx, float fy, RectF to, int dx, int dy) {
+        float along, off;
+        if (dx != 0) {
+            along = dx > 0 ? to.left - fx : fx - to.right;
+            off = Math.max(0, Math.max(to.top - fy, fy - to.bottom));
+        } else {
+            along = dy > 0 ? to.top - fy : fy - to.bottom;
+            off = Math.max(0, Math.max(to.left - fx, fx - to.right));
+        }
+        return along < 0 ? Float.MAX_VALUE : along + 2.5f * off;
+    }
+
+    /** Goes to a stop ccNearest found; false for NO_STOP. */
+    private boolean ccStop(int to) {
+        if (to == NO_STOP) return false;
+        if (to == WEATHER_STOP) {
+            zone = WIDGETS;
+            widgetIndex = widgets().get(0);
+            ccOnProfiles = false;
+        } else if (to <= PROFILE_STOP) {
+            zone = Z_DRAWER;
+            ccOnProfiles = true;
+            profileIndex = PROFILE_STOP - to;
+        } else {
+            zone = Z_DRAWER;
+            ccOnProfiles = false;
+            drawerIndex = to;
+        }
+        ccOnVolume = false;
+        return true;
+    }
+
+    /** Every card (HomeApps.drawerShortcuts), and which panel shows: the profile panel (the pill) or Control Center. */
+    private List<HomeApps.Item> allDrawer = new ArrayList<>();
+    private boolean ccProfile;
+
+    /** The profile panel's cards: Inputs, Screensaver, Lock, Home Settings, TV Settings; Control Center has the rest. */
+    private static boolean profileCard(int kind) {
+        return kind == HomeApps.INPUT_SHEET || kind == HomeApps.SAVER || kind == HomeApps.LOCK || kind == HomeApps.SETTINGS
+                || kind == HomeApps.ANDROID_SETTINGS;
+    }
+
+    private List<HomeApps.Item> panelItems(List<HomeApps.Item> all) {
+        List<HomeApps.Item> out = new ArrayList<>();
+        for (HomeApps.Item it : all) if (profileCard(it.kind) == ccProfile) out.add(it);
+        return out;
+    }
+
+    /** The first card of a kind, or −1. */
+    private int kindIndex(int kind) {
+        for (int i = 0; i < drawerItems.size(); i++) if (drawerItems.get(i).kind == kind) return i;
+        return -1;
     }
 
     /** A card's round symbol plate (40) and the room for its name and state beside it. */
@@ -2654,6 +2894,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         inputIndex = 0;
         inputsShown.tune(Spring.SHEET_OPEN);
         inputsShown.target = 1;
+        layoutDrawer();   // the panel grows to the list
         drawerDirty = true;
     }
 
@@ -2665,6 +2906,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < drawerItems.size(); i++) {
             if (drawerItems.get(i).kind == HomeApps.INPUT_SHEET) drawerIndex = i;
         }
+        layoutDrawer();   // back to its own height
         drawerDirty = true;
     }
 
@@ -2682,6 +2924,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         final android.media.AudioManager am = audio;
         LOADER.execute(() -> {
             String[] state = HomeApps.connectivity(c);
+            final boolean sleeping = SleepTimer.minutesLeft(c) > 0;
             boolean avail = false;
             int max = 1, index = 0;
             if (am != null) {
@@ -2697,6 +2940,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             final int top = Math.max(1, max), level = Math.max(0, Math.min(top, index));
             post(() -> {
                 HomeApps.showConnectivity(drawerItems, state);
+                sleepOn = sleeping;
+                showAppearance();
                 volumeMax = top;
                 volumeIndex = level;
                 if (available != volumeAvailable) {
@@ -2712,6 +2957,59 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 wake();
             });
         });
+    }
+
+    /** Appearance's detail: the theme now (Light, Dark or Automatic). */
+    private void showAppearance() {
+        int at = kindIndex(HomeApps.APPEARANCE);
+        if (at < 0) return;
+        String t = Prefs.theme();
+        drawerItems.get(at).detail = t.equals("light") ? Ui.tr("Light") : t.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
+    }
+
+    /** OK on Appearance: Light → Dark → Automatic, the whole home screen at once. */
+    private void cycleTheme() {
+        String t = Prefs.theme();
+        Prefs.setTheme(t.equals("light") ? "dark" : t.equals("dark") ? "auto" : "light");
+        showAppearance();
+        layoutDetails();
+        checkNight(false);
+        drawerDirty = true;
+        wake();
+    }
+
+    /**
+     * ↑/↓ on the brightness slider: a step of 5. The dimmer over mahitTV's screens and the window's brightness change at
+     * once; the TV's own brightness follows in mahitTV mode (HomeMode.brightness; Original puts it back). The HUD on the
+     * left shows it with the sun; past either end it stretches.
+     */
+    private boolean stepBrightness(int dir) {
+        int was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + 5 * dir));
+        if (b == was) return false;
+        Prefs.setBrightness(b);
+        brightLevel.target = b / 100f;
+        applyBrightness();
+        HomeMode.brightness(getContext(), b);
+        announceForAccessibility(Ui.trf("Brightness, {n}%", "n", b));
+        drawerDirty = true;
+        return true;
+    }
+
+    /** The dimmer (0.78 black at 0 %, none at 100 %) and the window's own brightness, as Prefs has them. */
+    void applyBrightness() {
+        int b = Prefs.brightness();
+        brightLevel.target = b / 100f;
+        if (dimmer != null) {
+            dimmer.setAlpha(0.78f * (100 - b) / 100f);
+            dimmer.setVisibility(b < 100 ? VISIBLE : GONE);
+        }
+        android.view.Window win = activity.getWindow();
+        android.view.WindowManager.LayoutParams lp = win.getAttributes();
+        float want = b < 100 ? Math.max(0.05f, b / 100f) : android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        if (lp.screenBrightness != want) {
+            lp.screenBrightness = want;
+            win.setAttributes(lp);
+        }
     }
 
     /**
@@ -2763,7 +3061,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
+    /** Control Center (the bubble). */
     private void openDrawer() {
+        openDrawer(false);
+    }
+
+    /**
+     * Opens a panel under the top-right cluster: Control Center's controls (the bubble), or the profile panel (the
+     * pill: the profiles, the weather, Inputs, Screensaver, Lock and the settings).
+     */
+    private void openDrawer(boolean profile) {
+        if (profile != ccProfile || drawerItems.isEmpty()) {
+            ccProfile = profile;
+            setDrawerItems(allDrawer);
+        }
         if (drawerItems.isEmpty()) return;
         drawerFrom = zone == Z_TOP ? Z_TOP : zone == Z_STATUS ? Z_STATUS : Z_SHELF;
         drawerOpen = true;
@@ -2773,9 +3084,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         motionDirty = true;
         zone = Z_DRAWER;
         drawerIndex = 0;
-        // On the profiles when there is more than one to switch to; else on the first card. The focus grows in as the
-        // panel arrives (retarget), not already there.
-        ccOnProfiles = profiles.size() > 1;
+        // The profile panel: on you, when there's someone to switch to; Control Center: on its first control. The focus
+        // grows in as the panel arrives (retarget), not already there.
+        ccOnProfiles = ccProfile && profiles.size() > 1;
         ccOnVolume = false;
         ccInputs = false;
         inputsShown.snap(0);
@@ -2802,9 +3113,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /**
-     * A Control Center platter: a frosted fill (white 42 % by day, white 9 % at night) in Apple's continuous shape, a
-     * 1 px rim (white 55 % / 14 %) and the light catching its top edge. Not glass: the panel under it already is (no
-     * glass on glass, DESIGN-TVOS.md §0b #5); the rim is what sets it apart from the panel.
+     * A tile inside the panels: a flat, quiet fill (white 42 % by day, white 9 % at night) in Apple's continuous shape.
+     * Not glass, and no rim or highlight: the panel under it already is the glass (no glass on glass, DESIGN-TVOS.md
+     * §0b #5).
      */
     private void drawerCard(Canvas c, RectF r, Shape shape, float alpha) {
         drawerCard(c, r, shape, CC_CARD_RADIUS * k, alpha);
@@ -2818,13 +3129,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         fill.setColor((base & 0xFFFFFF) | (Math.round((base >>> 24) * alpha) << 24));
         c.save();
         c.translate(r.left, r.top);
-        android.graphics.Path path = shape.of(r.width(), r.height(), radius);
-        c.drawPath(path, fill);
-        rim.setShader(null);
-        rim.setStrokeWidth(Math.max(1, k));
-        rim.setColor(Ui.alpha(blend(0x8CFFFFFF, 0x24FFFFFF, d), alpha));
-        c.drawPath(path, rim);
-        rim.setStrokeWidth(2.5f * k);
+        c.drawPath(shape.of(r.width(), r.height(), radius), fill);
         c.restore();
     }
 
@@ -2846,7 +3151,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 tone(0.7f, 0.9f), 1);
         long since = SystemClock.uptimeMillis() - drawerOpenedAt;
         int save = rowIn(c, 0, since, panelRect.left, panelRect.top, panelRect.right, weatherCard.top);
-        drawProfiles(c);
+        if (ccProfile) drawProfiles(c);
         if (save >= 0) c.restoreToCount(save);
         // The Inputs list slides in over the platter and the cards (they slide 40 px left and fade): one layer each
         // while it moves.
@@ -2861,33 +3166,159 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int rest = e > 0.004f ? c.saveLayerAlpha(panelRect.left, weatherCard.top - 12 * k, panelRect.right, panelRect.bottom,
                 Math.round(255 * (1 - e))) : -1;
         if (rest >= 0) c.translate(-40 * k * e, 0);
-        save = rowIn(c, 1, since, weatherCard.left, weatherCard.top, weatherCard.right, weatherCard.bottom);
-        drawWeatherCard(c, weatherCard);
-        if (save >= 0) c.restoreToCount(save);
+        if (!weatherCard.isEmpty()) {
+            save = rowIn(c, 1, since, panelRect.left, weatherCard.top, panelRect.right, weatherCard.bottom);
+            drawWeatherCard(c, weatherCard);
+            if (save >= 0) c.restoreToCount(save);
+        }
+        // The rest, row by row (the cluster and the sliders, the pills, the round buttons); the focused card last, over
+        // its neighbours.
         int top = -1;
-        for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
-        // The cards: when they don't all fit they scroll inside their area (the focused one is kept in view).
-        int scrolled = -1;
-        if (ccScrollMax > 0) {
-            scrolled = c.save();
-            c.clipRect(panelRect.left, cardsArea.top - 12 * k, panelRect.right, cardsArea.bottom + 12 * k);
-            c.translate(0, -ccScroll.value);
-        }
         for (int i = 0; i < drawerItems.size(); i++) {
-            if (i == top) continue;
-            save = rowIn(c, 2 + i / 2, since, panelRect.left, drawerRects[i].top - 30 * k, panelRect.right, drawerRects[i].bottom + 30 * k);
-            drawDrawerTile(c, i);
+            int shape = ccShape(drawerItems.get(i).kind);
+            if (drawerRects[i].isEmpty()) continue;
+            if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
+        }
+        int[][] rows = CC_ROWS;
+        for (int row = 0; row < rows.length; row++) {
+            float rt = Float.MAX_VALUE, rb = -1;
+            for (int i = 0; i < drawerItems.size(); i++) {
+                int shape = ccShape(drawerItems.get(i).kind);
+                if ((shape == rows[row][0] || (rows[row].length > 1 && shape == rows[row][1])) && !drawerRects[i].isEmpty()) {
+                    rt = Math.min(rt, drawerRects[i].top);
+                    rb = Math.max(rb, drawerRects[i].bottom);
+                }
+            }
+            if (rb < 0) continue;
+            save = rowIn(c, 2 + row, since, panelRect.left, rt, panelRect.right, rb + 40 * k);
+            if (row == 0 && !clusterPlate.isEmpty()) drawerCard(c, clusterPlate, plateShape, 32 * k, 1);
+            for (int i = 0; i < drawerItems.size(); i++) {
+                int shape = ccShape(drawerItems.get(i).kind);
+                if (i == top || drawerRects[i].isEmpty() || (shape != rows[row][0] && (rows[row].length < 2 || shape != rows[row][1]))) continue;
+                drawCcCard(c, i);
+            }
             if (save >= 0) c.restoreToCount(save);
         }
-        if (top >= 0) drawDrawerTile(c, top);
-        if (scrolled >= 0) c.restoreToCount(scrolled);
-        int rows = (drawerItems.size() + 1) / 2;
-        if (!volumeRect.isEmpty()) {
-            save = rowIn(c, 2 + rows, since, volumeRect.left, volumeRect.top, volumeRect.right, volumeRect.bottom);
-            drawVolume(c);
-            if (save >= 0) c.restoreToCount(save);
-        }
+        if (top >= 0) drawCcCard(c, top);
         if (rest >= 0) c.restoreToCount(rest);
+    }
+
+    /** A card in its shape: a cluster circle, a slider, a pill or a round button. */
+    private void drawCcCard(Canvas c, int i) {
+        switch (ccShape(drawerItems.get(i).kind)) {
+            case CC_CIRCLE: drawCcCircle(c, i); break;
+            case CC_SLIDER: drawCcSlider(c, i); break;
+            case CC_PILL: drawDrawerTile(c, i); break;
+            default: drawCcRound(c, i); break;
+        }
+    }
+
+    /**
+     * A glass disc (the cluster's, the round buttons', ⏻): the panel's frosted fill and rim, blue when its toggle is on
+     * (iOS's #007AFF), white when focused; the symbol in the middle.
+     */
+    private void ccDisc(Canvas c, float cx, float cy, float r, float f, boolean lit, String symbol, float size) {
+        if (f > 0.01f) {
+            tmp.set(cx - r, cy - r, cx + r, cy + r);
+            tmp.offset(0, 10 * k * f);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.3f * f));
+            shadows.draw(c, tmp, r, KEY_BLUR * k, shadowSoft);
+        }
+        float d = dark();
+        fill.setShader(null);
+        int base = lit ? 0xFF007AFF : blend(blend(0x6BFFFFFF, 0x17FFFFFF, d), 0xFFFFFFFF, f);
+        fill.setColor(base);
+        c.drawCircle(cx, cy, r, fill);
+        if (lit && f > 0.01f) {   // on and focused: a white ring round the blue
+            rim.setShader(null);
+            rim.setColor(Ui.alpha(0xFFFFFFFF, f));
+            rim.setStrokeWidth(4 * k);
+            c.drawCircle(cx, cy, r + 4 * k, rim);
+            rim.setStrokeWidth(2.5f * k);
+        }
+        int ink = lit ? 0xFFFFFFFF : blend(tone(L_INK, 0xF2FFFFFF), INK, f);
+        Symbols.draw(getContext(), c, symbol, cx, cy, size, ink);
+    }
+
+    /** Whether a cluster toggle is on: Wi-Fi up, Bluetooth on, Do Not Disturb on, the Sleep Timer running. */
+    private boolean ccLit(HomeApps.Item it) {
+        if (it.kind == HomeApps.SLEEP) return sleepOn;
+        return it.connected && (it.kind == HomeApps.WIFI || it.kind == HomeApps.BLUETOOTH || it.kind == HomeApps.DND);
+    }
+
+    private void drawCcCircle(Canvas c, int i) {
+        HomeApps.Item it = drawerItems.get(i);
+        RectF r = drawerRects[i];
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.1f * drawerFocus[i].value - PRESS * press.value * f;
+        float cx = r.centerX(), cy = r.top + (6 + CC_CIRCLE_D / 2) * k;
+        c.save();
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, cx, cy);
+        ccDisc(c, cx, cy, CC_CIRCLE_D / 2 * k, f, ccLit(it), it.symbol, 26 * k);
+        c.restore();
+        ccSmall.setColor(drawerInk(0.62f + 0.38f * f));
+        if (i < drawerLabels.length && drawerLabels[i] != null) c.drawText(drawerLabels[i], cx, r.top + 90 * k, ccSmall);
+    }
+
+    private void drawCcRound(Canvas c, int i) {
+        HomeApps.Item it = drawerItems.get(i);
+        RectF r = drawerRects[i];
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.1f * drawerFocus[i].value - PRESS * press.value * f;
+        c.save();
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, r.centerX(), r.centerY());
+        ccDisc(c, r.centerX(), r.centerY(), r.width() / 2, f, false, it.symbol, 28 * k);
+        c.restore();
+        ccSmall.setColor(drawerInk(0.62f + 0.38f * f));
+        if (i < drawerLabels.length && drawerLabels[i] != null) c.drawText(drawerLabels[i], r.centerX(), r.bottom + 26 * k, ccSmall);
+    }
+
+    /**
+     * A vertical slider (iOS's brightness and volume): a tall capsule, grey by day and faint at night, filled white from
+     * the bottom to the level, its glyph at the foot and the level at the top, both in ink where the fill reaches them.
+     * Focused: a white ring and a lift. ↑ ↓ change it (move()).
+     */
+    private void drawCcSlider(Canvas c, int i) {
+        HomeApps.Item it = drawerItems.get(i);
+        RectF r = drawerRects[i];
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.04f * drawerFocus[i].value - PRESS * press.value * f;
+        float rr = 32 * k, lv = Ui.clamp(it.kind == HomeApps.VOLUME ? volumeLevel.value : brightLevel.value);
+        android.graphics.Path path = sliderShape.of(r.width(), r.height(), rr);
+        c.save();
+        c.translate(bumpX * f, 0);
+        c.scale(s, s, r.centerX(), r.centerY());
+        if (f > 0.01f) {
+            tmp.set(r);
+            tmp.offset(0, 14 * k * f);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.3f * f));
+            shadows.draw(c, tmp, rr, KEY_BLUR * k, shadowSoft);
+        }
+        c.translate(r.left, r.top);
+        fill.setShader(null);
+        fill.setColor(blend(0x42787880, 0x1FFFFFFF, dark()));
+        c.drawPath(path, fill);
+        float fillTop = r.height() * (1 - lv);
+        if (lv > 0.002f) {
+            c.save();
+            c.clipPath(path);
+            fill.setColor(0xFFFFFFFF);
+            c.drawRect(0, fillTop, r.width(), r.height(), fill);
+            c.restore();
+        }
+        if (f > 0.01f) {
+            rim.setShader(null);
+            rim.setColor(Ui.alpha(0xFFFFFFFF, f));
+            rim.setStrokeWidth(4 * k);
+            c.drawPath(path, rim);
+            rim.setStrokeWidth(2.5f * k);
+        }
+        float gy = r.height() - 38 * k, ny = 34 * k;
+        int over = drawerInk(0.95f);
+        String glyph = it.kind == HomeApps.VOLUME && volumeIndex == 0 ? "volume" : it.symbol;
+        Symbols.draw(getContext(), c, glyph, r.width() / 2, gy, 30 * k, gy > fillTop ? INK : over);
+        ccNum.setColor(ny > fillTop ? INK : Ui.alpha(over, 0.62f + 0.38f * f));
+        c.drawText(PERCENT[Math.round(lv * 100)], r.width() / 2, ny, ccNum);
+        c.restore();
     }
 
     /** The Inputs list: "‹ Inputs", then a capsule row per input (its symbol, name and state); the focused one white. */
@@ -3112,31 +3543,41 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Consumer<Canvas> weatherContent = cc -> drawWeather(cc, weatherCard);
 
     /**
-     * The Time & Weather platter: the time (57, light) and the date on the left; on the right, on the second column,
-     * the weather now (its symbol and temperature), the condition and the day's high and low. Fixed columns: nothing
-     * runs into anything (the old card's temperature met its hours).
+     * The weather platter (the profile panel's): the city, the temperature now, the sky and the day's high and low in
+     * the left block; the next 4 hours (or days, with Forecast: Next days) in fixed columns to its right, each label once
+     * (HomeData drops the clocks-back night's repeated hour).
      */
     private void drawWeather(Canvas c, RectF r) {
         refreshDrawerText();
-        float x = r.left + 24 * k;
-        ccTime.setColor(drawerInk(1));
-        c.drawText(clockText, x - Ui.leftBearing(ccTime, clockText), r.top + 80 * k, ccTime);
+        float x = r.left + 22 * k;
         cardDim.setColor(tone(L_DIM, 0xADFFFFFF));
-        if (platterDate != null) c.drawText(platterDate, x, r.top + 118 * k, cardDim);
-        if (!Prefs.weather()) return;
-        float wx0 = r.left + (CC_CARD_W + CC_GAP + 10) * k;
+        if (platterCity != null) c.drawText(platterCity, x, r.top + 34 * k, cardDim);
         HomeData.Weather wx = textWeather;
         if (Double.isNaN(wx.temp)) {
-            if (noWeather != null) c.drawText(noWeather, wx0, r.top + 80 * k, cardDim);
+            if (noWeather != null) c.drawText(noWeather, x, r.top + 90 * k, cardDim);
             return;
         }
         String symbol = Symbols.weather(wx.code, wx.isDay);
-        float sw = Symbols.width(getContext(), symbol, 40 * k);
-        Symbols.draw(getContext(), c, symbol, wx0 + sw / 2, r.top + 60 * k, 40 * k, drawerInk(0.95f));
-        c.drawText(nowTemp, wx0 + sw + 10 * k - Ui.leftBearing(ccTime, nowTemp), r.top + 80 * k, ccTime);
-        if (platterSky != null) c.drawText(platterSky, wx0, r.top + 118 * k, cardDim);
+        float sw = Symbols.width(getContext(), symbol, 36 * k);
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, r.top + 72 * k, 36 * k, drawerInk(0.95f));
+        ccTemp.setColor(drawerInk(1));
+        c.drawText(nowTemp, x + sw + 10 * k - Ui.leftBearing(ccTemp, nowTemp), r.top + 92 * k, ccTemp);
+        cardText.setColor(drawerInk(0.95f));
+        if (platterSky != null) c.drawText(platterSky, x, r.top + 120 * k, cardText);
         hourPaint.setColor(tone(L_DIM, 0xADFFFFFF));
-        if (platterHighLow != null) c.drawText(platterHighLow, wx0, r.top + 142 * k, hourPaint);
+        if (platterHighLow != null) c.drawText(platterHighLow, x, r.top + 142 * k, hourPaint);
+        int n = 4;
+        float x0 = r.left + 240 * k, col = 252 * k / n;
+        int shown = textDays ? Math.min(n, wx.days.size()) : Math.min(n, wx.hours.size());
+        for (int i = 0; i < shown; i++) {
+            float cx = x0 + col * (i + 0.5f);
+            ccNum.setColor(tone(L_DIM, 0xADFFFFFF));
+            c.drawText(textDays ? dayText[i] : hourText[i], cx, r.top + 40 * k, ccNum);
+            String sym = textDays ? Symbols.weather(wx.dayCode.get(i), true) : Symbols.weather(wx.hourCode.get(i), wx.hourDay.get(i));
+            Symbols.draw(getContext(), c, sym, cx, r.top + 78 * k, 28 * k, drawerInk(0.95f));
+            ccNum.setColor(drawerInk(0.95f));
+            c.drawText(textDays ? dayMaxText[i] : hourTempText[i], cx, r.top + 124 * k, ccNum);
+        }
     }
 
     private void refreshDrawerText() {
@@ -3147,12 +3588,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (wx != textWeather || settings) {
             textWeather = wx;
             weatherTitle = Prefs.city().isEmpty() ? Ui.tr("Weather") : Prefs.city();
+            platterCity = TextUtils.ellipsize(weatherTitle, new TextPaint(cardDim), 200 * k,
+                    TextUtils.TruncateAt.END).toString();
             nowTemp = HomeData.degrees(wx.temp);
             highLow = HomeData.highLow(wx, "   ");
             // The platter's lines, cut to its columns once (never while drawing).
-            float col = (CC_CARD_W - 34) * k;
+            float col = 200 * k;
             platterSky = Double.isNaN(wx.temp) ? null : TextUtils.ellipsize(HomeData.condition(wx.code, wx.isDay),
-                    new TextPaint(cardDim), col, TextUtils.TruncateAt.END).toString();
+                    new TextPaint(cardText), col, TextUtils.TruncateAt.END).toString();
             platterHighLow = Double.isNaN(wx.temp) ? null : TextUtils.ellipsize(HomeData.highLow(wx, "  "),
                     new TextPaint(hourPaint), col, TextUtils.TruncateAt.END).toString();
             noWeather = TextUtils.ellipsize(Ui.tr("No weather data right now."), new TextPaint(cardDim), col,
@@ -3241,9 +3684,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (full.target != fullWas) motionDirty = true;
         if (full.target > fullWas) fullAt = SystemClock.uptimeMillis();   // the details' stagger starts now
         if (snap) full.snap(full.target);
-        boolean pillChanged = pillFocus.target != (!sheetOpen && zone == Z_STATUS ? 1 : 0);
-        pillFocus.target = !sheetOpen && zone == Z_STATUS ? 1 : 0;
-        if (snap) pillFocus.snap(pillFocus.target);
+        boolean pillChanged = pillFocus.target != (!sheetOpen && zone == Z_STATUS && !onBubble ? 1 : 0)
+                || bubbleFocus.target != (!sheetOpen && zone == Z_STATUS && onBubble ? 1 : 0);
+        pillFocus.target = !sheetOpen && zone == Z_STATUS && !onBubble ? 1 : 0;
+        bubbleFocus.target = !sheetOpen && zone == Z_STATUS && onBubble ? 1 : 0;
+        if (snap) {
+            pillFocus.snap(pillFocus.target);
+            bubbleFocus.snap(bubbleFocus.target);
+        }
         boolean statusChanged = pillChanged;
         boolean onCards = !sheetOpen && zone == Z_DRAWER && !ccOnProfiles && !ccOnVolume && !ccInputs;
         boolean drawerChanged = aim(drawerFocus, onCards ? drawerIndex : -1, snap)
@@ -3309,6 +3757,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - "All Apps" sheet
 
     private void setOthers(List<HomeApps.Item> list) {
+        list = HomeApps.folders(list);   // the TV's utilities in one folder at the end
         others = list;
         gridFocus = new Spring[list.size()];
         for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(scrubbing ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS, 0);
@@ -3394,6 +3843,152 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < n; i++) if (gridFocus[i].value > 0.02f && (top < 0 || gridFocus[i].value > gridFocus[top].value)) top = i;
         for (int i = 0; i < n; i++) if (i != top) drawGridTile(c, i, shift - rowLag(i / COLUMNS));
         if (top >= 0) drawGridTile(c, top, shift - rowLag(top / COLUMNS));
+        if (folderShown.value > 0.004f) drawFolder(c);
+    }
+
+    // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the grid
+
+    private static final int FOLDER_COLUMNS = 4;
+    private static final float FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_RADIUS = 40;
+    private HomeApps.Item folderOpen;
+    private int folderIndex;
+    private final Spring folderShown = new Spring(Spring.SHEET_OPEN, 0);
+    private Spring[] folderFocus = new Spring[0];
+    private RectF[] folderCells = new RectF[0];
+    private String[] folderLabels = new String[0];
+    private final RectF folderCard = new RectF(), folderFrom = new RectF(), folderBadge = new RectF(), miniRect = new RectF();
+    private final Shape folderShape = new Shape();
+    private final android.graphics.Matrix miniMatrix = new android.graphics.Matrix();
+    private float folderBadgeW;
+
+    /** The folder's tile: frosted glass (the panel's fill and rim), its first four apps as a 2×2 of little tiles. */
+    private void drawFolderTile(Canvas c, HomeApps.Item it, RectF base, float f) {
+        float fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f - TILE_PRESS * press.value * fc;
+        float cx = base.centerX() + bumpX * fc, cy = base.centerY() - TV_FOCUS_LIFT * k * f + bumpY * fc;
+        float bw = base.width(), bh = base.height(), r0 = TV_TILE_RADIUS * k;
+        c.save();
+        c.translate(cx, cy);
+        c.scale(s, s);
+        if (fc > 0.01f) {
+            tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
+            tmp.offset(0, 14 * k * fc);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.3f * fc));
+            shadows.draw(c, tmp, r0, KEY_BLUR * k, shadowSoft);
+        }
+        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
+        drawerCard(c, tmp, folderShape, r0, 1);
+        if (it.children != null) {
+            float mw = (bw - 2 * 18 * k - 12 * k) / 2, mh = (bh - 2 * 14 * k - 10 * k) / 2;
+            for (int i = 0; i < Math.min(4, it.children.size()); i++) {
+                float mx = -bw / 2 + 18 * k + (i % 2) * (mw + 12 * k), my = -bh / 2 + 14 * k + (i / 2) * (mh + 10 * k);
+                miniRect.set(mx, my, mx + mw, my + mh);
+                drawMini(c, it.children.get(i), miniRect);
+            }
+        }
+        c.restore();
+    }
+
+    /** An app's card, small and flat (the folder's previews): its tile image, or its colour with its symbol. */
+    private void drawMini(Canvas c, HomeApps.Item it, RectF r) {
+        float rr = 10 * k;
+        if (it.tile != null && it.tileShader != null) {
+            miniMatrix.setScale(r.width() / it.tile.getWidth(), r.height() / it.tile.getHeight());
+            miniMatrix.postTranslate(r.left, r.top);
+            it.tileShader.setLocalMatrix(miniMatrix);
+            imageFill.setShader(it.tileShader);
+            c.drawRoundRect(r, rr, rr, imageFill);
+            imageFill.setShader(null);
+            it.tileShader.setLocalMatrix(null);
+        } else {
+            fill.setShader(null);
+            fill.setColor(0xFF48484A);
+            c.drawRoundRect(r, rr, rr, fill);
+        }
+    }
+
+    /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
+    private void openFolder(HomeApps.Item folder, RectF from) {
+        folderOpen = folder;
+        folderIndex = 0;
+        int n = folder.children.size(), cols = Math.min(FOLDER_COLUMNS, n), rows = (n + FOLDER_COLUMNS - 1) / FOLDER_COLUMNS;
+        float cw = (2 * FOLDER_PAD + cols * GRID_W + (cols - 1) * FOLDER_GAP) * k, ch = (156 + rows * (GRID_H + 70) + 24) * k;
+        folderCard.set((w - cw) / 2, (h - ch) / 2, (w + cw) / 2, (h + ch) / 2);
+        snap(folderCard);
+        folderFrom.set(from);
+        folderFocus = new Spring[n];
+        folderCells = new RectF[n];
+        folderLabels = new String[n];
+        for (int i = 0; i < n; i++) {
+            folderFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
+            float x = folderCard.left + (FOLDER_PAD + (i % FOLDER_COLUMNS) * (GRID_W + FOLDER_GAP)) * k;
+            float y = folderCard.top + (132 + (i / FOLDER_COLUMNS) * (GRID_H + 70)) * k;
+            folderCells[i] = new RectF(x, y, x + GRID_W * k, y + GRID_H * k);
+            folderLabels[i] = TextUtils.ellipsize(folder.children.get(i).label, gridLabel, GRID_W * 1.3f * k, TextUtils.TruncateAt.END).toString();
+        }
+        folderBadgeW = ccLabel.measureText(folder.label) + 60 * k;
+        folderBadge.set(folderCard.centerX() - folderBadgeW / 2, folderCard.top + 34 * k, folderCard.centerX() + folderBadgeW / 2, folderCard.top + 86 * k);
+        folderFocus[0].target = 1;
+        folderShown.tune(Spring.SHEET_OPEN);
+        folderShown.target = 1;
+        gridDirty = motionDirty = true;
+        spoken.focusMoved();
+    }
+
+    /** Back (or an app opening): the card zooms back into its tile, the focus on the folder. */
+    private void closeFolder() {
+        if (folderOpen == null) return;
+        folderOpen = null;
+        folderShown.tune(Spring.SHEET_CLOSE);
+        folderShown.target = 0;
+        gridDirty = motionDirty = true;
+        spoken.focusMoved();
+    }
+
+    private void moveFolder(int dx, int dy) {
+        int n = folderOpen.children.size(), next = folderIndex + dx + dy * FOLDER_COLUMNS;
+        if (next < 0 || next >= n || (dx != 0 && next / FOLDER_COLUMNS != folderIndex / FOLDER_COLUMNS)) {
+            deadEnd(dx, dy);
+            return;
+        }
+        folderIndex = next;
+        for (int i = 0; i < folderFocus.length; i++) folderFocus[i].target = i == folderIndex ? 1 : 0;
+        gridDirty = true;
+        click.move();
+        spoken.focusMoved();
+    }
+
+    /** The open folder: the grid dims, the card springs from the folder's tile, the white badge, its apps 4 across. */
+    private void drawFolder(Canvas c) {
+        float e = Ui.clamp(folderShown.value);
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(dark() > 0.5f ? 0xFF000000 : 0xFF162130, (dark() > 0.5f ? 0.5f : 0.4f) * e));
+        c.drawRect(0, 0, w, h, fill);
+        c.save();
+        float z = 0.3f + 0.7f * e;
+        c.translate((folderFrom.centerX() - folderCard.centerX()) * (1 - e), (folderFrom.centerY() - folderCard.centerY()) * (1 - e));
+        c.scale(z, z, folderCard.centerX(), folderCard.centerY());
+        tmp.set(folderCard);
+        tmp.offset(0, 30 * k);
+        shadow.setColor(Ui.alpha(0xFF000000, 0.32f * e));
+        shadows.draw(c, tmp, FOLDER_RADIUS * k, SHADOW_BLUR * k, shadow);
+        scene.glass(c, folderCard, FOLDER_RADIUS * k, dark() > 0.5f ? 0xFF282C36 : 0xFFF6F7FA, 0.9f, WHITE, 0.06f, 0.04f, 1, e);
+        fill.setColor(Ui.alpha(0xFFFFFFFF, e));
+        c.drawRoundRect(folderBadge, folderBadge.height() / 2, folderBadge.height() / 2, fill);
+        ccLabel.setColor(Ui.alpha(INK, e));
+        c.drawText(folderOpen != null ? folderOpen.label : "", folderBadge.left + 30 * k, folderBadge.centerY() + Ui.halfCap(ccLabel), ccLabel);
+        if (folderOpen != null) {
+            int top = folderIndex;
+            for (int i = 0; i < folderCells.length; i++) if (i != top) drawAppTile(c, folderOpen.children.get(i), folderCells[i], folderFocus[i].value, 0, 0);
+            if (top < folderCells.length) {
+                drawAppTile(c, folderOpen.children.get(top), folderCells[top], folderFocus[top].value, 0, 0);
+                float fc = Ui.clamp(folderFocus[top].value);
+                gridLabel.setColor(Ui.alpha(tone(L_INK, WHITE), fc * e));
+                RectF r = folderCells[top];
+                float bottom = r.bottom + r.height() * TV_FOCUS_HALF * fc - TV_FOCUS_LIFT * k * fc;
+                c.drawText(folderLabels[top], r.centerX(), bottom + 22 * k + nameCap, gridLabel);
+            }
+        }
+        c.restore();
     }
 
     /** How far row `r` trails the grid's lift (each row 18 ms behind the one above, while it moves). */
@@ -3412,7 +4007,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float x = left + col * (GRID_W + GRID_GAP) * k;
         gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
         float f = gridFocus[i].value, fc = Ui.clamp(f);
-        drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex ? launch.value : 0);
+        if (others.get(i).kind == HomeApps.FOLDER) drawFolderTile(c, others.get(i), gridCell, f);
+        else drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex ? launch.value : 0);
         if (sheetOpen && i == gridIndex) {
             float s = 1 + FOCUS_GROW, cx = gridCell.centerX(), cy = gridCell.centerY() - TV_FOCUS_LIFT * k;
             gridFocusCell.set(cx - gridCell.width() * s / 2, cy - gridCell.height() * s / 2, cx + gridCell.width() * s / 2, cy + gridCell.height() * s / 2);
@@ -3561,7 +4157,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             intro.start();
         } else {
             intro.stop();
-            lock.show(false, null);
+            if (withIntro && !Prefs.setupDone()) welcome.show(true);   // no startup: the welcome setup, then the lock
+            else lock.show(false, null);
         }
     }
 
@@ -3617,12 +4214,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private final Intro.Listener introListener = new Intro.Listener() {
         @Override public void onIntroEnding() {
-            lock.show(true, null);
+            if (Prefs.setupDone()) lock.show(true, null);
+            else welcome.show(true);   // a new TV: the welcome setup first, then "Who's Watching?"
             intro.bringToFront();   // the lock comes in under the intro's dissolve
         }
 
         @Override public void onIntroDone() {
-            if (!lock.showing() && ProfileManager.needsLock(getContext())) lock.show(false, null);
+            if (!welcome.showing() && !lock.showing() && ProfileManager.needsLock(getContext())) lock.show(false, null);
+        }
+    };
+
+    private final WelcomeView.Listener welcomeListener = new WelcomeView.Listener() {
+        @Override public void onLook() {
+            checkNight(false);
+            updatePalette();
+            invalidateAll();
+        }
+
+        @Override public void onDone(boolean fromBoot) {
+            followShelf(false);   // the Top Shelf it picked
+            if (fromBoot) lock.show(false, null);
+            wake();
+            invalidateAll();
         }
     };
 
@@ -3721,6 +4334,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     boolean onKey(KeyEvent e) {
         wake();
         if (intro.showing()) return intro.onKey(e);
+        if (welcome.showing()) return welcome.onKey(e);
         if (lock.showing()) return lock.onKey(e);
         touch();
         if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
@@ -3806,7 +4420,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void back() {
-        if (sheetOpen) {
+        if (folderOpen != null) {
+            closeFolder();
+        } else if (sheetOpen) {
             closeSheet();
         } else if (zone == Z_HOUSE || zone == Z_WELLY) {
             focusTabBar();      // Back in a tab's content: the tab bar
@@ -3834,6 +4450,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void move(int dx, int dy) {
         lastDx = dx;
         lastDy = dy;
+        if (folderOpen != null) {
+            moveFolder(dx, dy);
+            return;
+        }
         if (sheetOpen) {
             moveGrid(dx, dy);
             return;
@@ -3904,58 +4524,37 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 break;
             case WIDGETS: {
-                // The Time & Weather platter, between the profiles (↑) and the cards (↓).
-                List<Integer> on = widgets();
-                int at = on.indexOf(widgetIndex);
-                if (at < 0 || dy > 0) {
-                    zone = Z_DRAWER;
-                    ccOnProfiles = ccOnVolume = false;
-                    drawerIndex = 0;
-                } else if (dy < 0 && profileRects.length > 0) {
-                    zone = Z_DRAWER;
-                    ccOnProfiles = true;
-                    ccOnVolume = false;
-                    profileIndex = Math.max(0, Math.min(profileRects.length - 1, ProfileManager.currentIndex(getContext())));
-                } else if (dy < 0) {
-                    deadEnd(0, dy);
-                    return;
-                } else if (dx < 0) {
-                    closeDrawer();
-                } else if (dx != 0 && at + dx >= 0 && at + dx < on.size()) {
-                    widgetIndex = on.get(at + dx);
-                } else {
-                    deadEnd(dx, dy);
-                    return;
+                // The weather platter: the nearest stop that way (the profiles ↑, Audio Output →, the cluster ↓).
+                if (!ccStop(ccNearest(weatherCard, dx, dy, -1))) {
+                    if (dx < 0) {
+                        closeDrawer();
+                    } else {
+                        deadEnd(dx, dy);
+                        return;
+                    }
                 }
                 break;
             }
             default: {
-                // Control Center: 2 columns; ← from the left column closes it.
-                int n = drawerItems.size();
-                if (dx < 0 && drawerIndex % 2 == 0) {
-                    closeDrawer();
-                } else if (dx != 0) {
-                    int next = drawerIndex + dx;
-                    if (next < 0 || next >= n || next / 2 != drawerIndex / 2) {
-                        deadEnd(dx, 0);
-                        return;
-                    }
-                    drawerIndex = next;
-                } else if (dy < 0) {
-                    if (drawerIndex < 2) {
-                        deadEnd(0, dy);
-                        return;
-                    }
-                    drawerIndex -= 2;
-                } else if (drawerIndex + 2 < n) {
-                    drawerIndex += 2;
-                } else if (drawerIndex / 2 < (n - 1) / 2) {
-                    drawerIndex = n - 1;
-                } else if (!volumeRect.isEmpty()) {
-                    ccOnVolume = true;   // ↓ from the last row: the volume
-                } else {
-                    deadEnd(0, dy);
+                // Control Center: the nearest card that way (spatial: circles, sliders, pills, round buttons, ⏻, Audio
+                // Output), else the weather or a profile; ↑ ↓ on a slider change its level; ← with nothing there closes it.
+                if (drawerItems.isEmpty()) return;
+                HomeApps.Item cur = drawerItems.get(drawerIndex);
+                if (ccShape(cur.kind) == CC_SLIDER && dy != 0) {
+                    boolean moved = cur.kind == HomeApps.VOLUME ? stepVolume(-dy) : stepBrightness(-dy);
+                    if (!moved) deadEnd(0, dy);
+                    else click.move();
+                    drawerDirty = true;
+                    wake();
                     return;
+                }
+                if (!ccStop(ccNearest(drawerRects[drawerIndex], dx, dy, drawerIndex))) {
+                    if (dx < 0) {
+                        closeDrawer();
+                    } else {
+                        deadEnd(dx, dy);
+                        return;
+                    }
                 }
                 break;
             }
@@ -4034,19 +4633,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (!sheetOpen && zone == Z_WELLY) return;   // Welly handles its own OK
-        if (sheetOpen) {
+        if (folderOpen != null) {
+            it = folderOpen.children.get(folderIndex);
+            r = folderCells[folderIndex];
+            closeFolder();   // the app opens from its card; back home, the grid
+        } else if (sheetOpen) {
             if (others.isEmpty()) return;
             it = others.get(gridIndex);
             r = gridFocusCell;
+            if (it.kind == HomeApps.FOLDER) {
+                click.open();
+                openFolder(it, r);
+                return;
+            }
         } else if (zone == Z_HERO) {
             Recs.Pick p = currentPick();
             if (p == null || p.pkg == null) return;
             it = HomeApps.app(p);
             r = heroButton;
         } else if (zone == Z_STATUS) {
-            // The pill: Control Center.
+            // The bubble: Control Center. The pill: "Who's Watching?" (Back keeps this profile).
             click.open();
-            openDrawer();
+            openDrawer(!onBubble);
             retarget(false);
             return;
         } else if (zone == Z_DRAWER && ccOnProfiles) {
@@ -4110,6 +4718,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
             return;
         }
+        if (it.kind == HomeApps.APPEARANCE) {
+            cycleTheme();
+            retarget(false);
+            return;
+        }
+        if (it.kind == HomeApps.BRIGHTNESS || it.kind == HomeApps.VOLUME) return;   // ↑ ↓ change them
         if (it.kind == HomeApps.POWER) {
             // The screen off now, through mahitTV's own ADB (a fixed key command in HomeMode).
             final Context ctx = getContext().getApplicationContext();
@@ -4460,7 +5074,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 String state = i < inputStates.length ? inputStates[i] : null;
                 return state == null ? label(inputItems, i) : label(inputItems, i) + ", " + state;
             }
-            case Z_STATUS: return clockText + ". " + Ui.tr("Control Center");
+            case Z_STATUS: return onBubble ? Ui.tr("Control Center") : clockText + ". " + Ui.tr("Profile");
             case WIDGETS:
                 if (i == VOLUME_ITEM) return Ui.trf("Volume, {n}%", "n", Math.round(100f * volumeIndex / Math.max(1, volumeMax)));
                 return i == 0 ? weatherText() : quotesText();
@@ -4727,7 +5341,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float width = 24 * k + pillTimeW + 18 * k + PILL_AVATAR * k + 4 * k;
         pillRect.set(right - width, top, right, top + ph);
         snap(pillRect);
-        float b = PILL_H * k, x = pillRect.left - 16 * k, cy = pillRect.centerY();
+        float bx = pillRect.left - BUBBLE_GAP * k;
+        bubbleRect.set(bx - BUBBLE_D * k, (PILL_TOP + (PILL_H - BUBBLE_D) / 2) * k, bx, (PILL_TOP + (PILL_H + BUBBLE_D) / 2) * k);
+        Symbols.warm(getContext(), "controls", 26 * k);
+        float b = PILL_H * k, x = bubbleRect.left - 16 * k, cy = pillRect.centerY();
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
             topRects[3 + i].set(x - b, cy - b / 2, x, cy + b / 2);
             x -= b + L_BUTTON_GAP * k;
@@ -5151,7 +5768,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (!sleepText.isEmpty()) {
-            float right = (lightButtons.isEmpty() ? pillRect.left : topRects[3].left) - 24 * k, cy = pillRect.centerY();
+            float right = (lightButtons.isEmpty() ? bubbleRect.left : topRects[3].left) - 24 * k, cy = pillRect.centerY();
             lQuote.setColor(0xE6FFFFFF);
             float tw = sleepTextW, size = lQuote.getTextSize();
             c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
@@ -5212,12 +5829,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadow.setColor(Ui.alpha(0xFF000000, 0.18f + 0.2f * f));
         shadows.draw(c, tmp, rr, SHADOW_BLUR * k, shadow);
         scene.liquid(c, pillNow, rr, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * f, 1 - f);
-        if (f > 0.01f) {
+        float white = Math.max(f, drawerOpen && ccProfile ? 0.86f : 0);   // lit while its profile panel is open
+        if (white > 0.01f) {
             fill.setShader(null);
-            fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+            fill.setColor(Ui.alpha(0xFFFFFFFF, white));
             c.drawRoundRect(pillNow, rr, rr, fill);
         }
-        int ink = blend(0xFFFFFFFF, INK, f);
+        int ink = blend(0xFFFFFFFF, INK, white);
         tvPill.setColor(ink);
         float base = pillNow.centerY() + Ui.halfCap(tvPill);
         if (wide > 0.01f) {
@@ -5249,6 +5867,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             bitmapPaint.setAlpha(255);
             if (pop) c.restore();
         }
+        c.restore();
+        drawBubble(c);
+    }
+
+    /** Control Center's bubble: the pill's smoke glass in a 48 px circle; white with ink focused, light while it's open. */
+    private void drawBubble(Canvas c) {
+        if (bubbleRect.isEmpty()) return;
+        float f = Ui.clamp(bubbleFocus.value), open = drawerOpen && !ccProfile ? 1 : 0;
+        float s = 1 + 0.12f * bubbleFocus.value - PRESS * press.value * f, r = bubbleRect.height() / 2;
+        c.save();
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, bubbleRect.centerX(), bubbleRect.centerY());
+        tmp.set(bubbleRect);
+        tmp.offset(0, (6 + 8 * f) * k);
+        shadow.setColor(Ui.alpha(0xFF000000, 0.18f + 0.2f * f));
+        shadows.draw(c, tmp, r, SHADOW_BLUR * k, shadow);
+        scene.liquid(c, bubbleRect, r, SMOKE, 0.42f, 0.02f, 10 * k, 6 * k, 0.7f + 0.6f * f, 1 - f);
+        float white = Math.max(f, 0.86f * open);
+        if (white > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, white));
+            c.drawCircle(bubbleRect.centerX(), bubbleRect.centerY(), r, fill);
+        }
+        Symbols.draw(getContext(), c, "controls", bubbleRect.centerX(), bubbleRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, white));
         c.restore();
     }
 
@@ -5301,8 +5943,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 break;
             case Z_STATUS:
-                // The pill ends the bar's row: ← to the round buttons, then the tabs.
-                if (dx < 0) {
+                // The pill, then Control Center's bubble, end the bar's row: ← to the round buttons, then the tabs.
+                if (dx > 0 && onBubble) {
+                    onBubble = false;   // → from the bubble: the pill
+                } else if (dx < 0 && !onBubble) {
+                    onBubble = true;    // ← from the pill: the bubble
+                } else if (dx < 0) {
                     zone = Z_TOP;
                     topIndex = 2 + lightButtons.size();
                     if (topIndex < 3) selectTab(topIndex);
@@ -5318,6 +5964,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     int next = topIndex + dx;
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
+                        onBubble = true;   // the bubble comes first, then the pill
                     } else if (next < 0) {
                         deadEnd(dx, 0);
                         return true;
@@ -5376,21 +6023,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     }
                     break;
                 }
-                if (!ccOnProfiles) {
-                    if (dy < 0 && drawerIndex < 2 && !widgets().isEmpty()) {
-                        // ↑ from the first row of cards: the Time & Weather platter.
-                        zone = WIDGETS;
-                        widgetIndex = widgets().get(0);
-                        break;
-                    }
-                    if (dy < 0 && drawerIndex < 2 && profileRects.length > 0) {
-                        // No weather: the profiles.
-                        ccOnProfiles = true;
-                        profileIndex = nearest(profileRects, drawerRects[drawerIndex].centerX());
-                        break;
-                    }
-                    return false;   // the cards: move()
-                }
+                if (!ccOnProfiles) return false;   // the cards: move(), spatially
                 if (dx != 0) {
                     int next = profileIndex + dx;
                     if (next < 0) {
@@ -5401,13 +6034,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     } else {
                         profileIndex = next;
                     }
-                } else if (dy > 0 && !widgets().isEmpty()) {
-                    ccOnProfiles = false;   // ↓ from the profiles: the Time & Weather platter
-                    zone = WIDGETS;
-                    widgetIndex = widgets().get(0);
-                } else if (dy > 0 && !drawerItems.isEmpty()) {
-                    ccOnProfiles = false;
-                    drawerIndex = profileRects[profileIndex].centerX() > (CC_LEFT + CC_RIGHT) / 2 * k && drawerItems.size() > 1 ? 1 : 0;
+                } else if (dy > 0 && profileIndex < profileRects.length
+                        && ccStop(ccNearest(profileRects[profileIndex], 0, 1, -1))) {
+                    // ↓ from the profiles: the weather, or what's under them
                 } else {
                     deadEnd(0, dy);
                     return true;

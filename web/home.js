@@ -366,7 +366,19 @@
       if (!out.length) out = apps.slice(0, FEW_APPS);
     }
     shelf = out;
-    others = apps.filter(function (x) { return shelf.indexOf(x) < 0; });
+    others = folders(apps.filter(function (x) { return shelf.indexOf(x) < 0; }));
+  }
+
+  // The TV's own utilities (its settings, store, browser, files, inputs…): together in one folder at the end of All Apps.
+  var UTILITY = /browser|settings|store|google\.play|play store|file|media ?player|gallery|help|manual|guide|update|account|smartthings|tv-viewer|livetv|channel|input|hdmi|tcl|usb|miracast/i;
+
+  /** All Apps' list with the utilities in a "TV & Utilities" folder (two or more of them; one stays an app). */
+  function folders(list) {
+    var util = list.filter(function (x) { return !shelfKey(x) && (UTILITY.test(x.id) || UTILITY.test(x.title)); });
+    if (util.length < 2) return list;
+    var rest = list.filter(function (x) { return util.indexOf(x) < 0; });
+    rest.push({id: 'folder:utilities', title: tr('TV & Utilities'), folder: true, apps: util});
+    return rest;
   }
 
   // MARK: - Motion (ANIMATIONS-SPEC.md): springs from motion.js drive every transform that can change mid-flight
@@ -523,11 +535,14 @@
     heroX: spring(P.TITLE_SETTLE).px(), heroA: spring(P.TITLE_SETTLE, 1), heroShow: spring([0.3, 1], 1),
     lensX: spring(P.LIQUID_PILL).px(), lensW: spring(P.LIQUID_PILL, 100).px(), dot: spring(P.SNAPPY_FOCUS).px(),
     rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL),
-    ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP)
+    ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP),
+    // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
+    brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN)
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
   var fxTiles = [], fxCells = [], fxTabs = [], fxKeys = [], fxWho = [], fxRecents = [], fxPill = null, fxWatch = null, launching = null;
+  var fxBubble = null, fxFolder = [];
   var pending = [];
 
   /** Sets a spring's target after `ms` (a stagger); a newer call for the same spring replaces it. */
@@ -665,9 +680,11 @@
       T(hud.node, 'translateX(' + r2(-40 * (1 - hs)) + 'px) scale(1,' + r4(1 + 0.03 * Motion.clamp(mv.hudBump.x, -1, 1)) + ')');
       A(hud.node, hs);
       V(hud.node, hs);
-      T(hud.fill, 'scale(1,' + r4(level) + ')');
+      T(hud.fill, 'scale(1,' + r4(hudMode === 'brightness' ? Motion.clamp(mv.brightFill.x, 0, 1) : level) + ')');
     }
-    if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
+    if (ccVolume) T(ccVolume.fill, 'scale(1,' + r4(level) + ')');
+    if (ccBright) T(ccBright.fill, 'scale(1,' + r4(Motion.clamp(mv.brightFill.x, 0, 1)) + ')');
+    drawFolder();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
@@ -686,14 +703,14 @@
   // MARK: - Focus
 
   var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', WALLPAPER: 'wallpaper', ABOUT: 'about',
-    TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents'};
+    TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents', FOLDER: 'folder'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
   var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
-    recent: 0, ccInput: 0};
+    recent: 0, ccInput: 0, folder: 0};
   var cards = [];
   var was = {drawer: false, full: false, row: null};
 
-  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT || st.zone === Z.RECENTS; }
+  function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT || st.zone === Z.RECENTS || st.zone === Z.FOLDER; }
 
   function focusList(list, on, index) {
     for (var i = 0; i < list.length; i++) {
@@ -704,8 +721,13 @@
 
   function updateFocus() {
     var i, list;
-    setClass($('pill'), 'focus', st.zone === Z.TOP);
-    if (fxPill) fxPill.focus(st.zone === Z.TOP);
+    // The top right: Control Center's bubble is st.top 3, the pill (the time and you: the profile panel) right of it 4.
+    var onBubble = st.zone === Z.TOP && st.top === 3, onPill = st.zone === Z.TOP && st.top === 4;
+    setClass($('pill'), 'focus', onPill);
+    if (fxPill) fxPill.focus(onPill);
+    setClass($('ccbtn'), 'focus', onBubble);
+    if (fxBubble) fxBubble.focus(onBubble);
+    focusList(fxFolder, st.zone === Z.FOLDER, st.folder);
     setClass($('watch'), 'focus', st.zone === Z.HERO);
     if (fxWatch) fxWatch.focus(st.zone === Z.HERO);
     setClass(body, 'full', st.zone === Z.HERO);
@@ -719,7 +741,7 @@
     focusList(fxCells, st.zone === Z.APPS, st.grid);
     // The grid shows 2 rows under the risen Dock; past them, the page (Dock and all) scrolls on.
     var rows = Math.max(1, Math.ceil(others.length / COLS)), r = Math.floor(st.grid / COLS), first = Math.max(0, Math.min(rows - 2, r - 1));
-    var grid = st.zone === Z.APPS, lift = grid ? GRID_LIFT + first * GRID_ROW : 0;
+    var grid = st.zone === Z.APPS || st.zone === Z.FOLDER, lift = grid ? GRID_LIFT + first * GRID_ROW : 0;
     if (lift !== mv.lift.to) {
       mv.lift.set(lift);
       for (i = 0; i < rowLag.length; i++) later(rowLag[i], lift, 18 * i);
@@ -738,6 +760,7 @@
     // Control Center: presented a little slower than it's dismissed; its rows follow 25 ms apart.
     var drawerOpen = st.zone === Z.DRAWER;
     setClass(body, 'drawer-open', drawerOpen);
+    setClass(body, 'drawer-profile', ccMode === 'profile');   // which button opened it lights up
     if (drawerOpen !== was.drawer) {
       was.drawer = drawerOpen;
       mv.drawer.tune(drawerOpen ? P.SHEET_OPEN : P.SHEET_CLOSE).set(drawerOpen ? 1 : 0);
@@ -796,7 +819,8 @@
       case Z.SHELF: return fxTiles[st.shelf] || null;
       case Z.APPS: return fxCells[st.grid] || null;
       case Z.TABS: return fxTabs[st.tab] || null;
-      case Z.TOP: return fxPill;
+      case Z.TOP: return st.top === 3 ? fxBubble : fxPill;
+      case Z.FOLDER: return fxFolder[st.folder] || null;
       case Z.HERO: return fxWatch;
       case Z.DRAWER: return ccFocusedFx();
       case Z.RECENTS: return fxRecents[st.recent] || null;
@@ -917,9 +941,11 @@
 
   function renderTop() {
     $('buttons').innerHTML = '';
-    hover($('pill'), Z.TOP, 3);
+    hover($('ccbtn'), Z.TOP, 3);
+    hover($('pill'), Z.TOP, 4);
     hover($('watch'), Z.HERO, 0);
     if (!fxPill) fxPill = new Fx($('pill'), {grow: 0.08, avatar: $('pill').querySelector('.avatar')});
+    if (!fxBubble) { sym('controls', $('ccbtn')); fxBubble = new Fx($('ccbtn'), {grow: 0.12}); }
     if (!fxWatch) fxWatch = new Fx($('watch'), {grow: 0.08});
     renderPill();
   }
@@ -944,7 +970,9 @@
     }
     avatar.setAttribute('data-url', url);
     avatar.style.backgroundImage = url;
-    $('quotes').style.right = (45 + pill.offsetWidth + 24) + 'px';
+    // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes.
+    $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
+    $('quotes').style.right = (45 + pill.offsetWidth + 14 + 48 + 24) + 'px';
   }
 
   /** What's playing (or a timer), when the TV tells us: the pill widens to show it with three moving bars. */
@@ -1066,11 +1094,25 @@
     syncAerialVideo();
   }
 
-  /** Re-evaluate on every focus/profile/recommendation/settings update. */
+  /** The first streaming app in the Dock (All Continue Watching shows its title on any Dock app). */
+  function firstMedia() {
+    for (var i = 0; i < shelf.length; i++) {
+      var d = mediaDescriptor(shelf[i]);
+      if (d.media && !d.music) return d;
+    }
+    return null;
+  }
+
+  /**
+   * Re-evaluate on every focus/profile/recommendation/settings update. The Top Shelf (Settings or the welcome setup):
+   * 'app' the focused streaming app's Continue Watching (the Frosted Horizon elsewhere), 'all' a Continue Watching title
+   * whatever app is focused, 'picks' the recommendations whatever app is focused, 'off' only the wallpaper.
+   */
   function refreshBackground() {
-    var app = mediaDescriptor(shelf[st.shelf]);
-    var wantsMedia = st.tab === TAB.TV && Wallpaper.media(st.zone, app.media);
-    var key = wantsMedia ? (st.zone + ':' + app.id + ':' + cards.length + ':' + Prefs.version) : 'profile:' + Prefs.wallpaper() + ':' + Prefs.version;
+    var mode = Prefs.topShelf(), app = mediaDescriptor(shelf[st.shelf]);
+    if (mode === 'all' && !app.media) app = firstMedia() || app;
+    var wantsMedia = mode !== 'off' && st.tab === TAB.TV && Wallpaper.media(st.zone, mode === 'picks' ? cards.length > 0 : app.media);
+    var key = wantsMedia ? (mode + ':' + st.zone + ':' + app.id + ':' + cards.length + ':' + Prefs.version) : 'profile:' + Prefs.wallpaper() + ':' + Prefs.version;
     // A media resolver can change Continue Watching/Now Playing without
     // changing the app, zone, recommendation count, or preference revision.
     // Re-resolve media focus; generations still reject older async answers.
@@ -1079,9 +1121,20 @@
     backgroundGeneration++;
     var generation = backgroundGeneration;
     if (!wantsMedia) { applyProfileBackground(); return; }
+    if (mode === 'picks') {
+      var featured = pageForMedia(cards[Math.min(st.page, cards.length - 1)]);
+      if (!featured) { applyProfileBackground(); return; }
+      backgroundMode = 'media';
+      mediaPage = null;
+      setClass(body, 'profile-background', false);
+      setClass(body, 'media-background', true);
+      showPage(Math.min(st.page, cards.length - 1), 0);
+      aerialVideo.hide();
+      return;
+    }
     Data.resolveWatch(app, generation, function (resolvedGeneration, pick) {
       if (resolvedGeneration !== backgroundGeneration || generation !== backgroundGeneration ||
-          !Wallpaper.media(st.zone, mediaDescriptor(shelf[st.shelf]).media) || st.tab !== TAB.TV) return;
+          !Wallpaper.media(st.zone, mode === 'all' || mediaDescriptor(shelf[st.shelf]).media) || st.tab !== TAB.TV) return;
       pick = pageForMedia(pick || featuredFor(app));
       if (!pick) { applyProfileBackground(); return; }
       backgroundMode = 'media';
@@ -1439,17 +1492,29 @@
 
   // MARK: - Control Center: a right-hand Liquid Glass panel, as tvOS's
 
-  // Its rows, top to bottom: the profiles, the weather, a 2-column bento of capsule tiles, the volume and a row of round
-  // buttons. Everything focusable is one entry of ccItems (its row, node, spring, what OK does): ← → walk the row,
-  // ↑ ↓ go to the nearest entry of the next row. OK on Inputs slides a list of the inputs over the tiles (ccSub).
+  // Two panels under the top-right cluster, as tvOS's: Control Center (its bubble) holds the controls — a 2×2 cluster
+  // (Wi-Fi, Bluetooth, Do Not Disturb, Sleep Timer) beside the vertical brightness and volume sliders, the Appearance and
+  // Audio Output pills, and round Power and Close Background Apps buttons; the profile panel (the pill) holds the
+  // profiles, the weather, Inputs (its list slides over what's under the weather, ccSub) and round Screensaver, Lock,
+  // Home Settings and TV Settings buttons. Everything focusable is one entry of ccItems (its row, node, spring, what OK
+  // does): ← → walk the row, ↑ ↓ go to the nearest entry of the next row; the sliders span the cluster's two rows and
+  // ↑ ↓ on them change their level. The tiles inside are flat (the panel is the glass: never glass on glass).
   var CC = {left: 1300, top: 124, pad: 28, body: 504, gap: 16, col: 260, tileW: 244, tileH: 72, tileGap: 12,
-    profilesH: 104, weatherH: 152, volumeH: 72, iconsH: 114, iconD: 72, inputH: 72, inputGap: 8, headH: 56};
+    whoH: 104, platterH: 152, cellW: 122, cellH: 96, cellGap: 12, sliderW: 114, sliderGap: 16,
+    iconsH: 114, iconD: 72, inputH: 72, inputGap: 8, headH: 56};
+  /** Which panel is drawn: 'controls' (the bubble) or 'profile' (the pill); how tall it is closed and with Inputs open. */
+  var ccMode = 'controls', ccHeights = {closed: 0, open: 0};
+
+  /** The panel as tall as what shows: its content, or the Inputs list while that's open. */
+  function fitDrawer() {
+    $('drawer').style.height = ((ccSub ? ccHeights.open : ccHeights.closed) + 2 * CC.pad) + 'px';
+  }
   var PREVIEW = !!window.PREVIEW_PICKS;
   // The preview stands in for the Google TV app (what LG and Samsung web apps can't do shows a note); these two only
   // keep a state there so the tiles can be tried.
   var previewCC = {dnd: false, sleep: 0};
-  var ccItems = [], ccRows = [], ccGroup = null, ccInputsNode = null, ccInputItems = [], ccSub = false, ccVolume = null;
-  var drawerWeather = false, recentList = [], recentRow = null;
+  var ccItems = [], ccRows = [], ccGroup = null, ccInputsNode = null, ccInputItems = [], ccSub = false, ccVolume = null, ccBright = null;
+  var ccLastRow = 0, drawerWeather = false, recentList = [], recentRow = null;
 
   function lastInput() {
     try { return localStorage.getItem('fmtv.lastInput') || ''; } catch (e) { return ''; }
@@ -1470,38 +1535,54 @@
 
   function googleOnly() { toast(tr('Only on Google TV')); }
 
-  /** The bento's tiles: on LG and Samsung what a web app can do, in the preview the Google TV app's whole set. */
-  function ccTiles() {
-    var t = [];
-    if (PREVIEW) {
-      t.push({label: tr('Power'), symbol: 'power', run: googleOnly});
-      t.push({label: tr('Sleep Timer'), glyph: 'glyph-timer', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
+  /** The 2×2 cluster's round toggles (blue when on, as iOS): in the preview the Google TV app's; LG and Samsung have none. */
+  function ccCluster() {
+    if (!PREVIEW) return [];
+    return [
+      {label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }},
+      {label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly},
+      {label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; }, active: function () { return previewCC.dnd; }},
+      {label: tr('Sleep Timer'), symbol: 'bedtime', run: function () { previewCC.sleep = [0, 15, 30, 60, 90][([0, 15, 30, 60, 90].indexOf(previewCC.sleep) + 1) % 5]; },
         active: function () { return !!previewCC.sleep; },
-        detail: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : tr('state|Off'); }});
-    }
-    if (inputs.length) {
-      t.push({label: tr('Inputs'), symbol: 'input', run: openInputsSheet, detail: function () {
-        var id = currentInput();
-        for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return inputName(inputs[i]);
-        return '';
-      }});
-    }
-    if (PREVIEW) {
-      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
-      t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return tr('Connected'); }});
-      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, detail: function () { return tr('state|Off'); }});
-      t.push({label: tr('Do Not Disturb'), symbol: 'moon', run: function () { previewCC.dnd = !previewCC.dnd; },
-        active: function () { return previewCC.dnd; }, detail: function () { return previewCC.dnd ? tr('state|On') : tr('state|Off'); }});
-    }
-    t.push({label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }});
+        name: function () { return previewCC.sleep ? trf('{n} min', {n: previewCC.sleep}) : tr('Sleep Timer'); }}
+    ];
+  }
+
+  /** Light → Dark → Automatic (sunset), for the whole home screen at once. */
+  var THEMES = ['light', 'dark', 'auto'];
+  function themeName(t) { return t === 'light' ? tr('Light') : t === 'dark' ? tr('Dark') : tr('Automatic'); }
+  function cycleTheme() {
+    Prefs.set('theme', THEMES[(THEMES.indexOf(Prefs.theme()) + 1) % THEMES.length]);
+    checkNight();
+  }
+
+  /** Control Center's pills: Appearance (◐) and where the sound goes. */
+  function ccPills() {
+    var t = [{label: tr('Appearance'), symbol: 'appearance', run: cycleTheme, detail: function () { return themeName(Prefs.theme()); }}];
+    if (PREVIEW) t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return tr('TV Speakers'); }});
     return t;
   }
 
-  /** The round buttons at the bottom. */
+  /** Control Center's round buttons: Power and Close Background Apps (the Google TV app's; LG and Samsung have neither). */
+  function ccControlIcons() {
+    if (!PREVIEW) return [];
+    return [{label: tr('Power'), symbol: 'power', run: googleOnly}, {label: tr('Close Background Apps'), symbol: 'memory', run: googleOnly}];
+  }
+
+  /** The profile panel's Inputs pill, the whole width: the input in use under its name. */
+  function ccInputsPill() {
+    return {label: tr('Inputs'), symbol: 'input', run: openInputsSheet, detail: function () {
+      var id = currentInput();
+      for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) return inputName(inputs[i]);
+      return '';
+    }};
+  }
+
+  /** The profile panel's round buttons. */
   function ccIcons() {
-    var b = [{label: tr('Lock'), glyph: 'glyph-lock', run: lockNow}];
-    if (PREVIEW) b.push({label: tr('Close Background Apps'), symbol: 'memory', run: googleOnly});
-    b.push({label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }});
+    var b = [{label: tr('Screensaver'), symbol: 'screensaver', run: function () { closeDrawer(); showSaver(); }},
+      {label: tr('Lock'), glyph: 'glyph-lock', run: lockNow},
+      {label: tr('Home Settings'), symbol: 'settings', run: function () { openSettings(); }}];
     if (TV.canOpenSettings || PREVIEW) b.push({label: tr('TV Settings'), symbol: 'tv_settings', run: TV.canOpenSettings ? tvSettings : googleOnly});
     return b;
   }
@@ -1529,7 +1610,7 @@
     return sym(spec.symbol, parent);
   }
 
-  /** Control Center: profiles, weather, the bento, the volume, the round buttons. */
+  /** The panel ccMode says: Control Center's controls, or the profile panel. */
   function renderDrawer() {
     var d = $('drawer').lastChild;
     d.innerHTML = '';
@@ -1537,10 +1618,55 @@
     killFx(fxWho);
     ccItems = [];
     ccRows = [];
-    ccVolume = null;
+    ccVolume = ccBright = ccInputsNode = ccGroup = null;
+    ccSub = false;
+    setClass($('drawer'), 'profile-panel', ccMode === 'profile');
+    ccHeights = ccMode === 'profile' ? renderProfilePanel(d) : renderControls(d);
+    fitDrawer();
+    while (drawerRows.length < ccRows.length) drawerRows.push(spring(P.SHEET_OPEN, 1));
+    drawerRows.length = ccRows.length;
+    renderPanels();
+    showVolumeLevel();
+    showBrightLevel();
+    ccRefresh();
+    updateFocus();
+  }
+
+  /** Control Center: the cluster beside the sliders, the pills, the round buttons. Returns how tall it is. */
+  function renderControls(d) {
+    var y = 0, row, cluster = ccCluster(), pills = ccPills(), icons = ccControlIcons();
+    var clusterW = cluster.length ? 2 * CC.cellW : 0, sx = cluster.length ? clusterW + CC.gap : 0;
+    var sliderH = 2 * CC.cellH + CC.cellGap;   // full height even without the cluster (LG and Samsung have none)
+    var rowA = ccRow(d, y, CC.cellH), clusterRow = ccRows.length - 1;
+    var rowB = cluster.length > 2 ? ccRow(d, y + CC.cellH + CC.cellGap, CC.cellH) : null;
+    if (cluster.length) {
+      var plate = el('div', 'ccplate', rowA);
+      plate.style.width = clusterW + 'px';
+      plate.style.height = (rowB ? sliderH : CC.cellH) + 'px';
+      for (var c = 0; c < cluster.length; c++) ccCircle(c < 2 ? rowA : rowB, cluster[c], c % 2, c < 2 ? clusterRow : clusterRow + 1);
+    }
+    var last = rowB ? clusterRow + 1 : clusterRow;
+    ccBright = ccSlider(rowA, sx, sliderH, 'sunny', function () { return Prefs.brightness(); }, stepBrightness, null, clusterRow, last);
+    if (volumeLevel !== null) ccVolume = ccSlider(rowA, sx + CC.sliderW + CC.sliderGap, sliderH, 'volume', function () { return volumeMuted ? 0 : volumeLevel; },
+      stepVolume, function () { stepVolume('mute'); }, clusterRow, last);
+    y += sliderH + CC.gap;
+    row = ccRow(d, y, CC.tileH);
+    for (var k = 0; k < pills.length; k++) ccTile(row, pills[k], k);
+    y += CC.tileH;
+    if (icons.length) {
+      y += CC.gap;
+      row = ccRow(d, y, CC.iconsH);
+      for (var b = 0; b < icons.length; b++) ccIcon(row, icons[b], b, icons.length);
+      y += CC.iconsH;
+    }
+    return {closed: y, open: y};
+  }
+
+  /** The profile panel: the profiles, the weather, Inputs (and its list), the round buttons. Returns how tall it is. */
+  function renderProfilePanel(d) {
     var y = 0, row, list = people(), np = list.length, step = Math.min(116, Math.floor(CC.body / Math.max(1, np)));
-    // Profiles first, as on tvOS: the avatars, the current one ringed; OK opens the lock on that profile.
-    row = ccRow(d, y, CC.profilesH);
+    // The profiles first, the current one ringed; OK opens the lock on that profile.
+    row = ccRow(d, y, CC.whoH);
     row.className += ' profiles';
     var x0 = Math.round((CC.body - np * step) / 2);
     for (var w = 0; w < np; w++) {
@@ -1552,42 +1678,29 @@
       el('span', 'name', who, list[w].name);
       ccAdd(who, new Fx(faceEl, {grow: 0.12}), profileRun(list[w]), 'who', x0 + w * step + step / 2);
     }
-    y += CC.profilesH + CC.gap;
-    // The weather, a platter of its own: OK opens the 24-hour / 7-day forecast (weather.js).
+    y += CC.whoH + CC.gap;
+    // The weather, the whole width: OK opens the floating weather card (weather.js).
     drawerWeather = Prefs.weather();
     if (drawerWeather) {
-      row = ccRow(d, y, CC.weatherH);
+      row = ccRow(d, y, CC.platterH);
       var wc = el('div', '', row);
       wc.id = 'weather';
       ccAdd(wc, null, function () { if (Data.weather) openForecast(); }, 'weather', CC.body / 2);
-      y += CC.weatherH + CC.gap;
+      y += CC.platterH + CC.gap;
     }
-    // The bento, the volume and the round buttons: the group the Inputs list slides over.
-    var grp = ccGroup = el('div', 'ccgroup', d), gy = 0, tiles = ccTiles(), icons = ccIcons();
+    // Under the weather: the group the Inputs list slides over.
+    var grp = ccGroup = el('div', 'ccgroup', d), gy = 0, icons = ccIcons();
     grp.style.top = y + 'px';
-    for (var k = 0; k < tiles.length; k += 2) {
+    if (inputs.length) {
       row = ccRow(grp, gy, CC.tileH, true);
-      for (var c = 0; c < 2 && k + c < tiles.length; c++) ccTile(row, tiles[k + c], c);
-      gy += CC.tileH + CC.tileGap;
-    }
-    if (tiles.length) gy += CC.gap - CC.tileGap;
-    if (volumeLevel !== null) {
-      row = ccRow(grp, gy, CC.volumeH, true);
-      ccVolumeRow(row);
-      gy += CC.volumeH + CC.gap;
+      ccTile(row, ccInputsPill(), 0, true);
+      gy += CC.tileH + CC.gap;
     }
     row = ccRow(grp, gy, CC.iconsH, true);
     for (var b = 0; b < icons.length; b++) ccIcon(row, icons[b], b, icons.length);
     gy += CC.iconsH;
-    // As tall as what it holds, from under the status pill (the Inputs list may need more than the tiles).
-    var inputsH = CC.headH + inputs.length * (CC.inputH + CC.inputGap) - CC.inputGap;
-    $('drawer').style.height = (y + Math.max(gy, inputsH) + 2 * CC.pad) + 'px';
     renderInputsSheet(d, y);
-    while (drawerRows.length < ccRows.length) drawerRows.push(spring(P.SHEET_OPEN, 1));
-    drawerRows.length = ccRows.length;
-    renderPanels();
-    ccRefresh();
-    updateFocus();
+    return {closed: y + gy, open: y + Math.max(gy, CC.headH + inputs.length * (CC.inputH + CC.inputGap) - CC.inputGap)};
   }
 
   function profileRun(who) {
@@ -1597,25 +1710,57 @@
     };
   }
 
-  /** A capsule tile: a round glyph (blue when the thing is on), the name and its state under it. */
-  function ccTile(row, spec, col) {
-    var tile = el('div', 'cctile' + (spec.detail ? '' : ' solo'), row);
+  /** A wide pill: a round glyph (blue when the thing is on), the name and its state under it. */
+  function ccTile(row, spec, col, wide) {
+    var tile = el('div', 'cctile' + (spec.detail ? '' : ' solo') + (wide ? ' wide' : ''), row);
     tile.style.left = (col * CC.col) + 'px';
     var dot = el('span', 'dot', tile);
     ccGlyph(spec, dot);
     el('div', 'label', tile, spec.label);
     var detail = spec.detail ? el('div', 'detail', tile) : null;
-    var item = ccAdd(tile, new Fx(tile, {grow: 0.05}), function () { spec.run(); ccRefresh(); }, 'tile', col * CC.col + CC.tileW / 2);
+    var item = ccAdd(tile, new Fx(tile, {grow: wide ? 0.03 : 0.05}), function () { spec.run(); ccRefresh(); }, 'tile', wide ? CC.body / 2 : col * CC.col + CC.tileW / 2);
     item.spec = spec;
     item.detail = detail;
   }
 
-  /** The tiles' states (a toggle, Inputs' last choice), without building the panel again. */
+  /** One of the cluster's round toggles, its name under it, in cell `col` of `row` (the panel's row `rowIndex`). */
+  function ccCircle(row, spec, col, rowIndex) {
+    var cell = el('div', 'cccircle', row);
+    cell.style.left = (col * CC.cellW) + 'px';
+    var disc = el('span', 'disc', cell);
+    ccGlyph(spec, disc);
+    var name = el('div', 'label', cell, spec.label);
+    var item = ccAdd(cell, new Fx(disc, {grow: 0.1}), function () { spec.run(); ccRefresh(); }, 'circle', col * CC.cellW + CC.cellW / 2);
+    item.row = rowIndex;
+    item.spec = spec;
+    item.name = name;
+  }
+
+  /**
+   * A vertical slider (iOS's brightness and volume): a tall glass capsule filled from the bottom, its glyph at the foot
+   * and the level at the top. ↑ ↓ change it (`step(±1)`); OK runs `ok` (the volume mutes). It spans rows `r0`–`r1`.
+   */
+  function ccSlider(row, x, h, glyph, level, step, ok, r0, r1) {
+    var v = el('div', 'ccslider', row);
+    v.style.left = x + 'px';
+    v.style.height = h + 'px';
+    var track = el('div', 'track', v), fill = el('div', 'fill', track), num = el('div', 'num', v);
+    var g = sym(glyph, v);
+    g.className += ' glyph';
+    var item = ccAdd(v, new Fx(v, {grow: 0.04}), ok || function () {}, 'vslider', x + CC.sliderW / 2);
+    item.row = r0;
+    item.rowEnd = r1;
+    item.step = step;
+    return {node: v, fill: fill, num: num, level: level};
+  }
+
+  /** The panel's states (a toggle, a name, Inputs' last choice, the theme), without building it again. */
   function ccRefresh() {
     for (var i = 0; i < ccItems.length; i++) {
       var it = ccItems[i];
       if (!it.spec) continue;
       setClass(it.node, 'on', !!(it.spec.active && it.spec.active()));
+      if (it.name && it.spec.name) it.name.textContent = it.spec.name();
       if (it.detail) {
         var text = it.spec.detail();
         it.detail.textContent = text;
@@ -1624,14 +1769,12 @@
     }
   }
 
-  /** The volume: a capsule with the speaker, the level's track and its number; ← → change it, as the remote's keys. */
-  function ccVolumeRow(row) {
-    var v = el('div', 'ccvolume', row);
-    sym('volume', v);
-    var track = el('div', 'track', v);
-    ccVolume = {fill: el('div', 'fill', track), num: el('div', 'num', v)};
-    ccAdd(v, new Fx(v, {grow: 0.03}), function () { stepVolume('mute'); }, 'volume', CC.body / 2);
-    showVolumeLevel();
+  /** A slider's number and whether its fill reaches the glyph (then the glyph takes the panel's colour). */
+  function sliderLevel(sl, n) {
+    if (!sl) return;
+    sl.num.textContent = String(n);
+    setClass(sl.node, 'lit', n >= 16);
+    setClass(sl.node, 'full', n >= 88);
   }
 
   /** A round glass button with its name under it. */
@@ -1693,6 +1836,7 @@
     var id = currentInput();
     for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) st.ccInput = i;
     mv.ccSub.tune(P.SHEET_OPEN).set(1);
+    fitDrawer();
     updateFocus();
   }
 
@@ -1701,29 +1845,39 @@
     if (!ccSub) return;
     ccSub = false;
     mv.ccSub.tune(P.SHEET_CLOSE).set(0);
+    fitDrawer();
     for (var i = 0; i < ccItems.length; i++) if (ccItems[i].spec && ccItems[i].spec.run === openInputsSheet) st.drawer = i;
     if (!quiet) updateFocus();
   }
 
-  /** The entry next to `it` in its row (dx ±1), or −1. */
+  /** Whether entry `c` is in row `r` (the sliders span two). */
+  function ccIn(c, r) { return r >= c.row && r <= (c.rowEnd === undefined ? c.row : c.rowEnd); }
+
+  /** The entry next to `it` in its row (dx ±1), or −1; on a slider, the row the focus came from. */
   function ccNeighbour(it, dx) {
-    var row = [], i;
-    for (i = 0; i < ccItems.length; i++) if (ccItems[i].row === it.row) row.push(i);
+    var r = it.rowEnd === undefined ? it.row : Math.max(it.row, Math.min(it.rowEnd, ccLastRow)), row = [], i;
+    for (i = 0; i < ccItems.length; i++) if (ccIn(ccItems[i], r)) row.push(i);
+    row.sort(function (a, b) { return ccItems[a].cx - ccItems[b].cx; });
     var at = row.indexOf(ccItems.indexOf(it)) + dx;
-    return at >= 0 && at < row.length ? row[at] : -1;
+    if (at >= 0 && at < row.length) {
+      if (ccItems[row[at]].rowEnd === undefined) ccLastRow = ccItems[row[at]].row;
+      return row[at];
+    }
+    return -1;
   }
 
   /** The entry in the next row that way (dy ±1) nearest under or over `it`, or −1; the weather without data is skipped. */
   function ccVertical(it, dy) {
-    for (var r = it.row + dy; r >= 0 && r < ccRows.length; r += dy) {
+    var from = dy > 0 && it.rowEnd !== undefined ? it.rowEnd : it.row;
+    for (var r = from + dy; r >= 0 && r < ccRows.length; r += dy) {
       var best = -1, dist = 1e9;
       for (var i = 0; i < ccItems.length; i++) {
         var c = ccItems[i];
-        if (c.row !== r || (c.kind === 'weather' && !Data.weather)) continue;
+        if (c === it || !ccIn(c, r) || (c.kind === 'weather' && !Data.weather)) continue;
         var dd = Math.abs(c.cx - it.cx);
         if (dd < dist) { dist = dd; best = i; }
       }
-      if (best >= 0) return best;
+      if (best >= 0) { ccLastRow = r; return best; }
     }
     return -1;
   }
@@ -1784,11 +1938,18 @@
 
   var drawerFrom = Z.SHELF;
 
-  function openDrawer() {
+  /** Opens a panel: 'controls' (Control Center, the default) or 'profile'; the focus on its first control, or on you. */
+  function openDrawer(mode) {
+    mode = mode === 'profile' ? 'profile' : 'controls';
+    if (mode !== ccMode || !ccItems.length) {
+      ccMode = mode;
+      renderDrawer();
+    }
     if (!ccItems.length) return;
     drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
-    st.drawer = Profiles.index();
+    st.drawer = ccMode === 'profile' ? Profiles.index() : 0;
+    ccLastRow = 0;
     if (ccSub) closeInputsSheet(true);
     ccRefresh();
     renderPill();
@@ -1797,7 +1958,7 @@
 
   /** Back where the focus was (the button that opened it, or the Dock). */
   function closeDrawer() {
-    if (ccSub) { ccSub = false; mv.ccSub.snap(0); }
+    if (ccSub) { ccSub = false; mv.ccSub.snap(0); fitDrawer(); }
     st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO || drawerFrom === Z.TABS ? drawerFrom : Z.SHELF;
     updateFocus();
   }
@@ -1842,12 +2003,41 @@
   /** The HUD's and Control Center's number and glyph for the level (mute, then 1, 2 or 3 arcs). */
   function showVolumeLevel() {
     var level = volumeMuted ? 0 : volumeLevel || 0, arcs = level === 0 ? 0 : level < 34 ? 1 : level < 67 ? 2 : 3;
-    if (hud) {
+    if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
         (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
     }
-    if (ccVolume) ccVolume.num.textContent = volumeMuted ? tr('Muted') : String(level);
+    if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
+  }
+
+  // MARK: - Brightness: a dimmer over everything, up to 0.65 black at 0 (as brightness(0.35)); Control Center, [ and ]
+
+  var hudMode = 'volume';
+
+  function applyBrightness() {
+    var b = Prefs.brightness(), a = (100 - b) / 100 * 0.65;
+    A($('bright'), a);
+    V($('bright'), a);
+  }
+
+  function showBrightLevel() {
+    var b = Prefs.brightness();
+    sliderLevel(ccBright, b);
+    if (hud && hudMode === 'brightness') {
+      hud.num.textContent = String(b);
+      hud.node.className = 'bright' + (b >= 19 ? ' lit' : '') + (b >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+    }
+  }
+
+  /** [ and ] (and Control Center's slider): a step of 5; past either end the HUD stretches and springs back. */
+  function stepBrightness(dir) {
+    var was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + 5 * dir));
+    if (b !== was) Prefs.set('brightness', b);
+    else mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04);
+    mv.brightFill.set(b / 100);
+    applyBrightness();
+    showHud('brightness');
   }
 
   function buildHud() {
@@ -1856,6 +2046,7 @@
     node.id = 'volhud';
     el('div', 'glass', node);
     var fill = el('div', 'fill', node), num = el('div', 'num', node), spk = el('div', 'spk', node);
+    sym('sunny', node).className += ' sunglyph';
     el('span', 'cone', spk);
     el('span', 'arc a1', spk);
     el('span', 'arc a2', spk);
@@ -1865,9 +2056,12 @@
     showVolumeLevel();
   }
 
-  function showHud() {
+  /** The HUD on the left, for the volume (the default) or the brightness. */
+  function showHud(mode) {
+    hudMode = mode || 'volume';
     buildHud();
-    showVolumeLevel();
+    if (hudMode === 'brightness') showBrightLevel();
+    else showVolumeLevel();
     mv.hud.tune(P.SHEET_OPEN).set(1);
     clearTimeout(hudTimer);
     if (!hudPinned) hudTimer = setTimeout(hideHud, HUD_HOLD);
@@ -1943,7 +2137,7 @@
   function openForecast() {
     var at = st.drawer;
     Forecast.open($('forecast'), function () {
-      if (!saverOn && !homing) { openDrawer(); st.drawer = at; updateFocus(); }
+      if (!saverOn && !homing) { openDrawer('profile'); st.drawer = at; updateFocus(); }
     });
     closeDrawer();
   }
@@ -2044,7 +2238,8 @@
       cell.style.left = (GRID_LEFT + c * (TILE_W + TILE_GAP)) + 'px';
       cell.style.top = (GRID_TOP + r * GRID_ROW) + 'px';
       var sh = el('div', 'lift-shadow', cell), f = el('div', 'face', cell);
-      face(others[i], f, wordFit(others[i].title, TILE_W, 34));
+      if (others[i].folder) folderFace(others[i], f);
+      else face(others[i], f, wordFit(others[i].title, TILE_W, 34));
       var sheen = el('span', 'sheen', f), label = el('div', 'label', cell, others[i].title);
       hover(cell, Z.APPS, i);
       fxCells.push(new Fx(f, {grow: 0.23, squish: 0.08, tilt: true, shadow: sh, img: f.querySelector('img'), sheen: sheen, label: label}));
@@ -2054,6 +2249,76 @@
     while (rowLag.length < gridRows.length) rowLag.push(spring(P.SPATIAL_SCROLL, mv.lift.to).px());
     rowLag.length = gridRows.length;
     Motion.kick();
+  }
+
+  // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the home screen
+
+  var FOLDER_COLS = 4, FOLDER_GAP = 40, FOLDER_PAD = 60, folderOpen = null, folderCard = null, folderFrom = {x: 0, y: 0};
+
+  /** The folder's tile: frosted glass, its first four apps as a 2×2 of little tiles. */
+  function folderFace(folder, box) {
+    setClass(box, 'folderface', true);
+    for (var i = 0; i < Math.min(4, folder.apps.length); i++) {
+      var mini = el('div', 'mini', box);
+      mini.style.left = (18 + (i % 2) * 110) + 'px';
+      mini.style.top = (14 + Math.floor(i / 2) * 64) + 'px';
+      face(folder.apps[i], mini, 12);
+    }
+  }
+
+  /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
+  function openFolder(folder, fromFx) {
+    folderOpen = folder;
+    var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.ceil(n / FOLDER_COLS);
+    layer.innerHTML = '';
+    killFx(fxFolder);
+    el('div', 'veil', layer);
+    var w = 2 * FOLDER_PAD + cols * TILE_W + (cols - 1) * FOLDER_GAP, h = 156 + rows * (TILE_H + 70) + 24;
+    var card = folderCard = el('div', 'card', layer);
+    card.style.width = w + 'px';
+    card.style.height = h + 'px';
+    card.style.left = Math.round((1920 - w) / 2) + 'px';
+    card.style.top = Math.round((1080 - h) / 2) + 'px';
+    el('div', 'badge', card, folder.title);
+    for (var i = 0; i < n; i++) {
+      var cell = el('div', 'cell', card);
+      cell.style.left = (FOLDER_PAD + (i % FOLDER_COLS) * (TILE_W + FOLDER_GAP)) + 'px';
+      cell.style.top = (132 + Math.floor(i / FOLDER_COLS) * (TILE_H + 70)) + 'px';
+      var sh = el('div', 'lift-shadow', cell), f = el('div', 'face', cell);
+      face(folder.apps[i], f, wordFit(folder.apps[i].title, TILE_W, 34));
+      var sheen = el('span', 'sheen', f), label = el('div', 'label', cell, folder.apps[i].title);
+      folderHover(cell, i);
+      fxFolder.push(new Fx(f, {grow: 0.2, squish: 0.08, tilt: true, shadow: sh, img: f.querySelector('img'), sheen: sheen, label: label}));
+    }
+    // From the folder's tile: the card starts there, small, and springs to the middle.
+    var from = fromFx && fromFx.node ? fromFx.node.getBoundingClientRect() : null;
+    folderFrom = from ? {x: (from.left + from.right) / 2 - 960, y: (from.top + from.bottom) / 2 - 540} : {x: 0, y: 0};
+    st.zone = Z.FOLDER;
+    st.folder = 0;
+    fitLogos(layer);
+    mv.folder.tune(P.SHEET_OPEN).set(1);
+    updateFocus();
+  }
+
+  /** Back (or an app opening): the card zooms back into its tile, the focus on the folder. */
+  function closeFolder(quiet) {
+    if (!folderOpen) return;
+    folderOpen = null;
+    mv.folder.tune(P.SHEET_CLOSE).set(0);
+    if (st.zone === Z.FOLDER) st.zone = Z.APPS;
+    if (!quiet) updateFocus();
+  }
+
+  function folderHover(node, i) {
+    node.onmouseover = function () { if (st.zone !== Z.FOLDER) return; st.folder = i; updateFocus(); };
+    node.onclick = function () { node.onmouseover(); activate(); };
+  }
+
+  function drawFolder() {
+    var a = Motion.clamp(mv.folder.x, 0, 1), layer = $('folder');
+    A(layer, a);
+    V(layer, a);
+    if (folderCard) T(folderCard, 'translate(' + r2(folderFrom.x * (1 - a)) + 'px, ' + r2(folderFrom.y * (1 - a)) + 'px) scale(' + r4(0.3 + 0.7 * a) + ')');
   }
 
   function openApps(index) {
@@ -2174,6 +2439,11 @@
           set: function (v) { Prefs.set('theme', v); checkNight(); }}},
         {label: tr('Wallpaper'), value: names[wall] || wallpaperName(wall), valueId: 'wallpaper', opens: true,
           step: function () { openWallpaperPicker(); }},
+        {label: tr('Glass'), choice: {title: tr('Glass'), current: Prefs.glass(), options: [['liquid', tr('Liquid Glass')], ['frosted', tr('Frosted Glass')]],
+          set: function (v) { Prefs.set('glass', v); checkNight(); }}},
+        {label: tr('Settings Style'), choice: {title: tr('Settings Style'), current: Prefs.settingsStyle(),
+          options: [['full', tr('Full Screen (tvOS)')], ['sidebar', tr('Floating Sidebar')]],
+          set: function (v) { Prefs.set('settingsStyle', v); }}},
         {label: tr('Startup animation & chime'), toggle: Prefs.intro(), step: function () { Prefs.set('intro', !Prefs.intro()); }}
       ]},
       {header: tr('Screensaver'), rows: saver, footer: tr('It starts after 5 minutes without a button press.')}
@@ -2251,6 +2521,8 @@
   function placeRows() {
     var unit = Prefs.temperature();
     var widgets = [
+      {label: tr('Top Shelf'), choice: {title: tr('Top Shelf'), current: Prefs.topShelf(), options: topShelfOptions(),
+        set: function (v) { Prefs.set('topShelf', v); follow(); }}},
       {label: tr('Weather widget'), toggle: Prefs.weather(), step: function () { Prefs.set('weather', !Prefs.weather()); renderPanels(); }},
       {label: tr('Forecast'), choice: {title: tr('Forecast'), current: Prefs.forecast(), options: [['hours', tr('Next hours')], ['days', tr('Next days')]],
         set: function (v) { Prefs.set('forecast', v); renderPanels(); }}},
@@ -2304,7 +2576,14 @@
       {label: tr('About this TV'), opens: true, about: true, step: function () { openAbout(); }}
     ];
     if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), opens: true, step: function () { tvSettings(); }});
-    return [{rows: rows}];
+    return [{rows: rows}, {rows: [{label: tr('Run Setup Again'), opens: true, step: function () { runSetup(); }}],
+      footer: tr('The welcome setup: the look, the glass, the Top Shelf and the weather.')}];
+  }
+
+  /** The Top Shelf's modes (Settings and the welcome setup). */
+  function topShelfOptions() {
+    return [['app', tr('App-Specific Continue Watching')], ['picks', tr('Recommendations & News')],
+      ['all', tr('All Continue Watching')], ['off', tr('Off (Wallpaper Only)')]];
   }
 
   function resetRows() {
@@ -2402,12 +2681,14 @@
     if (!section(settingsSection)) { sectionRow = 0; settingsSection = sections()[0].id; }
     rowsNow = settingRows();
     st.row = Math.max(0, Math.min(rowsNow.length - 1, st.row));
-    Settings.render($('settings'), settingsModel(fresh));
+    var m = settingsModel(fresh);
+    m.sidebar = Prefs.settingsStyle() === 'sidebar';
+    Settings.render($('settings'), m);
   }
 
   /** The focus moved (updateFocus): only the highlight and the scroll. */
   function focusSettings() {
-    if ($('settings').querySelector('.left')) Settings.focus($('settings'), settingsModel());
+    if ($('settings').querySelector('.left')) { var m = settingsModel(); m.sidebar = Prefs.settingsStyle() === 'sidebar'; Settings.focus($('settings'), m); }
   }
 
   function openChoice(c) {
@@ -2721,7 +3002,7 @@
         Welly.ok();
         return;
       case Z.TOP:
-        openDrawer();
+        openDrawer(st.top === 3 ? 'controls' : 'profile');   // the bubble: Control Center; the pill: the profile panel
         return;
       case Z.HERO:
         var p = cards[st.page], app = p && Data.appFor(p.app);
@@ -2744,7 +3025,12 @@
         }
         return;
       case Z.APPS:
+        if (others[st.grid] && others[st.grid].folder) { openFolder(others[st.grid], fxCells[st.grid]); return; }
         if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
+        return;
+      case Z.FOLDER:
+        var fa = folderOpen && folderOpen.apps[st.folder];
+        if (fa) { launchMotion(fxFolder[st.folder]); closeFolder(true); launcher(fa.id, fa.title)(); }
         return;
       case Z.SETTINGS:
         settingsOk();
@@ -2818,7 +3104,9 @@
         if (!Welly.move(dx, dy)) st.zone = Z.TABS;
         break;
       case Z.TOP:
-        if (dx < 0) { st.zone = Z.TABS; st.tab = TAB.WELLY; }
+        if (dx > 0 && st.top === 3) st.top = 4;
+        else if (dx < 0 && st.top === 4) st.top = 3;
+        else if (dx < 0) { st.zone = Z.TABS; st.tab = TAB.WELLY; }
         else if (dy > 0) enterTab();
         break;
       case Z.DRAWER:
@@ -2830,7 +3118,7 @@
         }
         var it = ccItems[st.drawer];
         if (!it) break;
-        if (it.kind === 'volume' && dx) { stepVolume(dx); return; }   // ← → change the volume, as the remote's keys
+        if (it.kind === 'vslider' && dy) { it.step(-dy); return; }   // ↑ ↓ change a slider's level, as iOS's
         if (dx) {
           var nx = ccNeighbour(it, dx);
           if (nx >= 0) st.drawer = nx;
@@ -2856,6 +3144,10 @@
         break;
       case Z.SETTINGS:
         settingsMove(dx, dy);
+        break;
+      case Z.FOLDER:
+        var fg = st.folder + dx + dy * FOLDER_COLS, fn = folderOpen ? folderOpen.apps.length : 0;
+        if (fg >= 0 && fg < fn && (dx === 0 || Math.floor(fg / FOLDER_COLS) === Math.floor(st.folder / FOLDER_COLS))) st.folder = fg;
         break;
       case Z.EDIT:
         if (dy) st.edit = Math.max(0, Math.min(apps.length - 1, st.edit + dy));
@@ -2886,6 +3178,7 @@
       updateFocus();
       return;
     }
+    if (st.zone === Z.FOLDER) { closeFolder(); return; }
     if (st.zone === Z.LANG) { closeLanguages(false); return; }
     if (st.zone === Z.WALLPAPER) { closeWallpaperPicker(); return; }
     if (st.zone === Z.SETTINGS && settingsBack()) return;
@@ -2941,6 +3234,7 @@
   function checkNight() {
     var night = Wallpaper.dark(Prefs.wallpaper(), Data.isNight(Date.now()));
     setClass(body, 'night', night);
+    setClass(body, 'frosted', Prefs.glass() === 'frosted');
     refreshBackground();
     Motion.kick();   // the page's shades are darker at night
     if (night === lastNight) return;
@@ -3003,6 +3297,27 @@
     Lock.show(o);
   }
 
+  // MARK: - The welcome setup (setup.js): on a new TV, and Settings → System → Run Setup Again
+
+  /** What the setup applies as it's picked, and `done` after its last step. */
+  function setupOptions(done) {
+    return {
+      theme: function (v) { Prefs.set('theme', v); checkNight(); },
+      glass: function (v) { Prefs.set('glass', v); checkNight(); },
+      topShelf: function (v) { Prefs.set('topShelf', v); follow(); },
+      temperature: function (v) { Prefs.set('temperature', v); renderPanels(); },
+      people: function () { return people().map(function (p) { return {name: p.name, avatar: avatarUrl(p)}; }); },
+      city: function () { return Data.city; },
+      done: function () { Prefs.set('setupDone', true); done(); }
+    };
+  }
+
+  function runSetup() {
+    closeSheets();
+    if (st.zone === Z.DRAWER) closeDrawer();
+    Setup.show($('setup'), setupOptions(function () { goHome(); }));
+  }
+
   /** Control Center's Lock card (and Settings → Profiles & PINs → Lock). */
   function lockNow() {
     if (st.zone === Z.DRAWER) closeDrawer();
@@ -3051,8 +3366,11 @@
     var typing = st.zone === Z.WELLY && window.Welly && Welly.typing();
     // The volume works over everything (the intro, the lock, the screensaver): the TV's keys, + and − on a keyboard.
     if (volumeKey(e, typing)) { e.preventDefault(); return; }
+    // [ and ] in a browser: the brightness down and up (as − and + step the volume), over everything too.
+    if (!typing && (k === 219 || k === 221)) { e.preventDefault(); stepBrightness(k === 221 ? 1 : -1); return; }
     // The intro and the lock take every other key while they show.
     if (Intro.showing()) { Intro.key(k); e.preventDefault(); return; }
+    if (Setup.showing()) { Setup.key(k, TV.keys); e.preventDefault(); return; }
     if (Lock.showing()) { idleAt = now; if (Lock.key(e)) e.preventDefault(); return; }
     // Away longer than the grace: the lock first (the screensaver goes with it).
     if (Profiles.needsLock()) { e.preventDefault(); showLock({from: 'idle'}); return; }
@@ -3204,6 +3522,7 @@
   fit();
   renderTop();
   renderTabs();
+  applyBrightness();
   if (window.House) House.init($('house'));
   if (window.Welly) {
     Welly.init($('welly'), {
@@ -3226,7 +3545,10 @@
     Intro.skip($('intro'));
     Profiles.unlock(Profiles.current());
   } else {
-    Intro.play($('intro'), function (shown) { showLock({from: shown ? 'intro' : 'power'}); });
+    Intro.play($('intro'), function (shown) {
+      if (Prefs.setupDone()) showLock({from: shown ? 'intro' : 'power'});
+      else Setup.show($('setup'), setupOptions(function () { showLock({from: 'intro'}); }));   // a new TV: the welcome setup first
+    });
   }
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {
@@ -3235,7 +3557,7 @@
   setInterval(function () {
     checkNight();
     Data.refresh();
-    if (!saverOn && !sheetOpen() && !Forecast.showing() && !Lock.showing() && !Intro.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
+    if (!saverOn && !sheetOpen() && !Forecast.showing() && !Lock.showing() && !Intro.showing() && !Setup.showing() && Date.now() - idleAt > SAVER_AFTER) showSaver();
   }, 30000);
 
   // For the browser preview and tests.
@@ -3243,7 +3565,16 @@
     lock: lockNow, showLock: showLock, openSettings: openSettings, recents: openRecents, forecast: openForecast,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // Control Center, Home and the volume, for the tests and the screenshots.
-    drawer: openDrawer, inputs: openInputsSheet, home: goHome, toggleSaver: toggleSaver,
+    drawer: function (mode) { openDrawer(mode); }, profile: function () { openDrawer('profile'); },
+    inputs: function () { if (ccMode !== 'profile' || st.zone !== Z.DRAWER) openDrawer('profile'); openInputsSheet(); },
+    home: goHome, toggleSaver: toggleSaver,
+    // All Apps' folder open (the screenshots), and the brightness ([ and ]) for the tests.
+    folder: function () {
+      for (var i = 0; i < others.length; i++) if (others[i].folder) { openApps(i); openFolder(others[i], fxCells[i]); return true; }
+      return false;
+    },
+    brightness: function () { return Prefs.brightness(); },
+    setup: function (n) { runSetup(); if (n) Setup.go(n); },
     cc: function () { return ccItems.map(function (it) { return {kind: it.kind, label: it.spec ? it.spec.label : it.node.textContent, row: it.row}; }); },
     saverOn: function () { return saverOn; },
     volume: function () { return {level: volumeLevel, muted: volumeMuted, shown: !!hud && mv.hud.to === 1}; },

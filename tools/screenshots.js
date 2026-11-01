@@ -242,11 +242,26 @@ async function shootMerge(browser, theme, shot) {
   return file;
 }
 
-// The tvOS pass (Control Center, Inputs, the volume HUD, Recent Apps, the screensavers, Settings):
+// The tvOS pass (Control Center and its bubble, the profile panel, the sliders, Inputs, the volume and brightness HUD, the weather card, a
+// folder, Recent Apps, the screensavers, Settings full screen and as a sidebar, the welcome setup):
 // web-tvos-<theme>-<name>.png. `prefs` go into fmtv.prefs; each step is a key ('x'), {down|up: key}, {js} or {wait}.
 const TVOS_SHOTS = [
-  { name: 'control-center', steps: [{ js: 'FreeMyTV.drawer()' }, { wait: 1000 }] },
-  { name: 'inputs', steps: [{ js: 'FreeMyTV.drawer()' }, { wait: 700 }, { js: 'FreeMyTV.inputs()' }, { wait: 1000 }] },
+  { name: 'cc-bubble', steps: [{ js: 'FreeMyTV.tab(2)' }, { wait: 500 }, 'ArrowRight', { wait: 700 }] },
+  { name: 'control-center', steps: [{ js: "FreeMyTV.drawer('controls')" }, { wait: 1000 }] },
+  { name: 'profile-panel', steps: [{ js: 'FreeMyTV.profile()' }, { wait: 1000 }] },
+  { name: 'control-center-sliders', steps: [{ js: "FreeMyTV.drawer('controls')" }, { wait: 800 }, 'ArrowRight', 'ArrowRight',
+    'ArrowDown', 'ArrowDown', 'ArrowDown', { wait: 700 }] },
+  { name: 'brightness-hud', steps: ['[', '[', '[', '[', '[', '[', { wait: 500 }] },
+  { name: 'weather-card', steps: [{ js: 'FreeMyTV.forecast()' }, { wait: 1100 }] },
+  { name: 'folder', steps: [{ js: 'FreeMyTV.folder()' }, { wait: 600 }, 'ArrowRight', { wait: 700 }] },
+  { name: 'setup-welcome', steps: [{ js: 'FreeMyTV.setup()' }, { wait: 1000 }] },
+  { name: 'setup-look', steps: [{ js: 'FreeMyTV.setup(1)' }, { wait: 1000 }] },
+  { name: 'setup-top-shelf', steps: [{ js: 'FreeMyTV.setup(2)' }, { wait: 800 }, 'ArrowDown', { wait: 500 }] },
+  { name: 'setup-done', steps: [{ js: 'FreeMyTV.setup(3)' }, { wait: 1000 }] },
+  { name: 'settings-sidebar', prefs: { settingsStyle: 'sidebar' }, steps: [{ js: 'FreeMyTV.openSettings()' }, { wait: 1000 }] },
+  { name: 'settings-sidebar-rows', prefs: { settingsStyle: 'sidebar' }, steps: [{ js: 'FreeMyTV.openSettings()' }, { wait: 700 },
+    'ArrowDown', 'ArrowRight', { wait: 900 }] },
+  { name: 'inputs', steps: [{ js: 'FreeMyTV.profile()' }, { wait: 700 }, { js: 'FreeMyTV.inputs()' }, { wait: 1000 }] },
   { name: 'volume-hud', steps: ['+', '+', '+', '+', '-', { wait: 500 }] },
   { name: 'home-dock', steps: [{ js: 'FreeMyTV.tab(1)' }, { wait: 700 }, 'h', { wait: 1100 }] },
   { name: 'recents', steps: [{ down: 'h' }, { wait: 700 }, { up: 'h' }, { wait: 1100 }] },

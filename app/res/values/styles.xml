@@ -7,4 +7,10 @@
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
     </style>
+    <!-- Settings as a Floating Sidebar: a translucent window, so the home screen stays behind it. -->
+    <style name="FreeMyTV.Sidebar" parent="FreeMyTV.Home">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

@@ -201,7 +201,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* Layers that hold others: only what's inside them takes the pointer. */
 #tv, #shelftop, #top { pointer-events: none; }
-#tv .tile, #platter, #watch, #pill, #buttons > * { pointer-events: auto; }
+#tv .tile, #platter, #watch, #pill, #ccbtn, #buttons > * { pointer-events: auto; }
 /* Control Center keeps the art visible: the page only dims a little behind it (home.js, with the panel). */
 #dim { background: #000; opacity: 0; pointer-events: none; }
 
@@ -545,28 +545,26 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.36); }
 #drawer .who .name { display: block; margin-top: 8px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* The platters (the weather, the tiles, the volume, the inputs, the round buttons): a frosted fill with a 1 px specular
-   rim and a soft lift over the panel by day (GLASS:176–188), a faint light fill at night or over a photo. */
-#weather, .cctile, .ccvolume, .inrow, .ccicon .disc {
+/* The tiles inside the panels (the weather, the pills, the cluster, the inputs, the round buttons): flat, quiet fills.
+   The panel is the glass; a rim or highlight on each tile too would be glass on glass. */
+#weather, .cctile, .ccplate, .ccslider, .inrow, .ccicon .disc {
   position: absolute;
   color: inherit;
-  background: rgba(255, 255, 255, 0.74);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 10px rgba(22, 33, 45, 0.08);
+  background: rgba(255, 255, 255, 0.62);
 }
-.night #weather, .night .cctile, .night .ccvolume, .night .inrow, .night .ccicon .disc,
-.has-photo #weather, .has-photo .cctile, .has-photo .ccvolume, .has-photo .inrow, .has-photo .ccicon .disc {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+.night #weather, .night .cctile, .night .ccplate, .night .ccslider, .night .inrow, .night .ccicon .disc,
+.has-photo #weather, .has-photo .cctile, .has-photo .ccplate, .has-photo .ccslider, .has-photo .inrow, .has-photo .ccicon .disc {
+  background: rgba(255, 255, 255, 0.09);
 }
-.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .ccvolume, .has-photo.art-bright .inrow,
-.has-photo.art-bright .ccicon .disc { background: rgba(255, 255, 255, 0.74); }
+.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .ccplate, .has-photo.art-bright .ccslider,
+.has-photo.art-bright .inrow, .has-photo.art-bright .ccicon .disc { background: rgba(255, 255, 255, 0.62); }
 /* Focused: white, dark ink, a soft lift (tvOS's focused platter). */
-#weather.focus, .cctile.focus, .ccvolume.focus, .inrow.focus, .ccicon.focus .disc {
+#weather.focus, .cctile.focus, .inrow.focus, .ccicon.focus .disc {
   background: #FFF;
   color: #1C1C1E;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
-#weather.focus, .cctile.focus, .ccvolume.focus, .inrow.focus, .ccicon.focus { z-index: 2; }
+#weather.focus, .cctile.focus, .ccslider.focus, .inrow.focus, .ccicon.focus, .cccircle.focus { z-index: 2; }
 
 /* The weather: city, temperature and sky in the left 220 px; four hours (or days) in their own columns to its right. */
 #weather { left: 0; top: 0; width: 504px; height: 152px; border-radius: 26px; }
@@ -576,6 +574,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #weather .now .temp { font-size: 52px; font-weight: 300; line-height: 58px; letter-spacing: -0.02em; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 #weather .cond { position: absolute; left: 22px; top: 100px; width: 200px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #weather .range { position: absolute; left: 22px; top: 124px; font-size: 18px; font-weight: 500; opacity: 0.62; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+#weather { overflow: hidden; }
 #weather .hours { position: absolute; left: 240px; top: 22px; width: 252px; height: 110px; }
 #weather .hour { position: absolute; top: 0; text-align: center; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
 #weather .hour .t { font-size: 17px; font-weight: 600; opacity: 0.62; white-space: nowrap; }
@@ -586,18 +585,34 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .cctile { top: 0; width: 244px; height: 72px; border-radius: 36px; }
 .cctile .dot, .inrow .dot { position: absolute; left: 11px; top: 11px; width: 50px; height: 50px; border-radius: 25px; background: rgba(120, 120, 128, 0.16); }
 .cctile .dot .sym, .inrow .dot .sym { position: absolute; left: 12px; top: 12px; width: 26px; height: 26px; }
-.cctile.on .dot { background: #0A84FF; color: #FFF; }
+.cctile.on .dot { background: #007AFF; color: #FFF; }
+.cctile.wide { width: 504px; }
 .cctile .label { position: absolute; left: 74px; right: 14px; top: 11px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cctile .detail { position: absolute; left: 74px; right: 14px; top: 37px; font-size: 19px; font-weight: 500; opacity: 0.62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cctile.solo .label { top: 23px; }
 .cctile.solo .detail { display: none; }
 
-/* The volume: speaker, track and level in one capsule; ← → change it. */
-.ccvolume { left: 0; top: 0; width: 504px; height: 72px; border-radius: 36px; }
-.ccvolume > .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
-.ccvolume .track { position: absolute; left: 66px; right: 96px; top: 32px; height: 8px; border-radius: 4px; background: rgba(120, 120, 128, 0.24); overflow: hidden; }
-.ccvolume .fill { width: 100%; height: 8px; border-radius: 4px; background: currentColor; -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
-.ccvolume .num { position: absolute; right: 22px; top: 22px; width: 70px; text-align: right; font-size: 21px; font-weight: 600; line-height: 28px; white-space: nowrap; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+/* The 2×2 cluster: one platter, four round toggles with their names (blue #007AFF when on, as iOS). */
+.ccplate { position: absolute; left: 0; top: 0; border-radius: 32px; }
+.cccircle { position: absolute; top: 0; width: 122px; height: 96px; text-align: center; }
+.cccircle .disc { position: absolute; left: 29px; top: 6px; width: 64px; height: 64px; border-radius: 32px; background: rgba(120, 120, 128, 0.2); }
+.cccircle .disc .sym { position: absolute; left: 19px; top: 19px; width: 26px; height: 26px; }
+.cccircle.on .disc { background: #007AFF; color: #FFF; }
+.cccircle.focus .disc { background: #FFF; color: #1C1C1E; box-shadow: 0 12px 26px rgba(0, 0, 0, 0.26); }
+.cccircle.on.focus .disc { background: #007AFF; color: #FFF; box-shadow: 0 0 0 4px #FFF, 0 12px 26px rgba(0, 0, 0, 0.26); }
+.cccircle .label { position: absolute; left: 0; right: 0; top: 74px; font-size: 15px; font-weight: 600; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cccircle.focus .label { opacity: 1; }
+
+/* The vertical sliders (brightness, volume): a tall capsule filled from the bottom; ↑ ↓ change them. */
+.ccslider { position: absolute; top: 0; width: 114px; border-radius: 32px; overflow: hidden; }
+.ccslider .track { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; overflow: hidden; }
+/* A grey track with a white fill (iOS), dark ink where the fill is under it; focused, it lifts with a white ring. */
+.ccslider .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; background: #FFF; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; }
+.ccslider .glyph { position: absolute; left: 41px; bottom: 22px; width: 32px; height: 32px; }
+.ccslider.lit .glyph { background-color: #1C1C1E; }
+.ccslider.full .num { color: #1C1C1E; }
+.ccslider .num { position: absolute; left: 0; right: 0; top: 16px; text-align: center; font-size: 19px; font-weight: 600; opacity: 0.62; -webkit-font-feature-settings: 'tnum'; font-feature-settings: 'tnum'; }
+.ccslider.focus .num { opacity: 1; }
 
 /* The round buttons, their names under them. */
 .ccicon { position: absolute; top: 0; width: 72px; height: 114px; }
@@ -623,7 +638,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .inrow .status { position: absolute; left: 76px; top: 40px; font-size: 17px; font-weight: 500; opacity: 0.62; white-space: nowrap; }
 .inrow.solo .name { top: 22px; }
 .inrow.off .dot, .inrow.off .name { opacity: 0.6; }
-.inrow .sym.check { position: absolute; right: 24px; top: 24px; width: 24px; height: 24px; color: #0A84FF; }
+.inrow .sym.check { position: absolute; right: 24px; top: 24px; width: 24px; height: 24px; color: #007AFF; }
 
 /* The volume HUD: a Liquid Glass capsule on the left edge, its fill rising from the bottom, the speaker morphing with
    the level (mute, then 1, 2, 3 arcs) and the number over it; dark ink where the white fill is under it. */
@@ -644,6 +659,37 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #volhud.arcs0 .a1, #volhud.arcs0 .a2, #volhud.arcs0 .a3, #volhud.arcs1 .a2, #volhud.arcs1 .a3, #volhud.arcs2 .a3, #volhud.muted .arc { opacity: 0; }
 #volhud .slash { position: absolute; left: 18px; top: 3px; width: 2.5px; height: 22px; border-radius: 2px; background: currentColor; opacity: 0; -webkit-transform: rotate(-40deg); transform: rotate(-40deg); }
 #volhud.muted .slash { opacity: 1; }
+/* The same HUD for the brightness ([ and ]): the sun instead of the speaker. */
+#volhud .sunglyph { position: absolute; left: 21px; bottom: 21px; width: 30px; height: 30px; display: none; }
+#volhud.bright .spk { display: none; }
+#volhud.bright .sunglyph { display: block; }
+#volhud.bright.lit .sunglyph { background-color: #1D1D1F; }
+
+/* The brightness: black over everything (pointer-events none), up to 0.65 at 0 % (home.js). */
+#bright { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: #000; opacity: 0; visibility: hidden; pointer-events: none; z-index: 100; }
+
+/* Control Center's bubble, left of the pill: the same smoke glass, Apple's two toggles; white when focused or open. */
+#ccbtn {
+  position: absolute;
+  right: 300px;   /* home.js puts it 14 px left of the pill */
+  top: 52px;
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  color: #FFF;
+  background: rgba(52, 62, 76, 0.52);
+  box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08), 0 6px 20px rgba(0, 0, 0, 0.16);
+  -webkit-transition: background-color 0.17s, color 0.17s, box-shadow 0.17s;
+  transition: background-color 0.17s, color 0.17s, box-shadow 0.17s;
+}
+#ccbtn .sym { position: absolute; left: 11px; top: 11px; width: 26px; height: 26px; }
+.drawer-open:not(.drawer-profile) #ccbtn, .drawer-open.drawer-profile #pill { background: rgba(255, 255, 255, 0.86); color: #1C1C1E; }
+#ccbtn.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
+
+/* Frosted Glass (Settings → Appearance & Startup → Glass, or the welcome setup): no specular rims, a softer fill. */
+.frosted #pill, .frosted #ccbtn { box-shadow: 0 2px 10px rgba(22, 33, 45, 0.08); }
+.frosted #drawer { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22); }
+.frosted #platter .tint { box-shadow: none; }
 
 /* MARK: - Sheets over the home screen: All Apps, Settings, Shelf, Language, About */
 
@@ -885,3 +931,49 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   .sheet:not(#apps) { background: rgba(22, 33, 45, 0.34) !important; }
   #saver .clock { background: rgba(30, 30, 34, 0.94) !important; }
 }
+
+/* MARK: - Folders: in All Apps a frosted squircle with four of its apps; open, a floating frosted card that springs out
+   of it over the home screen (home.js: openFolder), the folder's name in a white badge at the top. */
+.cell .face.folderface {
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), inset 0 1.5px 0 rgba(255, 255, 255, 0.65), 0 10px 26px rgba(22, 33, 45, 0.12);
+}
+.night .cell .face.folderface { background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16), inset 0 1.5px 0 rgba(255, 255, 255, 0.24); }
+.folderface .mini { position: absolute; width: 98px; height: 54px; border-radius: 12px; overflow: hidden; }
+.folderface .mini .word { margin-top: -9px; height: 18px; line-height: 18px; }
+.folderface .mini .sym.big { width: 30px; height: 30px; margin: -15px 0 0 -15px; }
+#folder { z-index: 5; opacity: 0; visibility: hidden; color: #1D1D1F; }
+.night #folder { color: #FFF; }
+#folder .veil { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(22, 33, 45, 0.5); }
+.night #folder .veil { background: rgba(0, 0, 0, 0.5); }
+#folder .card {
+  position: absolute;
+  border-radius: 40px;
+  background: rgba(246, 247, 250, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 1.5px 0 rgba(255, 255, 255, 0.85), 0 40px 90px rgba(0, 0, 0, 0.32);
+}
+.night #folder .card { background: rgba(40, 44, 54, 0.92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1.5px 0 rgba(255, 255, 255, 0.22), 0 40px 90px rgba(0, 0, 0, 0.45); }
+.frosted #folder .card { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.3); }
+#folder .badge {
+  position: absolute;
+  left: 50%;
+  top: 34px;
+  height: 52px;
+  padding: 0 30px;
+  border-radius: 26px;
+  background: #FFF;
+  color: #1D1D1F;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 52px;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+  -webkit-transform: translateX(-50%);
+  transform: translateX(-50%);
+}
+#folder .cell .label { color: inherit; opacity: 0.85; }
+
+/* The sliders' track: darker than the panel by day so the white fill reads; a white ring and a lift when focused. */
+#drawer .ccslider, .has-photo.art-bright #drawer .ccslider { background: rgba(120, 120, 128, 0.24); }
+.night #drawer .ccslider, .has-photo #drawer .ccslider { background: rgba(255, 255, 255, 0.12); }
+#drawer .ccslider.focus { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.26); z-index: 2; }

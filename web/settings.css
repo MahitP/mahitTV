@@ -240,3 +240,35 @@
 
 /* Over the aurora and the aerials, the clock is the photos' glass. */
 #saver.aurora-on .clock, #saver.aerials-on .clock { color: #FFF; }
+
+/* MARK: - Floating Sidebar (Appearance & Startup → Settings Style): a Liquid Glass sidebar at x 1080–1840 (under the pill) over the live
+   home screen (wallpaper and Dock stay, dimmed); the sections, then a section's rows, one pane at a time. */
+#settings.sidebar .hz, #settings.sidebar .veil { display: none; }
+#settings.sidebar .side {
+  position: absolute;
+  left: 1080px;
+  top: 124px;
+  width: 760px;
+  height: 916px;
+  border-radius: 40px;
+  background: rgba(246, 247, 250, 0.95);
+  box-shadow: 0 40px 90px rgba(22, 33, 45, 0.3), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+.night #settings.sidebar .side { background: rgba(30, 35, 48, 0.95); box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+.frosted #settings.sidebar .side { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.3); }
+#settings.sidebar .left, #settings.sidebar .right { -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+#settings.sidebar .left { left: 1128px; top: 164px; width: 664px; }
+#settings.sidebar .emblem { width: 96px; height: 96px; border-radius: 22px; }
+#settings.sidebar .emblem .sym { left: 22px; top: 22px; width: 52px !important; height: 52px !important; }
+#settings.sidebar .emblem .face { width: 96px; height: 96px; }
+#settings.sidebar .etitle { margin-top: 20px; font-size: 36px; }
+#settings.sidebar .edesc { min-height: 0; font-size: 21px; }
+#settings.sidebar .cats { margin-top: 28px; }
+#settings.sidebar .right { left: 1128px; top: 164px; width: 664px; height: 840px; }
+#settings.sidebar .rtitle { font-size: 38px; }
+#settings.sidebar .rtitle .back { display: inline-block; width: 26px; height: 26px; margin-right: 12px; vertical-align: 2px; opacity: 0.5; -webkit-transform: scaleX(-1); transform: scaleX(-1); }
+#settings.sidebar .view { height: 760px; }
+#settings.sidebar .srow .label { max-width: 380px; }
+#settings.sidebar.on-cats .right, #settings.sidebar .left { opacity: 0; visibility: hidden; }
+#settings.sidebar.on-cats .left { opacity: 1; visibility: visible; }
+.sheet#settings.sidebar { background: rgba(22, 33, 45, 0.18); }

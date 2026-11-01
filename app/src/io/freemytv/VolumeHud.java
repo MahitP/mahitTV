@@ -14,7 +14,7 @@ import android.view.View;
  * 34–66, 67–100) and the level above it, in ink where the fill has reached them. It slides in from 40 px to the left as
  * it fades in (SHEET_OPEN) and leaves HIDE_MS after the last change (SHEET_CLOSE); a press past 0 or 100 stretches it
  * 3% that way (BOUNDARY_BUMP). HomeView shows it for the volume keys while the home screen is in front; other apps keep
- * the system's own panel. The view only bounds the capsule: it draws in screen coordinates, like HomeView's layers, so
+ * the system's own panel; Control Center's brightness shows it too, with the sun (showBrightness). The view only bounds the capsule: it draws in screen coordinates, like HomeView's layers, so
  * the glass reads the background where it really is.
  */
 final class VolumeHud extends View implements Choreographer.FrameCallback {
@@ -31,6 +31,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
     private final Spring appear = new Spring(Spring.SHEET_OPEN, 0), level = new Spring(Spring.SNAPPY_FOCUS, 0);
     private final Spring arcs = new Spring(Spring.SNAPPY_FOCUS, 0), bump = new Spring(Spring.BOUNDARY_BUMP, 0);
     private int bumpDir = 1;   // 1: past 100, it stretches upwards; −1: past 0, downwards
+    private boolean bright;    // the brightness (Control Center's slider): the sun at its foot instead of the speaker
     private String number = "0";
     private boolean posted, leaving;
     private long lastNanos;
@@ -72,8 +73,18 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
 
     /** A new level (0–100), muted or not; `push` 1 or −1 when the key pressed past 100 or 0. */
     void show(int percent, boolean muted, int push) {
+        bright = false;
+        present(muted ? 0 : percent, push);
+    }
+
+    /** The brightness (0–100), the same capsule with the sun; `push` as show's. */
+    void showBrightness(int percent, int push) {
+        bright = true;
+        present(percent, push);
+    }
+
+    private void present(int percent, int push) {
         int p = Math.max(0, Math.min(100, percent));
-        if (muted) p = 0;
         number = Integer.toString(p);
         level.target = p / 100f;
         arcs.target = p == 0 ? 0 : p <= 33 ? 1 : p <= 66 ? 2 : 3;
@@ -187,6 +198,10 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         numberP.setColor(color);
         numberP.setAlpha(a);
         c.drawText(number, gx, gy - 34 * k, numberP);
+        if (bright) {
+            Symbols.draw(getContext(), c, "sunny", gx, gy, 30 * k, Ui.alpha(color, v));
+            return;
+        }
         c.save();
         c.translate(gx, gy);
         c.scale(k, k);

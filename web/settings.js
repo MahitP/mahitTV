@@ -8,7 +8,7 @@
  *   Settings.render(node, model): draws the model (a section, its rows, or a choice list)
  *   Settings.focus(node, model): moves the focus and the scroll only (cheap: no new elements)
  *
- * model: {cats: [{label, symbol}], cat, pane: 'cats' | 'rows' | 'choice', emblem: {symbol, avatar, title, desc},
+ * model: {cats: [{label, symbol}], cat, pane: 'cats' | 'rows' | 'choice', emblem: {symbol, avatar, title, desc}, sidebar,
  *         title, groups: [{header, footer, rows: [{label, value, toggle, chevron, dim, check}]}], row,
  *         hover(kind, index), click(kind, index)}
  * Only transform and opacity animate; the scroll and the switches' knobs move on springs (motion.js).
@@ -109,6 +109,9 @@ var Settings = (function () {
     clearNudge();
     node.innerHTML = '';
     setClass(node, 'tvs', true);
+    // Floating Sidebar (Appearance & Startup → Settings Style): one pane at a time in a glass sidebar on the right.
+    setClass(node, 'sidebar', !!m.sidebar);
+    el('div', 'side', node);
     el('div', 'hz hz-day', node);
     el('div', 'hz hz-night', node);
     el('div', 'veil', node);
@@ -130,8 +133,9 @@ var Settings = (function () {
     }
 
     // The right pane: the title, then the groups (or the choice list), scrolling under a fixed title.
-    var right = el('div', 'right', node);
-    el('div', 'rtitle', right, m.title);
+    var right = el('div', 'right', node), rtitle = el('div', 'rtitle', right);
+    if (m.sidebar) sym('chevron_right', rtitle, 26).className += ' back';
+    el('span', '', rtitle, m.title);
     var view = el('div', 'view', right);
     scrollEl = el('div', 'scroll', view);
     var flat = 0, seen = {};
