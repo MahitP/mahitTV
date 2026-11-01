@@ -112,6 +112,8 @@ public final class RecsWatchTest {
         rejectedPosts.get(0).run();
         check(rejectedCount[0] == 1, "executor rejection delivers exactly once");
 
+        check(Recs.CACHE_VERSION == 7, "6 meant different things on each side: today's cache must not be parsed");
+
         System.out.println("RecsWatchTest: " + checks + " checks passed");
     }
 }
