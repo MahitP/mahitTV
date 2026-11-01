@@ -20,13 +20,25 @@ var server = http.createServer(function (req, res) {
   fs.createReadStream(file).pipe(res);
 });
 
+/** Waits until an element's computed opacity has held still for 300 ms (springs overshoot, and slow runners lag). */
+async function settledOpacity(page, selector) {
+  await page.waitForFunction(function (sel) {
+    var o = getComputedStyle(document.querySelector(sel)).opacity, seen = window.__settled || (window.__settled = {}), now = Date.now();
+    if (!seen[sel] || seen[sel].o !== o) { seen[sel] = {o: o, at: now}; return false; }
+    return now - seen[sel].at >= 300;
+  }, selector, {polling: 50, timeout: 10000});
+  return page.evaluate(function (sel) { return parseFloat(getComputedStyle(document.querySelector(sel)).opacity); }, selector);
+}
+
 function profile(page, zone, app) {
   return page.evaluate(function (x) { return Home.testBackground({zone: x.zone, app: x.app, tab: 0}); }, {zone: zone, app: app});
 }
 
+var browser = null;
+
 (async function () {
   await new Promise(function (done) { server.listen(0, '127.0.0.1', done); });
-  var browser = await chromium.launch({headless: true});
+  browser = await chromium.launch({headless: true});
   var page = await browser.newPage({viewport: {width: 1920, height: 1080}});
   await page.addInitScript(function () { localStorage.clear(); });
   await page.goto('http://127.0.0.1:' + server.address().port + '/index.html?nolock');
@@ -127,17 +139,19 @@ function profile(page, zone, app) {
   // Control Center (OK on its bubble, left of the pill) keeps the status pill and the tab bar (tvOS keeps its status
   // over the panel); the panel starts under the pill and the bubble, so they never overlap.
   await page.evaluate(function () { FreeMyTV.state.zone = 'top'; FreeMyTV.state.top = 3; FreeMyTV.activate(); });
-  await page.waitForTimeout(1200);
+  // Wait for the dimmer's spring to come to rest, not a fixed time: mid-flight it overshoots its 0.18 / 0.22 target.
+  var dim = await settledOpacity(page, '#dim');
   var drawerOpen = await page.evaluate(function () {
     var pill = document.querySelector('#pill'), drawer = document.querySelector('#drawer');
     return {zone: FreeMyTV.state.zone, pill: parseFloat(getComputedStyle(pill).opacity), tabs: parseFloat(getComputedStyle(document.querySelector('#tabs')).opacity),
       pillBottom: Math.max(pill.getBoundingClientRect().bottom, document.querySelector('#ccbtn').getBoundingClientRect().bottom),
-      drawerTop: drawer.getBoundingClientRect().top, dim: parseFloat(getComputedStyle(document.querySelector('#dim')).opacity)};
+      drawerTop: drawer.getBoundingClientRect().top};
   });
+  drawerOpen.dim = dim;
   assert.ok(drawerOpen.zone === 'drawer' && drawerOpen.pill > 0.9 && drawerOpen.tabs > 0.9,
     'the status pill and the tab bar stay with Control Center open: ' + JSON.stringify(drawerOpen));
   assert.ok(drawerOpen.pillBottom <= drawerOpen.drawerTop, 'Control Center starts under the status pill: ' + JSON.stringify(drawerOpen));
-  assert.ok(drawerOpen.dim <= 0.22, 'Control Center only dims the page a little: ' + JSON.stringify(drawerOpen));
+  assert.ok(drawerOpen.dim > 0 && drawerOpen.dim <= 0.22, 'Control Center only dims the page a little: ' + JSON.stringify(drawerOpen));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(600);
   for (var i = 0; i < 3; i++) {
@@ -179,7 +193,12 @@ function profile(page, zone, app) {
   await page.route(allowedArtwork, function (route) { route.fulfill({path: path.join(root, 'preview', 'art', 'long-dunes.jpg'), contentType: 'image/jpeg'}); });
   await page.evaluate(function (art) { window.FMTV_NOW_PLAYING = {pkg: 'com.spotify.music', title: 'Allowed Spotify', artwork: art, active: true}; }, allowedArtwork);
   result = await profile(page, 'shelf', spotify);
-  await page.waitForTimeout(100);
+  // The artwork comes through a routed request: wait for it to land (up to 5 s) rather than a fixed 100 ms; the assert
+  // below still reports what was there if it never does.
+  await page.waitForFunction(function (art) {
+    return document.querySelector('#hero h1').textContent === 'Allowed Spotify' &&
+      (document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage).indexOf(art) >= 0;
+  }, allowedArtwork, {timeout: 5000}).catch(function () {});
   var allowedArt = await page.evaluate(function () {
     var input = window.FMTV_NOW_PLAYING;
     return {media: document.body.className.indexOf('media-background') >= 0, title: document.querySelector('#hero h1').textContent,
@@ -239,4 +258,10 @@ function profile(page, zone, app) {
   assert.strictEqual(instant.backdrop, 'none', 'instant clears backdrop transition');
   await browser.close(); server.close();
   console.log('home-background-dom-test: passed');
-})().catch(function (err) { server.close(); console.error(err.stack || err); process.exitCode = 1; });
+})().catch(async function (err) {
+  // A failed check must not leave the browser running: the process would never exit and CI would hang.
+  console.error(err.stack || err);
+  try { if (browser) await browser.close(); } catch (e) { /* exiting anyway */ }
+  server.close();
+  process.exit(1);
+});

@@ -30,7 +30,8 @@ function state(page) {
   });
 }
 
-var browser;
+var browser = null;
+
 (async function () {
   await new Promise(function (done) { server.listen(0, '127.0.0.1', done); });
   browser = await chromium.launch({headless: true});
@@ -298,6 +299,9 @@ var browser;
 
   // The weather card: the next 6 hours, each label once (the night the clocks go back has 1 AM twice: data.js).
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.forecast(); });
+  // Until its hours are in (the sample forecast can arrive late on a busy machine), then its spring settles.
+  await page.waitForFunction(function () { return document.querySelectorAll('#forecast .hour .t').length > 0; }, null, {timeout: 5000})
+    .catch(function () {});
   await page.waitForTimeout(800);
   var card = await page.evaluate(function () {
     var p = document.querySelector('#forecast .panel').getBoundingClientRect();
@@ -359,8 +363,10 @@ var browser;
   assert.deepStrictEqual(errors, [], 'no page errors');
   await browser.close(); server.close();
   console.log('web-keys-test: passed');
-})().catch(function (err) {
-  // Close the browser too, or a failed check leaves Chromium running and tools/check.sh never ends.
-  console.error(err.stack || err); process.exitCode = 1; server.close();
-  if (browser) browser.close().catch(function () {});
+})().catch(async function (err) {
+  // A failed check must not leave the browser running: the process would never exit and CI would hang.
+  console.error(err.stack || err);
+  try { if (browser) await browser.close(); } catch (e) { /* exiting anyway */ }
+  server.close();
+  process.exit(1);
 });
