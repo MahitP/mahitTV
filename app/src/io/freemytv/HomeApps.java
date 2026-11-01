@@ -206,10 +206,11 @@ final class HomeApps {
         order("^com\\.cbs\\.|paramount", "^paramount"),
         order("^com\\.instagram\\.", "^instagram$"),
         order("^com\\.roblox\\.", "^roblox$"),
+        order("freeplay", "freeplay"),
+        // From here (TCL_FIRST) the maker's apps, in the TCL folder in this order.
         order("alexa", "alexa"),
         order("^com\\.tcl\\.tv$", "^tv$"),
         order("tclplus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
-        order("freeplay", "freeplay"),
         order("mediacenter|mediaplayer|videoplayer", "^media ?player$"),
         order("instructions|userguide|manual", "^user ?guide$"),
         order("quickpanel", "^quick ?panel$"),
@@ -218,6 +219,15 @@ final class HomeApps {
         order("exhibit", "^t-?exhibition$"),
         order("browsehere|com\\.tcl\\.browser|iebrowser", "^browse ?here$"),
     };
+
+    /** GRID_ORDER's first TCL app (Works with Alexa): it and the ones after it go in the TCL folder. */
+    private static final int TCL_FIRST = 14;
+
+    /** One of TCL's own apps (GRID_ORDER's last ones, or any com.tcl package): the TCL folder's. */
+    static boolean tclApp(String pkg, String label) {
+        int r = gridRank(pkg, label);
+        return (r >= TCL_FIRST && r < GRID_ORDER.length) || (pkg != null && pkg.startsWith("com.tcl."));
+    }
 
     private static Pattern[] order(String pkg, String label) {
         return new Pattern[] {Pattern.compile(pkg), Pattern.compile(label, Pattern.CASE_INSENSITIVE)};
@@ -409,22 +419,34 @@ final class HomeApps {
                     + "|tcl|tvcenter|livetv|tv\\.input|hdmi|usb|miracast|keystone|smartthings", Pattern.CASE_INSENSITIVE);
 
     /**
-     * All Apps' list with the TV's utilities (two or more) in one "TV & Utilities" folder at its end; a video app never
-     * goes in it, and a single utility stays an app.
+     * All Apps' list with two folders at its end, so it fits one screen: "TCL" (the maker's apps, in GRID_ORDER's order)
+     * and "TV & Utilities" (the TV's settings, store, files and the like). A video app never goes in the second, and a
+     * folder of one stays an app.
      */
     static List<Item> folders(List<Item> apps) {
-        List<Item> util = new ArrayList<>(), rest = new ArrayList<>();
+        List<Item> tcl = new ArrayList<>(), util = new ArrayList<>(), rest = new ArrayList<>();
         for (Item it : apps) {
+            if (it.kind == APP && it.pkg != null && tclApp(it.pkg, it.label)) {
+                tcl.add(it);
+                continue;
+            }
             boolean utility = it.kind == APP && it.pkg != null && !Wallpaper.videoApp(it.pkg)
                     && gridRank(it.pkg, it.label) == GRID_ORDER.length   // the ones placed in the grid stay there
                     && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()));
             (utility ? util : rest).add(it);
         }
-        if (util.size() < 2) return apps;
-        Item folder = shortcut(FOLDER, "folder:utilities", Ui.tr("TV & Utilities"), "folder");
-        folder.children = util;
-        rest.add(folder);
+        folder(rest, tcl, "folder:tcl", "TCL");   // the maker's name
+        folder(rest, util, "folder:utilities", Ui.tr("TV & Utilities"));
         return rest;
+    }
+
+    /** `apps` as a folder at the end of `into`; one app stays an app, none adds nothing. */
+    private static void folder(List<Item> into, List<Item> apps, String key, String label) {
+        if (apps.size() == 1) into.add(apps.get(0));
+        if (apps.size() < 2) return;
+        Item folder = shortcut(FOLDER, key, label, "folder");
+        folder.children = apps;
+        into.add(folder);
     }
 
     /**

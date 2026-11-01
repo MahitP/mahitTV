@@ -3897,7 +3897,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the grid
 
     // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the apps slide; the card stays put).
-    private static final int FOLDER_COLUMNS = 3, FOLDER_ROWS = 3;
+    private static final int FOLDER_ROWS = 3;
+    /** 3, or 4 for a folder of 10 to 12 (TCL's apps), so it shows whole. */
+    private int FOLDER_COLUMNS = 3;
     private final Spring folderScroll = new Spring(Spring.SPATIAL_SCROLL, 0).px();
     private int folderTop;
     private static final float FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_RADIUS = 40;
@@ -3961,6 +3963,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void openFolder(HomeApps.Item folder, RectF from) {
         folderOpen = folder;
         folderIndex = 0;
+        FOLDER_COLUMNS = folder.children.size() > 9 && folder.children.size() <= 12 ? 4 : 3;
         int n = folder.children.size(), cols = Math.min(FOLDER_COLUMNS, n), rows = Math.min(FOLDER_ROWS, (n + FOLDER_COLUMNS - 1) / FOLDER_COLUMNS);
         folderTop = 0;
         folderScroll.snap(0);

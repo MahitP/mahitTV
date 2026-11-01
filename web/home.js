@@ -380,12 +380,21 @@
     [/apple\.?music/i, /^apple music$/i], [/youtube\.?(tv)?music/i, /^youtube music$/i], [/spotify/i, /^spotify$/i],
     [/crunchyroll/i, /^crunchyroll$/i], [/tubi/i, /^tubi$/i], [/youtube\.?(tv)?unplugged|youtubetv/i, /^youtube tv$/i],
     [/twitch/i, /^twitch$/i], [/hulu/i, /^hulu$/i], [/(^|\.)hbo|wbd/i, /^(hbo )?max$/i], [/peacock/i, /^peacock/i],
-    [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i], [/alexa/i, /alexa/i],
-    [/^com\.tcl\.tv$/i, /^tv$/i], [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i], [/freeplay/i, /freeplay/i],
+    [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i], [/freeplay/i, /freeplay/i],
+    // From here (TCL_FIRST) the maker's apps, in the TCL folder in this order.
+    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i], [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
     [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
     [/quick.?panel/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
     [/exhibit/i, /^t-?exhibition$/i], [/browse.?here|tcl\.browser/i, /^browse ?here$/i]
   ];
+
+  var TCL_FIRST = 14;
+
+  /** One of TCL's own apps (GRID_ORDER's last ones, or any com.tcl id): the TCL folder's. */
+  function tclApp(app) {
+    var r = gridRank(app);
+    return (r >= TCL_FIRST && r < GRID_ORDER.length) || /^com\.tcl\./i.test(app.id || '');
+  }
 
   function gridRank(app) {
     for (var i = 0; i < GRID_ORDER.length; i++) if (GRID_ORDER[i][0].test(app.id || '') || GRID_ORDER[i][1].test(app.title || '')) return i;
@@ -402,13 +411,24 @@
   // The TV's own utilities (its settings, store, browser, files, inputs…): together in one folder at the end of All Apps.
   var UTILITY = /browser|settings|store|google\.play|play store|file|media ?player|gallery|help|manual|guide|update|account|smartthings|tv-viewer|livetv|channel|input|hdmi|tcl|usb|miracast/i;
 
-  /** All Apps' list with the utilities in a "TV & Utilities" folder (two or more of them; one stays an app). */
+  /*
+   * All Apps' list with two folders at its end, so it fits one screen (as HomeApps.folders): "TCL" (the maker's apps,
+   * in GRID_ORDER's order) and "TV & Utilities" (settings, store, files…). A folder of one stays an app.
+   */
   function folders(list) {
-    var util = list.filter(function (x) { return !shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title)); });
-    if (util.length < 2) return list;
-    var rest = list.filter(function (x) { return util.indexOf(x) < 0; });
-    rest.push({id: 'folder:utilities', title: tr('TV & Utilities'), folder: true, apps: util});
+    var tcl = list.filter(tclApp);
+    var util = list.filter(function (x) {
+      return tcl.indexOf(x) < 0 && !shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title));
+    });
+    var rest = list.filter(function (x) { return tcl.indexOf(x) < 0 && util.indexOf(x) < 0; });
+    addFolder(rest, tcl, 'folder:tcl', 'TCL');   // the maker's name
+    addFolder(rest, util, 'folder:utilities', tr('TV & Utilities'));
     return rest;
+  }
+
+  function addFolder(into, apps, id, title) {
+    if (apps.length === 1) into.push(apps[0]);
+    if (apps.length > 1) into.push({id: id, title: title, folder: true, apps: apps});
   }
 
   // MARK: - Motion (ANIMATIONS-SPEC.md): springs from motion.js drive every transform that can change mid-flight
@@ -2281,6 +2301,7 @@
   // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the home screen
 
   // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the grid slides; the card stays put).
+  // A folder of 10 to 12 takes 4 columns instead, so it shows whole (TCL's apps).
   var FOLDER_COLS = 3, FOLDER_ROWS = 3, FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_ROW = TILE_H + 70;
   var folderOpen = null, folderCard = null, folderGrid = null, folderTop = 0, folderFrom = {x: 0, y: 0};
 
@@ -2298,6 +2319,7 @@
   /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
   function openFolder(folder, fromFx) {
     folderOpen = folder;
+    FOLDER_COLS = folder.apps.length > 9 && folder.apps.length <= 12 ? 4 : 3;
     var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.min(FOLDER_ROWS, Math.ceil(n / FOLDER_COLS));
     layer.innerHTML = '';
     killFx(fxFolder);
@@ -3636,7 +3658,11 @@
     home: goHome, toggleSaver: toggleSaver,
     // All Apps' folder open (the screenshots), and the brightness ([ and ]) for the tests.
     // The Dock's and All Apps' titles in order (folders as their names), for the tests.
-    apps: function () { return {dock: shelf.map(function (a) { return a.title; }), grid: others.map(function (a) { return a.title; })}; },
+    apps: function () {
+      var tcl = others.filter(function (a) { return a.id === 'folder:tcl'; })[0];
+      return {dock: shelf.map(function (a) { return a.title; }), grid: others.map(function (a) { return a.title; }),
+        tcl: tcl ? tcl.apps.map(function (a) { return a.title; }) : []};
+    },
     folder: function () {
       for (var i = 0; i < others.length; i++) if (others[i].folder) { openApps(i); openFolder(others[i], fxCells[i]); return true; }
       return false;

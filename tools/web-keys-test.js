@@ -244,9 +244,11 @@ var browser = null;
   // The owner's TV: its Dock (Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu) and All Apps in their order.
   var lists = await page.evaluate(function () { localStorage.removeItem('mahittv.profile.' + Profiles.current().id); return FreeMyTV.apps(); });
   var wantGrid = ['Apple Music', 'YouTube Music', 'Spotify', 'Crunchyroll', 'Tubi', 'YouTube TV', 'Twitch', 'Hulu', 'HBO Max',
-    'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'Works with Alexa', 'TV', 'TCL TV+', 'Google TV Freeplay', 'Media Player',
-    'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition', 'BrowseHere'];
-  assert.deepStrictEqual(lists.grid.slice(0, wantGrid.length), wantGrid, 'All Apps follows the TV\'s order: ' + JSON.stringify(lists.grid));
+    'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'Google TV Freeplay', 'TCL', 'TV & Utilities'];
+  assert.deepStrictEqual(lists.grid, wantGrid, 'All Apps follows the TV\'s order, the folders at its end: ' + JSON.stringify(lists.grid));
+  assert.ok(lists.grid.length <= 18, 'All Apps fits one screen (3 rows of 6 under the Dock): ' + lists.grid.length);
+  assert.deepStrictEqual(lists.tcl, ['Works with Alexa', 'TV', 'TCL TV+', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo',
+    'TCL Home', 'T-Exhibition', 'BrowseHere'], 'the TCL folder holds TCL\'s apps in order: ' + JSON.stringify(lists.tcl));
   assert.ok(lists.dock.length === 6 && lists.dock.indexOf('Spotify') < 0, 'a Dock of 6, without Spotify: ' + JSON.stringify(lists.dock));
   // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (its pills in a fixed order,
   // the volume under them); the pill opens the profile panel.
