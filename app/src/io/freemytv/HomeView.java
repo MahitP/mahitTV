@@ -4549,7 +4549,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // The remote's Settings button (TCL's sends NOTIFICATION) opens TV Settings, as Hisense's gear does by
                 // default; ours stay on the gear on screen. Hisense's gear is a Remote Buttons choice (RemoteKeys); where
                 // the system takes the key first, it never gets here.
-                if (RemoteKeys.HISENSE) return false;
+                if (RemoteKeys.HISENSE || RemoteKeys.TCL) return false;
                 if (down && e.getRepeatCount() == 0) HomeApps.open(activity, HomeApps.tvSettings(), this, w / 2, h / 2, 1, 1);
                 return true;
             case KeyEvent.KEYCODE_BACK:

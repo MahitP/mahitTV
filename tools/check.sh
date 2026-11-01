@@ -35,6 +35,11 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$what" = all ] || [ "$what" = android ]; then
+  # mahitTV's Home hold and volume run on the key service, so it can't go off with the buttons, as upstream's does.
+  if sed -n '/static boolean serviceWanted/,/^    }/p' app/src/io/freemytv/RemoteKeys.java | grep -q 'keyApp'; then
+    echo "RemoteKeys.serviceWanted turns the key service off with the buttons: Home hold and volume need it." >&2
+    exit 1
+  fi
   wallpaper_classes="$(mktemp -d)"
   javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest

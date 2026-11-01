@@ -28,6 +28,9 @@ import android.view.KeyEvent;
  * hot-key receiver (partnercustomizer's GlobalKeyReceiver).
  * On Hisense TVs, the Prime Video, YouTube, Disney+, All Apps, Settings (gear) and profile buttons go to Google TV's
  * home app, which Free My TV mode turns off: without the filter they do nothing. Netflix stays with the system.
+ * On Google TV Streamer, YouTube and the custom star button go to that home app too; Netflix goes to Google's service.
+ * On the JVC G24 (Skyworth Android 11), the input shortcut's vendor receiver crashes without Google TV's content
+ * provider, and Quick Settings targets its disabled notification panel. Open the native TV menus directly.
  * Double press and long press (TVOS-LAUNCHER-MERGE-SPEC.md S6 and Part 2 §4, the idea adapted from tvOS-Launcher
  * (Apache-2.0)): a button can open a second app when pressed twice within DOUBLE_MS, and a third when held LONG_MS.
  * Only a button with a second app waits DOUBLE_MS before opening its first one; only one with a held app acts on its
@@ -151,11 +154,9 @@ final class RemoteKeys {
         return TCL || STEM_NETFLIX || KTC || SONY || XIAOMI || HISENSE || GOOGLE_STREAMER || JVC_SKYWORTH;
     }
 
-    /** The key service is on only where the filter is safe, and while a button opens something (else it has no work). */
+    /** The key service is on wherever the filter is safe: whatever the buttons open, Home hold and volume run on it. */
     static boolean serviceWanted() {
-        if (!supported() || !FILTER_SAFE) return false;
-        for (int key : Prefs.KEYS) if (!Prefs.keyApp(key).isEmpty()) return true;
-        return false;
+        return supported() && FILTER_SAFE;
     }
 
     private static boolean is(String maker) {
@@ -174,7 +175,12 @@ final class RemoteKeys {
                     && onHome((android.accessibilityservice.AccessibilityService) c, e);
         }
         if (isVolume(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onVolume(c, e);
-        int keyCode = e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
+        int keyCode = TCL && e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
+        if (JVC_SKYWORTH) {
+            if (SkyworthRemote.settings(keyCode)) keyCode = Prefs.KEY_JVC_SETTINGS;
+            else if (SkyworthRemote.shortcut(keyCode, e.getScanCode())) keyCode = Prefs.KEY_JVC_SHORTCUT;
+            else return false;
+        }
         // Sony sends BUTTON_9 for five app buttons (BUTTON_4 for Netflix, BUTTON_8 for Google Play): only the scan code
         // tells them apart. The BRAVIA VU31's remote sends BUTTON_2 and BUTTON_15 too (Prefs.sonyKey).
         if (SONY && (keyCode == KeyEvent.KEYCODE_BUTTON_4 || keyCode == KeyEvent.KEYCODE_BUTTON_8
@@ -360,10 +366,26 @@ final class RemoteKeys {
         // watchdog handed it back. Not the settings app our launcher icon opens.
         Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
                 ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                : JVC_SKYWORTH && pkg.equals(Prefs.QUICK_SETTINGS)
+                ? new Intent(c, QuickSettingsActivity.class)
+                : JVC_SKYWORTH && pkg.equals(Prefs.TV_SHORTCUTS)
+                ? new Intent(Intent.ACTION_MAIN).setClassName("com.smartdevice.dailyshortcut",
+                        "com.smartdevice.dailyshortcut.ui.MainActivity")
+                : TCL && pkg.equals(Prefs.QUICK_PANEL)
+                ? new Intent(c, QuickPanelActivity.class)
+                : (JVC_SKYWORTH || TCL) && pkg.equals("com.android.tv.settings")
+                ? new Intent(android.provider.Settings.ACTION_SETTINGS).setPackage(pkg)
                 : launchIntent(c.getPackageManager(), pkg);
         if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
         AppLog.w("remote key " + keyCode + " -> " + pkg + (intent == null ? " (not installed)" : ""));
-        if (intent != null) c.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        // Consumed even when it doesn't open: its key-up is ours too, and a key-down alone would reach the TV.
+        if (intent != null) {
+            try {
+                c.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (android.content.ActivityNotFoundException | SecurityException ex) {
+                AppLog.w("remote target unavailable: " + pkg);
+            }
+        }
     }
 
     /** The app's TV launcher, or its plain one (kept here, not in HomeApps, so the key process stays small). */

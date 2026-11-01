@@ -1250,7 +1250,9 @@ public class SettingsActivity extends Activity {
                     }
                     pushedTitle = Ui.tr("Remote Buttons");
                     footerA = remoteNote();
-                    if (RemoteKeys.doublePress()) footerB = Ui.tr("Pressed twice or held: a second or a third app.");
+                    // No key service on this TV (RemoteKeys.FILTER_SAFE): inside other apps the buttons do nothing.
+                    if (!RemoteKeys.FILTER_SAFE) footerB = Ui.tr("On this TV they work on mahitTV's home screen only.");
+                    else if (RemoteKeys.doublePress()) footerB = Ui.tr("Pressed twice or held: a second or a third app.");
                     break;
                 }
                 case POWER: {
@@ -1355,9 +1357,10 @@ public class SettingsActivity extends Activity {
             return RemoteKeys.VESTEL ? Ui.tr("YouTube, Prime Video and Google Play: the TV itself controls those buttons.")
                     : RemoteKeys.KTC ? Ui.tr("Netflix, YouTube and Prime Video: the TV itself controls those buttons.")
                     : RemoteKeys.SONY ? Ui.tr("Sony default: the button opens what it always did.")
-                    : RemoteKeys.FORMOVIE ? Ui.tr("The other buttons: the TV itself controls them.")
+                    : RemoteKeys.FORMOVIE || RemoteKeys.JVC_SKYWORTH ? Ui.tr("The other buttons: the TV itself controls them.")
                     : RemoteKeys.XIAOMI ? Ui.tr("Xiaomi default: the button opens what it always did.")
                     : RemoteKeys.HISENSE ? Ui.tr("Netflix: the TV itself controls that button.")
+                    : RemoteKeys.GOOGLE_STREAMER ? Ui.tr("The other buttons: the TV itself controls them.")
                     : RemoteKeys.supported() ? Ui.tr("Disney and Globoplay: the TV itself controls those buttons.")
                     : Ui.tr("TCL remote buttons: on this TV they work as always.");
         }
@@ -2335,7 +2338,8 @@ public class SettingsActivity extends Activity {
                     focus = 0;
                     return true;
                 case R_TV_SETTINGS:
-                    activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    // As Control Center's TV Settings: where nothing answers the standard request, Android TV's own settings.
+                    HomeApps.open(activity, HomeApps.tvSettings(), null);
                     return false;
                 case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
                 case R_TV_SYSTEM: case R_TV_ACCESSIBILITY: case R_TV_REMOTES:
@@ -3096,19 +3100,23 @@ public class SettingsActivity extends Activity {
         }
 
         private String[] buttonLabels() {
+            if (RemoteKeys.GOOGLE_STREAMER) return new String[] {Ui.tr("YouTube button"), Ui.tr("Netflix button"),
+                    Ui.tr("Custom button") + " \u2605"};
+            if (RemoteKeys.JVC_SKYWORTH) return new String[] {Ui.tr("Inputs"), Ui.tr("Settings button")};
             if (RemoteKeys.HISENSE) return new String[] {Ui.tr("Prime Video button"), Ui.tr("YouTube button"),
                     Ui.tr("Disney+ button"), Ui.tr("All Apps button"), Ui.tr("Settings button"), Ui.tr("Profile button")};
             if (RemoteKeys.STEM_NETFLIX) return new String[] {Ui.tr("Netflix button")};
             if (RemoteKeys.KTC) return new String[] {Ui.tr("Tabii button")};
+            if (RemoteKeys.XIAOMI_PATCHWALL_ONLY) return new String[] {Ui.tr("PatchWall button")};
             if (RemoteKeys.XIAOMI) return new String[] {Ui.tr("Mi button"), Ui.tr("YouTube button"), Ui.tr("PatchWall button"),
                     Ui.tr("Okko button"), Ui.tr("VK button"), Ui.tr("Rutube button"), Ui.tr("KION button"),
                     Ui.tr("Wink button"), Ui.tr("IVI button")};
             if (RemoteKeys.SONY) return new String[] {Ui.tr("BRAVIA CORE button"),
                     Ui.tr("Netflix button"), Ui.tr("Disney+ button"),
                     Ui.tr("Prime Video button"), Ui.tr("YouTube button"),
-                    Ui.tr("Crunchyroll button"), Ui.tr("Google Play button")};
+                    Ui.tr("Crunchyroll button"), Ui.tr("Google Play button"), Ui.tr("SonyLIV button")};
             return new String[] {Ui.tr("Netflix button"), Ui.tr("YouTube button"),
-                    Ui.tr("Prime Video button"), Ui.tr("TCL Channel button")};
+                    Ui.tr("Prime Video button"), Ui.tr("TCL Channel button"), Ui.tr("Settings button")};
         }
 
         private String[] makeKeyValues() {
@@ -3131,14 +3139,32 @@ public class SettingsActivity extends Activity {
             appPkgs.clear();
             appLabels.clear();
             appPkgs.add("");
-            // On Sony and Xiaomi, "nothing" leaves the key to the TV, which opens its usual app.
-            appLabels.add(RemoteKeys.SONY ? Ui.tr("Sony default") : RemoteKeys.XIAOMI ? Ui.tr("Xiaomi default") : Ui.tr("Nothing"));
+            // An empty choice leaves the key to the system's receiver.
+            appLabels.add(RemoteKeys.GOOGLE_STREAMER ? Ui.tr("Google default")
+                    : RemoteKeys.SONY ? Ui.tr("Sony default") : RemoteKeys.XIAOMI ? Ui.tr("Xiaomi default") : Ui.tr("Nothing"));
+            if (RemoteKeys.JVC_SKYWORTH) {
+                appPkgs.add(Prefs.TV_SHORTCUTS);
+                appLabels.add(Ui.tr("Inputs"));
+                appPkgs.add(Prefs.QUICK_SETTINGS);
+                appLabels.add(Ui.tr("Quick Settings"));
+            }
+            if (RemoteKeys.TCL) {
+                appPkgs.add(Prefs.QUICK_PANEL);
+                appLabels.add(Ui.tr("Quick Settings"));
+                // The Settings button's default, listed even where TV Settings has no launcher entry.
+                boolean listed = false;
+                for (String[] f : found) listed |= f[0].equals("com.android.tv.settings");
+                if (!listed) {
+                    appPkgs.add("com.android.tv.settings");
+                    appLabels.add(Ui.tr("TV Settings"));
+                }
+            }
             // On Xiaomi the Mi button is the remote's Home button: it can open this home screen.
             if (RemoteKeys.XIAOMI) {
                 appPkgs.add(HomeMode.PKG);
                 appLabels.add("mahitTV");
             }
-            if (RemoteKeys.HISENSE) {
+            if (RemoteKeys.HISENSE || RemoteKeys.GOOGLE_STREAMER) {
                 appPkgs.add(Prefs.ALL_APPS);
                 appLabels.add(Ui.tr("All Apps"));
             }

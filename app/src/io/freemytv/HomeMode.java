@@ -578,8 +578,8 @@ final class HomeMode {
      * The remote's app buttons (RemoteKeys) need an accessibility service that only filters those keys. It is on only
      * on TCL, Vestel, KTC, Sony, Xiaomi and Hisense TVs and the JVC G24 (and Formovie projectors and the Google TV
      * Streamer) in Free My TV mode, and goes off with Original. Android turns it off when this app is updated, so the
-     * boot check and an update turn it back on. A change in Remote Buttons asks again: with every button on Nothing
-     * (or the brand's default), and on TCL's Android 11, it goes off (RemoteKeys.serviceWanted).
+     * boot check and an update turn it back on. On TCL's Android 11 it goes off, as the filter isn't safe there
+     * (RemoteKeys.serviceWanted).
      */
     static void ensureRemoteService(Context c, long delayMs) {
         if (RemoteKeys.supported()) ModeJob.schedule(c, ModeJob.REMOTE, null, delayMs);
