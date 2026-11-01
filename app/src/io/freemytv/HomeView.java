@@ -661,7 +661,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
         tvInputs = (TvInputManager) a.getSystemService(Context.TV_INPUT_SERVICE);
         launcherApps = (LauncherApps) a.getSystemService(Context.LAUNCHER_APPS_SERVICE);
-        if (launcherApps != null) launcherApps.registerCallback(packages, handler);
+        try {
+            if (launcherApps != null) launcherApps.registerCallback(packages, handler);
+        } catch (RuntimeException e) {   // some projectors (Rockchip rk3566 HY300) ship without the launcherapps service
+            AppLog.w("no app-change callback: " + e.getMessage());
+        }
         setFocusable(true);
         sky = new Layer(a, SKY);
         heroLayer = new Layer(a, HERO);
@@ -762,7 +766,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Spring.instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         checkNight(false);
-        boolean h24 = Prefs.clock24();
+        boolean h24 = Ui.h24();
         if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
             clock24 = h24;
             clockMinute = -1;
@@ -785,6 +789,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         recs.refreshIfStale();
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
+        ImmichPhotos.syncIfDue(getContext(), ownReady);   // or a new choice from the Immich server, every 6 hours
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
         handler.removeCallbacks(rotate);
@@ -867,7 +872,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void destroy() {
         pause();
         intro.stop();
-        if (launcherApps != null) launcherApps.unregisterCallback(packages);
+        try {
+            if (launcherApps != null) launcherApps.unregisterCallback(packages);
+        } catch (RuntimeException ignored) {
+        }
         click.release();
     }
 
