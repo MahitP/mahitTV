@@ -29,9 +29,11 @@ function state(page) {
   });
 }
 
+var browser = null;
+
 (async function () {
   await new Promise(function (done) { server.listen(0, '127.0.0.1', done); });
-  var browser = await chromium.launch({headless: true});
+  browser = await chromium.launch({headless: true});
   var page = await browser.newPage({viewport: {width: 1920, height: 1080}});
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
@@ -159,4 +161,10 @@ function state(page) {
   assert.deepStrictEqual(errors, [], 'no page errors');
   await browser.close(); server.close();
   console.log('web-keys-test: passed');
-})().catch(function (err) { server.close(); console.error(err.stack || err); process.exitCode = 1; });
+})().catch(async function (err) {
+  // A failed check must not leave the browser running: the process would never exit and CI would hang.
+  console.error(err.stack || err);
+  try { if (browser) await browser.close(); } catch (e) { /* exiting anyway */ }
+  server.close();
+  process.exit(1);
+});

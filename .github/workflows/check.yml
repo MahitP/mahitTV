@@ -19,6 +19,8 @@ jobs:
   android:
     name: Google TV app
     runs-on: ubuntu-latest
+    # A hung step (a test that never exits) fails in 15 minutes instead of GitHub's 6-hour default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       # The JDK and SDK the README asks for, not whatever the runner image has (build.sh takes the newest it finds,
@@ -38,6 +40,7 @@ jobs:
   web:
     name: Translations, LG and Samsung
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
