@@ -63,6 +63,7 @@ if [ "$what" = all ] || [ "$what" = android ]; then
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then
+  python3 tools/test_merge_i18n.py
   python3 tools/translate.py --check
   node tools/test_welly_bot.js
   node tools/wallpaper-web-test.js
