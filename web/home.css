@@ -1005,3 +1005,36 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .text-large .cchead { font-size: 28px; }
 .text-large .cell .label { font-size: 29px; }
 .text-large #tabs .tab { font-size: 30px; }
+
+/* AirPods (an AirPods or Beats output joined): the glyph left of Control Center's bubble, the card at the top right. */
+#airglyph { position: absolute; right: 360px; top: 59px; width: 34px; height: 34px; background-color: #FFF; opacity: 0; -webkit-mask-image: url(symbols/airpods.png); -webkit-mask-size: 26px 26px; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
+#airglyph.on { opacity: 0.92; }
+#airtoast { position: absolute; right: 45px; top: 0; height: 84px; min-width: 300px; max-width: 640px; border-radius: 42px; z-index: 48; opacity: 0; visibility: hidden; color: #FFF; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28); white-space: nowrap; }
+#airtoast .glass { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; background: rgba(40, 40, 46, 0.78); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.34); }
+#airtoast .icon { position: absolute; left: 22px; top: 22px; width: 40px; height: 40px; }
+#airtoast .title { position: relative; margin: 14px 34px 0 80px; font-size: 25px; font-weight: 600; line-height: 30px; }
+#airtoast .sub { position: relative; margin: 2px 34px 0 80px; font-size: 20px; font-weight: 500; line-height: 24px; opacity: 0.7; }
+#volhud .airglyph { position: absolute; left: 21px; bottom: 21px; width: 30px; height: 30px; display: none; }
+#volhud.lit .airglyph, #volhud.lit .sunglyph { color: #1D1D1F; }
+#volhud.air .spk { display: none; }
+#volhud.air .airglyph { display: block; }
+#volhud.bright .airglyph { display: none; }
+.folderface .mini .sym.big { width: 26px; height: 26px; margin: -13px 0 0 -13px; }
+
+/* An Apple guide (FaceTime, Fitness+, Podcasts, Apple Music): its AirPlay steps and a QR code, over the home screen. */
+#guide { z-index: 60; opacity: 0; color: #FFF; -webkit-transition: opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1); }
+#guide.open { opacity: 1; }
+#guide .veil { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(0, 0, 0, 0.55); }
+#guide .card { position: absolute; left: 260px; top: 170px; width: 1400px; height: 740px; border-radius: 44px; background: rgba(28, 28, 30, 0.92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 1.5px 0 rgba(255, 255, 255, 0.2), 0 40px 90px rgba(0, 0, 0, 0.45); -webkit-transform: scale(0.94); transform: scale(0.94); -webkit-transition: -webkit-transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1); transition: transform 0.45s cubic-bezier(0.34, 1.3, 0.64, 1); }
+#guide.open .card { -webkit-transform: none; transform: none; }
+#guide .plate { position: absolute; left: 80px; top: 80px; width: 150px; height: 150px; border-radius: 34px; overflow: hidden; }
+#guide .plate .sym { position: absolute; left: 36px; top: 36px; width: 78px; height: 78px; color: #FFF; }
+#guide .title { position: absolute; left: 270px; top: 98px; font-size: 64px; font-weight: 700; line-height: 72px; }
+#guide .sub { position: absolute; left: 270px; top: 180px; font-size: 28px; font-weight: 500; opacity: 0.7; }
+#guide .steps { position: absolute; left: 80px; top: 300px; width: 900px; margin: 0; padding: 0; list-style: none; }
+#guide .steps li { position: relative; min-height: 44px; margin-bottom: 40px; padding-left: 70px; font-size: 30px; line-height: 40px; }
+#guide .steps .n { position: absolute; left: 0; top: -2px; width: 44px; height: 44px; border-radius: 22px; background: rgba(255, 255, 255, 0.95); color: #1C1C1E; font-size: 26px; font-weight: 600; line-height: 44px; text-align: center; }
+#guide .qr { position: absolute; left: 1020px; top: 110px; width: 300px; height: 300px; padding: 20px; border-radius: 28px; background: #FFF; }
+#guide .qr img { display: block; width: 300px; height: 300px; image-rendering: pixelated; }
+#guide .scan { position: absolute; left: 1020px; top: 470px; width: 340px; text-align: center; font-size: 24px; font-weight: 500; opacity: 0.7; }
+#guide .foot { position: absolute; left: 80px; right: 80px; bottom: 50px; text-align: center; font-size: 22px; opacity: 0.6; }

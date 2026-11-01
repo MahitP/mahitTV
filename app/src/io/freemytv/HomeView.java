@@ -335,6 +335,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** In Z_STATUS: the focus is on Control Center's bubble (else on the pill). */
     private boolean onBubble;
     private final RectF bubbleRect = new RectF();
+    /** The AirPods glyph left of the bubble, while AirPods or Beats are the output (empty otherwise). */
+    private final RectF airRect = new RectF();
+    private final RectF miniDst = new RectF();
     private Bitmap pillAvatar;
     private int pillFrom = Z_SHELF;          // where ↓ from the pill goes back to
     private float pillTimeW;
@@ -424,6 +427,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final ArrayDeque<String> toasts = new ArrayDeque<>();
     private StaticLayout toast;
     private long toastAt;
+
+    // AirPods: an AirPods or Beats output joining slides a card in at the top right (y 36 → 108) for 3.5 s.
+    private static final long AIR_MS = 3500;
+    private final Spring airToast = new Spring(Spring.AIRPODS_TOAST, 0);
+    private String airName, airShown;
+    private boolean airSpatial;
+    private Paint airTitle, airSub;
+    private final Runnable airHide = () -> { airToast.target = 0; wake(); };
+    private final android.media.AudioDeviceCallback airWatch = new android.media.AudioDeviceCallback() {
+        @Override public void onAudioDevicesAdded(android.media.AudioDeviceInfo[] added) {
+            String name = AirPods.find(added);
+            if (name != null) airConnected(name, true);
+        }
+        @Override public void onAudioDevicesRemoved(android.media.AudioDeviceInfo[] removed) {
+            if (airName != null && AirPods.find(removed) != null) airConnected(AirPods.connected(audio), false);
+        }
+    };
 
     // Motion (ANIMATIONS-SPEC.md): dead ends, the OK press, an app opening, coming back, fast scrubbing.
     /** A press toward nothing: the focused thing's nudge (1920-px units; drawn through the rubber band, bumpX/Y). */
@@ -573,7 +593,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case SHEET: drawSheet(c); break;
                 case TABBAR: drawTabBar(c); break;
                 case CHEVRON: drawChevron(c, w / 2f, TV_CHEVRON_Y * k); break;
-                default: drawToast(c); break;
+                default: drawToast(c); drawAirToast(c); break;
             }
             scene.setOffset(0, 0);
         }
@@ -758,6 +778,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         data.addListener(this);
         recs.addListener(this);
         data.refreshIfStale();
+        if (audio != null) {
+            // Already connected: the glyph and the HUD's buds, no card (it greets a new connection only).
+            airConnected(AirPods.connected(audio), false);
+            audio.registerAudioDeviceCallback(airWatch, handler);
+        }
         recs.refreshIfStale();
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
@@ -827,6 +852,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Choreographer.getInstance().removeFrameCallback(this);
         volumeHud.dismiss();
         volumeKeyDown = false;
+        if (audio != null) audio.unregisterAudioDeviceCallback(airWatch);
+        handler.removeCallbacks(airHide);
+        airToast.snap(0);
         handler.removeCallbacks(tick);
         handler.removeCallbacks(rotate);
         handler.removeCallbacks(reloadSoon);
@@ -993,6 +1021,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clockMinute = -1;
         updateClock();
         Symbols.warm(getContext(), "bell", 26 * k);
+        Symbols.warm(getContext(), "airpods", 40 * k);
+        Symbols.warm(getContext(), "airpods", 24 * k);
+        airTitle = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
+        airSub = Ui.text(Ui.medium, 20 * k, 0xB3FFFFFF);
         Symbols.warm(getContext(), "bedtime", 21 * k);   // the sleep timer's "Off in", at lQuote's size
         layoutShelf();
         layoutStatus();
@@ -1160,6 +1192,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen) | glare.step(dt);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt) | bubbleFocus.step(dt);
+        boolean airMoving = airToast.step(dt);
+        if (airMoving) toastLayer.invalidate();
         boolean fullMoving = full.step(dt);
         boolean heroMoving = heroFocus.step(dt) | fullMoving;
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
@@ -1215,7 +1249,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
                 || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving || barsMoving
-                || chevronMoving || ccStagger || !toasts.isEmpty();
+                || chevronMoving || ccStagger || airMoving || !toasts.isEmpty();
         idle = !busy;
         if (busy) {
             Choreographer.getInstance().postFrameCallback(this);
@@ -3996,8 +4030,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it.tileShader.setLocalMatrix(null);
         } else {
             fill.setShader(null);
-            fill.setColor(0xFF48484A);
+            fill.setColor(it.style != null ? it.style[1] : 0xFF48484A);
             c.drawRoundRect(r, rr, rr, fill);
+            if (it.logo != null && it.style != null) {   // a composed icon (the Apple guides): its emblem at half height
+                float eh = r.height() * 0.5f, ew = eh * it.logo.getWidth() / it.logo.getHeight();
+                miniDst.set(r.centerX() - ew / 2, r.centerY() - eh / 2, r.centerX() + ew / 2, r.centerY() + eh / 2);
+                c.drawBitmap(it.logo, null, miniDst, bitmapPaint);
+            }
         }
     }
 
@@ -5472,6 +5511,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         bubbleRect.set(bx - BUBBLE_D * k, (PILL_TOP + (PILL_H - BUBBLE_D) / 2) * k, bx, (PILL_TOP + (PILL_H + BUBBLE_D) / 2) * k);
         Symbols.warm(getContext(), "controls", 26 * k);
         float b = PILL_H * k, x = bubbleRect.left - 16 * k, cy = pillRect.centerY();
+        if (airName != null) {
+            float aw = 34 * k;
+            airRect.set(x - aw, cy - aw / 2, x, cy + aw / 2);
+            x -= aw + 14 * k;
+        } else {
+            airRect.setEmpty();
+        }
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
             topRects[3 + i].set(x - b, cy - b / 2, x, cy + b / 2);
             x -= b + L_BUTTON_GAP * k;
@@ -6019,6 +6065,51 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         Symbols.draw(getContext(), c, "controls", bubbleRect.centerX(), bubbleRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, white));
         c.restore();
+        if (!airRect.isEmpty()) {
+            Symbols.draw(getContext(), c, "airpods", airRect.centerX(), airRect.centerY(), 24 * k, 0xEBFFFFFF);
+        }
+    }
+
+    /** AirPods or Beats joined (greet: a new connection, so the card too) or left (name null). */
+    private void airConnected(String name, boolean greet) {
+        boolean changed = name == null ? airName != null : !name.equals(airName);
+        airName = name;
+        volumeHud.setAirPods(name != null);
+        if (changed && pillRect.width() > 0) {
+            layoutPill();
+            status.invalidate();
+        }
+        if (name == null) {
+            handler.removeCallbacks(airHide);
+            airToast.target = 0;
+        } else if (greet && changed) {
+            airShown = name;
+            airSpatial = AirPods.spatial(audio);
+            airToast.target = 1;
+            handler.removeCallbacks(airHide);
+            handler.postDelayed(airHide, AIR_MS);
+        }
+        if (drawerOpen) readDrawerState(false);
+        wake();
+    }
+
+    /** The AirPods card: smoke glass at the top right, under the status cluster (36 → 108 px as it slides in). */
+    private void drawAirToast(Canvas c) {
+        float v = airToast.value;
+        if (v <= 0.01f || airShown == null || airTitle == null) return;
+        String sub = airSpatial ? Ui.tr("Connected · Spatial Audio") : Ui.tr("Connected");
+        float icon = 40 * k, pad = 22 * k, gap = 18 * k;
+        float tw = Math.max(airTitle.measureText(airShown), airSub.measureText(sub));
+        float cw = Math.min(pad + icon + gap + tw + pad + 6 * k, 640 * k), ch = 84 * k;
+        float right = PILL_RIGHT * k, top = (36 + 72 * v) * k;
+        tmp.set(right - cw, top, right, top + ch);
+        int save = c.saveLayerAlpha(tmp.left - 4, tmp.top - 4, tmp.right + 4, tmp.bottom + 4, Math.round(255 * Ui.clamp(v)));
+        scene.glass(c, tmp, ch / 2, SMOKE, 0.55f, 0, 0, 0.02f, 1);
+        Symbols.draw(getContext(), c, "airpods", tmp.left + pad + icon / 2, tmp.centerY(), icon, 0xFFFFFFFF);
+        float tx = tmp.left + pad + icon + gap;
+        c.drawText(airShown, tx, tmp.centerY() - 4 * k, airTitle);
+        c.drawText(sub, tx, tmp.centerY() + 24 * k, airSub);
+        c.restoreToCount(save);
     }
 
     /** How much wider the pill is now (its equalizer), px. */

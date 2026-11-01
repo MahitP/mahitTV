@@ -16,6 +16,8 @@ final class Spring {
     static final float[] CARD_ENTER = SNAPPY_FOCUS, ORB = {0.50f, 0.80f};
     /** Control Center's panels and the Inputs list: a momentum-weighted glide. */
     static final float[] CC_OPEN = {0.42f, 0.85f};
+    /** The AirPods card sliding in at the top right. */
+    static final float[] AIRPODS_TOAST = {0.38f, 0.82f};
 
     /** Dead ends: the push given to the focused thing, and the rubber band its offset goes through (§1.3). */
     static final float BUMP_VELOCITY = 1100, BAND = 40, BAND_C = 0.55f;

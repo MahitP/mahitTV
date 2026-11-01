@@ -256,6 +256,45 @@ can't run an Android emulator, so before calling it done, check these on the TCL
 3. The glare and the deck's depth.
 4. Holding Home for Recent Apps.
 
+## Part 4: Apple apps and AirPods on a Google TV
+
+What's real here and what isn't. Nothing in mahitTV pretends to be an Apple app.
+
+### Built
+
+- **AirPods and Beats.** When a Bluetooth output whose name contains "AirPods" or "Beats" joins
+  (`AudioManager.registerAudioDeviceCallback`, no permission needed; `AirPods.java`):
+  - A Liquid Glass card slides in at the top right (y 36 → 108, spring 0.38 / 0.82) for 3.5 s. It shows the device's
+    name and "Connected".
+  - "Spatial Audio" is added only when Android's Spatializer (Android 12L and newer) says it's available and on.
+  - A small AirPods glyph sits left of Control Center's bubble while they're connected.
+  - The Audio Output pill and the volume HUD show the buds instead of the speaker.
+  - In the web preview, `A` or the Audio Output / Bluetooth pills connect a stand-in pair.
+- **The Apple folder** (All Apps, where Apple Music goes). It holds:
+  - Apple Music. If the app is installed (`com.apple.android.music`) it opens it; otherwise it opens a guide.
+  - FaceTime, Fitness+ and Podcasts guides. Each guide (`AppleGuideActivity`, `GUIDES` in `web/home.js`) gives three
+    steps for playing it from an iPhone or iPad over AirPlay, and a QR code to Apple's page (`app/assets/qr/`).
+
+### Not possible, and why
+
+| Asked for | Why not |
+|---|---|
+| FaceTime on the TV | FaceTime on the web needs Chrome or Edge with a camera, and someone with an Apple device has to start the call. The TV has no camera, and Android TV's WebView isn't Chrome. |
+| Continuity Camera (iPhone as webcam) | This only works between an iPhone and an Apple TV or Mac. A web page on the iPhone can't use its camera over plain HTTP: browsers require HTTPS for that, and a TV on the home network has no certificate. |
+| Fitness+ rings and heart rate | Your Activity data stays on your iPhone and Apple Watch, and Android has no way to read it. Showing rings would mean showing made-up numbers. |
+| An Apple Music player inside mahitTV | There's no Apple Music API for Android TV apps. Use the Apple Music app itself, or AirPlay from an iPhone. |
+| Starting AirPlay from the home screen | Apps can't control the TV's AirPlay receiver. It's part of the TV's firmware, and only some TCL models have it. |
+
+### Installing Apple Music yourself
+
+- **From Google Play:** where it's offered for the TV, install it there. The Apple folder opens it once it's installed.
+- **Sideloading:** sideload only an APK you trust (from Google Play, or one you pulled from your own phone), with
+  `adb install -r <file>.apk`. The phone build runs but isn't made for a remote. mahitTV finds it by its package,
+  `com.apple.android.music`.
+- **Cider and similar:** these are desktop apps, with no Android TV build.
+- **AirPlay on TCL:** where the model has it, turn it on in the TV's own settings (*Settings › Channels & Inputs ›
+  Apple AirPlay & HomeKit*). mahitTV doesn't change it, per the rule against changing the TV's own settings.
+
 ## Sources
 
 - [Wikipedia: tvOS](https://en.wikipedia.org/wiki/TvOS)
@@ -271,3 +310,6 @@ can't run an Android emulator, so before calling it done, check these on the TCL
 - [BGR: tvOS 27 features](https://www.bgr.com/2269260/best-apple-tv-tvos-27-features/)
 - [TidBITS: tvOS 9.2](https://tidbits.com/2016/03/23/with-tvos-9-2-the-fourth-generation-apple-tv-hits-1-0/)
 - [iDownloadBlog: tvOS 9.2 released](https://www.idownloadblog.com/2016/03/21/tvos-9-2-released/)
+- [Apple: FaceTime links on the web](https://support.apple.com/HT204289)
+- [MDN: getUserMedia needs a secure context](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
+- [Android: Spatializer](https://developer.android.com/reference/android/media/Spatializer)

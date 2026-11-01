@@ -243,12 +243,14 @@ var browser = null;
 
   // The owner's TV: its Dock (Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu) and All Apps in their order.
   var lists = await page.evaluate(function () { localStorage.removeItem('mahittv.profile.' + Profiles.current().id); return FreeMyTV.apps(); });
-  var wantGrid = ['Apple Music', 'YouTube Music', 'Spotify', 'Disney+', 'Tubi', 'YouTube TV', 'Twitch', 'Hulu', 'HBO Max',
+  var wantGrid = ['Apple', 'YouTube Music', 'Spotify', 'Disney+', 'Tubi', 'YouTube TV', 'Twitch', 'Hulu', 'HBO Max',
     'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'Works with Alexa', 'TV', 'Google TV Freeplay', 'TCL', 'TV & Utilities'];
   assert.deepStrictEqual(lists.grid, wantGrid, 'All Apps follows the TV\'s order, the folders at its end: ' + JSON.stringify(lists.grid));
   assert.ok(lists.grid.length <= 18, 'All Apps fits one screen (3 rows of 6 under the Dock): ' + lists.grid.length);
   assert.deepStrictEqual(lists.tcl, ['TCL TV+', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition'],
     'the TCL folder holds TCL\'s 7 utilities in order: ' + JSON.stringify(lists.tcl));
+  assert.deepStrictEqual(lists.apple, ['Apple Music', 'FaceTime (guide)', 'Fitness+ (guide)', 'Podcasts (guide)'],
+    'the Apple folder, where Apple Music was: Apple Music, then the FaceTime, Fitness+ and Podcasts guides: ' + JSON.stringify(lists.apple));
   assert.deepStrictEqual(lists.dock, ['Netflix', 'Prime Video', 'YouTube', 'Apple TV', 'Crunchyroll', 'StbEmu'],
     'the Dock: Netflix, Prime Video, YouTube, Apple TV, Crunchyroll, StbEmu: ' + JSON.stringify(lists.dock));
   // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (its pills in a fixed order,
@@ -308,6 +310,8 @@ var browser = null;
   await page.waitForTimeout(600);
 
   // The weather card: the next 6 hours, each label once (the night the clocks go back has 1 AM twice: data.js).
+  // The card is built when it opens: first the weather itself (the sample can arrive late on a busy machine).
+  await page.waitForFunction(function () { return !!Data.weather; }, null, {timeout: 15000}).catch(function () {});
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.forecast(); });
   // Until its hours are in (the sample forecast can arrive late on a busy machine), then its spring settles.
   await page.waitForFunction(function () { return document.querySelectorAll('#forecast .hour .t').length > 0; }, null, {timeout: 5000})
@@ -326,13 +330,48 @@ var browser = null;
 
   // A folder: OK opens it over All Apps, Back closes it onto the folder.
   var opened = await page.evaluate(function () { return FreeMyTV.folder(); });
-  assert.ok(opened, 'All Apps has a folder (TV & Utilities)');
+  assert.ok(opened, 'All Apps has a folder (Apple, first)');
   await page.waitForTimeout(700);
   s = await state(page);
   var folder = await page.evaluate(function () { return {cells: document.querySelectorAll('#folder .cell').length, badge: document.querySelector('#folder .badge').textContent}; });
   assert.ok(s.zone === 'folder' && folder.cells >= 2 && folder.badge, 'the folder opens: ' + JSON.stringify(folder));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
+
+  // The Apple folder's FaceTime: OK opens its AirPlay guide (steps and a QR code that loads), OK closes it.
+  await page.evaluate(function () { FreeMyTV.folder(); });
+  await page.waitForTimeout(700);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  var guide = await page.evaluate(function () {
+    var g = document.querySelector('#guide'), img = g && g.querySelector('.qr img');
+    return g && {open: g.className.indexOf('open') >= 0, title: g.querySelector('.title').textContent,
+      steps: g.querySelectorAll('.steps li').length, qr: img.complete && img.naturalWidth > 0};
+  });
+  assert.ok(guide && guide.open && guide.title === 'FaceTime' && guide.steps === 3 && guide.qr, 'FaceTime opens its guide: ' + JSON.stringify(guide));
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(500);
+  assert.ok(await page.evaluate(function () { return !document.querySelector('#guide'); }), 'OK closes the guide');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+
+  // AirPods (A in the preview): the card slides in at the top right, the glyph shows by the bubble, then the card goes.
+  await page.keyboard.press('a');
+  await page.waitForTimeout(900);
+  var air = await page.evaluate(function () {
+    var t = document.querySelector('#airtoast'), r = t.getBoundingClientRect();
+    return {a: parseFloat(getComputedStyle(t).opacity), title: t.querySelector('.title').textContent, top: r.top, right: r.right,
+      glyph: document.querySelector('#airglyph').className.indexOf('on') >= 0};
+  });
+  assert.ok(air.a > 0.9 && air.title && air.glyph && Math.abs(air.top - 108) < 4 && air.right > 1800, 'A: the AirPods card and glyph: ' + JSON.stringify(air));
+  await page.waitForTimeout(3600);
+  var gone = await page.evaluate(function () { return parseFloat(getComputedStyle(document.querySelector('#airtoast')).opacity); });
+  assert.ok(gone < 0.05, 'the AirPods card leaves after 3.5 s: ' + gone);
+  await page.keyboard.press('a');
+  await page.waitForTimeout(300);
+  assert.ok(await page.evaluate(function () { return document.querySelector('#airglyph').className.indexOf('on') < 0; }), 'A again: the AirPods leave');
   s = await state(page);
   assert.strictEqual(s.zone, 'apps', 'Back closes the folder onto All Apps');
   await page.evaluate(function () { FreeMyTV.home(); });

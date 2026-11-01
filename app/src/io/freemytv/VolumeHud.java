@@ -32,6 +32,13 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
     private final Spring arcs = new Spring(Spring.SNAPPY_FOCUS, 0), bump = new Spring(Spring.BOUNDARY_BUMP, 0);
     private int bumpDir = 1;   // 1: past 100, it stretches upwards; −1: past 0, downwards
     private boolean bright;    // the brightness (Control Center's slider): the sun at its foot instead of the speaker
+    private boolean airpods;   // AirPods or Beats are the output: their buds instead of the speaker
+
+    void setAirPods(boolean on) {
+        if (airpods == on) return;
+        airpods = on;
+        invalidate();
+    }
     private String number = "0";
     private boolean posted, leaving;
     private long lastNanos;
@@ -198,8 +205,8 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         numberP.setColor(color);
         numberP.setAlpha(a);
         c.drawText(number, gx, gy - 34 * k, numberP);
-        if (bright) {
-            Symbols.draw(getContext(), c, "sunny", gx, gy, 30 * k, Ui.alpha(color, v));
+        if (bright || airpods) {
+            Symbols.draw(getContext(), c, bright ? "sunny" : "airpods", gx, gy, 30 * k, Ui.alpha(color, v));
             return;
         }
         c.save();

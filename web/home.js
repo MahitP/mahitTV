@@ -304,6 +304,12 @@
 
   /** An app's face: its logo on its brand color (or its name, when the icon can't be read). */
   function face(app, box, wordSize) {
+    if (app.guide) {   // an Apple guide: its symbol in white on its colours
+      var g = GUIDES[app.guide];
+      paint(box, g.top, g.bottom);
+      sym(g.symbol, box).className += ' big';
+      return;
+    }
     if (!app.icon && /(^|\.)settings$/i.test(app.id)) {   // the TV's settings: graphite with a white gear, as tvOS draws it
       paint(box, '#8E8E93', '#48484A');
       sym('settings', box).className += ' big';
@@ -426,9 +432,120 @@
       return tcl.indexOf(x) < 0 && !shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title));
     });
     var rest = list.filter(function (x) { return tcl.indexOf(x) < 0 && util.indexOf(x) < 0; });
+    appleFolder(rest);
     addFolder(rest, tcl, 'folder:tcl', 'TCL');   // the maker's name
     addFolder(rest, util, 'folder:utilities', tr('TV & Utilities'));
     return rest;
+  }
+
+  /*
+   * FaceTime, Fitness+, Podcasts and Apple Music where the TV lacks them (as AppleGuideActivity): how to AirPlay them
+   * from an iPhone, with a QR code to Apple's page. Nothing here pretends to be the app.
+   */
+  var GUIDES = {
+    music: {title: 'Apple Music', symbol: 'music', top: '#2C2C2E', bottom: '#000000', qr: 'applemusic', steps: function () {
+      return [tr('Play music in Apple Music on your iPhone or iPad.'), tr('Tap the AirPlay button and choose this TV.'),
+        tr("Or install Apple Music for Android TV from Google Play, where it's offered.")];
+    }},
+    facetime: {title: 'FaceTime', symbol: 'videocam', top: '#65DE6A', bottom: '#1DB33A', qr: 'facetime', steps: function () {
+      return [tr('Start the FaceTime call on your iPhone or iPad.'), tr('Open Control Center and choose Screen Mirroring, then this TV.'),
+        tr('Keep your iPhone near you: its camera and microphone carry the call.')];
+    }},
+    fitness: {title: 'Fitness+', symbol: 'fitness', top: '#2C2C2E', bottom: '#000000', qr: 'fitness', steps: function () {
+      return [tr('Open the Fitness app on your iPhone or iPad and choose a workout.'), tr('Tap the AirPlay button and choose this TV.'),
+        tr('Your Apple Watch keeps the rings and heart rate on your wrist.')];
+    }},
+    podcasts: {title: 'Podcasts', symbol: 'podcasts', top: '#D56DFB', bottom: '#8C2AE8', qr: 'podcasts', steps: function () {
+      return [tr('Play an episode in Podcasts on your iPhone or iPad.'), tr('Tap the AirPlay button and choose this TV.'),
+        tr('Scan the code to browse Apple Podcasts on the web.')];
+    }}
+  };
+
+  function guideApp(key) { return {id: 'guide:' + key, title: GUIDES[key].title, guide: key}; }
+
+  /** "Apple", where Apple Music goes: Apple Music (installed, else its guide), then FaceTime, Fitness+ and Podcasts. */
+  function appleFolder(rest) {
+    var at = 0, music = null;
+    for (var i = 0; i < rest.length; i++) if (!rest[i].folder && gridRank(rest[i]) === 0) { music = rest[i]; at = i; break; }
+    if (music) rest.splice(at, 1);
+    else music = guideApp('music');
+    rest.splice(at, 0, {id: 'folder:apple', title: 'Apple', folder: true, apps: [music, guideApp('facetime'), guideApp('fitness'), guideApp('podcasts')]});
+  }
+
+  var guideNode = null;
+
+  // MARK: - AirPods: an AirPods or Beats output joining (on the TV: AirPods.java); in the preview, A or the CC tiles
+
+  var airpods = null, airTimer = 0, airNode = null;
+
+  function toggleAirPods() {
+    var bt = CONFIG.previewBluetooth || [], name = null;
+    for (var i = 0; i < bt.length; i++) if (/airpods|beats/i.test(bt[i])) { name = bt[i]; break; }
+    setAirPods(airpods ? null : (name || 'AirPods Pro'));
+  }
+
+  /** Joined (a name) or gone (null): the card slides in for 3.5 s, the glyph by the bubble, the HUD's buds. */
+  function setAirPods(name) {
+    airpods = name;
+    if (hud) setClass(hud.node, 'air', !!name);
+    renderPill();
+    ccRefresh();
+    clearTimeout(airTimer);
+    if (!name) { mv.air.set(0); Motion.kick(); return; }
+    if (!airNode) {
+      airNode = el('div', '', $('stage'));
+      airNode.id = 'airtoast';
+      el('div', 'glass', airNode);
+      sym('airpods', airNode).className += ' icon';
+      el('div', 'title', airNode);
+      el('div', 'sub', airNode, tr('Connected · Spatial Audio'));
+    }
+    airNode.querySelector('.title').textContent = name;
+    mv.air.set(1);
+    airTimer = setTimeout(function () { mv.air.set(0); Motion.kick(); }, 3500);
+    Motion.kick();
+  }
+
+  function drawAir() {
+    if (!airNode) return;
+    var v = mv.air.x, a = Motion.clamp(v, 0, 1);
+    T(airNode, 'translateY(' + r2(36 + 72 * v) + 'px)');
+    A(airNode, a);
+    V(airNode, a);
+  }
+
+  /** OK on a guide: its card over the home screen; OK or Back closes it. */
+  function openGuide(key) {
+    var g = GUIDES[key];
+    closeGuide(true);
+    var layer = guideNode = el('div', 'layer', $('stage'));
+    layer.id = 'guide';
+    el('div', 'veil', layer);
+    var card = el('div', 'card', layer), plate = el('div', 'plate', card);
+    paint(plate, g.top, g.bottom);
+    sym(g.symbol, plate);
+    el('div', 'title', card, g.title);
+    el('div', 'sub', card, tr('Use your iPhone with AirPlay'));
+    var steps = el('ol', 'steps', card), list = g.steps();
+    for (var i = 0; i < list.length; i++) {
+      var li = el('li', '', steps);
+      el('span', 'n', li, String(i + 1));
+      el('span', 't', li, list[i]);
+    }
+    var qr = el('div', 'qr', card), img = el('img', '', qr);
+    img.src = 'qr/' + g.qr + '.png';
+    el('div', 'scan', card, tr('Scan with your iPhone'));
+    el('div', 'foot', card, tr('AirPlay needs a TV that supports it (Settings › Channels & Inputs › Apple AirPlay & HomeKit).'));
+    layer.onclick = function () { closeGuide(); };
+    setTimeout(function () { setClass(layer, 'open', true); }, 20);
+  }
+
+  function closeGuide(quiet) {
+    var layer = guideNode;
+    if (!layer) return;
+    guideNode = null;
+    setClass(layer, 'open', false);
+    setTimeout(function () { if (layer.parentNode) layer.parentNode.removeChild(layer); }, quiet ? 0 : 320);
   }
 
   function addFolder(into, apps, id, title) {
@@ -607,6 +724,7 @@
   // The page's springs. lift: how far the page has risen for the grid (px); tab: TV 0, Home 1, Welly 2 (between them
   // mid-swap); drawer: Control Center 0..1; full: the Top Shelf's full screen 0..1; dock: the Dock's scroll (px);
   // par: the art's counter-parallax (px); launch/wake: the page receding for an app, and back from the screensaver.
+  var AIRPODS_TOAST = [0.38, 0.82];
   var mv = {
     lift: spring(P.SPATIAL_SCROLL).px(), tab: spring(P.TAB_SWAP), drawer: spring(P.SHEET_OPEN), full: spring(P.SPATIAL_SCROLL),
     dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
@@ -615,7 +733,9 @@
     rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL),
     ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP),
     // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
-    brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px()
+    brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px(),
+    // air: the AirPods card at the top right (0 hidden, 1 in place).
+    air: spring(AIRPODS_TOAST)
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
@@ -762,6 +882,7 @@
     }
     if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
     drawFolder();
+    drawAir();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
@@ -1049,7 +1170,13 @@
     avatar.style.backgroundImage = url;
     // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes.
     $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
-    $('quotes').style.right = (45 + pill.offsetWidth + 14 + 48 + 24) + 'px';
+    var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24;
+    if (air) {
+      air.style.right = (right - 8) + 'px';
+      setClass(air, 'on', !!airpods);
+      if (airpods) right += 34 + 14;
+    }
+    $('quotes').style.right = right + 'px';
   }
 
   /** What's playing (or a timer), when the TV tells us: the pill widens to show it with three moving bars. */
@@ -1648,10 +1775,12 @@
       t.push({label: tr('Power'), symbol: 'power', run: googleOnly});
       // preview_wifi / preview_bluetooth (config.properties) stand in for what the TV reports, as Android shows it.
       var bt = CONFIG.previewBluetooth || [], wifi = CONFIG.previewWifi;
-      t.push({label: tr('Audio Output'), symbol: 'speaker', run: googleOnly, detail: function () { return bt[0] || tr('TV Speakers'); }});
+      // Audio Output and Bluetooth: in the preview they connect the AirPods (or let them go), as A does.
+      t.push({label: tr('Audio Output'), symbol: function () { return airpods ? 'airpods' : 'speaker'; }, run: toggleAirPods,
+        detail: function () { return airpods || bt[0] || tr('TV Speakers'); }});
       t.push({label: tr('Wi-Fi'), symbol: 'wifi', run: googleOnly, active: function () { return true; }, detail: function () { return wifi || tr('Connected'); }});
-      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: googleOnly, active: function () { return bt.length > 0; },
-        detail: function () { return bt[0] || onOff(false); }});
+      t.push({label: tr('Bluetooth'), symbol: 'bluetooth', run: toggleAirPods, active: function () { return !!airpods || bt.length > 0; },
+        detail: function () { return airpods || bt[0] || onOff(false); }});
     }
     t.push({label: tr('Dark Mode'), symbol: 'appearance', run: toggleDark, active: darkOn, detail: function () { return onOff(darkOn()); }});
     if (PREVIEW) {
@@ -1708,7 +1837,7 @@
 
   function ccGlyph(spec, parent) {
     if (spec.glyph) return el('span', spec.glyph, parent);
-    return sym(spec.symbol, parent);
+    return sym(typeof spec.symbol === 'function' ? spec.symbol() : spec.symbol, parent);
   }
 
   /** The panel ccMode says: Control Center's controls, or the profile panel. */
@@ -1804,13 +1933,13 @@
   function ccTile(row, spec, col, wide) {
     var tile = el('div', 'cctile' + (spec.detail ? '' : ' solo') + (wide ? ' wide' : ''), row);
     tile.style.left = (col * CC.col) + 'px';
-    var dot = el('span', 'dot', tile);
-    ccGlyph(spec, dot);
+    var dot = el('span', 'dot', tile), glyph = ccGlyph(spec, dot);
     el('div', 'label', tile, spec.label);
     var detail = spec.detail ? el('div', 'detail', tile) : null;
     var item = ccAdd(tile, new Fx(tile, {grow: wide ? 0.03 : 0.05}), function () { spec.run(); ccRefresh(); if (spec.pop) popGlyph(tile, dot); }, 'tile', wide ? CC.body / 2 : col * CC.col + CC.tileW / 2);
     item.spec = spec;
     item.detail = detail;
+    item.glyph = glyph;
   }
 
   /** Do Not Disturb turned on: its moon swings in (tvOS's micro-animation); off, it only fades back to grey. */
@@ -1850,6 +1979,10 @@
       if (!it.spec) continue;
       setClass(it.node, 'on', !!(it.spec.active && it.spec.active()));
       if (it.name && it.spec.name) it.name.textContent = it.spec.name();
+      if (it.glyph && typeof it.spec.symbol === 'function') {   // Audio Output: the speaker, or the AirPods
+        var mask = 'url(symbols/' + it.spec.symbol() + '.png)';
+        it.glyph.style.webkitMaskImage = it.glyph.style.maskImage = mask;
+      }
       if (it.detail) {
         var text = it.spec.detail();
         it.detail.textContent = text;
@@ -2122,12 +2255,14 @@
     el('div', 'glass', node);
     var fill = el('div', 'fill', node), num = el('div', 'num', node), spk = el('div', 'spk', node);
     sym('sunny', node).className += ' sunglyph';
+    sym('airpods', node).className += ' airglyph';
     el('span', 'cone', spk);
     el('span', 'arc a1', spk);
     el('span', 'arc a2', spk);
     el('span', 'arc a3', spk);
     el('span', 'slash', spk);
     hud = {node: node, fill: fill, num: num};
+    setClass(node, 'air', !!airpods);
     showVolumeLevel();
   }
 
@@ -3144,10 +3279,12 @@
         return;
       case Z.APPS:
         if (others[st.grid] && others[st.grid].folder) { openFolder(others[st.grid], fxCells[st.grid]); return; }
+        if (others[st.grid] && others[st.grid].guide) { openGuide(others[st.grid].guide); return; }
         if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
         return;
       case Z.FOLDER:
         var fa = folderOpen && folderOpen.apps[st.folder];
+        if (fa && fa.guide) { openGuide(fa.guide); return; }
         if (fa) { launchMotion(fxFolder[st.folder]); closeFolder(true); launcher(fa.id, fa.title)(); }
         return;
       case Z.SETTINGS:
@@ -3503,6 +3640,14 @@
     // Away longer than the grace: the lock first (the screensaver goes with it).
     if (Profiles.needsLock()) { e.preventDefault(); showLock({from: 'idle'}); return; }
     touch();
+    // A guide is up: OK or Back closes it, the rest wait.
+    if (guideNode) {
+      if (k === TV.keys.ok || k === TV.keys.back || k === 27 || k === 8) closeGuide();
+      e.preventDefault();
+      return;
+    }
+    // A in the preview: AirPods connect (or leave), as the TV shows when they join over Bluetooth.
+    if (!typing && k === 65 && PREVIEW) { e.preventDefault(); if (!e.repeat) toggleAirPods(); return; }
     // A browser's stand-ins for the remote: H is Home (a press: the Dock; held: Recent Apps), S the screensaver (S
     // again: back), V keeps the volume HUD up in the preview. Not while Welly's text field has the keyboard.
     if (!typing && (k === 72 || k === 83 || (k === 86 && PREVIEW))) {
@@ -3706,13 +3851,18 @@
     // The Dock's and All Apps' titles in order (folders as their names), for the tests.
     apps: function () {
       var tcl = others.filter(function (a) { return a.id === 'folder:tcl'; })[0];
+      var apple = others.filter(function (a) { return a.id === 'folder:apple'; })[0];
       return {dock: shelf.map(function (a) { return a.title; }), grid: others.map(function (a) { return a.title; }),
-        tcl: tcl ? tcl.apps.map(function (a) { return a.title; }) : []};
+        tcl: tcl ? tcl.apps.map(function (a) { return a.title; }) : [],
+        apple: apple ? apple.apps.map(function (a) { return a.title + (a.guide ? ' (guide)' : ''); }) : []};
     },
     folder: function () {
       for (var i = 0; i < others.length; i++) if (others[i].folder) { openApps(i); openFolder(others[i], fxCells[i]); return true; }
       return false;
     },
+    // AirPods (as A does) and an Apple guide, for the tests and the screenshots.
+    airpods: function (name) { setAirPods(name === undefined ? 'AirPods Pro' : name); },
+    guide: function (key) { if (key) openGuide(key); else closeGuide(); },
     brightness: function () { return Prefs.brightness(); },
     setup: function (n) { runSetup(); if (n) Setup.go(n); },
     cc: function () { return ccItems.map(function (it) { return {kind: it.kind, label: it.spec ? it.spec.label : it.node.textContent, row: it.row}; }); },

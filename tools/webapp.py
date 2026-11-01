@@ -152,7 +152,7 @@ def files(config, made_by):
             with open(os.path.join(symbols, name), 'rb') as f:
                 out['symbols/' + name] = f.read()
     # The wallpapers (aerials) and the profile avatars (yours too: avatars/memoji.png), shared with the Android app.
-    for folder in ('aerials', 'avatars', 'profiles'):
+    for folder in ('aerials', 'avatars', 'profiles', 'qr'):
         src = os.path.join(ROOT, 'app', 'assets', folder)
         for name in sorted(os.listdir(src)) if os.path.isdir(src) else []:
             if name.lower().endswith(('.jpg', '.png')):

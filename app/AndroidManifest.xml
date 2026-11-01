@@ -131,6 +131,16 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Sidebar" />
 
+        <!-- FaceTime, Fitness+, Podcasts, Apple Music: how to AirPlay them from an iPhone (All Apps' Apple folder). -->
+        <activity
+            android:name=".AppleGuideActivity"
+            android:process=":home"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Home" />
+
         <!-- The app's icon opens the settings (switch between Free My TV and the original home screen). -->
         <activity
             android:name=".SettingsActivity"

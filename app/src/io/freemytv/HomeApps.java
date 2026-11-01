@@ -81,6 +81,8 @@ final class HomeApps {
     static final int BRIGHTNESS = 19, VOLUME = 20, APPEARANCE = 21;
     /** All Apps' folder ("TV & Utilities"): its apps in `children`; the home screen opens it over the grid. */
     static final int FOLDER = 22;
+    /** FaceTime, Fitness+, Podcasts (and Apple Music when it isn't installed): AppleGuideActivity's AirPlay steps. */
+    static final int APPLE_GUIDE = 23;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -442,9 +444,75 @@ final class HomeApps {
                     && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()));
             (utility ? util : rest).add(it);
         }
+        appleFolder(rest);
         folder(rest, tcl, "folder:tcl", "TCL");   // the maker's name
         folder(rest, util, "folder:utilities", Ui.tr("TV & Utilities"));
         return rest;
+    }
+
+    /**
+     * "Apple", where Apple Music goes (GRID_ORDER's first): Apple Music when it's installed (else its AirPlay guide), then
+     * the FaceTime, Fitness+ and Podcasts guides. Apple TV stays in the Dock.
+     */
+    private static void appleFolder(List<Item> rest) {
+        List<Item> apple = new ArrayList<>();
+        int at = 0;
+        Item music = null;
+        for (int i = 0; i < rest.size(); i++) {
+            Item it = rest.get(i);
+            if (it.kind == APP && gridRank(it.pkg, it.label) == 0) {
+                music = it;
+                at = i;
+                break;
+            }
+        }
+        if (music != null) rest.remove(at);
+        else music = guideItem("music", "Apple Music");
+        apple.add(music);
+        apple.add(guideItem("facetime", "FaceTime"));
+        apple.add(guideItem("fitness", "Fitness+"));
+        apple.add(guideItem("podcasts", "Podcasts"));
+        Item folder = shortcut(FOLDER, "folder:apple", "Apple", "folder");
+        folder.children = apple;
+        rest.add(at, folder);
+    }
+
+    private static final Map<String, Item> GUIDES = new HashMap<>();
+
+    /** The guides' cards, made in the background with All Apps' list (others) so the grid only picks them up. */
+    private static void warmGuides(Context c) {
+        guideItem(c, "music", "Apple Music");
+        guideItem(c, "facetime", "FaceTime");
+        guideItem(c, "fitness", "Fitness+");
+        guideItem(c, "podcasts", "Podcasts");
+    }
+
+    private static Item guideItem(String key, String label) {
+        return guideItem(null, key, label);
+    }
+
+    /**
+     * A guide's card: its symbol in white on its colours (Apple's names stay as they are in every language). Without a
+     * context (not warmed yet), a plain card for now.
+     */
+    private static Item guideItem(Context c, String key, String label) {
+        synchronized (GUIDES) {
+            Item cached = GUIDES.get(key);
+            if (cached != null) return cached;
+        }
+        String[] g = AppleGuideActivity.guide(key);
+        Item it = shortcut(APPLE_GUIDE, "guide:" + key, label, g[1]);
+        if (c == null) return it;
+        Composed out = new Composed();
+        out.style = new int[] {(int) Long.parseLong(g[2], 16), (int) Long.parseLong(g[3], 16), 1};
+        out.logo = symbolLogo(c, g[1]);
+        out.emblemHeight = 0.5f;
+        out.ink = 0.4f;
+        if (out.logo != null) out.applyTo(it);
+        synchronized (GUIDES) {
+            GUIDES.put(key, it);
+        }
+        return it;
     }
 
     /** `apps` as a folder at the end of `into`; one app stays an app, none adds nothing. */
@@ -619,7 +687,10 @@ final class HomeApps {
         for (Item it : items) {
             if (it.kind == WIFI) it.detail = state[0];
             else if (it.kind == BLUETOOTH) it.detail = state[1];
-            else if (it.kind == AUDIO) it.detail = state[2];
+            else if (it.kind == AUDIO) {
+                it.detail = state[2];
+                it.symbol = AirPods.matches(state[2]) ? "airpods" : "speaker";
+            }
             else if (it.kind == DND) it.detail = state[3];
             // Lit (the symbol on a coloured plate, as tvOS's toggles): Wi-Fi up, Bluetooth on, Do Not Disturb on.
             if (it.kind == WIFI || it.kind == BLUETOOTH || it.kind == DND) {
@@ -845,6 +916,7 @@ final class HomeApps {
             TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
         }
         items.add(special(c, SETTINGS, "freemytv-settings", "mahitTV", "sparkles"));
+        warmGuides(c);
         return items;
     }
 
@@ -888,6 +960,10 @@ final class HomeApps {
             case SETTINGS:   // full screen, or the Floating Sidebar over the home screen (Settings Style)
                 intent = new Intent().setComponent(new ComponentName(a,
                         "sidebar".equals(Prefs.settingsStyle()) ? SettingsSidebar.class : SettingsActivity.class));
+                break;
+            case APPLE_GUIDE:
+                intent = new Intent().setComponent(new ComponentName(a, AppleGuideActivity.class))
+                        .putExtra(AppleGuideActivity.EXTRA_KEY, it.key.substring("guide:".length()));
                 break;
             case SLEEP:
                 intent = new Intent().setComponent(new ComponentName(a, SettingsActivity.class))
