@@ -41,12 +41,13 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     exit 1
   fi
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
   java -cp "$wallpaper_classes" io.freemytv.AerialRequestTest
   java -cp "$wallpaper_classes" io.freemytv.DockRecessTest   # the Top Shelf never hides the Dock
+  java -cp "$wallpaper_classes" io.freemytv.RowAccessTest   # only the manager changes keys and sign-ins
   ./build.sh
   watch_classes="$(mktemp -d)"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
