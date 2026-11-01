@@ -392,15 +392,15 @@
     [/disney/i, /^disney/i], [/tubi/i, /^tubi$/i], [/youtube\.?(tv)?unplugged|youtubetv/i, /^youtube tv$/i],
     [/twitch/i, /^twitch$/i], [/hulu/i, /^hulu$/i], [/(^|\.)hbo|wbd/i, /^(hbo )?max$/i], [/peacock/i, /^peacock/i],
     [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i],
-    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i], [/freeplay/i, /freeplay/i],
-    // From here (TCL_FIRST) TCL's utilities, in the TCL folder in this order.
+    // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
+    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i],
     [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
     [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
     [/quick.?panel/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
     [/exhibit/i, /^t-?exhibition$/i]
   ];
 
-  var TCL_FIRST = 16;
+  var TCL_FIRST = 13;
 
   /**
    * One of TCL's utilities, for the TCL folder (as HomeApps.tclApp): GRID_ORDER's last ones, or another com.tcl app it
@@ -425,7 +425,7 @@
   }
 
   // The TV's own utilities (its settings, store, browser, files, inputs…): together in one folder at the end of All Apps.
-  var UTILITY = /browser|settings|store|google\.play|play store|file|media ?player|gallery|help|manual|guide|update|account|smartthings|tv-viewer|livetv|channel|input|hdmi|tcl|usb|miracast/i;
+  var UTILITY = /browser|settings|store|google\.play|play store|file|media ?player|gallery|help|manual|guide|update|account|smartthings|tv-viewer|livetv|channel|input|hdmi|tcl|usb|miracast|freeplay/i;
 
   /*
    * All Apps' list with two folders at its end, so it fits one screen (as HomeApps.folders): "TCL" (the maker's apps,
@@ -472,9 +472,13 @@
   function appleFolder(rest) {
     var at = 0, music = null;
     for (var i = 0; i < rest.length; i++) if (!rest[i].folder && gridRank(rest[i]) === 0) { music = rest[i]; at = i; break; }
+    var installed = false;   // Apple Music on the Dock: it stays only there, no guide for it in the folder
+    for (var j = 0; j < apps.length; j++) if (gridRank(apps[j]) === 0) installed = true;
     if (music) rest.splice(at, 1);
-    else music = guideApp('music');
-    rest.splice(at, 0, {id: 'folder:apple', title: 'Apple', folder: true, apps: [music, guideApp('facetime'), guideApp('fitness'), guideApp('podcasts')]});
+    else if (!installed) music = guideApp('music');
+    var list = [guideApp('facetime'), guideApp('fitness'), guideApp('podcasts')];
+    if (music) list.unshift(music);
+    rest.splice(at, 0, {id: 'folder:apple', title: 'Apple', folder: true, apps: list});
   }
 
   var guideNode = null;
@@ -911,6 +915,14 @@
   var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
     recent: 0, ccInput: 0, folder: 0};
   var cards = [];
+  var topFromTab = null;   // the tab ↑ left for the bubble (← goes back to it)
+  // The pointer only moves the focus once it has really moved since the last key: a mouse resting on the screen
+  // doesn't steal it while the arrows slide the grid or the Dock under it.
+  var keyAt = 0, mouseAt = 0, mouseX = -1, mouseY = -1;
+  document.addEventListener('mousemove', function (e) {
+    if (e.clientX === mouseX && e.clientY === mouseY) return;
+    mouseX = e.clientX; mouseY = e.clientY; mouseAt = Date.now();
+  });
   var was = {drawer: false, full: false, row: null};
 
   function sheetOpen() { return st.zone === Z.APPS || st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG || st.zone === Z.CITY || st.zone === Z.KEY || st.zone === Z.WALLPAPER || st.zone === Z.ABOUT || st.zone === Z.RECENTS || st.zone === Z.FOLDER; }
@@ -1181,7 +1193,7 @@
     if (air) {
       air.style.right = (right - 8) + 'px';
       setClass(air, 'on', !!airpods);
-      if (airpods) right += 34 + 14;
+      if (airpods) right += 40 + 14;
     }
     $('quotes').style.right = right + 'px';
   }
@@ -2041,7 +2053,7 @@
       st.ccInput = i;
       updateFocus();
     };
-    node.onclick = function () { node.onmouseover(); activate(); };
+    node.onclick = function () { mouseAt = Date.now() + 1; node.onmouseover(); activate(); };
   }
 
   function openInputsSheet() {
@@ -2221,7 +2233,7 @@
     if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
-        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
     }
     if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
   }
@@ -2539,8 +2551,8 @@
   }
 
   function folderHover(node, i) {
-    node.onmouseover = function () { if (st.zone !== Z.FOLDER) return; st.folder = i; updateFocus(); };
-    node.onclick = function () { node.onmouseover(); activate(); };
+    node.onmouseover = function () { if (keyAt > mouseAt || st.zone !== Z.FOLDER) return; st.folder = i; updateFocus(); };
+    node.onclick = function () { mouseAt = Date.now() + 1; node.onmouseover(); activate(); };
   }
 
   /** Keeps the focused app's row in view: the grid slides a row at a time (SPATIAL_SCROLL, through mv.folderScroll). */
@@ -3648,9 +3660,11 @@
         break;
       case Z.TABS:
         // ← → walk TV · Home · Welly · the pill; focusing a tab selects it, as on tvOS.
-        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = 3; }
+        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = 3; topFromTab = null; }
         else if (dx) st.tab = Math.max(0, Math.min(TAB.WELLY, st.tab + dx));
         else if (dy > 0) enterTab();
+        // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the other tabs.
+        else if (dy < 0) { st.zone = Z.TOP; st.top = 3; topFromTab = st.tab; }
         break;
       case Z.HOUSE:
         if (!House.move(dx, dy)) st.zone = Z.TABS;
@@ -3661,8 +3675,9 @@
       case Z.TOP:
         if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;
-        else if (dx < 0) { st.zone = Z.TABS; st.tab = TAB.WELLY; }
-        else if (dy > 0) enterTab();
+        // ← from the bubble: the tab it was reached from with ↑, else the nearest one (Welly).
+        else if (dx < 0) { st.zone = Z.TABS; st.tab = topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
+        else if (dy > 0) { topFromTab = null; enterTab(); }
         break;
       case Z.DRAWER:
         // Inputs: ↑ ↓ through the inputs, ← back to the tiles.
@@ -3695,6 +3710,8 @@
           break;
         }
         var g = st.grid + dx + dy * COLS;
+        // ↓ onto a shorter last row: its last app (as Android's moveGrid), not a dead end.
+        if (dy > 0 && g >= others.length && Math.floor(st.grid / COLS) < Math.floor((others.length - 1) / COLS)) g = others.length - 1;
         if (g >= 0 && g < others.length && (dx === 0 || Math.floor(g / COLS) === Math.floor(st.grid / COLS))) st.grid = g;
         break;
       case Z.SETTINGS:
@@ -3762,6 +3779,7 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
+      if (keyAt > mouseAt) return;
       if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.CITY || zone === Z.KEY || zone === Z.ABOUT ||
           zone === Z.RECENTS))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
@@ -3781,7 +3799,7 @@
       else if (zone === Z.RECENTS) st.recent = index;
       updateFocus();
     };
-    node.onclick = function () { node.onmouseover(); activate(); };
+    node.onclick = function () { mouseAt = Date.now() + 1; node.onmouseover(); activate(); };
   }
 
   // MARK: - Toast
@@ -3951,6 +3969,7 @@
 
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, now = Date.now();
+    keyAt = now;
     if (fieldKey(k)) return;
     var typing = st.zone === Z.WELLY && window.Welly && Welly.typing();
     // The volume works over everything (the intro, the lock, the screensaver): the TV's keys, + and − on a keyboard.
@@ -4178,6 +4197,7 @@
       var apple = others.filter(function (a) { return a.id === 'folder:apple'; })[0];
       return {dock: shelf.map(function (a) { return a.title; }), grid: others.map(function (a) { return a.title; }),
         tcl: tcl ? tcl.apps.map(function (a) { return a.title; }) : [],
+        utilities: (others.filter(function (a) { return a.id === 'folder:utilities'; })[0] || {apps: []}).apps.map(function (a) { return a.title; }),
         apple: apple ? apple.apps.map(function (a) { return a.title + (a.guide ? ' (guide)' : ''); }) : []};
     },
     folder: function () {
