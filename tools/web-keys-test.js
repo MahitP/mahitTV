@@ -29,9 +29,10 @@ function state(page) {
   });
 }
 
+var browser;
 (async function () {
   await new Promise(function (done) { server.listen(0, '127.0.0.1', done); });
-  var browser = await chromium.launch({headless: true});
+  browser = await chromium.launch({headless: true});
   var page = await browser.newPage({viewport: {width: 1920, height: 1080}});
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
@@ -47,7 +48,7 @@ function state(page) {
   assert.ok(labels.indexOf('All Apps') < 0 && labels.indexOf('Recent Apps') < 0, 'no All Apps or Recent Apps tile: ' + JSON.stringify(labels));
   assert.ok(!labels.some(function (l) { return /^HDMI|^Live TV$/.test(l); }), 'no tile per input: ' + JSON.stringify(labels));
   await page.evaluate(function () { FreeMyTV.drawer(); });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1600);   // SHEET_OPEN's spring is still a few px out at 800 ms
   var panel = await page.evaluate(function () {
     var r = document.querySelector('#drawer').getBoundingClientRect();
     return {zone: FreeMyTV.state.zone, left: r.left, top: r.top, width: r.width, bottom: r.bottom, opacity: parseFloat(getComputedStyle(document.querySelector('#drawer')).opacity)};
@@ -159,4 +160,8 @@ function state(page) {
   assert.deepStrictEqual(errors, [], 'no page errors');
   await browser.close(); server.close();
   console.log('web-keys-test: passed');
-})().catch(function (err) { server.close(); console.error(err.stack || err); process.exitCode = 1; });
+})().catch(function (err) {
+  // Close the browser too, or a failed check leaves Chromium running and tools/check.sh never ends.
+  console.error(err.stack || err); process.exitCode = 1; server.close();
+  if (browser) browser.close().catch(function () {});
+});
