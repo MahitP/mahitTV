@@ -1174,7 +1174,7 @@
     if (air) {
       air.style.right = (right - 8) + 'px';
       setClass(air, 'on', !!airpods);
-      if (airpods) right += 34 + 14;
+      if (airpods) right += 40 + 14;
     }
     $('quotes').style.right = right + 'px';
   }
@@ -2214,7 +2214,7 @@
     if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
-        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
     }
     if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
   }

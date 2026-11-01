@@ -5512,7 +5512,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Symbols.warm(getContext(), "controls", 26 * k);
         float b = PILL_H * k, x = bubbleRect.left - 16 * k, cy = pillRect.centerY();
         if (airName != null) {
-            float aw = 34 * k;
+            float aw = 40 * k;
             airRect.set(x - aw, cy - aw / 2, x, cy + aw / 2);
             x -= aw + 14 * k;
         } else {
@@ -6098,15 +6098,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float v = airToast.value;
         if (v <= 0.01f || airShown == null || airTitle == null) return;
         String sub = airSpatial ? Ui.tr("Connected · Spatial Audio") : Ui.tr("Connected");
-        float icon = 40 * k, pad = 22 * k, gap = 18 * k;
+        float icon = 40 * k, pad = 24 * k, gap = 18 * k, iconW = Symbols.width(getContext(), "airpods", icon);
         float tw = Math.max(airTitle.measureText(airShown), airSub.measureText(sub));
-        float cw = Math.min(pad + icon + gap + tw + pad + 6 * k, 640 * k), ch = 84 * k;
+        float cw = Math.min(pad + iconW + gap + tw + pad + 6 * k, 640 * k), ch = 84 * k;
         float right = PILL_RIGHT * k, top = (36 + 72 * v) * k;
         tmp.set(right - cw, top, right, top + ch);
         int save = c.saveLayerAlpha(tmp.left - 4, tmp.top - 4, tmp.right + 4, tmp.bottom + 4, Math.round(255 * Ui.clamp(v)));
         scene.glass(c, tmp, ch / 2, SMOKE, 0.55f, 0, 0, 0.02f, 1);
-        Symbols.draw(getContext(), c, "airpods", tmp.left + pad + icon / 2, tmp.centerY(), icon, 0xFFFFFFFF);
-        float tx = tmp.left + pad + icon + gap;
+        Symbols.draw(getContext(), c, "airpods", tmp.left + pad + iconW / 2, tmp.centerY(), icon, 0xFFFFFFFF);
+        float tx = tmp.left + pad + iconW + gap;
         c.drawText(airShown, tx, tmp.centerY() - 4 * k, airTitle);
         c.drawText(sub, tx, tmp.centerY() + 24 * k, airSub);
         c.restoreToCount(save);

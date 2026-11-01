@@ -262,7 +262,7 @@ What's real here and what isn't. Nothing in mahitTV pretends to be an Apple app.
 
 ### Built
 
-- **AirPods and Beats.** When a Bluetooth output whose name contains "AirPods" or "Beats" joins
+- **AirPods and Beats** (the glyph is drawn after AirPods 4: round heads turned inward, short stems). When a Bluetooth output whose name contains "AirPods" or "Beats" joins
   (`AudioManager.registerAudioDeviceCallback`, no permission needed; `AirPods.java`):
   - A Liquid Glass card slides in at the top right (y 36 → 108, spring 0.38 / 0.82) for 3.5 s. It shows the device's
     name and "Connected".
@@ -288,9 +288,11 @@ What's real here and what isn't. Nothing in mahitTV pretends to be an Apple app.
 ### Installing Apple Music yourself
 
 - **From Google Play:** where it's offered for the TV, install it there. The Apple folder opens it once it's installed.
-- **Sideloading:** sideload only an APK you trust (from Google Play, or one you pulled from your own phone), with
-  `adb install -r <file>.apk`. The phone build runs but isn't made for a remote. mahitTV finds it by its package,
-  `com.apple.android.music`.
+- **Sideloading:** `tools/sideload.sh <TV IP> <file>` installs an `.apk` or a split bundle (`.apks`, `.apkm`, `.xapk`)
+  over ADB. It first refuses any file whose certificate doesn't name Apple Inc., since a repackaged APK from a mirror
+  is how malware gets onto a TV, and it installs only the pieces for the TV's processor. The phone build runs, but it
+  isn't made for a remote. mahitTV finds it by its package, `com.apple.android.music`, and the Apple folder opens it.
+  FaceTime, Fitness+ and Podcasts have no Android app to sideload, so their guides stay.
 - **Cider and similar:** these are desktop apps, with no Android TV build.
 - **AirPlay on TCL:** where the model has it, turn it on in the TV's own settings (*Settings › Channels & Inputs ›
   Apple AirPlay & HomeKit*). mahitTV doesn't change it, per the rule against changing the TV's own settings.
