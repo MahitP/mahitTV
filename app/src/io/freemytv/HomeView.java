@@ -338,6 +338,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The AirPods glyph left of the bubble, while AirPods or Beats are the output (empty otherwise). */
     private final RectF airRect = new RectF();
     private final RectF miniDst = new RectF();
+    /** The tab ↑ left for Control Center's bubble (← goes back to it), or −1. */
+    private int topFromTab = -1;
     private Bitmap pillAvatar;
     private int pillFrom = Z_SHELF;          // where ↓ from the pill goes back to
     private float pillTimeW;
@@ -6166,11 +6168,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     onBubble = false;   // → from the bubble: the pill
                 } else if (dx < 0 && !onBubble) {
                     onBubble = true;    // ← from the pill: the bubble
+                } else if (dx < 0 && topFromTab >= 0) {
+                    zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
+                    topIndex = topFromTab;
+                    topFromTab = -1;
                 } else if (dx < 0) {
                     zone = Z_TOP;
                     topIndex = 2 + lightButtons.size();
                     if (topIndex < 3) selectTab(topIndex);
                 } else if (dy > 0) {
+                    topFromTab = -1;
                     enterTab();
                 } else {
                     deadEnd(dx, dy);
@@ -6182,6 +6189,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     int next = topIndex + dx;
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
+                        topFromTab = -1;
                         onBubble = true;   // the bubble comes first, then the pill
                     } else if (next < 0) {
                         deadEnd(dx, 0);
@@ -6193,8 +6201,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else if (dy > 0) {
                     enterTab();
                 } else {
-                    deadEnd(0, dy);
-                    return true;
+                    // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the tabs.
+                    topFromTab = topIndex < 3 ? topIndex : -1;
+                    zone = Z_STATUS;
+                    onBubble = true;
                 }
                 break;
             case Z_HOUSE:

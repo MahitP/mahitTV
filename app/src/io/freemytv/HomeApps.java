@@ -209,10 +209,9 @@ final class HomeApps {
         order("^com\\.cbs\\.|paramount", "^paramount"),
         order("^com\\.instagram\\.", "^instagram$"),
         order("^com\\.roblox\\.", "^roblox$"),
+        // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
         order("alexa", "alexa"),
         order("^com\\.tcl\\.tv$", "^tv$"),
-        order("freeplay", "freeplay"),
-        // From here (TCL_FIRST) TCL's utilities, in the TCL folder in this order.
         order("tclplus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
         order("mediacenter|mediaplayer|videoplayer", "^media ?player$"),
         order("instructions|userguide|manual", "^user ?guide$"),
@@ -222,14 +221,14 @@ final class HomeApps {
         order("exhibit", "^t-?exhibition$"),
     };
 
-    /** GRID_ORDER's first TCL utility (TCL TV+): it and the ones after it go in the TCL folder. */
-    private static final int TCL_FIRST = 16;
+    /** GRID_ORDER's first TCL app (Works with Alexa): it and the ones after it go in the TCL folder. */
+    private static final int TCL_FIRST = 13;
     /** A browser (TCL's BrowseHere): TV & Utilities', not the TCL folder's. */
     private static final Pattern BROWSER = Pattern.compile("browse", Pattern.CASE_INSENSITIVE);
 
     /**
      * One of TCL's utilities, for the TCL folder: GRID_ORDER's last ones, or another com.tcl app it doesn't place (TCL's
-     * Alexa and TV stay in the grid; its browser goes in TV & Utilities).
+     * browser goes in TV & Utilities).
      */
     static boolean tclApp(String pkg, String label) {
         int r = gridRank(pkg, label);
@@ -425,7 +424,7 @@ final class HomeApps {
     /** The TV's own utilities, by package or name: its settings, store, browser, files, players, inputs and the maker's apps. */
     private static final Pattern UTILITY = Pattern.compile(
             "settings|vending|store|browser|chrome|files|filemanager|explorer|mediaplayer|gallery|help|manual|guide|update|account"
-                    + "|tcl|tvcenter|livetv|tv\\.input|hdmi|usb|miracast|keystone|smartthings", Pattern.CASE_INSENSITIVE);
+                    + "|tcl|tvcenter|livetv|tv\\.input|hdmi|usb|miracast|keystone|smartthings|freeplay", Pattern.CASE_INSENSITIVE);
 
     /**
      * All Apps' list with two folders at its end, so it fits one screen: "TCL" (the maker's apps, in GRID_ORDER's order)
@@ -467,8 +466,8 @@ final class HomeApps {
             }
         }
         if (music != null) rest.remove(at);
-        else music = guideItem("music", "Apple Music");
-        apple.add(music);
+        else if (!musicInstalled) music = guideItem("music", "Apple Music");   // on the Dock: only there
+        if (music != null) apple.add(music);
         apple.add(guideItem("facetime", "FaceTime"));
         apple.add(guideItem("fitness", "Fitness+"));
         apple.add(guideItem("podcasts", "Podcasts"));
@@ -478,9 +477,12 @@ final class HomeApps {
     }
 
     private static final Map<String, Item> GUIDES = new HashMap<>();
+    /** Apple Music is installed (seen with All Apps' list): on the Dock, the folder adds no guide for it. */
+    private static volatile boolean musicInstalled;
 
     /** The guides' cards, made in the background with All Apps' list (others) so the grid only picks them up. */
     private static void warmGuides(Context c) {
+        musicInstalled = launchIntent(c.getPackageManager(), "com.apple.android.music") != null;
         guideItem(c, "music", "Apple Music");
         guideItem(c, "facetime", "FaceTime");
         guideItem(c, "fitness", "Fitness+");

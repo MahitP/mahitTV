@@ -11,6 +11,18 @@ var http = require('http');
 var path = require('path');
 var chromium = require('playwright').chromium;
 var root = path.join(__dirname, '..');
+function weatherFixture() {
+  var t = fs.readFileSync(path.join(root, 'tools', 'weather-fixture.json'), 'utf8');
+  var h = 3600000, d = 24 * h, now = Date.now(), thisHour = Math.floor(now / h) * h, today = Math.floor(now / d) * d;
+  function hour(ms) { return new Date(ms).toISOString().slice(0, 16); }
+  function day(ms) { return new Date(ms).toISOString().slice(0, 10); }
+  var hours = [], days = [], rises = [], sets = [];
+  for (var i = 0; i < 48; i++) hours.push(hour(thisHour + (i - 1) * h));
+  for (var j = 0; j < 8; j++) { days.push(day(today + j * d)); rises.push(hour(today + j * d + 6 * h)); sets.push(hour(today + j * d + 18 * h)); }
+  return t.replace('{NOW}', JSON.stringify(hour(thisHour))).replace('{HOURS}', JSON.stringify(hours)).replace('{DAYS}', JSON.stringify(days))
+    .replace('{SUNRISES}', JSON.stringify(rises)).replace('{SUNSETS}', JSON.stringify(sets));
+}
+
 var site = process.env.SITE ? path.resolve(process.env.SITE) : path.join(root, 'out', 'webos');
 var types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf'};
 
@@ -39,6 +51,9 @@ var browser = null;
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
   await page.addInitScript(function () { localStorage.clear(); });
+  // The forecast from tools/weather-fixture.json with times around now (as WeatherParseTest fills it), not the live
+  // Open-Meteo: the weather card's check doesn't hang on the network.
+  await page.route(/api\.open-meteo\.com/, function (route) { route.fulfill({contentType: 'application/json', body: weatherFixture()}); });
   await page.goto('http://127.0.0.1:' + server.address().port + '/index.html?nolock');
   await page.waitForTimeout(900);
   var s;
@@ -244,11 +259,32 @@ var browser = null;
   // The owner's TV: its Dock (Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu) and All Apps in their order.
   var lists = await page.evaluate(function () { localStorage.removeItem('mahittv.profile.' + Profiles.current().id); return FreeMyTV.apps(); });
   var wantGrid = ['Apple', 'YouTube Music', 'Spotify', 'Disney+', 'Tubi', 'YouTube TV', 'Twitch', 'Hulu', 'HBO Max',
-    'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'Works with Alexa', 'TV', 'Google TV Freeplay', 'TCL', 'TV & Utilities'];
+    'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'TCL', 'TV & Utilities'];
   assert.deepStrictEqual(lists.grid, wantGrid, 'All Apps follows the TV\'s order, the folders at its end: ' + JSON.stringify(lists.grid));
   assert.ok(lists.grid.length <= 18, 'All Apps fits one screen (3 rows of 6 under the Dock): ' + lists.grid.length);
-  assert.deepStrictEqual(lists.tcl, ['TCL TV+', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition'],
-    'the TCL folder holds TCL\'s 7 utilities in order: ' + JSON.stringify(lists.tcl));
+  assert.deepStrictEqual(lists.tcl, ['Works with Alexa', 'TV', 'TCL TV+', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition'],
+    'the TCL folder holds TCL\'s 9 apps in order: ' + JSON.stringify(lists.tcl));
+  assert.ok(lists.utilities.indexOf('Google TV Freeplay') >= 0, 'Google TV Freeplay is in TV & Utilities: ' + JSON.stringify(lists.utilities));
+
+  // Arrow keys: ↓ onto All Apps' shorter last row lands on its last app; ↑ from the tabs reaches Control Center's
+  // bubble without switching tabs, and ← goes back to that tab.
+  var nav = await page.evaluate(function () {
+    FreeMyTV.home();
+    var out = {}, s = FreeMyTV.state, n = FreeMyTV.apps().grid.length;
+    s.zone = 'apps'; s.grid = Math.min(n - 1, 6 + 5);   // row 2, column 6 (or the last one)
+    FreeMyTV.move(0, 1);
+    out.down = s.grid; out.last = n - 1;
+    FreeMyTV.home();
+    s.zone = 'tabs'; s.tab = 0;
+    FreeMyTV.move(0, -1);
+    out.up = s.zone + ' ' + s.top + ' ' + s.tab;
+    FreeMyTV.move(-1, 0);
+    out.left = s.zone + ' ' + s.tab;
+    FreeMyTV.home();
+    return out;
+  });
+  assert.ok(nav.down === nav.last || nav.last < 12, '↓ onto a shorter row: its last app: ' + JSON.stringify(nav));
+  assert.ok(nav.up === 'top 3 0' && nav.left === 'tabs 0', '↑ from the TV tab: the bubble, tab kept; ← back: ' + JSON.stringify(nav));
   assert.deepStrictEqual(lists.apple, ['Apple Music', 'FaceTime (guide)', 'Fitness+ (guide)', 'Podcasts (guide)'],
     'the Apple folder, where Apple Music was: Apple Music, then the FaceTime, Fitness+ and Podcasts guides: ' + JSON.stringify(lists.apple));
   assert.deepStrictEqual(lists.dock, ['Netflix', 'Prime Video', 'YouTube', 'Apple TV', 'Crunchyroll', 'StbEmu'],
@@ -320,7 +356,8 @@ var browser = null;
   var card = await page.evaluate(function () {
     var p = document.querySelector('#forecast .panel').getBoundingClientRect();
     return {left: p.left, top: p.top, width: p.width, hours: [].map.call(document.querySelectorAll('#forecast .hour .t'), function (e) { return e.textContent; }),
-      days: document.querySelectorAll('#forecast .day .fill').length};
+      days: document.querySelectorAll('#forecast .day .fill').length,
+      data: Data.weather ? (Data.weather.hours24 || []).length : -1, text: document.querySelector('#forecast .panel').textContent.slice(0, 80)};
   });
   var unique = card.hours.filter(function (h, i) { return card.hours.indexOf(h) === i; });
   assert.ok(card.hours.length >= 6 - 1 && unique.length === card.hours.length && card.days > 0, 'the weather card: unique hours and day bars: ' + JSON.stringify(card));
