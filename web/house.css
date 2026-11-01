@@ -20,11 +20,11 @@
   background: rgba(28, 28, 30, 0.8);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 10px 26px rgba(0, 0, 0, 0.32);
   opacity: 0;
-  -webkit-transition: opacity 0.12s;
-  transition: opacity 0.12s;
+  -webkit-transition: opacity 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* Moving to another light, the old text leaves quickly and the new one comes in just after (rooms.js keeps two). */
-#house .pill.on { opacity: 1; -webkit-transition: opacity 0.2s 0.06s; transition: opacity 0.2s 0.06s; }
+#house .pill.on { opacity: 1; -webkit-transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1) 0.06s; transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1) 0.06s; }
 #house .pill .n { font-weight: 600; }
 #house .pill .s { font-weight: 400; color: rgba(255, 255, 255, 0.7); }
 #house .pill.lit .s { color: #FFC07A; }

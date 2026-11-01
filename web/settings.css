@@ -47,8 +47,8 @@
   white-space: nowrap;
   -webkit-transform-origin: 0 50%;
   transform-origin: 0 50%;
-  -webkit-transition: -webkit-transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s, box-shadow 0.2s;
-  transition: transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s, box-shadow 0.2s;
+  -webkit-transition: -webkit-transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.15s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #settings .cat .sym { width: 30px; height: 30px; margin-right: 18px; vertical-align: -5px; background-color: currentColor; opacity: 0.8; }
 /* The section shown on the right while the focus is there: a quiet capsule. */
@@ -104,8 +104,8 @@
   letter-spacing: -0.01em;
   line-height: 64px;
   white-space: nowrap;
-  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s, box-shadow 0.2s;
-  transition: transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s, box-shadow 0.2s;
+  -webkit-transition: -webkit-transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.26s cubic-bezier(0.25, 1.1, 0.4, 1), background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 /* The separators: inset 24 px, not under the focused row or the one after it. */
 #settings .srow + .srow:before {
@@ -152,8 +152,8 @@
   margin-top: 13px;
   border-radius: 19px;
   background: rgba(120, 120, 128, 0.32);
-  -webkit-transition: background-color 0.2s;
-  transition: background-color 0.2s;
+  -webkit-transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .night #settings .switch { background: rgba(120, 120, 128, 0.36); }
 #settings .switch.on, .night #settings .switch.on { background: #34C759; }
@@ -256,7 +256,7 @@
 }
 .night #settings.sidebar .side { background: rgba(30, 35, 48, 0.95); box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45), inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
 .frosted #settings.sidebar .side { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.3); }
-#settings.sidebar .left, #settings.sidebar .right { -webkit-transition: opacity 0.2s; transition: opacity 0.2s; }
+#settings.sidebar .left, #settings.sidebar .right { -webkit-transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 #settings.sidebar .left { left: 1128px; top: 164px; width: 664px; }
 #settings.sidebar .emblem { width: 96px; height: 96px; border-radius: 22px; }
 #settings.sidebar .emblem .sym { left: 22px; top: 22px; width: 52px !important; height: 52px !important; }

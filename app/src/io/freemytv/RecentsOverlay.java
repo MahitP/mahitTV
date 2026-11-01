@@ -573,6 +573,11 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         icon.setAlpha(255);
     }
 
+    // Depth: a card beside the focused one turns toward it, its outer edge receding (as the web's rotateY(9°) in
+    // perspective): mapped to a trapezoid, the outer edge up to 3.5 % shorter at each end. Reused, never made per frame.
+    private final Matrix turn = new Matrix();
+    private final float[] turnSrc = new float[8], turnDst = new float[8];
+
     private void drawCard(Canvas c, int i, float pos, float shift) {
         float cw = CARD_W * k, ch = CARD_H * k, d = i - pos, ad = Math.abs(d);
         float s = 1 - BACK * Math.min(ad, 2), half = cw / 2 * s;
@@ -590,6 +595,16 @@ final class RecentsOverlay extends View implements Choreographer.FrameCallback {
         c.save();
         c.translate(cx - half, top);
         c.scale(s, s);
+        float t = Math.max(-1, Math.min(1, d)), inset = 0.035f * ch * Math.abs(t);
+        if (inset > 0.05f) {
+            float[] a8 = turnSrc, b8 = turnDst;
+            a8[0] = 0; a8[1] = 0; a8[2] = cw; a8[3] = 0; a8[4] = cw; a8[5] = ch; a8[6] = 0; a8[7] = ch;
+            System.arraycopy(a8, 0, b8, 0, 8);
+            if (t > 0) { b8[3] = inset; b8[5] = ch - inset; }   // right of the focus: its right edge recedes
+            else { b8[1] = inset; b8[7] = ch - inset; }         // left of it: its left edge
+            turn.setPolyToPoly(a8, 0, b8, 0, 4);
+            c.concat(turn);
+        }
         if (i < shaders.length && shaders[i] != null) {
             card.setShader(shaders[i]);
             card.setAlpha(Math.round(255 * a));

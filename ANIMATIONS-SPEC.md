@@ -61,13 +61,14 @@ tilt, drift, bumps, waves and breathing are off; the focus scale and the press s
 | Preset | response | ζ | Used for |
 |---|---|---|---|
 | `MICRO_PRESS` | 0.18 | 0.92 | OK press-down squish and its rebound |
-| `SNAPPY_FOCUS` | 0.28 | 0.82 | focus scale, lift shadow, dot and card focus (≈ 1.5% overshoot) |
+| `SNAPPY_FOCUS` | 0.30 | 0.80 | focus scale (the Dock's 1.23×), lift shadow, dot and card focus (≈ 2% overshoot) |
 | `FAST_FOCUS` | 0.16 | 0.95 | focus while an arrow is held (fast scrub, §5.1) |
 | `BOUNDARY_BUMP` | 0.24 | 0.76 | dead-end nudge and its return |
 | `TILT` | 0.42 | 0.60 | arrival tilt (an impulse, settles flat) |
 | `LIQUID_PILL` | 0.36 | 0.84 | tab bar indicator x/width, status pill width morph |
 | `TAB_SWAP` | 0.42 | 0.90 | TV ↔ Home ↔ Welly content slide |
-| `SHEET_OPEN` | 0.44 | 0.88 | Control Center, sheets opening |
+| `SHEET_OPEN` | 0.44 | 0.88 | sheets opening |
+| `CC_OPEN` | 0.42 | 0.85 | Control Center's panels and their Inputs list sliding in |
 | `SHEET_CLOSE` | 0.34 | 0.96 | the same closing (brisker, no bounce) |
 | `SPATIAL_SCROLL` | 0.46 | 0.92 | Dock ↔ grid, grid rows, Top Shelf inspection |
 | `TITLE_SETTLE` | 0.38 | 0.88 | Top Shelf title/logo entry |
@@ -75,7 +76,7 @@ tilt, drift, bumps, waves and breathing are off; the focus scale and the press s
 | `WALL_CUT` | 0.45 | 0.92 | Home outside walls lowering/rising |
 | `ROOM_FADE` | 0.40 | 1.00 | Home rooms de-emphasis, light warmth |
 | `IGNITE` | 0.25 | 0.75 | filament flash when a light turns on |
-| `CARD_ENTER` | 0.28 | 0.82 | Welly cards entering (= SNAPPY_FOCUS) |
+| `CARD_ENTER` | 0.30 | 0.80 | Welly cards entering (= SNAPPY_FOCUS) |
 | `ORB` | 0.50 | 0.80 | Welly orb state blends and its move to the header |
 
 Exits that only disappear are short fades, 150–220 ms (appear slower than disappear). Staggers: 20–50 ms per item,
@@ -126,7 +127,7 @@ the band, too small to see; 1100 px/s gives the 6–10 px tug the brief asks for
   playing, the pill widens (LIQUID_PILL) to show a three-bar equalizer, and narrows back when it stops.
 
 ### 2.4 Control Center and profiles
-- **Open:** SHEET_OPEN; the panel slides in from +480 px while the canvas behind scales to 0.975 under a 30% dim;
+- **Open:** CC_OPEN (the Inputs list too); the panel slides in from +480 px while the canvas behind scales to 0.975 under a 30% dim;
   header, profiles, the bento rows and the weather card follow 25 ms apart.
 - **Close (Back):** SHEET_CLOSE, the canvas back to 1.0.
 - **Profile switch:** the avatar in the status pill cross-dissolves.

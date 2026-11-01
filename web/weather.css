@@ -83,8 +83,8 @@
   background: rgba(255, 255, 255, 0.62);
   box-shadow: 0 10px 24px rgba(22, 33, 45, 0.14);
   opacity: 0;
-  -webkit-transition: opacity 0.15s;
-  transition: opacity 0.15s;
+  -webkit-transition: opacity 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #forecast .hour.focus::before { opacity: 1; }
 .night #forecast .hour::before { background: rgba(255, 255, 255, 0.16); box-shadow: none; }

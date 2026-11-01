@@ -118,9 +118,14 @@ var browser = null;
     Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Track B', backdrop: 'preview/neon-meridian.jpg', app: 'netflix'}); };
     Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0, keepKey: true});
   });
-  await page.waitForTimeout(100);
+  // Until the new title and art are in (a busy machine can take longer than a frame or two), not a fixed 100 ms.
+  // The art swaps in once its picture has loaded, which can trail the title: wait for both.
+  await page.waitForFunction(function () {
+    var art = document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage;
+    return document.querySelector('#hero h1').textContent === 'Track B' && /neon-meridian/.test(art);
+  }, null, {timeout: 3000}).catch(function () {});
   var changedMedia = await page.evaluate(function () { return {title: document.querySelector('#hero h1').textContent, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
-  assert.ok(changedMedia.title === 'Track B' && /neon-meridian/.test(changedMedia.art), 'same focused app refreshes changed media artwork without card-count changes');
+  assert.ok(changedMedia.title === 'Track B' && /neon-meridian/.test(changedMedia.art), 'same focused app refreshes changed media artwork without card-count changes: ' + JSON.stringify(changedMedia));
   await page.evaluate(function () { Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'History only', backdrop: 'preview/long-dunes.jpg', app: 'netflix'}); }; });
   result = await profile(page, 'hero', netflix);
   assert.ok(result.media && result.zone === 'hero' && result.title === 'History only', 'history-only Shelf remains Hero');
@@ -242,7 +247,10 @@ var browser = null;
     Data.resolveWatch = function (app, generation, done) { done(generation, {title: 'Fade', backdrop: 'preview/orbital.jpg', app: 'netflix'}); };
     Home.testBackground({zone: 'shelf', app: {id: 'netflix', title: 'Netflix'}, tab: 0});
   });
-  await page.waitForTimeout(100);
+  // Until its picture has loaded and swapped in (it can take longer than 100 ms on a busy machine).
+  await page.waitForFunction(function () {
+    return /orbital/.test(document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage);
+  }, null, {timeout: 3000}).catch(function () {});
   var transitions = await page.evaluate(function () { return {photo: document.querySelector('#photoA').style.transition || document.querySelector('#photoB').style.transition, backdrop: document.querySelector('#bgA').style.transition, art: document.querySelector('#photoA').style.backgroundImage + document.querySelector('#photoB').style.backgroundImage}; });
   assert.ok(/orbital/.test(transitions.art) && /0\.7s cubic-bezier/.test(transitions.photo) && /0\.7s cubic-bezier/.test(transitions.backdrop),
     'normal photo and backdrop use 700ms cubic fades: ' + JSON.stringify(transitions));

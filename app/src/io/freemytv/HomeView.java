@@ -241,6 +241,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // vignette, the gloss band, the rim's gradient.
     /** The focused tile's one specular highlight (DESIGN-TVOS.md §0b #3). */
     private Shader tileSheen;
+    /**
+     * The glare (tvOS's hardware glint): a narrow band of light, its edge bright along the bevel, that sweeps across the
+     * focused tile the way the focus came, once per arrival: -1.3 … 1.3 tile half-widths from the middle (critically
+     * damped: light doesn't overshoot). Made for one tile width; moved by the canvas, never a new matrix per frame.
+     */
+    private final Spring glare = new Spring(new float[] {1.1f, 1f}, 1.3f);
+    private HomeApps.Item glareFor;
+    private Shader glareShader;
+    private float glareW;
+    private final Paint glareRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** Apple's continuous-corner shapes (Corners), made once per size: the tiles, the bento cards, the weather card. */
     private final Shape tileShape = new Shape(), cardShape = new Shape(), weatherShape = new Shape();
     private float tileFxW;
@@ -1147,7 +1157,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean ccStagger = drawer.target > 0.5f && !Ui.LEGACY && !Spring.instant
                 && up - drawerOpenedAt < CC_ROW_MS * (drawerItems.size() / 2 + 3) + CC_ROW_IN_MS;
         if (ccStagger) drawerLayer.invalidate();
-        boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen);
+        boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen) | glare.step(dt);
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt) | bubbleFocus.step(dt);
         boolean fullMoving = full.step(dt);
@@ -2461,6 +2471,38 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float px = swayX.value * 6 * k * fc, py = swayY.value * 4 * k * fc;
         if (emblem) drawEmblem(c, it, style == null ? 0 : style[2], s, px, py, 1 + 0.03f * fc);
         float sheenA = fc * (1 - Ui.clamp(scrub.value));   // no sheen while scrubbing fast
+        if (fc > 0.5f && it != glareFor && !Ui.LEGACY && !Spring.instant && scrub.value < 0.01f) {
+            glareFor = it;   // a new arrival: the glare crosses from the side the focus came from
+            float from = lastDx < 0 ? 1.3f : -1.3f;
+            glare.snap(from);
+            glare.target = -from;
+        }
+        float through = it == glareFor ? Ui.clamp(1 - Math.abs(glare.value) / 1.3f) * sheenA : 0;
+        if (through > 0.01f) {
+            if (glareShader == null || glareW != bw) {
+                glareW = bw;
+                float band = bw * 0.2f;
+                glareShader = new android.graphics.LinearGradient(-band / 2, 0, band / 2, 0,
+                        new int[] {0x00FFFFFF, 0x33FFFFFF, 0x00FFFFFF}, null, Shader.TileMode.CLAMP);
+            }
+            float bx = bw / 2 + glare.value * bw * 0.62f + px;   // it rides the tilt like the logo
+            int save = c.save();
+            c.translate(bx - bw / 2, -bh / 2);
+            shape.offset(-bx, 0);
+            tileFill.setShader(glareShader);
+            tileFill.setAlpha(Math.round(255 * through));
+            c.drawPath(shape, tileFill);
+            // The bevel's 1.5 px glint: the shape's edge, lit only where the band is.
+            glareRim.setStyle(Paint.Style.STROKE);
+            glareRim.setStrokeWidth(3 * k);   // half of it inside the tile: 1.5 px
+            glareRim.setShader(glareShader);
+            glareRim.setAlpha(Math.round(255 * Math.min(1, through * 2.2f)));
+            c.drawPath(shape, glareRim);
+            tileFill.setShader(null);
+            tileFill.setAlpha(255);
+            shape.offset(bx, 0);
+            c.restoreToCount(save);
+        }
         if (sheenA > 0.01f) {
             // The one specular highlight: soft, ≤ 14 %, sitting up and to the left and following the sway. The canvas
             // moves and the shape moves back: the shader keeps its matrix (a new local matrix every frame rebuilds the
@@ -2887,7 +2929,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         ccOnProfiles = ccOnVolume = false;
         if (zone == WIDGETS) zone = Z_DRAWER;
         inputIndex = 0;
-        inputsShown.tune(Spring.SHEET_OPEN);
+        inputsShown.tune(Spring.CC_OPEN);
         inputsShown.target = 1;
         layoutDrawer();   // the panel grows to the list
         drawerDirty = true;

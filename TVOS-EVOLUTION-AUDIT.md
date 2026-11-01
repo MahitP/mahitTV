@@ -199,6 +199,63 @@ the icons.
 After each pass, put the numbers that changed into `DESIGN-TVOS.md` and the constants named above, then render the
 previews again and compare.
 
+## Part 3: motion audit and readiness
+
+### Springs (`web/motion.js`, `Spring.java`, `ANIMATIONS-SPEC.md` §1.2)
+
+Everything that moves runs on the same damped spring, on both platforms. A spring is described by its response (the
+time it takes to settle) and its damping (1 = no bounce, lower = some overshoot).
+
+| What | Preset | Response | Damping |
+| --- | --- | --- | --- |
+| Dock and grid focus (1.23×), Settings and panel focus | `SNAPPY_FOCUS` | 0.30 s | 0.80 |
+| Control Center and the profile menu, and their Inputs list | `CC_OPEN` | 0.42 s | 0.85 |
+| Sheets (All Apps, Settings) | `SHEET_OPEN` / `SHEET_CLOSE` | 0.44 / 0.34 s | 0.88 / 0.96 |
+| Volume and brightness overlay, bounce past 0 % and 100 % (3 % stretch) | `BOUNDARY_BUMP` | 0.24 s | 0.76 |
+| Recent Apps deck scroll | `SPATIAL_SCROLL` | 0.46 s | 0.92 |
+| The glare's sweep | (its own) | 1.1 s | 1 (no bounce) |
+
+- **Control Center trade-off:** `CC_OPEN` was 0.32 / 0.86, after tvOS 27's faster Control Center. It's now 0.42 / 0.85,
+  as you asked for this pass.
+- **CSS transitions:** none use plain `ease` any more. The 146 transitions (fades, colors, shadows) settle on
+  `cubic-bezier(0.22, 1, 0.36, 1)`, a curve close to a critically damped spring. The settings switch knob overshoots a
+  little (`cubic-bezier(0.3, 1.35, 0.5, 1)`, 0.32 s).
+- **Left on `ease-in-out`, on purpose:** the always-running loops (the breathing chevron, the playing-music bars, the
+  aurora drift). They move back and forth forever, so a sine-like curve suits them.
+
+### Light and depth
+
+- **The glare (new):** when focus lands on a tile in the Dock, All Apps or a folder, a narrow band of light sweeps across
+  it in the direction you moved.
+  - It has a 1.5 px bright edge along the tile's bevel, rides the tile's tilt, and is brightest crossing the middle.
+  - It's skipped while you hold an arrow to scroll, when animations are off, and on Android 8–11 and Tizen 2.4 (their
+    GPUs).
+  - Web: `Fx.sweep()` and `.glare`. Android: `glare` in `drawAppTile`, one gradient per tile size, moved by the canvas.
+- **The sheen:** the soft specular highlight that slides against the tilt (DESIGN-TVOS.md §0b) is unchanged.
+- **Recent Apps deck (new depth):** the cards beside the focused one turn up to 9° toward it, their outer edges
+  receding. Web: `rotateY` in perspective. Android: the card mapped to a matching trapezoid.
+
+### Readiness checklist
+
+| Check | Status | How it was checked |
+| --- | --- | --- |
+| The Dock never hides when an app or a pick is focused | Yes | `DockRecessTest` (14 checks) and the web DOM test: in full screen it recesses 36 px to 0.75 opacity |
+| Every screen sits on the Frosted Horizon, Light / Dark / Auto | Yes (preview) | Light and dark screenshots of every screen; Settings → Theme and Control Center's Dark Mode |
+| The TV's apps in order, StbEmu in slot 6, the TCL folder | Yes (code, preview) | `web-keys-test` checks the Dock, the 18-tile grid and the TCL folder; Android uses the same order and folder rules |
+| Apps launch | Code paths only | TV-style and phone-style launch intents, with fallback packages; **not run on the TV from here** |
+| App tiles | Partly | On the TV, each tile uses the app's own artwork in a glass tile; the web preview uses each brand's color and name, plus the bundled logos |
+| Wi-Fi name, Bluetooth headphones, remote | Partly | Android shows the Wi-Fi name where Android allows it, and the playing headphones' name; the remote's name isn't read (Android hides paired-device names without Bluetooth permission); the preview reads `preview_wifi` / `preview_bluetooth` |
+| The TV's Settings pages | Code paths only | Each Google TV Settings row tries the public Android action, then the TV's Settings |
+| Build and checks | Yes | `./build.sh` → Built FreeMyTV.apk; `tools/check.sh` → All checks passed |
+
+**Ready for the TV, after one check on the TV itself.** Everything above builds and passes its tests. This build machine
+can't run an Android emulator, so before calling it done, check these on the TCL:
+
+1. A few launches, especially StbEmu, Instagram and Roblox.
+2. Each Google TV Settings row.
+3. The glare and the deck's depth.
+4. Holding Home for Recent Apps.
+
 ## Sources
 
 - [Wikipedia: tvOS](https://en.wikipedia.org/wiki/TvOS)

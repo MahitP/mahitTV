@@ -439,6 +439,8 @@
   // MARK: - Motion (ANIMATIONS-SPEC.md): springs from motion.js drive every transform that can change mid-flight
 
   var P = Motion.P, BUMP = Motion.BUMP_VELOCITY, scrubbing = false, lastMove = {dx: 0, dy: 0, at: 0};
+  // The glare's sweep: a smooth, critically damped glide (no bounce: light doesn't overshoot).
+  var GLARE = [1.1, 1];
 
   function spring(preset, value) { return new Motion.Spring(preset, value || 0); }
   // Styles are written only when they change: a write that changes nothing still costs a style pass per frame.
@@ -490,6 +492,10 @@
     this.shadow = o.shadow || null;
     this.img = o.img || null;
     this.sheen = o.sheen || null;
+    // The glare (tvOS's hardware glint): a narrow band of light, with a 1.5 px bright edge on the bevel, that sweeps
+    // across the focused tile the way the focus came, once per arrival. -1.3 … 1.3 tile half-widths; at rest, off it.
+    this.glare = null;
+    this.gl = spring(GLARE, 1.3);
     this.label = o.label || null;
     this.avatar = o.avatar || null;
     this.lab = spring(P.SNAPPY_FOCUS);
@@ -512,6 +518,16 @@
     this.lab.tune(on ? P.SNAPPY_FOCUS : [0.12, 1]).set(on ? 1 : 0);
     if (!on) this.p.set(0);
     if (on && Date.now() - lastMove.at < 120) this.arrive(lastMove.dx, lastMove.dy);
+    if (on) this.sweep(Date.now() - lastMove.at < 120 ? lastMove.dx : 0);
+  };
+
+  /** The glare crosses the tile: left to right when the focus came from the left (or up/down), else right to left. */
+  Fx.prototype.sweep = function (dx) {
+    if (!this.sheen || scrubbing || Motion.instant || Motion.lite) return;
+    if (!this.glare) this.glare = el('span', 'glare', this.sheen.parentNode);
+    var from = dx < 0 ? 1.3 : -1.3;
+    this.gl.snap(from);
+    this.gl.set(-from);
   };
 
   /** Arrival: a 3° lean toward where it was reached from, settling flat (an impulse on the tilt springs). */
@@ -534,6 +550,7 @@
     m = this.ny.step(dt) || m;
     m = this.ry.step(dt) || m;
     m = this.rx.step(dt) || m;
+    m = this.gl.step(dt) || m;
     m = this.lab.step(dt) || m;
     m = this.launch.step(dt) || m;
     if (m || this.dirty) this.draw();
@@ -558,6 +575,12 @@
     }
     // Layers: the emblem drifts with the tilt (6 px at 3°) and grows 3%, the sheen the other way.
     if (this.img) T(this.img, 'translate(-50%, -50%) translateX(' + r2(-2 * ry) + 'px) scale(' + r4(1 + 0.03 * f) + ')');
+    if (this.glare) {
+      // Brightest crossing the middle, gone at the edges; it rides the tilt like the sheen.
+      var g = this.gl.x, through = Motion.clamp(1 - Math.abs(g) / 1.3, 0, 1);
+      A(this.glare, f * through * (1 - scrub.x));
+      T(this.glare, 'translateX(' + r2(g * 150 + 4 * ry) + 'px) skewX(-18deg)');
+    }
     if (this.sheen) {
       A(this.sheen, f * (1 - scrub.x));
       T(this.sheen, 'translateX(' + r2(4 * ry) + 'px)');
@@ -1887,7 +1910,7 @@
     st.ccInput = 0;
     var id = currentInput();
     for (var i = 0; i < inputs.length; i++) if (inputs[i].id === id) st.ccInput = i;
-    mv.ccSub.tune(P.SHEET_OPEN).set(1);
+    mv.ccSub.tune(P.CC_OPEN).set(1);
     fitDrawer();
     updateFocus();
   }
@@ -2240,7 +2263,9 @@
       if (d >= 0) x = RECENT_X + d * RECENT_STEP;
       else x = RECENT_X - (a <= 1 ? a * 313 : 313 + (a - 1) * 101);
       var s = 1 - 0.06 * Math.min(1, a), alpha = d < 0 ? Motion.clamp(4 - a, 0, 1) : Motion.clamp(2.2 - d, 0, 1);
-      T(cards[i], 'translate(' + r2(x) + 'px,0) scale(' + r4(s) + ')');
+      // Depth: the cards beside the focused one turn up to 9° toward it, their outer edges receding (a deck, not a strip).
+      var turn = 9 * Motion.clamp(d, -1, 1);
+      T(cards[i], 'translate(' + r2(x) + 'px,0) perspective(2000px) rotateY(' + r2(turn) + 'deg) scale(' + r4(s) + ')');
       A(cards[i], alpha);
       cards[i].style.zIndex = String(40 - Math.round(a * 4));
       A(cards[i].firstChild, Motion.clamp(1 - a * 1.6, 0, 1));   // the app's name above the focused card only
@@ -3368,7 +3393,7 @@
   function hideSaver(woken) {
     var s = $('saver');
     if (woken && saverOn) {
-      s.style.webkitTransition = s.style.transition = 'opacity 0.32s, visibility 0s 0.32s';
+      s.style.webkitTransition = s.style.transition = 'opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s 0.32s';
       mv.wake.snap(1);
       mv.wake.set(0);
     }

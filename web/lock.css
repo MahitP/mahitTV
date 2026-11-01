@@ -118,8 +118,8 @@
   border-radius: 13px;
   box-sizing: border-box;
   border: 2.5px solid rgba(29, 29, 31, 0.6);
-  -webkit-transition: background-color 0.12s, border-color 0.12s;
-  transition: background-color 0.12s, border-color 0.12s;
+  -webkit-transition: background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #lock .dot.on { background: #1D1D1F; border-color: #1D1D1F; }
 .night #lock .dot { border-color: rgba(255, 255, 255, 0.72); }
@@ -154,8 +154,8 @@
   text-align: center;
   -webkit-font-feature-settings: 'tnum';
   font-feature-settings: 'tnum';
-  -webkit-transition: background-color 0.12s, color 0.12s;
-  transition: background-color 0.12s, color 0.12s;
+  -webkit-transition: background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), color 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), color 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #lock .pad .digit:first-child { margin-left: 20px; }
 #lock .pad .digit.focus { background: #1D1D1F; color: #FFF; box-shadow: 0 10px 24px rgba(22, 33, 45, 0.3); }

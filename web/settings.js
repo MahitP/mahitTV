@@ -99,7 +99,7 @@ var Settings = (function () {
     nudgeY = dy;
     nudgeScale = has(target, 'cat') ? 1.04 : 1.02;
     if (!dx && !dy) { nudgeScale *= 0.985; nudgeY = 0; }
-    target.style.webkitTransition = target.style.transition = 'background-color 0.12s, box-shadow 0.2s';
+    target.style.webkitTransition = target.style.transition = 'background-color 0.12s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s cubic-bezier(0.22, 1, 0.36, 1)';
     nudge.snap(0);
     nudge.impulse(Motion.BUMP_VELOCITY);
     start();
