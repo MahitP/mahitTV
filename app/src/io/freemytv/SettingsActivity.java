@@ -1529,6 +1529,9 @@ public class SettingsActivity extends Activity {
                 R_SAVER_SCENE = 73, R_SAVER_CLOCK = 74, R_PHOTOS_REMOVE = 75,
                 R_GLASS = 17, R_SETTINGS_STYLE = 18, R_TEXT_SIZE = 19, R_SHELF_MODE = 30, R_SETUP = 76,
                 R_RESET = 70, R_RESTORE = 71,
+                // The TV's own Settings, as its menu lists them (TCL Google TV): each opens that page there.
+                R_TV_CHANNELS = 80, R_TV_DISPLAY = 81, R_TV_NETWORK = 82, R_TV_ACCOUNTS = 83, R_TV_PRIVACY = 84, R_TV_APPS = 85,
+                R_TV_SYSTEM = 86, R_TV_ACCESSIBILITY = 87, R_TV_REMOTES = 88,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
         private static final String[] LIGHTS = {"parents.bulb", "mine.lamp", "mine.bulb", "living.bulb"};
@@ -1542,6 +1545,9 @@ public class SettingsActivity extends Activity {
         private int shelfSection = S_PROFILES;   // where the Dock editor was opened from, for Back
         private int armed;                       // a row waiting for its second OK
         private int appCount = -1;               // apps found (HomeApps.launchable), counted off the UI thread
+        // Google TV Settings' values, read off the UI thread when System opens: the Wi-Fi network, and the Bluetooth
+        // headphones playing (else Bluetooth's state).
+        private String tvNetwork = "", tvRemotes = "";
         private int checking;                    // lights that haven't answered "Check again" yet
         private boolean reduceMotion, highContrast;   // the TV's own accessibility settings, read with the state
         private Bitmap avatar;                   // the current profile's, for its row
@@ -1584,7 +1590,7 @@ public class SettingsActivity extends Activity {
         // A section's groups (tvOS: grouped inset containers): each one's header above and footer under it.
         private static final int G_YOU = 0, G_PINS = 1, G_LOOK = 2, G_SAVER = 3, G_STARTUP = 4, G_WEATHER = 5, G_WIDGETS = 6,
                 G_MEDIA = 7, G_LIGHTS = 8, G_BRAIN = 9, G_MEMORY = 10, G_HOME = 11, G_REMOTE = 12, G_TV = 13, G_RESET = 14,
-                G_RESTORE = 15;
+                G_RESTORE = 15, G_TV_MENU = 16;
         private final List<Integer> buildRows = new ArrayList<>(), buildGroups = new ArrayList<>();
 
         private void group(int kind) {
@@ -1658,6 +1664,9 @@ public class SettingsActivity extends Activity {
                     add(R_FORGET);
                     break;
                 case S_SYSTEM:
+                    group(G_TV_MENU);
+                    add(R_TV_CHANNELS, R_TV_DISPLAY, R_TV_NETWORK, R_TV_ACCOUNTS, R_TV_PRIVACY, R_TV_APPS, R_TV_SYSTEM,
+                            R_TV_ACCESSIBILITY, R_TV_REMOTES);
                     group(G_HOME);
                     add(R_HOME, R_DOCK, R_TOP_BUTTONS, R_SETUP);
                     group(G_REMOTE);
@@ -1695,6 +1704,7 @@ public class SettingsActivity extends Activity {
                 case G_HOME: return Ui.tr("Home Screen");
                 case G_REMOTE: return Ui.tr("Remote & Power");
                 case G_TV: return Ui.tr("TV");
+                case G_TV_MENU: return Ui.tr("Google TV Settings");
                 default: return null;
             }
         }
@@ -1748,7 +1758,58 @@ public class SettingsActivity extends Activity {
             snapScroll = true;
             if (s == S_PROFILES) loadAvatar();
             if (s == S_SMART_HOME) checkLights();
-            if (s == S_SYSTEM) countApps();
+            if (s == S_SYSTEM) {
+                countApps();
+                readTvState();
+            }
+        }
+
+        private void readTvState() {
+            Context c = getContext().getApplicationContext();
+            new Thread(() -> {
+                String[] st = HomeApps.connectivity(c);   // {wifi, bluetooth, audio, dnd}
+                handler.post(() -> {
+                    tvNetwork = st[0] == null ? "" : st[0];
+                    tvRemotes = st[1] == null ? "" : st[1];
+                    invalidate();
+                });
+            }).start();
+        }
+
+        /**
+         * One of Google TV Settings' rows: its page in the TV's own Settings (the public Android actions Google TV's
+         * Settings answers); Channels & Inputs opens the TV's live channels app, which holds the tuner and the sources.
+         * Where the TV has no such page, its Settings' first page.
+         */
+        private void openTvPage(int id) {
+            Context c = getContext();
+            List<Intent> tries = new ArrayList<>();
+            switch (id) {
+                case R_TV_CHANNELS:
+                    for (String tv : HomeApps.LIVE_TV_APPS) {
+                        Intent i = c.getPackageManager().getLeanbackLaunchIntentForPackage(tv);
+                        if (i != null) tries.add(i);
+                    }
+                    break;
+                case R_TV_DISPLAY: tries.add(new Intent(Settings.ACTION_DISPLAY_SETTINGS)); tries.add(new Intent(Settings.ACTION_SOUND_SETTINGS)); break;
+                case R_TV_NETWORK: tries.add(new Intent(Settings.ACTION_WIFI_SETTINGS)); tries.add(new Intent(Settings.ACTION_WIRELESS_SETTINGS)); break;
+                case R_TV_ACCOUNTS: tries.add(new Intent(Settings.ACTION_SYNC_SETTINGS)); tries.add(new Intent(Settings.ACTION_ADD_ACCOUNT)); break;
+                case R_TV_PRIVACY: tries.add(new Intent(Settings.ACTION_PRIVACY_SETTINGS)); break;
+                case R_TV_APPS: tries.add(new Intent(Settings.ACTION_APPLICATION_SETTINGS)); break;
+                case R_TV_SYSTEM: tries.add(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)); break;
+                case R_TV_ACCESSIBILITY: tries.add(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
+                default: tries.add(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); break;   // Remotes & Accessories
+            }
+            tries.add(new Intent(Settings.ACTION_SETTINGS));
+            for (Intent i : tries) {
+                if (c.getPackageManager().resolveActivity(i, 0) == null) continue;
+                try {
+                    activity.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    return;
+                } catch (RuntimeException e) {
+                    AppLog.w("TV settings page: " + e.getMessage());
+                }
+            }
         }
 
         private void loadAvatar() {
@@ -1854,6 +1915,15 @@ public class SettingsActivity extends Activity {
                 case R_REMOTE: return Ui.tr("Remote Buttons");
                 case R_SLEEP: return Ui.tr("Sleep Timer");
                 case R_TV_SETTINGS: return Ui.tr("TV Settings");
+                case R_TV_CHANNELS: return Ui.tr("Channels & Inputs");
+                case R_TV_DISPLAY: return Ui.tr("Display & Sound");
+                case R_TV_NETWORK: return Ui.tr("Network & Internet");
+                case R_TV_ACCOUNTS: return Ui.tr("Accounts & Profiles");
+                case R_TV_PRIVACY: return Ui.tr("Privacy");
+                case R_TV_APPS: return Ui.tr("Apps");
+                case R_TV_SYSTEM: return Ui.tr("tv|System");
+                case R_TV_ACCESSIBILITY: return Ui.tr("Accessibility");
+                case R_TV_REMOTES: return Ui.tr("Remotes & Accessories");
                 case R_LANGUAGE: return Ui.tr("Language");
                 case R_SYSTEM_APPS: return Ui.tr("Show system apps");
                 case R_APP_COUNT: return Ui.tr("Apps found");
@@ -1939,6 +2009,8 @@ public class SettingsActivity extends Activity {
                 }
                 case R_SYSTEM_APPS: return onOff(Prefs.systemApps());
                 case R_APP_COUNT: return appCount < 0 ? Ui.tr("Counting…") : String.valueOf(appCount);
+                case R_TV_NETWORK: return tvNetwork;
+                case R_TV_REMOTES: return tvRemotes;
                 case R_SAVER_STYLE: return saverName(Prefs.saverStyle());
                 case R_SAVER_SCENE: return sceneName(Prefs.saverScene());
                 case R_SAVER_CLOCK: return clockName(Prefs.saverClock());
@@ -1959,6 +2031,8 @@ public class SettingsActivity extends Activity {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
                 case R_CLEAN: case R_CITY: case R_SCREENSAVER: case R_SETUP:
+                case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
+                case R_TV_SYSTEM: case R_TV_ACCESSIBILITY: case R_TV_REMOTES:
                     return true;
                 default:
                     return id >= R_OTHER && id < R_COIN;
@@ -2262,6 +2336,10 @@ public class SettingsActivity extends Activity {
                     return true;
                 case R_TV_SETTINGS:
                     activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    return false;
+                case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
+                case R_TV_SYSTEM: case R_TV_ACCESSIBILITY: case R_TV_REMOTES:
+                    openTvPage(id);
                     return false;
                 case R_LANGUAGE:
                     openPicker(PICK_LANGUAGE);

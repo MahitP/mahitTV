@@ -68,14 +68,15 @@
   // MARK: - Apps on the shelf
 
   /** Shelf apps in this order when installed, like the Android app: key, LG app id, name on the TV, brand gradient. */
-  // The first DOCK_DEFAULT found make the built-in Dock: Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu.
+  // The first DOCK_DEFAULT found make the built-in Dock: Netflix, Prime Video, YouTube, Apple TV, Crunchyroll, StbEmu.
   var SHELF = [
     ['netflix', /^netflix$/, /netflix/i, ['#141414', '#000000']],
     ['prime', /^amazon$/, /prime video|amazon/i, ['#1FA2FF', '#0A62C9']],
     ['youtube', /youtube\.leanback|^com\.google\.android\.youtube\.tv$/, /^youtube$/i, ['#202020', '#0B0B0B']],
     ['appletv', /appletv|apple\.tv/, /apple tv/i, ['#2C2C2E', '#000000']],
-    ['disney', /disney/, /disney/i, ['#1A3E9A', '#0A1854']],
+    ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']],
     ['stbemu', /stb\.?emu/i, /^stb ?emu$/i, ['#84CC16', '#4D7C0F']],
+    ['disney', /disney/, /disney/i, ['#1A3E9A', '#0A1854']],
     ['max', /(^|\.)hbo|wbd/, /^(hbo )?max$|hbo max/i, ['#5B2EEA', '#1F1477']],   // (^|.)hbo: not com.tcl.dasHBOard
     ['hulu', /^hulu/, /hulu/i, ['#1CE783', '#0E9F57']],
     ['paramount', /paramount|cbs/, /paramount/i, ['#0064FF', '#002A86']],
@@ -86,8 +87,7 @@
     // tvOS 27.2's Music icon: a white note on black glass (it was red), in light and dark alike.
     ['applemusic', /apple.?music|com\.apple\.music/i, /apple music/i, ['#3A3A3C', '#000000']],
     ['spotify', /spotify/, /spotify/i, ['#202020', '#050505']],
-    ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']],
-    ['crunchyroll', /crunchyroll/, /crunchyroll/i, ['#FF8A1F', '#E8590C']]
+    ['plex', /^cdp-30$|plex/i, /^plex$/i, ['#282A2D', '#121315']]
   ];
   // These apps are media for Dock policy but their album art must only come
   // from active Now Playing; they never borrow a film/TV recommendation.
@@ -378,22 +378,27 @@
    */
   var GRID_ORDER = [
     [/apple\.?music/i, /^apple music$/i], [/youtube\.?(tv)?music/i, /^youtube music$/i], [/spotify/i, /^spotify$/i],
-    [/crunchyroll/i, /^crunchyroll$/i], [/tubi/i, /^tubi$/i], [/youtube\.?(tv)?unplugged|youtubetv/i, /^youtube tv$/i],
+    [/disney/i, /^disney/i], [/tubi/i, /^tubi$/i], [/youtube\.?(tv)?unplugged|youtubetv/i, /^youtube tv$/i],
     [/twitch/i, /^twitch$/i], [/hulu/i, /^hulu$/i], [/(^|\.)hbo|wbd/i, /^(hbo )?max$/i], [/peacock/i, /^peacock/i],
-    [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i], [/freeplay/i, /freeplay/i],
-    // From here (TCL_FIRST) the maker's apps, in the TCL folder in this order.
-    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i], [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
+    [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i],
+    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i], [/freeplay/i, /freeplay/i],
+    // From here (TCL_FIRST) TCL's utilities, in the TCL folder in this order.
+    [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
     [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
     [/quick.?panel/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
-    [/exhibit/i, /^t-?exhibition$/i], [/browse.?here|tcl\.browser/i, /^browse ?here$/i]
+    [/exhibit/i, /^t-?exhibition$/i]
   ];
 
-  var TCL_FIRST = 14;
+  var TCL_FIRST = 16;
 
-  /** One of TCL's own apps (GRID_ORDER's last ones, or any com.tcl id): the TCL folder's. */
+  /**
+   * One of TCL's utilities, for the TCL folder (as HomeApps.tclApp): GRID_ORDER's last ones, or another com.tcl app it
+   * doesn't place; TCL's browser goes in TV & Utilities.
+   */
   function tclApp(app) {
     var r = gridRank(app);
-    return (r >= TCL_FIRST && r < GRID_ORDER.length) || /^com\.tcl\./i.test(app.id || '');
+    if (r < GRID_ORDER.length) return r >= TCL_FIRST;
+    return /^com\.tcl\./i.test(app.id || '') && !/browse/i.test((app.id || '') + ' ' + (app.title || ''));
   }
 
   function gridRank(app) {
@@ -2647,8 +2652,24 @@
       {label: tr('About this TV'), opens: true, about: true, step: function () { openAbout(); }}
     ];
     if (TV.canOpenSettings) rows.push({label: tr('TV Settings'), opens: true, step: function () { tvSettings(); }});
-    return [{rows: rows}, {rows: [{label: tr('Run Setup Again'), opens: true, step: function () { runSetup(); }}],
+    var groups = [{rows: rows}, {rows: [{label: tr('Run Setup Again'), opens: true, step: function () { runSetup(); }}],
       footer: tr('The welcome setup: the look, the glass, the Top Shelf and the weather.')}];
+    var tv = tvMenuRows();
+    if (tv.length) groups.unshift({header: tr('Google TV Settings'), rows: tv});
+    return groups;
+  }
+
+  /*
+   * The TV's own Settings, as a TCL Google TV lists them (as SettingsActivity's Google TV Settings): on LG and Samsung
+   * each opens the TV's settings; the preview shows what the Google TV app shows (preview_wifi, preview_bluetooth).
+   */
+  function tvMenuRows() {
+    if (!TV.canOpenSettings && !PREVIEW) return [];
+    var open = TV.canOpenSettings ? tvSettings : googleOnly, bt = CONFIG.previewBluetooth || [];
+    function row(label, value) { return {label: label, value: value || '', opens: true, step: function () { open(); }}; }
+    return [row(tr('Channels & Inputs')), row(tr('Display & Sound')), row(tr('Network & Internet'), PREVIEW ? CONFIG.previewWifi : ''),
+      row(tr('Accounts & Profiles')), row(tr('Privacy')), row(tr('Apps')), row(tr('tv|System')), row(tr('Accessibility')),
+      row(tr('Remotes & Accessories'), PREVIEW ? bt[0] : '')];
   }
 
   /** The Top Shelf's modes (Settings and the welcome setup). */

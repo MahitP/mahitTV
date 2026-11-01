@@ -119,7 +119,7 @@ final class HomeApps {
      * art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
      */
     private static final String[][] SHELF = {
-        // The default Dock (DOCK_DEFAULT of them): Netflix, Prime Video, YouTube, Apple TV, Disney+ and StbEmu.
+        // The default Dock (DOCK_DEFAULT of them): Netflix, Prime Video, YouTube, Apple TV, Crunchyroll and StbEmu.
         {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
         {"prime", "Prime Video", "com.amazon.amazonvideo.livingroom", "1A98FF", "tint", "0.96"},
         {"prime", "Prime Video", "com.amazon.firebat", "1A98FF", "tint", "0.96"},
@@ -131,9 +131,10 @@ final class HomeApps {
         {"appletv", "Apple TV", "com.apple.atve.androidtv.appletv", "B8BCC6", "", "1.1"},
         {"appletv", "Apple TV", "com.apple.atve.sony.appletv", "B8BCC6", "", "1.1"},   // Sony's own build
         {"appletv", "Apple TV", "com.apple.atve.amazon.appletv", "B8BCC6", "", "1.1"},
-        {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
+        {"crunchyroll", "Crunchyroll", "com.crunchyroll.crunchyroid", "F47521", "", "1"},
         {"stbemu", "StbEmu", "com.mvas.stb.emu.pro", "84CC16", "", "1"},          // IPTV set-top box emulator (sideloaded)
         {"stbemu", "StbEmu", "com.mvas.stb.emu.free", "84CC16", "", "1"},
+        {"disney", "Disney+", "com.disney.disneyplus", "1838C8", "", "1"},
         {"max", "Max", "com.wbd.stream", "6C3BE0", "", "1.32"},
         {"max", "HBO Max", "com.hbo.hbonow", "6C3BE0", "", "1.32"},
         {"hulu", "Hulu", "com.hulu.livingroomplus", "1CE783", "", "1"},
@@ -196,7 +197,7 @@ final class HomeApps {
         order("com\\.apple\\.android\\.music", "^apple music$"),
         order("youtube\\.tvmusic", "^youtube music$"),
         order("^com\\.spotify\\.", "^spotify$"),
-        order("crunchyroll", "^crunchyroll$"),
+        order("^com\\.disney\\.disneyplus", "^disney"),
         order("^com\\.tubitv", "^tubi$"),
         order("youtube\\.tvunplugged", "^youtube tv$"),
         order("twitch", "^twitch$"),
@@ -206,10 +207,10 @@ final class HomeApps {
         order("^com\\.cbs\\.|paramount", "^paramount"),
         order("^com\\.instagram\\.", "^instagram$"),
         order("^com\\.roblox\\.", "^roblox$"),
-        order("freeplay", "freeplay"),
-        // From here (TCL_FIRST) the maker's apps, in the TCL folder in this order.
         order("alexa", "alexa"),
         order("^com\\.tcl\\.tv$", "^tv$"),
+        order("freeplay", "freeplay"),
+        // From here (TCL_FIRST) TCL's utilities, in the TCL folder in this order.
         order("tclplus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
         order("mediacenter|mediaplayer|videoplayer", "^media ?player$"),
         order("instructions|userguide|manual", "^user ?guide$"),
@@ -217,16 +218,22 @@ final class HomeApps {
         order("t_?solo", "^t-?solo$"),
         order("^com\\.tcl\\.dashboard$|tclhome", "^tcl home$"),
         order("exhibit", "^t-?exhibition$"),
-        order("browsehere|com\\.tcl\\.browser|iebrowser", "^browse ?here$"),
     };
 
-    /** GRID_ORDER's first TCL app (Works with Alexa): it and the ones after it go in the TCL folder. */
-    private static final int TCL_FIRST = 14;
+    /** GRID_ORDER's first TCL utility (TCL TV+): it and the ones after it go in the TCL folder. */
+    private static final int TCL_FIRST = 16;
+    /** A browser (TCL's BrowseHere): TV & Utilities', not the TCL folder's. */
+    private static final Pattern BROWSER = Pattern.compile("browse", Pattern.CASE_INSENSITIVE);
 
-    /** One of TCL's own apps (GRID_ORDER's last ones, or any com.tcl package): the TCL folder's. */
+    /**
+     * One of TCL's utilities, for the TCL folder: GRID_ORDER's last ones, or another com.tcl app it doesn't place (TCL's
+     * Alexa and TV stay in the grid; its browser goes in TV & Utilities).
+     */
     static boolean tclApp(String pkg, String label) {
         int r = gridRank(pkg, label);
-        return (r >= TCL_FIRST && r < GRID_ORDER.length) || (pkg != null && pkg.startsWith("com.tcl."));
+        if (r < GRID_ORDER.length) return r >= TCL_FIRST;
+        boolean browser = (pkg != null && BROWSER.matcher(pkg).find()) || (label != null && BROWSER.matcher(label).find());
+        return pkg != null && pkg.startsWith("com.tcl.") && !browser;
     }
 
     private static Pattern[] order(String pkg, String label) {

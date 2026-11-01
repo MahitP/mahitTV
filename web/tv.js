@@ -166,10 +166,10 @@ var TV = (function () {
   // show in their real order; Settings and Google Play fill the utilities folder.
   var SAMPLE = [
     ['netflix', 'Netflix', '#E50914'], ['amazon', 'Prime Video', '#00A8E1'], ['youtube.leanback.v4', 'YouTube', '#FF0033'],
-    ['com.apple.appletv', 'Apple TV', '#1C1C1E'], ['com.disney.disneyplus-prod', 'Disney+', '#0A1D56'],
+    ['com.apple.appletv', 'Apple TV', '#1C1C1E'], ['com.crunchyroll.webapp', 'Crunchyroll', '#F47521'],
     ['com.mvas.stb.emu.pro', 'StbEmu', '#65A30D'],
     ['com.apple.music', 'Apple Music', '#1C1C1E'], ['com.google.android.youtube.tvmusic', 'YouTube Music', '#212121'],
-    ['spotify-beehive', 'Spotify', '#1DB954'], ['com.crunchyroll.webapp', 'Crunchyroll', '#F47521'], ['com.tubitv', 'Tubi', '#4500B5'],
+    ['spotify-beehive', 'Spotify', '#1DB954'], ['com.disney.disneyplus-prod', 'Disney+', '#0A1D56'], ['com.tubitv', 'Tubi', '#4500B5'],
     ['com.google.android.youtube.tvunplugged', 'YouTube TV', '#2A2A2A'], ['tv.twitch.android.app', 'Twitch', '#9146FF'],
     ['com.hulu.livingroomplus', 'Hulu', '#0B0C0F'], ['com.wbd.stream', 'HBO Max', '#1B2A8F'], ['com.peacocktv.peacockandroid', 'Peacock TV', '#000000'],
     ['com.cbs.ott', 'Paramount+', '#0064FF'], ['com.instagram.android', 'Instagram', '#C13584'], ['com.roblox.client', 'Roblox', '#2563EB'],
