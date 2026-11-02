@@ -93,6 +93,11 @@ if [ "$what" = all ] || [ "$what" = android ]; then
 fi
 
 if [ "$what" = all ] || [ "$what" = web ]; then
+  # The browser tests' and the generic LG and Samsung packages land where your own build leaves yours (with your city
+  # and TMDB key): keep yours and put them back afterwards, so the next install isn't one of those.
+  kept="$(mktemp -d)"
+  for p in $packages; do if [ -f "$p" ]; then cp "$p" "$kept/"; fi; done
+  restore_packages=true
   python3 tools/test_merge_i18n.py
   python3 tools/translate.py --check
   node tools/test_welly_bot.js
@@ -104,11 +109,6 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/home-background-dom-test.js
   node tools/web-keys-test.js   # H (Dock / Recent Apps), S (screensaver), + and − (volume HUD), one Inputs tile
 
-  # The generic LG and Samsung packages land where your own build leaves yours (with your city and TMDB key):
-  # keep yours and put them back afterwards, so the next install isn't the generic one.
-  kept="$(mktemp -d)"
-  for p in $packages; do if [ -f "$p" ]; then cp "$p" "$kept/"; fi; done
-  restore_packages=true
   python3 webos/build.py --generic
   python3 tizen/build.py --generic
 

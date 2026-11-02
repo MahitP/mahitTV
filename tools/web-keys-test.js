@@ -26,7 +26,8 @@ function weatherFixture() {
 var site = process.env.SITE ? path.resolve(process.env.SITE) : path.join(root, 'out', 'webos');
 var types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf'};
 
-if (!process.env.SITE) child.execFileSync('python3', ['webos/build.py', '--preview'], {cwd: root, stdio: 'inherit'});
+// The example settings, as CI has: with a TMDB key of your own, the preview has no sample picks and no test seam.
+if (!process.env.SITE) child.execFileSync('python3', ['webos/build.py', '--preview', '--config', 'config.example.properties'], {cwd: root, stdio: 'inherit'});
 var server = http.createServer(function (req, res) {
   var file = path.join(site, decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html');
   if (!file.startsWith(site) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
