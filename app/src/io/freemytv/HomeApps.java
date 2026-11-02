@@ -104,6 +104,7 @@ final class HomeApps {
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
         float logoInk;      // fraction of the logo with ink (thin logos are drawn larger, with the same "weight")
         float logoScale = 1; // size tweak by eye (compact logos need more)
+        float tileZoom = 1;  // how far the card fills its tile, past just covering it (a small wordmark on a plain field)
         int[] style;        // the composed backdrop (top, bottom colour, logo mode) when the app has no brand style
         float emblemHeight; // > 0: the emblem's height as a share of the tile's (an icon); 0: sized by its ink (a logo)
         boolean connected = true;
@@ -701,6 +702,7 @@ final class HomeApps {
 
     static Item app(String pkg, String label) {
         Item it = new Item();
+        if ("com.netflix.ninja".equals(pkg)) it.tileZoom = 1.2f;   // its word only fills half the tile, on plain white
         it.kind = APP;
         it.key = pkg;
         it.pkg = pkg;

@@ -12,6 +12,7 @@ import android.graphics.PorterDuffXfermode;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.os.Build;
 import android.view.Choreographer;
 import android.view.View;
 
@@ -132,6 +133,17 @@ final class HouseView extends View implements Choreographer.FrameCallback {
     private final Paint face = new Paint(Paint.ANTI_ALIAS_FLAG), edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint add = new Paint(Paint.ANTI_ALIAS_FLAG), line = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), fade = new Paint();
+
+    // While anything moves on LEGACY, the faces go to the GPU together as triangles, without anti-aliasing: about 1,200
+    // anti-aliased paths took a 2.45 GB TCL to 16 fps. The frame it comes to rest on is drawn with the paths, edges smooth.
+    private static final int BATCH_VERTS = 8192;
+    private final boolean canBatch = Ui.LEGACY && Build.VERSION.SDK_INT >= 29;   // hardware-accelerated drawVertices: Android 10
+    private final float[] batchXy = canBatch ? new float[BATCH_VERTS * 2] : null;
+    private final int[] batchColor = canBatch ? new int[BATCH_VERTS] : null;
+    private final short[] batchIndex = canBatch ? new short[BATCH_VERTS / 4 * 6] : null;
+    private final Paint batchPaint = new Paint();
+    private boolean batching;
+    private int batchVerts, batchIndexes;
     private Paint nameP, stateP, subP;
     private float nameCap, subCap;
 
@@ -210,6 +222,13 @@ final class HouseView extends View implements Choreographer.FrameCallback {
     }
 
     // MARK: - What HomeView calls
+
+    /** The Home tab is coming up. On LEGACY the view stays visible while hidden, so onVisibilityChanged doesn't say so. */
+    void tabShown() {
+        lastKey = System.nanoTime();
+        cameraTarget(true);
+        kick();
+    }
 
     /** Whether the house has the focus (the tab bar has it otherwise): the camera frames the focused light's room. */
     void setFocused(boolean f) {
@@ -321,7 +340,9 @@ final class HouseView extends View implements Choreographer.FrameCallback {
             // The tab shows: the camera settles into place from a little higher and further (pitch +4°, zoom 0.94).
             lastKey = System.nanoTime();
             cameraTarget(true);
-            if (!Spring.instant) {
+            // Not on LEGACY: moving the camera redraws every face on every frame of the tab's arrival (50 to 70 ms each on a
+            // 2.45 GB TCL), where the house can simply fade in as one picture.
+            if (!Spring.instant && !Ui.LEGACY) {
                 camPitch.value = camPitch.target + 4;
                 camZoom.value = camZoom.target * 0.94f;
             }
@@ -836,6 +857,7 @@ final class HouseView extends View implements Choreographer.FrameCallback {
             pillAge = Math.min(1, pillAge + dt / 0.26f);
             moving = true;
         }
+        batching = canBatch && moving;
         invalidate();
         // The fans, the glints and a lit dot's breath keep frames coming while the house shows.
         if (moving || ambient()) {
@@ -864,6 +886,7 @@ final class HouseView extends View implements Choreographer.FrameCallback {
         if (Ui.LEGACY) c.clipRect(0, FADE_H * 0.6f * k, w, h);
         drawGround(c);
         drawItems(c);
+        flushBatch(c);
         if (!Ui.LEGACY) c.drawRect(0, 0, w, FADE_H * k, fade);
         c.restoreToCount(save);
         drawOverlay(c);
@@ -970,6 +993,7 @@ final class HouseView extends View implements Choreographer.FrameCallback {
                 }
             }
         }
+        flushBatch(c);
         for (int i = 0; i < on.length; i++) floorPool(c, i);
     }
 
@@ -1014,9 +1038,11 @@ final class HouseView extends View implements Choreographer.FrameCallback {
             float e = emphOf(rooms);
             switch (m.type[i]) {
                 case LIGHT:
+                    flushBatch(c);
                     drawLight(c, m.fixtureOf[i]);
                     break;
                 case FAN:
+                    flushBatch(c);
                     drawFan(c, m.fixtureOf[i], e);
                     break;
                 case PIECE: {
@@ -1027,6 +1053,7 @@ final class HouseView extends View implements Choreographer.FrameCallback {
                 }
                 case DISC_X:
                 case DISC_Y:
+                    flushBatch(c);
                     disc(c, i, b, warmth(rooms, b[0] + b[3] / 2, b[1] + b[4] / 2), e);
                     break;
                 default: {
@@ -1042,8 +1069,10 @@ final class HouseView extends View implements Choreographer.FrameCallback {
                         }
                     }
                     float g = warmth(rooms, b[0] + b[3] / 2, b[1] + b[4] / 2);
-                    if (m.type[i] == ROUND) round(c, b, z, hh, m.color[i], g, e, a);
-                    else box(c, b[0], b[1], z, b[3], b[4], hh, m.color[i], -1, g, e, a, true);
+                    if (m.type[i] == ROUND) {
+                        flushBatch(c);
+                        round(c, b, z, hh, m.color[i], g, e, a);
+                    } else box(c, b[0], b[1], z, b[3], b[4], hh, m.color[i], -1, g, e, a, true);
                     if (m.screen[i] && ambient()) glint(c, i, b, e);
                 }
             }
@@ -1125,6 +1154,10 @@ final class HouseView extends View implements Choreographer.FrameCallback {
     }
 
     private void poly(Canvas c, Paint p) {
+        if (batching) {
+            batchFace(c, p.getColor());
+            return;
+        }
         tmp.rewind();
         tmp.moveTo(q[0], q[1]);
         tmp.lineTo(q[2], q[3]);
@@ -1132,6 +1165,30 @@ final class HouseView extends View implements Choreographer.FrameCallback {
         tmp.lineTo(q[6], q[7]);
         tmp.close();
         c.drawPath(tmp, p);
+    }
+
+    /** The face in q, as two triangles of the batch. */
+    private void batchFace(Canvas c, int color) {
+        if (batchVerts + 4 > BATCH_VERTS) flushBatch(c);
+        int v = batchVerts;
+        System.arraycopy(q, 0, batchXy, v * 2, 8);
+        for (int i = 0; i < 4; i++) batchColor[v + i] = color;
+        int n = batchIndexes;
+        batchIndex[n] = (short) v;
+        batchIndex[n + 1] = (short) (v + 1);
+        batchIndex[n + 2] = (short) (v + 2);
+        batchIndex[n + 3] = (short) v;
+        batchIndex[n + 4] = (short) (v + 2);
+        batchIndex[n + 5] = (short) (v + 3);
+        batchVerts = v + 4;
+        batchIndexes = n + 6;
+    }
+
+    /** What's batched so far goes down before anything drawn another way, which has to land on top of it. */
+    private void flushBatch(Canvas c) {
+        if (batchIndexes == 0) return;
+        c.drawVertices(Canvas.VertexMode.TRIANGLES, batchVerts * 2, batchXy, 0, null, 0, batchColor, 0, batchIndex, 0, batchIndexes, batchPaint);
+        batchVerts = batchIndexes = 0;
     }
 
     /** A round thing (a pot, a stool, a basket): a circle at the camera's pitch is an upright ellipse here. */

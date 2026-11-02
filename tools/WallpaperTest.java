@@ -115,6 +115,17 @@ public final class WallpaperTest {
         yes(Wallpaper.videoApp("com.amazon.amazonvideo.livingroom"), "Prime Video is video");
         yes(Wallpaper.videoApp("com.google.android.youtube.tv"), "YouTube is video");
         yes(Wallpaper.videoApp("com.apple.atve.androidtv.appletv"), "Apple TV is video");
+        for (String pkg : new String[] {"com.crunchyroll.crunchyroid", "com.hulu.livingroomplus", "com.peacocktv.peacockandroid",
+            "com.cbs.ott", "com.tubitv", "com.google.android.youtube.tvunplugged", "com.mvas.stb.emu.free"}) {
+            yes(Wallpaper.videoApp(pkg), pkg + " has a Top Shelf of its own");
+        }
+        yes(Wallpaper.theaterApp("com.mvas.stb.emu.free"), "StbEmu shows what's in theaters");
+        yes(Wallpaper.theaterApp("com.mvas.stb.emu.pro"), "StbEmu Pro too");
+        no(Wallpaper.theaterApp("com.netflix.ninja"), "Netflix shows its own titles");
+        no(Wallpaper.theaterApp(null), "no package");
+        yes(Wallpaper.youTubeApp("com.google.android.youtube.tv"), "YouTube shows its videos");
+        no(Wallpaper.youTubeApp("com.google.android.youtube.tvunplugged"), "YouTube TV has TMDB's titles");
+        no(Wallpaper.youTubeApp(null), "no package");
         no(Wallpaper.videoApp("com.apple.android.music"), "Apple Music is not TMDB video");
         no(Wallpaper.videoApp("com.spotify.tv.android"), "Spotify is not TMDB video");
         no(Wallpaper.videoApp("io.freemytv"), "Settings is not video");

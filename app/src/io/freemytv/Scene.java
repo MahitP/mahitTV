@@ -204,6 +204,9 @@ final class Scene {
 
     boolean isHorizon() { return horizonMode; }
 
+    /** How bright the photo behind the glass is on average, 0 to 1. */
+    float photoLum() { return imageLum; }
+
     private static void color(RuntimeShader shader, String name, int color) {
         shader.setFloatUniform(name, Color.red(color) / 255f, Color.green(color) / 255f, Color.blue(color) / 255f);
     }

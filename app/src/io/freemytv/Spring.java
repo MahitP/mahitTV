@@ -10,7 +10,7 @@ final class Spring {
     // The presets (ANIMATIONS-SPEC.md §1.2): {response, damping}.
     static final float[] MICRO_PRESS = {0.18f, 0.92f}, SNAPPY_FOCUS = {0.30f, 0.80f}, FAST_FOCUS = {0.16f, 0.95f};
     static final float[] BOUNDARY_BUMP = {0.24f, 0.76f}, TILT = {0.42f, 0.60f}, LIQUID_PILL = {0.36f, 0.84f};
-    static final float[] TAB_SWAP = {0.42f, 0.90f}, SHEET_OPEN = {0.44f, 0.88f}, SHEET_CLOSE = {0.34f, 0.96f};
+    static final float[] TAB_SWAP = {0.30f, 0.92f}, SHEET_OPEN = {0.36f, 0.90f}, SHEET_CLOSE = {0.30f, 0.96f};
     static final float[] SPATIAL_SCROLL = {0.46f, 0.92f}, TITLE_SETTLE = {0.38f, 0.88f}, CAMERA_ORBIT = {0.68f, 0.94f};
     static final float[] WALL_CUT = {0.45f, 0.92f}, ROOM_FADE = {0.40f, 1.00f}, IGNITE = {0.25f, 0.75f};
     static final float[] CARD_ENTER = SNAPPY_FOCUS, ORB = {0.50f, 0.80f};

@@ -120,7 +120,7 @@ final class Recs {
     /** Trakt's titles in the list: about what the tabs show of them (now(): up to 2 in 5 in progress, 3 in 5 liked). */
     private static final int TRAKT_MAX = MAX_CARDS;
     /** Images kept on disk: a backdrop for every title the list can hold. */
-    private static final int FILES = POOL + TRAKT_MAX;
+    private static final int FILES = POOL + TRAKT_MAX + 40;   // 40: the Dock apps' own titles (forApp)
     /** Pick.mine: what they're in the middle of, and what they'd like (watchlist, Trakt's recommendations). */
     private static final int PROGRESS = 1, LIKED = 2;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
@@ -145,6 +145,8 @@ final class Recs {
         {"apple tv", "appletv", "com.apple.atve.amazon.appletv"},
         {"hotstar", "hotstar", "in.startv.hotstar"},   // TMDB: "JioHotstar" (earlier "Disney Plus Hotstar")
         {"crunchyroll", "crunchyroll", "com.crunchyroll.crunchyroid"},
+        {"tubi", "tubi", "com.tubitv"},
+        {"youtube tv", "youtubetv", "com.google.android.youtube.tvunplugged"},
         {"now tv", "now", "com.bskyb.nowtv.beta"},     // UK: Sky's NOW (TMDB: "Now TV", "Now TV Cinema")
         {"oneplay", "oneplay", "net.cme.voyo.cz.tvapp"},    // Czechia: Voyo and O2 TV became Oneplay, same app
         // Germany (TMDB's watch providers for DE)
@@ -173,6 +175,9 @@ final class Recs {
     static {
         SERVICE_NAME.put("stremio", "Stremio");
         SERVICE_NAME.put("netflix", "Netflix");
+        SERVICE_NAME.put("tubi", "Tubi");
+        SERVICE_NAME.put("youtubetv", "YouTube TV");
+        SERVICE_NAME.put("youtube", "YouTube");
         SERVICE_NAME.put("prime", "Prime Video");
         SERVICE_NAME.put("disney", "Disney+");
         SERVICE_NAME.put("hulu", "Hulu");
@@ -774,6 +779,200 @@ final class Recs {
         });
     }
 
+    // MARK: - Each Dock app's own titles
+
+    private static final String YOUTUBE_KIND = "youtube";
+    private static final int APP_TITLES = 5;   // SHELF_PAGES
+    private static final long APP_LIST_EVERY = 12 * 3600_000L, APP_LIST_RETRY = 15 * 60_000L;
+    /** Lists by package, what's being fetched, and when each was last tried: read on the main thread, written on `io`. */
+    private final Map<String, List<Pick>> appLists = new HashMap<>();
+    private final Map<String, Long> appListAt = new HashMap<>();
+    private final Set<String> appFetching = new HashSet<>();
+
+    /**
+     * The Top Shelf's titles for one Dock app: what's popular on its service (TMDB by provider), what's in theaters for
+     * IPTV, the newest videos for YouTube. Answers at once with what's saved; a missing or old list comes in the background,
+     * and listeners hear when it's there.
+     */
+    List<Pick> forApp(String pkg) {
+        boolean youTube = Wallpaper.youTubeApp(pkg);
+        if (pkg == null || Config.PREVIEW || (!youTube && !hasKey(context))) return new ArrayList<>();
+        List<Pick> list;
+        boolean fetch;
+        synchronized (appLists) {
+            list = appLists.get(pkg);
+            if (list == null) {
+                list = readAppList(pkg);
+                appLists.put(pkg, list);
+                if (appStamp().equals(cache.getString("appStamp:" + pkg, ""))) appListAt.put(pkg, cache.getLong("appAt:" + pkg, 0));
+            }
+            Long at = appListAt.get(pkg);
+            long now = System.currentTimeMillis();
+            fetch = (at == null || now < at || now - at > (list.isEmpty() ? APP_LIST_RETRY : APP_LIST_EVERY)) && appFetching.add(pkg);
+        }
+        if (fetch) io.execute(() -> fetchAppList(pkg));
+        return list;
+    }
+
+    /** What makes a saved list stale whatever its age: the key, the country, the language, the saved format. */
+    private String appStamp() {
+        return CACHE_VERSION + "/" + key().hashCode() + "/" + REGION + "/" + Ui.language + "/" + Prefs.hideAnimation() + "/" + Config.YOUTUBE_CHANNELS.hashCode();
+    }
+
+    private List<Pick> readAppList(String pkg) {
+        try {
+            if (appStamp().equals(cache.getString("appStamp:" + pkg, ""))) return parse(new JSONArray(cache.getString("app:" + pkg, "[]")));
+        } catch (Exception e) {
+            AppLog.w("app titles: " + e.getMessage());
+        }
+        return new ArrayList<>();
+    }
+
+    private void fetchAppList(String pkg) {
+        List<Pick> list = null;
+        try {
+            list = Wallpaper.youTubeApp(pkg) ? youTubeTitles(pkg) : Wallpaper.theaterApp(pkg) ? theaterTitles(pkg) : serviceTitles(pkg);
+            // The first pages' photos on disk now, so the app's Top Shelf opens on them.
+            for (int i = 0; i < list.size() && i < 2; i++) download(list.get(i));
+        } catch (Exception e) {
+            AppLog.w("titles for " + pkg + ": " + e.getMessage());
+        }
+        synchronized (appLists) {
+            appListAt.put(pkg, System.currentTimeMillis());
+            if (list != null && !list.isEmpty()) {
+                appLists.put(pkg, list);
+                JSONArray a = new JSONArray();
+                try {
+                    for (Pick p : list) a.put(json(p));
+                    cache.edit().putString("app:" + pkg, a.toString()).putLong("appAt:" + pkg, System.currentTimeMillis())
+                            .putString("appStamp:" + pkg, appStamp()).apply();
+                } catch (Exception e) {
+                    AppLog.w("app titles: " + e.getMessage());
+                }
+            }
+            appFetching.remove(pkg);
+        }
+        if (list != null && !list.isEmpty()) notifyListeners();
+    }
+
+    /** What's popular on the app's service, movies and shows in turn, one per franchise. */
+    private List<Pick> serviceTitles(String pkg) throws Exception {
+        String key = serviceKey(pkg);
+        List<Pick> out = new ArrayList<>();
+        if (key == null || Prefs.serviceOff(key)) return out;
+        Set<Integer> ids = new HashSet<>();
+        for (String kind : new String[] {"movie", "tv"}) {
+            JSONArray providers = get("/watch/providers/" + kind + "?language=" + lang() + "&watch_region=" + REGION).getJSONArray("results");
+            for (int i = 0; i < providers.length(); i++) {
+                JSONObject o = providers.getJSONObject(i);
+                String[] s = service(o.optString("provider_name"), o.optInt("provider_id"));
+                if (s != null && key.equals(s[1])) ids.add(o.optInt("provider_id"));
+            }
+        }
+        if (ids.isEmpty()) return out;
+        StringBuilder joined = new StringBuilder();
+        for (int id : ids) joined.append(joined.length() == 0 ? "" : "|").append(id);
+        boolean anime = key.equals("crunchyroll");   // the service is the anime: Picks > Cartoons and anime doesn't empty it
+        String common = "&language=" + lang() + "&watch_region=" + REGION + "&include_adult=false&vote_count.gte=20&sort_by=popularity.desc"
+                + "&with_watch_monetization_types=" + URLEncoder.encode("flatrate|free|ads", "UTF-8")
+                + "&with_watch_providers=" + URLEncoder.encode(joined.toString(), "UTF-8")
+                + (Prefs.hideAnimation() && !anime ? "&without_genres=" + ANIMATION : "");
+        List<Pick> movies = new ArrayList<>(), shows = new ArrayList<>(), both = new ArrayList<>();
+        JSONArray found = get("/discover/movie?" + common.substring(1)).getJSONArray("results");
+        for (int i = 0; i < found.length(); i++) addAny(movies, found.getJSONObject(i), "movie");
+        found = get("/discover/tv?" + common.substring(1)).getJSONArray("results");
+        for (int i = 0; i < found.length(); i++) addAny(shows, found.getJSONObject(i), "tv");
+        alternate(both, new HashSet<>(), movies, shows, Integer.MAX_VALUE);
+        Set<String> seen = new HashSet<>();
+        for (Pick p : both) {
+            if (out.size() >= APP_TITLES) break;
+            if (!seen.add(franchise(p.title))) continue;
+            try {
+                fetchDetails(p);
+            } catch (Exception e) {
+                continue;
+            }
+            if (p.backdrop == null) continue;
+            String prior = p.service;
+            p.pkg = pkg;
+            p.app = key;
+            p.service = name(key);
+            p.servicePkg = null;
+            p.link = null;
+            p.meta = WatchArtworkPolicy.rebindMeta(p.meta, prior, p.service);
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** What's popular in theaters in the region, for an app with no catalogue of its own: OK opens the app. */
+    private List<Pick> theaterTitles(String pkg) throws Exception {
+        List<Pick> found = new ArrayList<>(), out = new ArrayList<>();
+        JSONArray playing = get("/movie/now_playing?language=" + lang() + "&region=" + REGION + "&page=1").getJSONArray("results");
+        for (int i = 0; i < playing.length(); i++) add(found, playing.getJSONObject(i), "movie");
+        Set<String> seen = new HashSet<>();
+        for (Pick p : found) {
+            if (out.size() >= APP_TITLES) break;
+            if (!seen.add(franchise(p.title))) continue;
+            p.tag = Ui.tr("In Theaters");
+            try {
+                fetchDetails(p);
+            } catch (Exception e) {
+                continue;
+            }
+            if (p.backdrop == null) continue;
+            p.meta = WatchArtworkPolicy.rebindMeta(p.meta, p.service, "");
+            p.pkg = pkg;
+            p.app = null;
+            p.service = null;
+            p.servicePkg = null;
+            p.link = null;
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** The newest video of each channel; only one whose wide thumbnail exists, since that's the full-screen photo. */
+    private List<Pick> youTubeTitles(String pkg) {
+        List<List<YouTubeFeed.Video>> feeds = new ArrayList<>();
+        for (String channel : YouTubeFeed.channels(Config.YOUTUBE_CHANNELS)) {
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL("https://www.youtube.com/feeds/videos.xml?channel_id=" + URLEncoder.encode(channel, "UTF-8")).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(8000);
+                try {
+                    if (c.getResponseCode() == 200) feeds.add(YouTubeFeed.parse(read(c.getInputStream())));
+                } finally {
+                    c.disconnect();
+                }
+            } catch (Exception e) {
+                AppLog.w("youtube feed: " + e.getMessage());
+            }
+        }
+        List<Pick> out = new ArrayList<>();
+        for (YouTubeFeed.Video v : YouTubeFeed.newest(feeds, APP_TITLES * 2)) {
+            if (out.size() >= APP_TITLES) break;
+            Pick p = new Pick();
+            p.kind = YOUTUBE_KIND;
+            p.id = v.id.hashCode() & Integer.MAX_VALUE;
+            p.title = v.title;
+            p.backdrop = "yt-" + v.id + ".jpg";
+            p.app = "youtube";
+            p.pkg = pkg;
+            p.service = name("youtube");
+            p.link = "https://www.youtube.com/watch?v=" + v.id;
+            p.meta = v.channel + " · " + p.service;
+            p.detailed = true;
+            try {
+                download(p);
+            } catch (IOException e) {
+                continue;
+            }
+            out.add(p);
+        }
+        return out;
+    }
+
     /** This hour's picks for the TMDB tabs (Explore, Movies, Shows), without repeats. */
     List<Pick> wanted() {
         List<Pick> out = new ArrayList<>();
@@ -1023,9 +1222,13 @@ final class Recs {
     }
 
     private static void add(List<Pick> list, JSONObject o, String kind) {
+        if (Prefs.hideAnimation() && animated(o)) return;
+        addAny(list, o, kind);
+    }
+
+    private static void addAny(List<Pick> list, JSONObject o, String kind) {
         String backdrop = o.optString("backdrop_path", "");
         if (backdrop.isEmpty() || "null".equals(backdrop)) return;
-        if (Prefs.hideAnimation() && animated(o)) return;
         Pick p = new Pick();
         p.id = o.optInt("id");
         p.kind = kind;
@@ -1440,6 +1643,10 @@ final class Recs {
 
     private void download(Pick p) throws IOException {
         File f = imageFile(p);
+        if (YOUTUBE_KIND.equals(p.kind)) {
+            fetch("https://i.ytimg.com/vi/" + p.backdrop.substring(3, p.backdrop.length() - 4) + "/maxresdefault.jpg", f);
+            return;
+        }
         if (!f.exists()) fetchFile(f, p.id < 0
                 ? plexOpen("/photo/:/transcode?width=1920&height=1080&minSize=1&url=" + URLEncoder.encode(p.backdrop, "UTF-8"))
                 : (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection());
@@ -1601,15 +1808,7 @@ final class Recs {
         try {
             JSONArray a = new JSONArray();
             for (Pick p : picks) {
-                a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop)
-                        .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
-                        .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
-                        .put("service", p.service == null ? "" : p.service)
-                        .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
-                        .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine)
-                        .put("year", p.year).put("overview", p.overview).put("rating", p.rating)
-                        .put("cert", p.cert).put("logo", p.logo == null ? "" : p.logo).put("badges", p.badges)
-                        .put("detailed", p.detailed));
+                a.put(json(p));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("traktActivity", traktActivity).putLong("traktStamp", traktStamp)
@@ -1622,6 +1821,18 @@ final class Recs {
             e.apply();
         } catch (Exception ignored) {
         }
+    }
+
+    private static JSONObject json(Pick p) throws org.json.JSONException {
+        return new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop)
+                .put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link)
+                .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
+                .put("service", p.service == null ? "" : p.service)
+                .put("servicePkg", p.servicePkg == null ? "" : p.servicePkg)
+                .put("tag", p.tag == null ? "" : p.tag).put("mine", p.mine)
+                .put("year", p.year).put("overview", p.overview).put("rating", p.rating)
+                .put("cert", p.cert).put("logo", p.logo == null ? "" : p.logo).put("badges", p.badges)
+                .put("detailed", p.detailed);
     }
 
     private static List<Pick> parse(JSONArray a) {

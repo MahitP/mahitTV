@@ -990,6 +990,12 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         kick();
     }
 
+    /** The Welly tab is coming up. On LEGACY the view stays visible while hidden, so onVisibilityChanged doesn't say so. */
+    void tabShown() {
+        if (memory != null) person();   // maybe for someone else
+        kick();
+    }
+
     /** The orb lives (an idle frame every vsync) only while the tab shows and animations are on. */
     private boolean orbAlive() {
         return !Spring.instant && isAttachedToWindow() && getVisibility() == VISIBLE && getAlpha() > 0.01f && isShown();
@@ -1061,7 +1067,7 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         invalidate();
         if (moving || listening || thinking || orbAlive()) {
             posted = true;
-            if (Ui.LEGACY && !moving) Choreographer.getInstance().postFrameCallbackDelayed(this, 33);   // the orb at 30 fps
+            if (!Ui.SMALL_MOTION && !moving) Choreographer.getInstance().postFrameCallbackDelayed(this, 33);   // the orb at 30 fps
             else Choreographer.getInstance().postFrameCallback(this);
         } else {
             lastFrame = 0;

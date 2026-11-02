@@ -79,8 +79,8 @@
     /** The presets (ANIMATIONS-SPEC.md §1.2): [response, damping]. */
     P: {
       MICRO_PRESS: [0.18, 0.92], SNAPPY_FOCUS: [0.30, 0.80], FAST_FOCUS: [0.16, 0.95], BOUNDARY_BUMP: [0.24, 0.76],
-      TILT: [0.42, 0.60], LIQUID_PILL: [0.36, 0.84], TAB_SWAP: [0.42, 0.90], SHEET_OPEN: [0.44, 0.88],
-      SHEET_CLOSE: [0.34, 0.96], SPATIAL_SCROLL: [0.46, 0.92], TITLE_SETTLE: [0.38, 0.88], CAMERA_ORBIT: [0.68, 0.94],
+      TILT: [0.42, 0.60], LIQUID_PILL: [0.36, 0.84], TAB_SWAP: [0.30, 0.92], SHEET_OPEN: [0.36, 0.90],
+      SHEET_CLOSE: [0.30, 0.96], SPATIAL_SCROLL: [0.46, 0.92], TITLE_SETTLE: [0.38, 0.88], CAMERA_ORBIT: [0.68, 0.94],
       WALL_CUT: [0.45, 0.92], ROOM_FADE: [0.40, 1.00], IGNITE: [0.25, 0.75], CARD_ENTER: [0.30, 0.80], ORB: [0.50, 0.80],
       // Control Center's panels and the Inputs list: a momentum-weighted glide.
       CC_OPEN: [0.42, 0.85]

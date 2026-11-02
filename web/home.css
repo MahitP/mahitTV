@@ -211,7 +211,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   position: absolute;
   left: 64px;
   top: 44px;
-  width: 700px;
+  width: 640px;
   color: #FFF;
   text-shadow: 0 2px 22px rgba(0, 0, 0, 0.35);
 }
