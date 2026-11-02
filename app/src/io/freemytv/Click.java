@@ -5,7 +5,9 @@ import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -14,31 +16,70 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Soft click for the home screen (moving focus, opening, and a duller knock when focus can't go further). The app
- * synthesizes the sounds itself (a short, low "tock"), writes them once as WAVs in the cache and plays them quietly
- * through SoundPool. They only play on the home screen, never inside apps. The views of the home screen play the knock
- * through `boundary()`, on the same frame as their dead-end bump (ANIMATIONS-SPEC.md §5.4).
+ * The home screen's acoustic feedback engine. Every sound is synthesized by the app (16-bit PCM, written once as WAVs
+ * in the cache, then played from memory by SoundPool: nothing is decoded when one plays):
+ * <ul>
+ * <li>`move()`, the focus tick: a 28 ms glass-and-wood tick (three modes, 1.24 / 2.71 / 4.38 kHz, over a 0.6 ms
+ * transient), panned to where the focus landed on screen (`focusAt`), its pitch and level varied a little from one tick
+ * to the next so a run of them never sounds mechanical, lighter when the focus is moving fast (a held arrow) and never
+ * more than ~28 a second.</li>
+ * <li>`open()`, select: a soft 196 Hz press under a G6 glass ping, 150 ms.</li>
+ * <li>`bump()`: a muted knock at a dead end, on the same frame as the views' bump (ANIMATIONS-SPEC.md §5.4).</li>
+ * <li>`toggle(on)`: two blips, C6 → G6 rising for on, falling for off.</li>
+ * <li>`holdStart()`, `holdCancel()`, `holdCommit()`: a low mechanical tension (110 Hz and a ratcheting grain, rising
+ * in pitch and level to the hold's threshold), faded out if OK is let go first, and a snap when the hold commits.</li>
+ * <li>`sheet(open, pan)`: an air-release whisper, noise through a low-pass sweeping up (in) or down (out), for Control
+ * Center, Inputs, All Apps and folders.</li>
+ * </ul>
+ * The views call these on the key event that starts the spring, so sound and motion begin on the same frame; the tick
+ * waits only for the end of that event (the view places the focus first, then `focusAt` pans the tick there). SoundPool's
+ * own calls can wait on the audio server, so they run on the sound's thread, never on the UI thread. All of it follows
+ * Settings → Navigation sounds and plays under the system volume, only on the home screen, never inside apps.
  */
 final class Click {
     private static final int RATE = 48_000;
+    /** Each cue's level (0–1, before the system volume): the tick is the quietest, select and the knock a little over. */
+    private static final float TICK = 0.13f, SELECT = 0.20f, BUMP = 0.15f, TOGGLE = 0.16f, TENSION = 0.16f, COMMIT = 0.20f;
+    private static final float SHEET = 0.14f, ERROR = 0.22f, CHIME = 0.36f;
+    /** How wide the panning goes (1: hard left to hard right): a hint of place, never a jump between speakers. */
+    private static final float PAN_WIDTH = 0.6f;
+    /** The tick's variations (pitch, level), in turn: a run of ticks never sounds like one sample repeated. */
+    private static final float[] RATES = {1f, 1.012f, 0.994f, 1.006f, 0.988f}, GAINS = {1f, 0.94f, 0.97f, 0.92f, 0.98f};
+    /** Ticks closer than this are dropped; closer than FAST, lighter (a held arrow scrubbing). */
+    private static final long MIN_GAP_MS = 35, FAST_MS = 90;
+
     private static Click current;
     private volatile SoundPool pool;
-    private int move, open, bump, chime, error;
+    private int tick, select, bump, toggleOn, toggleOff, tension, commit, sheetIn, sheetOut, chime, error;
+    /** SoundPool's own thread (see the class comment), and the UI thread for what waits for the end of a key event. */
     private final HandlerThread thread = new HandlerThread("click", Process.THREAD_PRIORITY_BACKGROUND);
-    private final Handler handler;
+    private final Handler audio, main = new Handler(Looper.getMainLooper());
+    private float pan = 0.5f, fade;
+    private boolean tickPending;
+    private long lastTickAt;
+    private int variation, tensionStream;
 
     Click(Context c) {
         thread.start();
-        handler = new Handler(thread.getLooper());
+        audio = new Handler(thread.getLooper());
         try {
-            pool = new SoundPool.Builder().setMaxStreams(4).setAudioAttributes(new AudioAttributes.Builder()
+            pool = new SoundPool.Builder().setMaxStreams(6).setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
-            move = pool.load(wav(c, "click-move.wav", 1450f, 0.009f, 0.030f), 1);
-            open = pool.load(wav(c, "click-open.wav", 880f, 0.022f, 0.090f), 1);
-            bump = pool.load(wav(c, "click-bump.wav", 310f, 0.014f, 0.060f), 1);
+            for (String old : new String[] {"click-move.wav", "click-open.wav", "click-bump.wav", "click-error.wav"}) {
+                new File(c.getCacheDir(), old).delete();   // the first single-sine clicks
+            }
+            tick = pool.load(cue(c, "ui-tick.wav", 0.028f, Click::tick), 1);
+            select = pool.load(cue(c, "ui-select.wav", 0.15f, Click::select), 1);
+            bump = pool.load(cue(c, "ui-bump.wav", 0.07f, Click::knock), 1);
+            toggleOn = pool.load(cue(c, "ui-toggle-on.wav", 0.09f, m -> blips(m, 1046.5, 1568.0)), 1);
+            toggleOff = pool.load(cue(c, "ui-toggle-off.wav", 0.09f, m -> blips(m, 1568.0, 1046.5)), 1);
+            tension = pool.load(cue(c, "ui-tension.wav", 0.56f, Click::tension), 1);
+            commit = pool.load(cue(c, "ui-commit.wav", 0.12f, Click::commit), 1);
+            sheetIn = pool.load(cue(c, "ui-sheet-in.wav", 0.26f, m -> air(m, 260, 1700, 0.12)), 1);
+            sheetOut = pool.load(cue(c, "ui-sheet-out.wav", 0.20f, m -> air(m, 1500, 220, 0.03)), 1);
             chime = pool.load(chord(c), 1);
-            error = pool.load(wav(c, "click-error.wav", 150f, 0.045f, 0.180f), 1);
+            error = pool.load(cue(c, "ui-error.wav", 0.18f, Click::error), 1);
             current = this;
         } catch (IOException | RuntimeException e) {
             AppLog.w("click sound unavailable: " + e.getMessage());
@@ -46,27 +87,120 @@ final class Click {
         }
     }
 
+    // MARK: - Playing
+
+    /** The focus moved: a tick, at the end of this key event (once `focusAt` has placed it), in the focus's place. */
     void move() {
-        play(move, 0.14f, 1);
+        if (tickPending) return;
+        tickPending = true;
+        main.post(flushTick);
     }
 
+    /** Where the focus is now, 0 (left edge) to 1 (right edge): the pending tick plays there. */
+    void focusAt(float x) {
+        pan = Math.max(0, Math.min(1, x));
+    }
+
+    private final Runnable flushTick = () -> {
+        tickPending = false;
+        float at = pan;
+        pan = 0.5f;   // a tick from a view that doesn't place it plays in the middle
+        if (pool == null || !Prefs.sounds()) return;
+        long now = SystemClock.uptimeMillis(), gap = now - lastTickAt;
+        if (gap < MIN_GAP_MS) return;
+        lastTickAt = now;
+        float level = TICK * GAINS[variation] * (gap < FAST_MS ? 0.62f : 1f);
+        play(tick, level, at, RATES[variation]);
+        variation = (variation + 1) % RATES.length;
+    };
+
+    /** Select: opening an app, pressing OK on a card or a control. */
     void open() {
-        play(open, 0.18f, 1);
+        play(select, SELECT, 0.5f, 1);
     }
 
     /** Focus can't go further that way. */
     void bump() {
-        play(bump, 0.12f, 1);
+        play(bump, BUMP, 0.5f, 1);
+    }
+
+    /** A switch went on or off. */
+    void toggle(boolean on) {
+        play(on ? toggleOn : toggleOff, TOGGLE, 0.5f, 1);
+    }
+
+    /** OK went down where holding it does something: the tension builds toward the hold's threshold. */
+    void holdStart() {
+        if (pool == null) return;
+        boolean on = Prefs.sounds();
+        audio.post(() -> {
+            holdStop();
+            SoundPool p = pool;
+            if (on && p != null) tensionStream = p.play(tension, TENSION, TENSION, 1, 0, 1f);
+        });
+    }
+
+    /** Let go before the hold: the tension fades out over 40 ms (a stop mid-wave would click). */
+    void holdCancel() {
+        if (pool == null) return;
+        audio.post(() -> {
+            if (tensionStream == 0) return;
+            audio.removeCallbacks(fadeStep);
+            fade = 1;
+            audio.post(fadeStep);
+        });
+    }
+
+    /** The hold took: the tension stops and a snap answers it. */
+    void holdCommit() {
+        if (pool == null) return;
+        audio.post(this::holdStop);
+        play(commit, COMMIT, 0.5f, 1);
+    }
+
+    /** On the sound's thread, like everything that touches the tension's stream. */
+    private void holdStop() {
+        audio.removeCallbacks(fadeStep);
+        SoundPool p = pool;
+        if (tensionStream != 0 && p != null) p.stop(tensionStream);
+        tensionStream = 0;
+    }
+
+    private final Runnable fadeStep = this::fadeTension;
+
+    private void fadeTension() {
+        SoundPool p = pool;
+        if (tensionStream == 0 || p == null) return;
+        fade -= 0.25f;
+        if (fade <= 0) {
+            p.stop(tensionStream);
+            tensionStream = 0;
+            return;
+        }
+        p.setVolume(tensionStream, TENSION * fade, TENSION * fade);
+        audio.postDelayed(fadeStep, 10);
+    }
+
+    /** A sheet or panel slides in (or out), from `pan` (0 left … 1 right: Control Center comes from the top right). */
+    void sheet(boolean open, float pan) {
+        play(open ? sheetIn : sheetOut, SHEET, pan, 1);
     }
 
     /** mahitTV's startup sound (Intro, from its first frame: it carries its own timing, stereo). */
     void chime() {
-        play(chime, 0.36f, 2);
+        send(chime, CHIME, CHIME, 2, 1f);
     }
 
     /** A dull thud: a wrong PIN. */
     void error() {
-        play(error, 0.22f, 1);
+        play(error, ERROR, 0.5f, 1);
+    }
+
+    /** Plays `id` at `level`, panned (equal power, PAN_WIDTH wide; the middle at full level), at `rate`. */
+    private void play(int id, float level, float at, float rate) {
+        double p = (at - 0.5) * PAN_WIDTH, angle = (p + 1) * Math.PI / 4;
+        send(id, (float) Math.min(1, level * Math.sqrt(2) * Math.cos(angle)),
+                (float) Math.min(1, level * Math.sqrt(2) * Math.sin(angle)), 1, rate);
     }
 
     static Click current() {
@@ -79,19 +213,20 @@ final class Click {
         if (c != null) c.bump();
     }
 
-    /** On its own thread: SoundPool's calls can wait on the audio server, and never on the UI thread. */
-    private void play(int sound, float volume, int priority) {
-        if (pool == null || !Prefs.sounds()) return;
-        handler.post(() -> {
+    private void send(int id, float left, float right, int priority, float rate) {
+        if (pool == null || id == 0 || !Prefs.sounds()) return;
+        audio.post(() -> {
             SoundPool p = pool;
-            if (p != null) p.play(sound, volume, volume, priority, 0, 1f);
+            if (p != null) p.play(id, left, right, priority, 0, rate);
         });
     }
 
     void release() {
+        main.removeCallbacks(flushTick);
+        audio.removeCallbacks(fadeStep);
         SoundPool p = pool;
         pool = null;
-        if (p != null) handler.post(p::release);   // after the plays already queued, never during one
+        if (p != null) audio.post(p::release);   // after the plays already queued, never during one
         thread.quitSafely();
         if (current == this) current = null;
     }
@@ -269,21 +404,142 @@ final class Click {
         return b;
     }
 
-    /** Sine wave plus one harmonic, 1.5 ms attack (no pop) and exponential decay. */
-    private static String wav(Context c, String name, float freq, float decay, float seconds) throws IOException {
+    // MARK: - The cues, synthesized (once, into the cache)
+
+    /** Fills a mono buffer of a cue's length with its samples (any level: `cue` normalizes it). */
+    private interface Synth {
+        void fill(float[] m);
+    }
+
+    /** A cue's WAV in the cache (made on the first run): faded in over 0.15 ms and out over 1 ms, peak at −3 dBFS. */
+    private static String cue(Context c, String name, float seconds, Synth synth) throws IOException {
         File f = new File(c.getCacheDir(), name);
         if (f.exists() && f.length() > 44) return f.getPath();
         int n = Math.round(RATE * seconds);
-        ByteBuffer b = header(n);
+        float[] m = new float[n];
+        synth.fill(m);
+        int fadeIn = RATE / 6667, fadeOut = RATE / 1000;   // 0.15 ms in (the transient stays crisp), 1 ms out
+        float peak = 1e-6f;
         for (int i = 0; i < n; i++) {
-            double t = (double) i / RATE;
-            double env = Math.min(1, t / 0.0015) * Math.exp(-t / decay);
-            double s = 0.75 * Math.sin(2 * Math.PI * freq * t) + 0.25 * Math.sin(2 * Math.PI * freq * 2.01 * t);
-            b.putShort((short) Math.round(s * env * 0.7 * Short.MAX_VALUE));
+            m[i] *= Math.min(1, Math.min((i + 1f) / fadeIn, (float) (n - i) / fadeOut));
+            peak = Math.max(peak, Math.abs(m[i]));
         }
+        float gain = 0.708f / peak;
+        ByteBuffer b = header(n);
+        for (int i = 0; i < n; i++) b.putShort(pcm(m[i] * gain));
         try (FileOutputStream out = new FileOutputStream(f)) {
             out.write(b.array());
         }
         return f.getPath();
+    }
+
+    /** A struck mode: a sine at `hz` from `start` s, `amp`, decaying with time constant `tau` s (0.3 ms attack). */
+    private static void mode(float[] m, double start, double hz, double amp, double tau) {
+        int from = (int) Math.round(start * RATE);
+        double w = 2 * Math.PI * hz / RATE;
+        for (int i = Math.max(0, from); i < m.length; i++) {
+            double t = (double) (i - from) / RATE, env = raised(t / 0.0003) * Math.exp(-t / tau);
+            if (t > 0.01 && env < 1e-4) break;
+            m[i] += (float) (amp * env * Math.sin(w * (i - from)));
+        }
+    }
+
+    /** A noise burst from `start`, `amp`, decaying with `tau`, through a one-pole low-pass at `cut` Hz (0: none). */
+    private static void grain(float[] m, double start, double amp, double tau, double cut) {
+        int from = (int) Math.round(start * RATE);
+        double a = cut > 0 ? Math.exp(-2 * Math.PI * cut / RATE) : 0, y = 0;
+        int seed = 0x2545F491;
+        for (int i = Math.max(0, from); i < m.length; i++) {
+            double t = (double) (i - from) / RATE, env = Math.exp(-t / tau);
+            if (env < 1e-4) break;
+            seed = seed * 1664525 + 1013904223;   // a fixed noise: the same cue on every TV
+            double x = (seed >>> 8) / (double) (1 << 24) * 2 - 1;
+            y = cut > 0 ? (1 - a) * x + a * y : x;
+            m[i] += (float) (amp * env * y);
+        }
+    }
+
+    /** The focus tick: glass on wood, three modes over a sub-millisecond transient. */
+    private static void tick(float[] m) {
+        grain(m, 0, 0.30, 0.0005, 0);
+        mode(m, 0, 1240, 1.0, 0.007);
+        mode(m, 0, 2710, 0.42, 0.0045);
+        mode(m, 0, 4380, 0.16, 0.0025);
+    }
+
+    /** Select: a soft press (196 Hz body) and, 6 ms later, the G6 glass ping with its fifth. */
+    private static void select(float[] m) {
+        grain(m, 0, 0.18, 0.0008, 3000);
+        mode(m, 0, 196, 0.55, 0.022);
+        mode(m, 0.006, 1568, 0.62, 0.055);
+        mode(m, 0.006, 2352, 0.22, 0.032);
+        mode(m, 0.006, 3136, 0.08, 0.018);
+    }
+
+    /** The dead end: a muted knock, low and short, with a dull thud of air under it. */
+    private static void knock(float[] m) {
+        grain(m, 0, 0.35, 0.006, 900);
+        mode(m, 0, 220, 0.9, 0.016);
+        mode(m, 0, 331, 0.4, 0.010);
+    }
+
+    /** Two glass blips 28 ms apart (a toggle: rising for on, falling for off). */
+    private static void blips(float[] m, double first, double second) {
+        mode(m, 0, first, 0.8, 0.018);
+        mode(m, 0, first * 2, 0.12, 0.010);
+        mode(m, 0.028, second, 0.8, 0.022);
+        mode(m, 0.028, second * 2, 0.12, 0.012);
+    }
+
+    /** The hold's tension: 110 Hz and its partials rising ~12% in pitch and swelling to the threshold (0.45 s), under
+     * a low ratcheting grain (18 Hz), then easing off. */
+    private static void tension(float[] m) {
+        double phase = 0, a = Math.exp(-2 * Math.PI * 380 / RATE), y = 0, y2 = 0;
+        int seed = 0x1234567;
+        for (int i = 0; i < m.length; i++) {
+            double t = (double) i / RATE, rise = Math.min(1, t / 0.45);
+            double env = raised(rise) * (1 - raised((t - 0.46) / 0.10)), hz = 110 * (1 + 0.12 * rise * rise);
+            phase += 2 * Math.PI * hz / RATE;
+            double tone = Math.sin(phase) + 0.35 * Math.sin(2 * phase) + 0.12 * Math.sin(3 * phase);
+            seed = seed * 1664525 + 1013904223;
+            y = (1 - a) * ((seed >>> 8) / (double) (1 << 24) * 2 - 1) + a * y;
+            y2 = (1 - a) * y + a * y2;   // two poles: a low grain, felt more than heard
+            double ratchet = 0.5 + 0.5 * Math.sin(2 * Math.PI * (14 + 8 * rise) * t);
+            m[i] = (float) (env * (0.55 * tone + 2.4 * y2 * ratchet * ratchet));
+        }
+    }
+
+    /** The hold commits: a lower, firmer select (a snap into place). */
+    private static void commit(float[] m) {
+        grain(m, 0, 0.25, 0.0008, 2500);
+        mode(m, 0, 147, 0.7, 0.03);
+        mode(m, 0.004, 880, 0.55, 0.04);
+        mode(m, 0.004, 1320, 0.3, 0.03);
+    }
+
+    /** Air released through glass: noise under a low-pass sweeping from `from` to `to` Hz, peaking at `peak` s. */
+    private static void air(float[] m, double from, double to, double peak) {
+        int n = m.length;
+        double y1 = 0, y2 = 0;
+        int seed = 0x7F4A7C15;
+        for (int i = 0; i < n; i++) {
+            double t = (double) i / RATE, u = (double) i / n;
+            double cut = from * Math.pow(to / from, u), a = Math.exp(-2 * Math.PI * cut / RATE);
+            seed = seed * 1664525 + 1013904223;
+            double x = (seed >>> 8) / (double) (1 << 24) * 2 - 1;
+            y1 = (1 - a) * x + a * y1;
+            y2 = (1 - a) * y1 + a * y2;   // two poles: a soft, whispered slope
+            double env = t < peak ? raised(t / peak) : Math.exp(-(t - peak) / ((n / (double) RATE - peak) * 0.35));
+            m[i] = (float) (env * y2);
+        }
+        // A faint glass edge on the way in (a sheet arriving), none on the way out.
+        if (to > from) mode(m, peak, 2093, 0.03, 0.06);
+    }
+
+    /** A wrong PIN: a dull low thud, falling a little. */
+    private static void error(float[] m) {
+        grain(m, 0, 0.3, 0.02, 600);
+        mode(m, 0, 150, 1.0, 0.045);
+        mode(m, 0.07, 120, 0.7, 0.05);
     }
 }

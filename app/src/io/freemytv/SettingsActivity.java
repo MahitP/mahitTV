@@ -3403,6 +3403,10 @@ public class SettingsActivity extends Activity {
             if (screen != SECTION) return;
             int id = rows[focus];
             if (id >= R_LIGHT) return;   // read only
+            if (isSwitch(id)) {   // its sound as it flips: rising on, falling off
+                Click k = Click.current();
+                if (k != null) k.toggle(!switchOn(id));
+            }
             if (id >= R_COIN) {
                 if (!Prefs.quotes()) return;
                 Prefs.setCoin(id - R_COIN, !Prefs.coin(id - R_COIN));

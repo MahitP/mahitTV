@@ -126,8 +126,10 @@ var Prefs = (function () {
       this.set('servicesOff', list);
     },
     openPicks: function () { return pick('openPicks', CONFIG.openPicksIn === 'nuvio' ? 'nuvio' : 'apps'); },
-    /** The golden intro at power-on (for the whole TV). */
+    /** The Liquid Glass intro at power-on (for the whole TV). */
     intro: function () { return pick('intro', true) !== false; },
+    /** The interface's sounds (sound.js): the focus tick, select, the knock, toggles, sheets (Navigation sounds). */
+    sounds: function () { return pick('sounds', true) !== false; },
     /** The profile in use (an index into CONFIG.profiles, or the default one). */
     profile: function () { return pick('profile', 0); },
     /** The shelf_apps of the build that last set the shelf, so a new one wins once over the TV's choice. */

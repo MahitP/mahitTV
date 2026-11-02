@@ -2996,6 +2996,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             showToast(Ui.tr("This TV lists no inputs."));
             return;
         }
+        if (!ccInputs) click.sheet(true, 0.78f);
         ccInputs = true;
         ccOnProfiles = ccOnVolume = false;
         if (zone == WIDGETS) zone = Z_DRAWER;
@@ -3008,6 +3009,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Back or ←: the list slides away (SHEET_CLOSE) and the focus returns to the Inputs card. */
     private void closeInputs() {
+        if (ccInputs) click.sheet(false, 0.78f);
         ccInputs = false;
         inputsShown.tune(Spring.SHEET_CLOSE);
         inputsShown.target = 0;
@@ -3211,6 +3213,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (drawerItems.isEmpty()) return;
         drawerFrom = zone == Z_TOP ? Z_TOP : zone == Z_STATUS ? Z_STATUS : Z_SHELF;
+        if (!drawerOpen) click.sheet(true, 0.82f);   // Control Center comes from the top right
         drawerOpen = true;
         drawer.tune(Spring.CC_OPEN);   // tvOS 27's quicker Control Center (still a little slower than leaving)
         drawer.target = 1;
@@ -3233,6 +3236,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void closeDrawer() {
+        if (drawerOpen) click.sheet(false, 0.82f);
         drawerOpen = false;
         drawer.tune(Spring.SHEET_CLOSE);   // disappearing is brisker than appearing
         drawer.target = 0;
@@ -3821,6 +3825,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Sets the springs' targets from the current focus (snap: no animation). */
     private void retarget(boolean snap) {
+        click.focusAt(focusPan());   // the tick of this move plays where the focus lands
         revealShelf(snap);
         // Only the group whose focus changed is redrawn (moving along the shelf doesn't redraw the hero or capsule).
         boolean tilesChanged = aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
@@ -3940,12 +3945,38 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private boolean allAppsOnResume;
 
+    /** Where the focus is across the screen (0 left … 1 right): the focus tick is panned there. */
+    private float focusPan() {
+        if (w <= 0) return 0.5f;
+        RectF r = null;
+        if (folderOpen != null) {
+            r = folderIndex < folderCells.length ? folderCells[folderIndex] : null;
+        } else if (sheetOpen) {
+            return (gridIndex % COLUMNS + 0.5f) / COLUMNS;
+        } else if (zone == Z_SHELF) {
+            r = shelfIndex < tileRects.length ? tileRects[shelfIndex] : null;
+        } else if (zone == Z_TOP) {
+            r = topIndex < topRects.length ? topRects[topIndex] : null;
+        } else if (zone == Z_CARDS) {
+            r = cardIndex < cardRects.length ? cardRects[cardIndex] : null;
+        } else if (zone == Z_HERO) {
+            r = heroButton;
+        } else if (zone == Z_STATUS) {
+            r = onBubble ? bubbleRect : pillRect;
+        } else if (zone == Z_DRAWER) {
+            r = ccInputs ? (inputIndex < inputRects.length ? inputRects[inputIndex] : null)
+                    : drawerIndex < drawerRects.length ? drawerRects[drawerIndex] : null;
+        }
+        return r == null || r.isEmpty() ? 0.5f : r.centerX() / w;
+    }
+
     private void openSheet() {
         openSheet(0);
     }
 
     /** The app grid, with the focus on `index` (↓ from the Dock: the app under the focused one). */
     private void openSheet(int index) {
+        if (!sheetOpen) click.sheet(true, 0.5f);
         sheetOpen = true;
         gridIndex = Math.max(0, Math.min(index, others.size() - 1));
         scroll.snap(0);
@@ -3957,6 +3988,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void closeSheet() {
+        if (sheetOpen) click.sheet(false, 0.5f);
         sheetOpen = false;
         sheet.target = 0;
         retargetGrid(false);   // the focused app shrinks as the grid goes down
@@ -4079,6 +4111,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
     private void openFolder(HomeApps.Item folder, RectF from) {
+        click.sheet(true, 0.5f);
         folderOpen = folder;
         folderIndex = 0;
         FOLDER_COLUMNS = folder.children.size() > 9 && folder.children.size() <= 12 ? 4 : 3;
@@ -4111,6 +4144,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Back (or an app opening): the card zooms back into its tile, the focus on the folder. */
     private void closeFolder() {
         if (folderOpen == null) return;
+        click.sheet(false, 0.5f);
         folderOpen = null;
         folderShown.tune(Spring.SHEET_CLOSE);
         folderShown.target = 0;
@@ -4574,12 +4608,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
                         holdArmed = sheetOpen ? canToggleShelf(gridIndex) : canReorder();
-                        if (holdArmed) handler.postDelayed(holdStart, HOLD_MS);
+                        if (holdArmed) {
+                            handler.postDelayed(holdStart, HOLD_MS);
+                            click.holdStart();   // the tension builds toward the hold, from the frame OK goes down
+                        }
                     } else if (okDown && holdArmed && e.isLongPress()) {
                         hold();
                     }
                 } else {
                     press.target = 0;
+                    if (holdArmed && !okHeld) click.holdCancel();   // let go before the hold: the tension eases off
                     holdArmed = false;
                     handler.removeCallbacks(holdStart);
                     if (okDown && !okHeld && !e.isCanceled() && spoken.keyClick()) activate();
@@ -4999,6 +5037,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - Holding OK: All Apps puts the app on the shelf or takes it off; on the shelf, the app is lifted to move
 
     private void hold() {
+        if (!holdArmed) return;   // the timer and the remote's long-press repeat: whichever comes first, once
+        holdArmed = false;
+        handler.removeCallbacks(holdStart);
+        click.holdCommit();
         press.target = 0;
         if (sheetOpen) toggleShelf(); else startReorder();
     }

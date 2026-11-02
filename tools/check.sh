@@ -46,7 +46,7 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     exit 1
   fi
   # SoundPool's calls can wait on the audio server: 5 to 16 ms per key on a MediaTek TV, so never in the key handler.
-  if grep -n 'pool\.play(' app/src/io/freemytv/Click.java; then
+  if grep -nE 'pool\.(play|stop|setVolume)\(' app/src/io/freemytv/Click.java; then
     echo "Click: sounds play on the UI thread (above)." >&2
     exit 1
   fi
@@ -108,6 +108,7 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/home-background-test.js
   node tools/home-background-dom-test.js
   node tools/web-keys-test.js   # H (Dock / Recent Apps), S (screensaver), + and − (volume HUD), one Inputs tile
+  node tools/web-sound-test.js  # the interface sounds: tick, knock, select, sheets, the hold's tension, the setting
 
   python3 webos/build.py --generic
   python3 tizen/build.py --generic
