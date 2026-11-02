@@ -32,6 +32,11 @@ import java.util.concurrent.Executors;
  * notification and asks the system to unbind it at once, so no process stays up for it.
  */
 public class NowPlaying extends NotificationListenerService {
+    /** Only a new title counts (bars, TalkBack): not a subtitle some players rewrite every second, nor the screen showing again. */
+    static boolean newTitle(String title, String line, boolean showing, String shown) {
+        return title != null && line != null && showing && !title.equals(shown);
+    }
+
 
     @Override public void onListenerConnected() {
         requestUnbind();
@@ -88,6 +93,8 @@ public class NowPlaying extends NotificationListenerService {
         };
         private boolean on;
         volatile String text;
+        /** The title alone (the app's package when it gives none): the line's other parts can change every second. */
+        volatile String title;
         /** Continue Watching: the app playing and when its position was last written (at most every PROGRESS_MS). */
         private MediaController progressOf;
         private long progressAt;
@@ -138,7 +145,7 @@ public class NowPlaying extends NotificationListenerService {
         }
 
         private void update() {
-            String now = null;
+            String now = null, nowTitle = null;
             MediaController playingNow = null;
             for (MediaController mc : controllers) {   // most recent first
                 PlaybackState s = mc.getPlaybackState();
@@ -148,10 +155,14 @@ public class NowPlaying extends NotificationListenerService {
                         || state == PlaybackState.STATE_CONNECTING) {
                     now = describe(mc);
                     playingNow = mc;
+                    MediaMetadata m = mc.getMetadata();
+                    CharSequence t = m == null ? null : m.getDescription().getTitle();
+                    nowTitle = now == null ? null : TextUtils.isEmpty(t) ? mc.getPackageName() : t.toString().trim();
                     break;
                 }
             }
             playing(playingNow);
+            title = nowTitle;
             if (Objects.equals(now, text)) return;
             text = now;
             changed.run();

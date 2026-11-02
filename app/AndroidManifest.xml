@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.freemytv"
-    android:versionCode="3"
-    android:versionName="1.2">
+    android:versionCode="4"
+    android:versionName="1.3">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -30,6 +30,9 @@
          returns null). The shelf and streaming apps, the live TV apps and, through the <intent>, every TV app
          (for "All Apps"). -->
     <queries>
+        <!-- Optional App Store top button: Google Play or Amazon Appstore. -->
+        <package android:name="com.android.vending" />
+        <package android:name="com.amazon.venezia" />
         <package android:name="com.netflix.ninja" />
         <package android:name="com.google.android.youtube.tv" />
         <package android:name="com.amazon.firetv.youtube" />
@@ -47,6 +50,13 @@
         <package android:name="com.cbs.ott" />
         <package android:name="com.cbs.ca" />
         <package android:name="com.bskyb.nowtv.beta" />
+        <package android:name="de.swr.avp.ard.tv" />
+        <package android:name="com.zdf.android.mediathek" />
+        <package android:name="tv.arte.plus7" />
+        <package android:name="de.prosiebensat1digital.seventv" />
+        <package android:name="de.rtli.tvnow" />
+        <package android:name="de.sky.online" />
+        <package android:name="de.telekom.magentatv.tv" />
         <package android:name="com.peacocktv.peacockandroid" />
         <package android:name="com.peacock.peacockfiretv" />
         <package android:name="com.globo.globotv" />
@@ -57,6 +67,8 @@
         <package android:name="ru.rt.video.app.tv" />
         <package android:name="in.startv.hotstar" />
         <package android:name="com.crunchyroll.crunchyroid" />
+        <!-- Sony: Google TV's home app takes its remote's app buttons (Prefs.sonyGoogleTv, #395) -->
+        <package android:name="com.google.android.apps.tv.launcherx" />
         <package android:name="net.cme.voyo.cz.tvapp" />
         <package android:name="com.spotify.tv.android" />
         <package android:name="com.apple.android.music" />
@@ -87,6 +99,7 @@
         <package android:name="com.google.android.videos" />
         <!-- HY300 projectors: keystone and Miracast (drawer shortcuts), Allwinner's player for HDMI; MIUI TV's source player -->
         <package android:name="com.htc.htcsettings" />
+        <package android:name="com.softwinner.tcorrection" />
         <package android:name="com.softwinner.miracastReceiver" />
         <package android:name="com.softwinner.awlivetv" />
         <package android:name="com.xiaomi.mitv.tvplayer" />
@@ -160,6 +173,17 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".QuickSettingsActivity"
+            android:process=":home"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="io.freemytv.quick"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/FreeMyTV.QuickSettings" />
+
         <!-- The home screen. Its own process (:home): if it ever crashes, the safety net in the main process still
              works. It only becomes the TV's home screen in Free My TV mode (cmd package set-home-activity). -->
         <activity
@@ -196,6 +220,18 @@
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Home" />
+
+        <!-- The quick settings panel the remote's Settings button opens in Free My TV mode (RemoteKeys), over what's
+             playing: a window on the left of the screen, not the whole screen. -->
+        <activity
+            android:name=".QuickPanelActivity"
+            android:process=":home"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="io.freemytv.panel"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Panel" />
 
         <service
             android:name=".Screensaver"
@@ -250,6 +286,13 @@
         <provider
             android:name=".PhotoInbox"
             android:authorities="io.freemytv.photos"
+            android:exported="true" />
+
+        <!-- tools/send_key.py writes keys that stay out of the APK here (the Immich key, Home Assistant's token); only
+             adb's shell may write (Secrets checks). -->
+        <provider
+            android:name=".Secrets"
+            android:authorities="io.freemytv.secrets"
             android:exported="true" />
 
         <!-- The sleep timer's minutes left over any app, while the timer runs. A process of its own: a foreground

@@ -653,19 +653,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         this.aerialCache = aerialCache;
         data = HomeData.get(a);
         recs = Recs.get(a);
-        playing = new NowPlaying.Watch(a, () -> {
-            fitPlaying();
-            heroDirty = statusDirty = true;
-            pillWide.target = HomeView.this.playing.text != null ? 1 : 0;   // the pill widens for its equalizer
-            wake();
-            bounceBars();
-        });
+        playing = new NowPlaying.Watch(a, this::onPlaying);
         click = new Click(a);
         shelfVisible = Math.min((int) TV_DOCK_SHOWN, HomeApps.shelfVisible(a));
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
         tvInputs = (TvInputManager) a.getSystemService(Context.TV_INPUT_SERVICE);
         launcherApps = (LauncherApps) a.getSystemService(Context.LAUNCHER_APPS_SERVICE);
-        if (launcherApps != null) launcherApps.registerCallback(packages, handler);
+        try {
+            if (launcherApps != null) launcherApps.registerCallback(packages, handler);
+        } catch (RuntimeException e) {   // some projectors (Rockchip rk3566 HY300) ship without the launcherapps service
+            AppLog.w("no app-change callback: " + e.getMessage());
+        }
         setFocusable(true);
         sky = new Layer(a, SKY);
         heroLayer = new Layer(a, HERO);
@@ -766,7 +764,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Spring.instant = android.provider.Settings.Global.getFloat(getContext().getContentResolver(),
                 android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
         checkNight(false);
-        boolean h24 = Prefs.clock24();
+        boolean h24 = Ui.h24();
         if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
             clock24 = h24;
             clockMinute = -1;
@@ -789,6 +787,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         recs.refreshIfStale();
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
+        ImmichPhotos.syncIfDue(getContext(), ownReady);   // or a new choice from the Immich server, every 6 hours
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
         handler.removeCallbacks(rotate);
@@ -875,7 +874,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void destroy() {
         pause();
         intro.stop();
-        if (launcherApps != null) launcherApps.unregisterCallback(packages);
+        try {
+            if (launcherApps != null) launcherApps.unregisterCallback(packages);
+        } catch (RuntimeException ignored) {
+        }
         click.release();
     }
 
@@ -1151,7 +1153,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         border.setStrokeWidth(2 * k);
         rim.setStyle(Paint.Style.STROKE);
         rim.setStrokeWidth(2.5f * k);
-        fitPlaying();
+        onPlaying();   // the line fits the new size; a title that came before the first layout bounces and is said now
     }
 
     // MARK: - Frames: 60 per second while something moves; nothing is redrawn when still
@@ -2274,6 +2276,33 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (playingTab == null) return;
         barsUntil = SystemClock.uptimeMillis() + BARS_BOUNCE_MS;
         wake();
+    }
+
+    private String shownTitle;   // kept while the screen is hidden: showing it again with the same title is no change
+
+    /** What's playing changed (or stopped). */
+    private void onPlaying() {
+        fitPlaying();
+        heroDirty = statusDirty = true;
+        pillWide.target = playing.text != null ? 1 : 0;   // the pill widens for its equalizer
+        wake();
+        String title = playing.title, now = playing.text;
+        if (NowPlaying.newTitle(title, now, running, shownTitle)) {
+            shownTitle = title;
+            bounceBars();
+            if (readerOn()) announceForAccessibility(Ui.trf("Now playing: {what}", "what", now.replace(" · ", ", ")));
+        }
+    }
+
+    /**
+     * A screen reader is on (TalkBack, or another service that speaks): only then is a new title announced. Other
+     * accessibility services (a button mapper, a sleep timer) would get the announcement too, for nothing.
+     */
+    private boolean readerOn() {
+        android.view.accessibility.AccessibilityManager am =
+                getContext().getSystemService(android.view.accessibility.AccessibilityManager.class);
+        return am != null && am.isEnabled() && !am.getEnabledAccessibilityServiceList(
+                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_SPOKEN).isEmpty();
     }
 
     private void fitPlaying() {
@@ -4562,7 +4591,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // The remote's Settings button (TCL's sends NOTIFICATION) opens TV Settings, as Hisense's gear does by
                 // default; ours stay on the gear on screen. Hisense's gear is a Remote Buttons choice (RemoteKeys); where
                 // the system takes the key first, it never gets here.
-                if (RemoteKeys.HISENSE) return false;
+                if (RemoteKeys.HISENSE || RemoteKeys.TCL) return false;
                 if (down && e.getRepeatCount() == 0) HomeApps.open(activity, HomeApps.tvSettings(), this, w / 2, h / 2, 1, 1);
                 return true;
             case KeyEvent.KEYCODE_BACK:

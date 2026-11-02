@@ -3,6 +3,9 @@ package io.freemytv;
 import android.content.Context;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Process;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -19,10 +22,14 @@ import java.nio.ByteOrder;
 final class Click {
     private static final int RATE = 48_000;
     private static Click current;
-    private SoundPool pool;
+    private volatile SoundPool pool;
     private int move, open, bump, chime, error;
+    private final HandlerThread thread = new HandlerThread("click", Process.THREAD_PRIORITY_BACKGROUND);
+    private final Handler handler;
 
     Click(Context c) {
+        thread.start();
+        handler = new Handler(thread.getLooper());
         try {
             pool = new SoundPool.Builder().setMaxStreams(4).setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
@@ -40,26 +47,26 @@ final class Click {
     }
 
     void move() {
-        if (pool != null && Prefs.sounds()) pool.play(move, 0.14f, 0.14f, 1, 0, 1f);
+        play(move, 0.14f, 1);
     }
 
     void open() {
-        if (pool != null && Prefs.sounds()) pool.play(open, 0.18f, 0.18f, 1, 0, 1f);
+        play(open, 0.18f, 1);
     }
 
     /** Focus can't go further that way. */
     void bump() {
-        if (pool != null && Prefs.sounds()) pool.play(bump, 0.12f, 0.12f, 1, 0, 1f);
+        play(bump, 0.12f, 1);
     }
 
     /** mahitTV's startup sound (Intro, from its first frame: it carries its own timing, stereo). */
     void chime() {
-        if (pool != null && Prefs.sounds()) pool.play(chime, 0.36f, 0.36f, 2, 0, 1f);
+        play(chime, 0.36f, 2);
     }
 
     /** A dull thud: a wrong PIN. */
     void error() {
-        if (pool != null && Prefs.sounds()) pool.play(error, 0.22f, 0.22f, 1, 0, 1f);
+        play(error, 0.22f, 1);
     }
 
     static Click current() {
@@ -72,9 +79,20 @@ final class Click {
         if (c != null) c.bump();
     }
 
+    /** On its own thread: SoundPool's calls can wait on the audio server, and never on the UI thread. */
+    private void play(int sound, float volume, int priority) {
+        if (pool == null || !Prefs.sounds()) return;
+        handler.post(() -> {
+            SoundPool p = pool;
+            if (p != null) p.play(sound, volume, volume, priority, 0, 1f);
+        });
+    }
+
     void release() {
-        if (pool != null) pool.release();
+        SoundPool p = pool;
         pool = null;
+        if (p != null) handler.post(p::release);   // after the plays already queued, never during one
+        thread.quitSafely();
         if (current == this) current = null;
     }
 

@@ -112,6 +112,43 @@ public final class RecsWatchTest {
         rejectedPosts.get(0).run();
         check(rejectedCount[0] == 1, "executor rejection delivers exactly once");
 
+        check(Recs.CACHE_VERSION == 7, "6 meant different things on each side: today's cache must not be parsed");
+
+        // A new list reuses a title's details: the Top Shelf's must come along, or it shows a bare title for hours.
+        Recs.Pick before = new Recs.Pick();
+        before.id = 7;
+        before.kind = "movie";
+        before.title = "Kept";
+        before.year = "2024";
+        before.overview = "Synopsis";
+        before.rating = 8.1;
+        before.cert = "PG";
+        before.logo = "/logo.png";
+        before.badges = "4K";
+        before.service = "Netflix";
+        Recs.Pick again = new Recs.Pick();
+        again.id = 7;
+        again.kind = "movie";
+        again.copyDetails(before);
+        check("Kept".equals(again.title), "a title in the list before is reused");
+        check("2024".equals(again.year) && "Synopsis".equals(again.overview) && again.rating == 8.1 && "PG".equals(again.cert)
+                && "/logo.png".equals(again.logo) && "4K".equals(again.badges) && "Netflix".equals(again.service),
+                "the Top Shelf's details come along when a title is reused");
+
+        // Only a new title bounces the bars and is said to TalkBack: not a subtitle rewritten every second.
+        check(NowPlaying.newTitle("Show", "Show · 0:01", true, null), "the first title counts");
+        check(NowPlaying.newTitle("Next", "Next · 0:01", true, "Show"), "another title counts");
+        check(!NowPlaying.newTitle("Show", "Show · 0:02", true, "Show"), "the same title with a new line doesn't");
+        check(!NowPlaying.newTitle(null, null, true, "Show"), "nothing playing doesn't");
+        check(!NowPlaying.newTitle("Next", "Next", false, "Show"), "not while the screen is hidden");
+
+        // All Apps' system apps: a factory or service menu never, one OK there can reset the TV.
+        check(SystemApps.listed(true, false, false), "Show system apps lists them");
+        check(SystemApps.listed(false, true, false), "a named one is listed without it");
+        check(!SystemApps.listed(false, false, false), "the others aren't");
+        check(!SystemApps.listed(true, false, true), "never a factory menu with Show system apps");
+        check(!SystemApps.listed(false, true, true), "never a factory menu by name either");
+
         System.out.println("RecsWatchTest: " + checks + " checks passed");
     }
 }

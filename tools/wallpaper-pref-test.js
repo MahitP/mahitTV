@@ -21,6 +21,7 @@ function load(initial, profiles) {
     navigator: {language: 'en-US'},
     TV: {zone: function () { return ''; }},
     ZONES: {},
+    I18N: {},   // data.js adds its date names to it as it loads, after strings.js on the TV
     CONFIG: {latitude: '', longitude: ''},
     localStorage: {
       getItem: function (key) { return key === 'fmtv.prefs' ? JSON.stringify(initial || {}) : null; },

@@ -24,6 +24,7 @@ BT="$SDK/build-tools/$(ls "$SDK/build-tools" | sort -V | tail -1)"
 AJ="$(ls -d "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1 || true)"
 [ -f "${AJ:-}" ] || { echo "Android platform not found. Run: sdkmanager \"platforms;android-34\""; exit 1; }
 JAVAC="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
+JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 KEYTOOL="${JAVA_HOME:+$JAVA_HOME/bin/}keytool"
 command -v "$JAVAC" >/dev/null 2>&1 || { echo "JDK not found. Install JDK 17 and set JAVA_HOME."; exit 1; }
 
@@ -35,6 +36,10 @@ elif [ ! -f config.properties ]; then
   cp config.example.properties config.properties
   echo "Created config.properties: add your TMDB key and your city there (optional), then build again."
 fi
+# Notepad's "Unicode" is UTF-16: grep would find no keys in it and build every default without a word.
+case "$(head -c 2 "$CONFIG" 2>/dev/null | od -An -tx1 | tr -d ' \n')" in
+  fffe|feff) echo "config.properties is saved as UTF-16 (Notepad's \"Unicode\"). Save it as UTF-8 and build again." >&2; exit 1 ;;
+esac
 prop() {
   local v
   v="$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$CONFIG" | tail -1 | cut -d= -f2- || true)"
@@ -90,6 +95,49 @@ for entry in "${ENTRIES[@]}"; do
   PROFILES="$PROFILES${PROFILES:+,}$id:$name:$role:$hash:$avatar"
 done
 DEFAULT_DOCK="$(prop default_dock_apps '')"
+STREMIO=false; [ "$(prop open_in_stremio false)" = "true" ] && STREMIO=true
+
+# Servers on your own network (Immich, and the next feature that needs one) often answer in plain HTTP. One rule for
+# all of them: a server given as http:// must be on the local network, and only its host may skip HTTPS
+# (network_security_config.xml, below). A new one is read with `lan_server <key>`, then `prop <key>`.
+LAN_HTTP_HOSTS=""
+lan_host() {   # a private IPv4 address, or a .local, .lan or .home.arpa name, or a one-word name
+  local h a b
+  h="$(printf '%s' "$1" | tr 'A-Z' 'a-z')"
+  if [[ "$h" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+    a=$((10#${BASH_REMATCH[1]})); b=$((10#${BASH_REMATCH[2]}))
+    [ $a -eq 10 ] || { [ $a -eq 172 ] && [ $b -ge 16 ] && [ $b -le 31 ]; } || { [ $a -eq 192 ] && [ $b -eq 168 ]; }
+    return
+  fi
+  [[ "$h" =~ ^[a-z0-9-]+$ || "$h" =~ ^[a-z0-9.-]+\.(local|lan|home\.arpa)$ ]]
+}
+lan_server() {   # lan_server <key>: checks it; the host of an http:// one joins LAN_HTTP_HOSTS
+  local v host
+  v="$(prop "$1" '')"
+  case "$v" in
+    "" | https://*) ;;
+    http://*)
+      host="$(printf '%s' "$v" | sed -E -e 's#^http://##' -e 's#[/?].*$##' -e 's#:[0-9]+$##' | tr 'A-Z' 'a-z')"
+      lan_host "$host" || {
+        echo "config.properties: $1 in plain http:// must be on your own network (a private address like" >&2
+        echo "192.168.1.20, or a .local, .lan or .home.arpa name); use https:// for anything else (over Tailscale, the" >&2
+        echo "server's https://<machine>.<tailnet>.ts.net address). Got \"$v\"" >&2
+        exit 1
+      }
+      case " $LAN_HTTP_HOSTS " in *" $host "*) ;; *) LAN_HTTP_HOSTS="$LAN_HTTP_HOSTS $host" ;; esac
+      ;;
+    *) echo "config.properties: $1 must start with http:// or https:// (got \"$v\")" >&2; exit 1 ;;
+  esac
+}
+lan_server immich_server
+# Keys that would let another app on the TV into the user's own servers stay out of the APK: tools/send_key.py sends
+# them to the TV (Secrets).
+for key in immich_api_key; do
+  if [ -n "$(prop "$key" '')" ]; then
+    echo "config.properties: $key isn't built into the app (any app on the TV could read it there)." >&2
+    echo "Send it to the TV instead (python3 tools/send_key.py <TV IP> $key), then remove it here." >&2
+  fi
+done
 
 rm -rf "$OUT" && mkdir -p "$OUT/gen/io/freemytv" "$OUT/classes"
 cat > $OUT/gen/io/freemytv/Config.java <<EOF
@@ -101,6 +149,9 @@ final class Config {
 
     static final String TMDB_KEY = "$(prop tmdb_key '')";
     static final String WATCHMODE_KEY = "$(prop watchmode_key '')";
+    static final String PLEX_URL = "$(prop plex_url '')";
+    static final String PLEX_TOKEN = "$(prop plex_token '')";
+    static final String TRAKT_CLIENT_ID = "$(prop trakt_client_id '')";
     static final String TMDB_REGION = "$REGION";
     static final String LATITUDE = "$LAT";
     static final String LONGITUDE = "$LON";
@@ -113,10 +164,13 @@ final class Config {
     static final String PROFILES = "$PROFILES";   // id:Name:role:sha256(PIN_SALT+PIN):avatar,… (ProfileManager)
     static final String PIN_SALT = "$PIN_SALT";
     static final String DEFAULT_DOCK = "$DEFAULT_DOCK";   // packages: each new profile's Dock, in order
+    static final String IMMICH_SERVER = "$(prop immich_server '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;
     static final boolean SCREENSAVER = $SAVER;   // false: the TV keeps its own
+    static final boolean GENERIC = $GENERIC;   // built with --generic, as the APK on GitHub's releases (Updates)
+    static final boolean OPEN_IN_STREMIO = $STREMIO;
     static final boolean PREVIEW = $PREVIEW;   // sample picks (Preview), never in a release
     static final String GEMINI_KEY = "$(prop gemini_key '')";   // Welly's first brain (secret: config.properties only)
     static final String WELLY_MODEL = "$WELLY_MODEL";
@@ -127,8 +181,9 @@ final class Config {
 }
 EOF
 
-# --- Plain HTTP: HTTPS everywhere, except to this TV itself (127.0.0.1: a local brain) and to ollama_url's host (the
-# Mac's Ollama on the LAN). Android refuses cleartext otherwise and Welly would skip those brains.
+# --- Plain HTTP: HTTPS everywhere, except to this TV itself (127.0.0.1: a local brain), to ollama_url's host (the
+# Mac's Ollama on the LAN) and to the hosts lan_server let through. Android refuses cleartext otherwise and Welly
+# would skip those brains.
 OLLAMA_HOST="$(prop ollama_url '' | sed -E -e 's#^[A-Za-z]+://##' -e 's#[/?].*$##' -e 's#:[0-9]+$##')"
 if [ -n "$OLLAMA_HOST" ] && ! [[ "$OLLAMA_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
   echo "config.properties: ollama_url needs a host name or an IPv4 address (got \"$OLLAMA_HOST\")" >&2; exit 1
@@ -136,13 +191,14 @@ fi
 mkdir -p $OUT/res-gen/xml
 {
   echo '<?xml version="1.0" encoding="utf-8"?>'
-  echo '<!-- Generated by build.sh from config.properties (ollama_url). -->'
+  echo '<!-- Generated by build.sh from config.properties: edit that file, not this one. -->'
   echo '<network-security-config>'
   echo '    <base-config cleartextTrafficPermitted="false" />'
   echo '    <domain-config cleartextTrafficPermitted="true">'
   echo '        <domain includeSubdomains="false">127.0.0.1</domain>'
   echo '        <domain includeSubdomains="false">localhost</domain>'
   if [ -n "$OLLAMA_HOST" ]; then echo "        <domain includeSubdomains=\"false\">$OLLAMA_HOST</domain>"; fi
+  for host in $LAN_HTTP_HOSTS; do echo "        <domain includeSubdomains=\"false\">$host</domain>"; done
   echo '    </domain-config>'
   echo '</network-security-config>'
 } > $OUT/res-gen/xml/network_security_config.xml
@@ -199,14 +255,24 @@ class FixAssets {
     }
 }
 EOF
-    "${JAVA_HOME:+$JAVA_HOME/bin/}java" $OUT/FixAssets.java $OUT/base.apk
+    "$JAVA" $OUT/FixAssets.java $OUT/base.apk
     ;;
 esac
-# On Windows javac separates paths with ";", and d8 and apksigner are .bat files.
+# On Windows javac separates paths with ";", and d8 and apksigner are .bat files. Git Bash can't start a .bat whose
+# path has a space (and the wrappers trip over a JAVA_HOME that has one), so there the jars inside them are run with the
+# JDK's java instead; on macOS and Linux the usual executables are used.
 CPSEP=:; BAT=; case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) CPSEP=";"; BAT=.bat ;; esac
+d8() {
+  if [ -n "$BAT" ]; then "$JAVA" -Xmx1024M -Xss1m -cp "$BT/lib/d8.jar" com.android.tools.r8.D8 "$@"
+  else "$BT/d8" "$@"; fi
+}
+apksigner() {
+  if [ -n "$BAT" ]; then "$JAVA" -jar "$BT/lib/apksigner.jar" "$@"
+  else "$BT/apksigner" "$@"; fi
+}
 "$JAVAC" -nowarn -Xlint:-options -source 8 -target 8 -bootclasspath "$AJ$CPSEP$BT/core-lambda-stubs.jar" -classpath "$AJ" \
   -encoding UTF-8 -d $OUT/classes $(find app/src $OUT/gen -name '*.java')
-"$BT/d8$BAT" --release --min-api 26 --lib "$AJ" --output "$OUT" $(find $OUT/classes -name '*.class')
+d8 --release --min-api 26 --lib "$AJ" --output "$OUT" $(find $OUT/classes -name '*.class')
 if command -v zip >/dev/null; then (cd "$OUT" && zip -qj base.apk classes.dex)
 else "${JAVA_HOME:+$JAVA_HOME/bin/}jar" -u -M -f $OUT/base.apk -C "$OUT" classes.dex; fi # Git Bash has no zip
 "$BT/zipalign" -f -p 4 $OUT/base.apk $OUT/aligned.apk
@@ -215,13 +281,13 @@ else "${JAVA_HOME:+$JAVA_HOME/bin/}jar" -u -M -f $OUT/base.apk -C "$OUT" classes
 # Releases sign with the project's key instead: FREEMYTV_KEYSTORE=<its file>, its password in FREEMYTV_KEYSTORE_PASS.
 if [ -n "${FREEMYTV_KEYSTORE:-}" ]; then
   [ -n "${FREEMYTV_KEYSTORE_PASS:-}" ] || { echo "FREEMYTV_KEYSTORE_PASS is empty"; exit 1; }
-  "$BT/apksigner$BAT" sign --ks "$FREEMYTV_KEYSTORE" --ks-pass env:FREEMYTV_KEYSTORE_PASS --key-pass env:FREEMYTV_KEYSTORE_PASS \
+  apksigner sign --ks "$FREEMYTV_KEYSTORE" --ks-pass env:FREEMYTV_KEYSTORE_PASS --key-pass env:FREEMYTV_KEYSTORE_PASS \
     --out "$APK" $OUT/aligned.apk
 else
   if [ ! -f freemytv.keystore ]; then
     "$KEYTOOL" -genkeypair -keystore freemytv.keystore -alias freemytv -keyalg RSA -keysize 2048 -validity 20000 \
       -storepass freemytv -keypass freemytv -dname "CN=Free My TV" >/dev/null 2>&1
   fi
-  "$BT/apksigner$BAT" sign --ks freemytv.keystore --ks-pass pass:freemytv --key-pass pass:freemytv --out "$APK" $OUT/aligned.apk
+  apksigner sign --ks freemytv.keystore --ks-pass pass:freemytv --key-pass pass:freemytv --out "$APK" $OUT/aligned.apk
 fi
 echo "Built $APK ($(du -h "$APK" | cut -f1)). Install: adb install -r $APK"

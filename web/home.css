@@ -720,7 +720,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .cell .label { position: absolute; left: -40px; right: -40px; top: 182px; text-align: center; font-size: 25px; font-weight: 600; color: #1D1D1F; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 .night .cell .label, .has-photo .cell .label { color: #FFF; }
 
-#settings .box, #shelfedit .box, #langpick .box, #wallpaperpick .box, #about .box {
+#settings .box, #shelfedit .box, #langpick .box, #citypick .box, #keypick .box, #wallpaperpick .box, #about .box {
   position: absolute;
   left: 560px;
   top: 150px;
@@ -1038,3 +1038,30 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #guide .qr img { display: block; width: 300px; height: 300px; image-rendering: pixelated; }
 #guide .scan { position: absolute; left: 1020px; top: 470px; width: 340px; text-align: center; font-size: 24px; font-weight: 500; opacity: 0.7; }
 #guide .foot { position: absolute; left: 80px; right: 80px; bottom: 50px; text-align: center; font-size: 22px; opacity: 0.6; }
+
+/* The text fields of the city and TMDB key sheets. */
+#citypick .row.field input, #keypick .row.field input {
+  width: 100%;
+  height: 70px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #FFF;
+  font: inherit;
+  line-height: 70px;
+}
+#citypick .row.field, #keypick .row.field { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18); }
+#citypick .row.field input::-webkit-input-placeholder, #keypick .row.field input::-webkit-input-placeholder { color: rgba(255, 255, 255, 0.4); }
+#citypick .row.field input::placeholder, #keypick .row.field input::placeholder { color: rgba(255, 255, 255, 0.4); }
+#citypick .row { overflow: hidden; text-overflow: ellipsis; }
+.box .hint.warn { color: #FFC266; }
+.box .hint.steps { white-space: pre-line; line-height: 1.4; }
+
+/* Samsungs up to 2 GB (see tv.js): the parts that move lose their soft shadows, which the TV repainted on every frame of
+   a move, and what slides is a layer from the start, so a move starts at once. */
+.flat .tab, .flat .card .img, .flat .tile, .flat .key { box-shadow: none !important; }
+.flat .cell.focus .face { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4) !important; }
+.flat #home, .flat #drawer, .flat #cards, .flat .card, .flat #tiles, .flat .tile { will-change: transform; }
+.flat #top { will-change: opacity; }

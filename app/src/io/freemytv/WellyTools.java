@@ -183,7 +183,7 @@ final class WellyTools {
     };
 
     private Result searchTitles(String query, String kind, int maxRuntime, String genre) throws Exception {
-        if (Config.TMDB_KEY.trim().isEmpty()) return error("no TMDB key on this TV, so no title search");
+        if (Recs.key().isEmpty()) return error("no TMDB key on this TV, so no title search");
         String lang = "&language=" + tmdbLanguage() + "&include_adult=false";
         JSONArray found;
         if (!query.trim().isEmpty()) {
@@ -276,7 +276,7 @@ final class WellyTools {
     private Result openTitle(int id, String kind) throws Exception {
         Recs.Pick p = seen.get(id);
         if (p == null) {
-            if (Config.TMDB_KEY.trim().isEmpty()) return error("no TMDB key on this TV");
+            if (Recs.key().isEmpty()) return error("no TMDB key on this TV");
             p = pick(tmdb("/" + kind + "/" + id + "?language=" + tmdbLanguage()), kind);
             findApp(p);
             seen.put(id, p);
@@ -385,7 +385,7 @@ final class WellyTools {
             }
             return null;
         }
-        if (Config.TMDB_KEY.trim().isEmpty() || !("movie".equals(e.kind) || "tv".equals(e.kind))) return null;
+        if (Recs.key().isEmpty() || !("movie".equals(e.kind) || "tv".equals(e.kind))) return null;
         try {
             Recs.Pick seenPick = seen.get((int) e.tmdbId);
             String path = seenPick != null ? seenPick.backdrop : tmdb("/" + e.kind + "/" + e.tmdbId).optString("backdrop_path");
@@ -413,7 +413,7 @@ final class WellyTools {
     }
 
     private Result castCrossref(int id, String kind) throws Exception {
-        if (Config.TMDB_KEY.trim().isEmpty()) return error("no TMDB key on this TV");
+        if (Recs.key().isEmpty()) return error("no TMDB key on this TV");
         JSONArray cast = tmdb("/" + kind + "/" + id + ("tv".equals(kind) ? "/aggregate_credits" : "/credits")).optJSONArray("cast");
         String history = history().toLowerCase(Locale.ROOT);
         JSONArray out = new JSONArray();
@@ -440,7 +440,7 @@ final class WellyTools {
     }
 
     private Result recap(int id, int season) throws Exception {
-        if (Config.TMDB_KEY.trim().isEmpty()) return error("no TMDB key on this TV");
+        if (Recs.key().isEmpty()) return error("no TMDB key on this TV");
         JSONObject s = tmdb("/tv/" + id + "/season/" + season + "?language=" + tmdbLanguage());
         JSONArray eps = s.optJSONArray("episodes"), out = new JSONArray();
         for (int i = 0; eps != null && i < eps.length() && i < 14; i++) {
@@ -453,7 +453,7 @@ final class WellyTools {
     }
 
     private JSONObject tmdb(String path) throws IOException, JSONException {
-        String key = Config.TMDB_KEY.trim();
+        String key = Recs.key();
         boolean bearer = key.startsWith("eyJ");   // read access token (v4) or API key (v3)
         String url = TMDB + path + (bearer ? "" : (path.contains("?") ? "&" : "?") + "api_key=" + enc(key));
         return new JSONObject(get(url, bearer ? "Bearer " + key : null));
