@@ -1045,6 +1045,13 @@
     return null;
   }
 
+  /** Where the focus is across the screen (0 left … 1 right): the tick is panned there. */
+  function focusPan() {
+    var fx = focusedFx(), r = fx && fx.node && fx.node.getBoundingClientRect && fx.node.getBoundingClientRect();
+    var w = window.innerWidth || 1920;
+    return r && r.width ? Math.max(0, Math.min(1, (r.left + r.width / 2) / w)) : 0.5;
+  }
+
   function bump(dx, dy) {
     var fx = focusedFx();
     if (fx) fx.bump(dx, dy);
@@ -2058,6 +2065,7 @@
 
   function openInputsSheet() {
     if (!ccInputItems.length) return;
+    if (!ccSub) Sound.sheet(true, 0.78);
     ccSub = true;
     st.ccInput = 0;
     var id = currentInput();
@@ -2070,6 +2078,7 @@
   /** Back to the tiles, on Inputs. */
   function closeInputsSheet(quiet) {
     if (!ccSub) return;
+    if (!quiet) Sound.sheet(false, 0.78);
     ccSub = false;
     mv.ccSub.tune(P.SHEET_CLOSE).set(0);
     fitDrawer();
@@ -2173,6 +2182,7 @@
       renderDrawer();
     }
     if (!ccItems.length) return;
+    if (st.zone !== Z.DRAWER) Sound.sheet(true, 0.82);   // Control Center comes from the top right
     drawerFrom = st.zone === Z.DRAWER ? drawerFrom : st.zone;
     st.zone = Z.DRAWER;
     st.drawer = ccMode === 'profile' ? Profiles.index() : 0;
@@ -2185,6 +2195,7 @@
 
   /** Back where the focus was (the button that opened it, or the Dock). */
   function closeDrawer() {
+    if (st.zone === Z.DRAWER) Sound.sheet(false, 0.82);
     if (ccSub) { ccSub = false; mv.ccSub.snap(0); fitDrawer(); }
     st.zone = drawerFrom === Z.TOP || drawerFrom === Z.HERO || drawerFrom === Z.TABS ? drawerFrom : Z.SHELF;
     updateFocus();
@@ -2330,14 +2341,16 @@
   function homeDown() {
     if (homeTimer) return;
     if (st.zone === Z.RECENTS) { goHome(); return; }   // Home over the switcher takes it away at once
+    Sound.holdStart();   // the tension builds toward Recent Apps from the frame H goes down
     homeTimer = setTimeout(function () {
       homeTimer = 0;
+      Sound.holdCommit();
       if (st.zone !== Z.RECENTS) openRecents();
     }, HOME_HOLD);
   }
 
   function homeUp() {
-    if (homeTimer) { clearTimeout(homeTimer); homeTimer = 0; goHome(); }
+    if (homeTimer) { clearTimeout(homeTimer); homeTimer = 0; Sound.holdCancel(); goHome(); }
   }
 
   var homing = false;
@@ -2428,6 +2441,7 @@
 
   /** Recent Apps (Home held, or H held in a browser): the deck over the Frosted Horizon; OK opens one (logged). */
   function openRecents() {
+    Sound.sheet(true, 0.5);
     var layer = $('recents');
     layer.innerHTML = '';
     killFx(fxRecents);
@@ -2502,6 +2516,7 @@
 
   /** OK on a folder: its apps in a floating frosted card, springing out of the folder's tile. */
   function openFolder(folder, fromFx) {
+    Sound.sheet(true, 0.5);
     folderOpen = folder;
     FOLDER_COLS = folder.apps.length > 9 && folder.apps.length <= 12 ? 4 : 3;
     var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.min(FOLDER_ROWS, Math.ceil(n / FOLDER_COLS));
@@ -2544,6 +2559,7 @@
   /** Back (or an app opening): the card zooms back into its tile, the focus on the folder. */
   function closeFolder(quiet) {
     if (!folderOpen) return;
+    if (!quiet) Sound.sheet(false, 0.5);
     folderOpen = null;
     mv.folder.tune(P.SHEET_CLOSE).set(0);
     if (st.zone === Z.FOLDER) st.zone = Z.APPS;
@@ -2573,6 +2589,7 @@
   }
 
   function openApps(index) {
+    if (st.zone !== Z.APPS) Sound.sheet(true, 0.5);
     renderApps();
     st.zone = Z.APPS;
     st.grid = Math.max(0, Math.min(others.length - 1, index || 0));
@@ -2582,6 +2599,10 @@
   }
 
   function closeSheets() {
+    var z = st.zone;
+    if (z === Z.APPS || z === Z.SETTINGS || z === Z.RECENTS || z === Z.EDIT || z === Z.LANG || z === Z.WALLPAPER || z === Z.ABOUT) {
+      Sound.sheet(false, 0.5);
+    }
     setClass($('apps'), 'open', false);
     setClass($('settings'), 'open', false);
     setClass($('shelfedit'), 'open', false);
@@ -2704,7 +2725,11 @@
           options: [['full', tr('Full Screen (tvOS)')], ['sidebar', tr('Floating Sidebar')]],
           set: function (v) { Prefs.set('settingsStyle', v); }}},
         {label: tr('Startup animation & chime'), toggle: Prefs.intro(), step: function () { Prefs.set('intro', !Prefs.intro()); }},
-        {label: tr('Preview Startup Animation'), opens: true, step: function () { replayIntro(); }}
+        {label: tr('Preview Startup Animation'), opens: true, step: function () { replayIntro(); }},
+        {label: tr('Navigation sounds'), toggle: Prefs.sounds(), step: function () {
+          Prefs.set('sounds', !Prefs.sounds());
+          if (Prefs.sounds()) Sound.toggle(true);   // off is heard as it goes (settingsOk); on, once it's on
+        }}
       ]},
       {header: tr('Screensaver'), rows: saver, footer: tr('It starts after 5 minutes without a button press.')}
     ];
@@ -3040,8 +3065,10 @@
       return;
     }
     var r = rowsNow[st.row];
-    if (!r || r.fixed) { Settings.bump($('settings'), 0, 0); return; }
-    if (r.choice) { openChoice(r.choice); return; }
+    if (!r || r.fixed) { Sound.bump(0.5); Settings.bump($('settings'), 0, 0); return; }
+    if (r.choice) { Sound.select(); openChoice(r.choice); return; }
+    if (r.toggle !== undefined) Sound.toggle(!r.toggle);   // rising on, falling off
+    else Sound.select();
     if (r.step) r.step();
     if (st.zone === Z.SETTINGS) { renderSettings(); updateFocus(); }
   }
@@ -3072,6 +3099,7 @@
 
   /** From Control Center: the sections. keep: back from Language, About, the Dock or the wallpapers, in the rows. */
   function openSettings(keep) {
+    if (st.zone !== Z.SETTINGS) Sound.sheet(true, 0.5);
     applyTextSize();
     st.zone = Z.SETTINGS;
     settingsChoice = null;
@@ -3550,6 +3578,8 @@
   }
 
   function activate() {
+    // Select, on the frame the press lets go and the opening motion starts (Settings plays its own, by row).
+    if (st.zone !== Z.SETTINGS && st.zone !== Z.WELLY) Sound.select();
     switch (st.zone) {
       case Z.TABS:
         enterTab();
@@ -3631,9 +3661,11 @@
     lastMove = {dx: dx, dy: dy, at: Date.now()};
     var before = snapshot(), zone = st.zone;
     moveFocus(dx, dy);
-    // Nothing that way: the focused thing tugs toward the press and comes back (the house and Welly do their own).
+    // Nothing that way: the focused thing tugs toward the press and comes back (the house and Welly do their own),
+    // with the knock; otherwise the tick, where the focus landed, as its spring starts.
     var changesValue = (zone === Z.SETTINGS && dx) || (zone === Z.EDIT && dx);
-    if (snapshot() === before && !changesValue && zone !== Z.HOUSE && zone !== Z.WELLY) bump(dx, dy);
+    if (snapshot() !== before || changesValue) Sound.tick(focusPan());
+    else if (zone !== Z.HOUSE && zone !== Z.WELLY) { Sound.bump(0.5 + 0.2 * dx); bump(dx, dy); }
   }
 
   function moveFocus(dx, dy) {
@@ -3989,6 +4021,7 @@
   document.addEventListener('keydown', function (e) {
     var k = e.keyCode, now = Date.now();
     keyAt = now;
+    Sound.wake();   // a browser holds audio until a key
     if (fieldKey(k)) return;
     var typing = st.zone === Z.WELLY && window.Welly && Welly.typing();
     // The volume works over everything (the intro, the lock, the screensaver): the TV's keys, + and − on a keyboard.

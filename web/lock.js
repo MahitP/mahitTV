@@ -295,7 +295,7 @@ var Lock = (function () {
       sp.shake.impulse(seq[i] * 1080);
       if (++i < seq.length) setTimeout(next, 75);
     })();
-    if (window.Intro) Intro.knock();
+    if (window.Sound) Sound.error(); else if (window.Intro) Intro.knock();
     setTimeout(function () { busy = false; digits = ''; focus(); showWait(); }, 260);
   }
 
