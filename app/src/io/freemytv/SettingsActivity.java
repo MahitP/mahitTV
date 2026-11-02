@@ -60,6 +60,7 @@ public class SettingsActivity extends Activity {
     private SettingsView view;
     private DreamView preview;   // "Screensaver": the screensaver right here, without changing the system setting
     private boolean previewOnly;   // opened only for the preview (Control Center): closing it closes Settings
+    private boolean backToHome;   // opened from the app's icon in Original mode (onBackPressed)
 
     /** Opens straight on the Sleep Timer (the home screen's Control Center). */
     static final String EXTRA_SLEEP = "sleep";
@@ -73,6 +74,30 @@ public class SettingsActivity extends Activity {
         SleepTimer.check(this);
         view = new SettingsView(this);
         setContentView(view);
+        noteIcon(getIntent());
+    }
+
+    private void noteIcon(Intent intent) {
+        org.json.JSONObject s = HomeMode.state(this);
+        boolean free = HomeMode.FREE.equals(s.optString("mode")) && !s.optBoolean("homeReverted");
+        backToHome = fromIcon(intent) && !free && !HomeMode.phone(this);
+    }
+
+    private static boolean fromIcon(Intent intent) {
+        return intent != null && (intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER) || intent.hasCategory(Intent.CATEGORY_LAUNCHER));
+    }
+
+    /**
+     * In Original mode the icon opens only these settings and Home goes to the stock screen, so Back is the way into
+     * mahitTV's home screen. Not for a visit that began in mahitTV mode: a switch to Original there asks for the stock one.
+     */
+    @Override public void onBackPressed() {
+        if (backToHome) {
+            startActivity(new Intent(this, HomeActivity.class));
+            finish();
+            return;
+        }
+        super.onBackPressed();
     }
 
     /**
@@ -80,10 +105,7 @@ public class SettingsActivity extends Activity {
      * the gear on the home screen opens these settings (no launcher category).
      */
     private boolean openFireHome(Intent intent) {
-        if (!HomeMode.AMAZON || intent == null || !(intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                || intent.hasCategory(Intent.CATEGORY_LAUNCHER)) || intent.getBooleanExtra("screensaver", false)) {
-            return false;
-        }
+        if (!HomeMode.AMAZON || !fromIcon(intent) || intent.getBooleanExtra("screensaver", false)) return false;
         startActivity(new Intent(this, FireHomeActivity.class));
         finish();
         return true;
@@ -110,6 +132,7 @@ public class SettingsActivity extends Activity {
         super.onNewIntent(intent);
         if (openFireHome(intent)) return;
         setIntent(intent);
+        noteIcon(intent);
     }
 
     @Override protected void onPause() {
