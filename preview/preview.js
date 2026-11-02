@@ -5,6 +5,8 @@
  */
 (function () {
   'use strict';
+  // A preview build, with or without a key: it shows the Google TV app's Control Center and allows ?nolock.
+  window.PREVIEW_BUILD = true;
   if (window.CONFIG && CONFIG.tmdbKey) return;
   function pick(i, file, kind, title, year, meta, app, service, rating, overview, cert, badges) {
     return {id: 9000 + i, kind: kind, title: title, year: year, backdrop: 'preview/' + file + '.jpg', logo: 'preview/' + file + '-logo.png',

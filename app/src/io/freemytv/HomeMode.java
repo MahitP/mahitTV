@@ -652,6 +652,20 @@ final class HomeMode {
         }
     }
 
+    /**
+     * TCL only, before a switch: lets mahitTV run in the background (TclAppBoot), since the switch's job can't start
+     * without it. Blocking, off the UI thread, and nothing else on the TV changes. ADB not answering isn't fatal: the switch
+     * still runs, and its stalled message gives the command for a computer. Original leaves it, for the watchdog's sake.
+     */
+    static void allowAutoStart(Context app, Adb.Approval asking) {
+        try (Adb adb = Adb.connect(app, 120_000, asking)) {
+            String out = adb.shell(TclAppBoot.allow(PKG)).trim();
+            AppLog.w("auto start allowed" + (out.isEmpty() ? "" : ": " + out));
+        } catch (IOException e) {
+            AppLog.w("auto start: " + e.getMessage());
+        }
+    }
+
     /** The widget as Home Settings (:home) saved it. */
     private static boolean nowPlayingOn() {
         Prefs.reload();

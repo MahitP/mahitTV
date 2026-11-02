@@ -466,6 +466,10 @@ final class HomeData {
     static boolean isNight(String theme, long now, long sunrise, long sunset) {
         if (theme.equals("dark")) return true;
         if (theme.equals("light")) return false;
+        if (sunrise != 0 && sunset != 0) {   // instants, so a TV in the wrong time zone still follows the real sun
+            long day = TimeCheck.sunriseOfDay(now, sunrise, sunset);
+            return now < day || now >= TimeCheck.sunsetAfter(day, sunrise, sunset);
+        }
         long t = Shaders.timeOfDay(now, 0);
         long rise = Shaders.timeOfDay(sunrise, 6 * 60 * 60_000L);
         long set = Shaders.timeOfDay(sunset, 18 * 60 * 60_000L);

@@ -56,6 +56,9 @@ var Place = (function () {
   };
 })();
 
+/** `ms` within a day, whichever side of zero. */
+function floorDay(ms) { return ((ms % 86400000) + 86400000) % 86400000; }
+
 var Prefs = (function () {
   'use strict';
   var KEY = 'fmtv.prefs';
@@ -855,10 +858,28 @@ var Data = (function () {
       var theme = Prefs.theme();
       if (theme === 'dark') return true;
       if (theme === 'light') return false;
+      if (weather && weather.sunrise && weather.sunset) {   // instants, as Android's: a wrong time zone can't move the sun
+        var rise0 = this.sunriseOfDay(at, weather.sunrise, weather.sunset);
+        return at < rise0 || at >= rise0 + floorDay(weather.sunset - weather.sunrise);
+      }
       var d = new Date(at), mins = d.getHours() * 60 + d.getMinutes();
       function hm(t, fallback) { if (!t) return fallback; var x = new Date(t); return x.getHours() * 60 + x.getMinutes(); }
       var rise = hm(weather && weather.sunrise, 360), set = hm(weather && weather.sunset, 1080);
       return mins < rise || mins >= set;
+    },
+
+    /** TimeCheck's sunriseOfDay: the sunrise of the sun's day `now` falls in, its night split halfway. */
+    sunriseOfDay: function (now, sunrise, sunset) {
+      var since = floorDay(now - sunrise), light = floorDay(sunset - sunrise), start = now - since;
+      return since <= light + (86400000 - light) / 2 ? start : start + 86400000;
+    },
+
+    /** TimeCheck's zoneLooksWrong: `offsetMinutes` east of GMT can't be the time zone at `longitude`. */
+    zoneLooksWrong: function (offsetMinutes, longitude) {
+      var lon = parseFloat(longitude);
+      if (isNaN(lon)) return false;
+      var off = Math.abs(offsetMinutes / 60 - lon / 15) % 24;
+      return Math.min(off, 24 - off) > 3.5;
     },
 
     compact: function (v) {

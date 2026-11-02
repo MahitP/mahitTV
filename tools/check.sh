@@ -62,7 +62,7 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     exit 1
   fi
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java app/src/io/freemytv/TraktOauth.java tools/TraktOauthTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java app/src/io/freemytv/TraktOauth.java tools/TraktOauthTest.java app/src/io/freemytv/TimeCheck.java tools/TimeCheckTest.java app/src/io/freemytv/Transport.java tools/TransportTest.java app/src/io/freemytv/TclAppBoot.java tools/TclAppBootTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
@@ -70,6 +70,9 @@ if [ "$what" = all ] || [ "$what" = android ]; then
   java -cp "$wallpaper_classes" io.freemytv.DockRecessTest   # the Top Shelf never hides the Dock
   java -cp "$wallpaper_classes" io.freemytv.RowAccessTest   # only the manager changes keys and sign-ins
   java -cp "$wallpaper_classes" io.freemytv.TraktOauthTest   # sign-in on the auth host, renewals with the registered address
+  java -cp "$wallpaper_classes" io.freemytv.TimeCheckTest   # a wrong time zone is noticed, and the sky ignores it
+  java -cp "$wallpaper_classes" io.freemytv.TransportTest   # the session Control Center's playback card follows
+  java -cp "$wallpaper_classes" io.freemytv.TclAppBootTest   # TCL's background permission, and nothing else
   ./build.sh
   watch_classes="$(mktemp -d)"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"

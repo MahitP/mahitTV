@@ -152,7 +152,7 @@ var Profiles = (function () {
     }
     seed('mahit', [['Orbital', 9003, 'tv', 'Disney+', 'disney', 41, 52], ['Neon Meridian', 9000, 'movie', 'Apple TV', 'appletv', 63, 124],
       ['The Long Dunes', 9001, 'tv', 'Netflix', 'netflix', 12, 48]],
-      ['netflix', 'amazon', 'youtube.leanback.v4', 'com.apple.appletv', 'com.crunchyroll.webapp', 'com.mvas.stb.emu.pro']);
+      ['netflix', 'amazon', 'youtube.leanback.v4', 'com.apple.appletv', 'com.crunchyroll.webapp', 'com.mvas.stb.emu.free']);
     seed('dhruvin', [['Quiet Peak', 9002, 'movie', 'Prime Video', 'prime', 28, 112], ['Tidebreak', 9004, 'movie', 'Max', 'max', 95, 107]],
       ['youtube.leanback.v4', 'amazon', 'com.wbd.stream', 'netflix', 'com.crunchyroll.webapp', 'spotify-beehive']);
   }
