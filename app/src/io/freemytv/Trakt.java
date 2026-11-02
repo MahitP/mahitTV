@@ -43,7 +43,6 @@ import java.util.Set;
 final class Trakt {
     private Trakt() {}
 
-    private static final String API = "https://api.trakt.tv";
     /** Watchlist titles read, per kind: candidates (Recs looks them up on TMDB only until it has enough). */
     static final int WATCHLIST_MAX = 12;
     /** Trakt's recommendations taken, per kind. */
@@ -213,14 +212,14 @@ final class Trakt {
                 .putLong("expires", (created + t.optLong("expires_in", 86400)) * 1000L).apply();
     }
 
-    /** A valid access token, renewed when it's about to expire (Trakt's last a day). Off the UI thread. */
+    /** A valid access token, renewed when it's about to expire (Trakt's last 7 days). Off the UI thread. */
     private static synchronized String token(Context c) throws Exception {
         SharedPreferences sp = sp(c);
         String refresh = sp.getString("refresh", "");
         if (refresh.isEmpty()) throw new IOException("not signed in");
         if (System.currentTimeMillis() < sp.getLong("expires", 0) - 3600_000L) return sp.getString("access", "");
         Response r = send("POST", "/oauth/token", new JSONObject().put("refresh_token", refresh).put("client_id", clientId())
-                .put("redirect_uri", "urn:ietf:wg:oauth:2.0:oob").put("grant_type", "refresh_token"), null);
+                .put("redirect_uri", TraktOauth.REDIRECT).put("grant_type", "refresh_token"), null);
         if (r.code == 400 || r.code == 401) {
             // The person disconnected the app on trakt.tv (or the token is gone): signed out here too.
             sp.edit().clear().apply();
@@ -465,7 +464,7 @@ final class Trakt {
     }
 
     private static HttpURLConnection open(String method, String path, String token) throws IOException {
-        HttpURLConnection c = (HttpURLConnection) new URL(API + path).openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(TraktOauth.url(path)).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(15000);
         c.setInstanceFollowRedirects(false);   // HttpURLConnection keeps custom headers across hosts: the token must not follow a redirect

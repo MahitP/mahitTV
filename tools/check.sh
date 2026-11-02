@@ -50,19 +50,26 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     echo "Click: sounds play on the UI thread (above)." >&2
     exit 1
   fi
+  # A renewal has to name the address the person's app registered, or Trakt refuses it and the TV signs out; a
+  # Development app can only register localhost. Trakt also wants sign-in requests on its auth host.
+  if grep -nE 'urn:ietf|api\.trakt\.tv' app/src/io/freemytv/Trakt.java; then
+    echo "Trakt: addresses belong in TraktOauth (above)." >&2
+    exit 1
+  fi
   # Left leaves the key screen as Back does: its page on the network and the kept-on screen must stop too.
   if ! sed -n '/private void toSidebar/,/^        }/p' app/src/io/freemytv/SettingsActivity.java | grep -q 'stopKeyPage'; then
     echo "SettingsActivity.toSidebar leaves the key page running." >&2
     exit 1
   fi
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java app/src/io/freemytv/TraktOauth.java tools/TraktOauthTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
   java -cp "$wallpaper_classes" io.freemytv.AerialRequestTest
   java -cp "$wallpaper_classes" io.freemytv.DockRecessTest   # the Top Shelf never hides the Dock
   java -cp "$wallpaper_classes" io.freemytv.RowAccessTest   # only the manager changes keys and sign-ins
+  java -cp "$wallpaper_classes" io.freemytv.TraktOauthTest   # sign-in on the auth host, renewals with the registered address
   ./build.sh
   watch_classes="$(mktemp -d)"
   sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
