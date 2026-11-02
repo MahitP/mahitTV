@@ -218,7 +218,7 @@ var TV = (function () {
     ['com.google.android.youtube.tvunplugged', 'YouTube TV', '#2A2A2A'], ['tv.twitch.android.app', 'Twitch', '#9146FF'],
     ['com.hulu.livingroomplus', 'Hulu', '#0B0C0F'], ['com.wbd.stream', 'HBO Max', '#1B2A8F'], ['com.peacocktv.peacockandroid', 'Peacock TV', '#000000'],
     ['com.cbs.ott', 'Paramount+', '#0064FF'], ['com.instagram.airwave', 'Instagram', '#C13584'], ['com.roblox.client', 'Roblox', '#2563EB'],
-    ['com.tcl.smartalexa', 'Works with Alexa', '#0091D5'], ['com.tcl.tv', 'TV', '#DC2626'], ['com.tcl.tv.plus', 'TCL TV+', '#D7263D'],
+    ['com.tcl.smartalexa', 'Works with Alexa', '#0091D5'], ['com.tcl.tv', 'Live TV', '#DC2626'], ['com.tcl.tv.plus', 'TCL TV+', '#D7263D'],
     ['com.google.android.tv.freeplay', 'Google TV Freeplay', '#4285F4'], ['com.tcl.ui_mediaCenter', 'Media Player', '#6D28D9'],
     ['com.tcl.ocean.instructions', 'User Guide', '#64748B'], ['com.tcl.suspension', 'Quick Panel', '#475569'],
     ['com.tcl.t_solo', 'T-Solo', '#4F46E5'], ['com.tcl.dashboard', 'TCL Home', '#EF4444'], ['com.tcl.exhibit', 'T-Exhibition', '#FB923C'],

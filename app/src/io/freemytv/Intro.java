@@ -35,7 +35,7 @@ import android.view.View;
  * drift, the beam and the ring are back to 0 by then, so the sky never changes) and its cards spring in 32 ms apart,
  * while the wordmark exhales (1 → 0.95, 0 → 14 px of blur, out) over 360 ms.</li>
  * </ol>
- * The sound (Click.chime: sub swell, Cmaj9 glass bloom, the shimmer that follows the beam) starts with the first frame
+ * The sound (Click.chime: sub swell, Cmaj9(#11) glass bloom, the shimmer that follows the beam) starts with the first frame
  * and carries its own timing. OK or Back jumps to the handover. Reduce motion: the Horizon and the still glass
  * wordmark for 0.7 s, then the handover at once. Everything is made in onSizeChanged, theme() and start(); a frame only
  * moves numbers (no allocation in doFrame or onDraw). The glass bitmaps are built on a background thread; until they're

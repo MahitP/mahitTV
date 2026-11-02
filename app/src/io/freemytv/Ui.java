@@ -43,10 +43,34 @@ final class Ui {
     /**
      * Android 8 to 11, and Android 12 and 12L short on memory: their GPUs need the cheaper drawing paths (Shadows,
      * rounded images) and can't afford the off-screen layers (a 2 GB TCL on Android 12 spent 156 MB of GPU memory on
-     * them, without the AGSL shaders that only arrive on 13). From 13 the layers also cache the shaders' glass, so
-     * they stay until a small-memory TV there is measured.
+     * them, without the AGSL shaders that only arrive on 13). A 2.45 GB TCL on Android 14 was measured with and without
+     * them, by the gaps between frames: without, the Dock went from 35 to 60 fps, All Apps from 42 to 60 and its opening
+     * from 29 to 45, on a third of the GPU memory (87 to 26 MB), so small memory means the cheaper paths on any Android.
+     * AGSL's glass stays: dropping it gained nothing there.
      */
-    static final boolean LEGACY = Build.VERSION.SDK_INT < 31 || (Build.VERSION.SDK_INT < 33 && smallMemory());
+    static final boolean LEGACY = Build.VERSION.SDK_INT < 31 || smallMemory();
+
+    /**
+     * Motion that only redraws a little (the focus's glare, rows that trail one another): what the older GPUs in LEGACY
+     * can't spare, but the same 2.45 GB TCL holds 60 fps with. Ken Burns and the like redraw the whole screen, so they stay
+     * with !LEGACY: full-screen frames already take that GPU past 16 ms.
+     */
+    static final boolean SMALL_MOTION = !LEGACY || Build.VERSION.SDK_INT >= 33;
+
+    /**
+     * A frosted card over the Frosted Horizon (the welcome setup, the PIN pad). Scene's glass refracts the home screen's
+     * photo, which is hidden behind these: it shows as streaks here, and a white focus disappears on it by day.
+     */
+    static void plate(Canvas c, RectF r, float radius, boolean night, float alpha, Paint fill, Paint rim, float k) {
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(night ? 0xFF1E2330 : 0xFFD9E0E8, (night ? 0.72f : 0.66f) * alpha));
+        c.drawRoundRect(r, radius, radius, fill);
+        rim.setStyle(Paint.Style.STROKE);
+        rim.setStrokeWidth(1.5f * k);
+        rim.setShader(null);
+        rim.setColor(Ui.alpha(0xFFFFFFFF, (night ? 0.2f : 0.6f) * alpha));
+        c.drawRoundRect(r, radius, radius, rim);
+    }
 
     /** Under 3 GB of RAM, read from /proc: LEGACY is read before Ui.init, so there is no Context yet. */
     private static boolean smallMemory() {
