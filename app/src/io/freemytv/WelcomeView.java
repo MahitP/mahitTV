@@ -432,7 +432,7 @@ final class WelcomeView extends View implements Choreographer.FrameCallback {
         float z = 1.03f - 0.03f * Ui.clamp(appear.value);
         c.save();
         c.scale(z, z, card.centerX(), card.centerY());
-        scene.glass(c, card, CARD_RADIUS * k, night ? 0xFF1E2330 : WHITE, night ? 0.62f : 0.56f, WHITE, 0.06f, 0.04f, 1);
+        Ui.plate(c, card, CARD_RADIUS * k, night, 1, fill, rim, k);
         // The step's dots.
         float cx = card.centerX();
         for (int i = 0; i < STEPS; i++) {

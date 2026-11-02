@@ -7,7 +7,7 @@
  *  III (1.15–2.35 s) a −28° volumetric beam crosses the screen, splitting the rim into cyan, white and amber, and at
  *      1.45 s a gossamer glass ring spreads from the word over the sky;
  *  IV  (2.35–3.10 s) the wordmark exhales while "Who's Watching?" springs in over the same, uninterrupted Horizon.
- * Three layers of sound go with it (Web Audio): a C2 + G2 sub swell, the Cmaj9 glass bloom in a 2.2 s room, and a
+ * Three layers of sound go with it (Web Audio): a C2 + G2 sub swell, the Cmaj9(#11) glass bloom in a 2.2 s room, and a
  * shimmer that pans left to right with the beam. OK or Back jumps to the hand-off; I (home.js) or Settings → Preview
  * Startup Animation plays it again. Reduce motion or an old TV (lite): the Horizon and the still wordmark, then the
  * hand-off at once. Startup animation off: no startup at power-on (the lock straight away).
@@ -48,7 +48,7 @@ var Intro = (function () {
     // The sound (Click.java's, in Web Audio).
     sound: {
       sub: [[65.41, 0.30], [98.00, 0.22]], subAt: 0.05, subAttack: 0.26, subRelease: [1.95, 2.60],
-      chord: [261.63, 329.63, 392.00, 493.88, 587.33], chordLevel: [0.11, 0.10, 0.10, 0.085, 0.075],
+      chord: [261.63, 329.63, 392.00, 493.88, 587.33, 739.99], chordLevel: [0.11, 0.10, 0.10, 0.085, 0.075, 0.05],
       chordAt: 0.48, roll: 0.045, bloom: 0.035, tau: 1.1, cents: 1.8, fm: 0.12,
       shimmer: [659.25, 783.99, 987.77, 1174.66], shimmerAt: [1.15, 1.33, 1.51, 1.69], shimmerLevel: 0.055,
       reverb: 2.2, wet: 0.45, fadeAt: 2.90, length: 3.2, master: 0.5
@@ -437,7 +437,7 @@ var Intro = (function () {
         o.start(t0 + s.subAt); o3.start(t0 + s.subAt);
         o.stop(t0 + s.subRelease[1] + 0.05); o3.stop(t0 + s.subRelease[1] + 0.05);
       }
-      // Layer 2: Cmaj9, rolled; each note a voice detuned down on the left and up on the right.
+      // Layer 2: Cmaj9(#11), rolled, the #11 last and quietest; each note a voice detuned down on the left and up on the right.
       var down = Math.pow(2, -s.cents / 1200), up = Math.pow(2, s.cents / 1200);
       for (i = 0; i < s.chord.length; i++) {
         var at = t0 + s.chordAt + i * s.roll;

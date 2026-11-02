@@ -1302,9 +1302,9 @@ final class WellyView extends View implements Choreographer.FrameCallback {
         float newA = flying ? (float) Math.pow(Ui.clamp(fly.value), 3) : 1;
         drawCentre(c, centreOld, centreOldBig, centreOldW, mid, a * (1 - cf));
         drawCentre(c, centre, centreBig, centreW, mid, a * cf * newA);
-        status.setAlpha(Math.round(0x9E * a * (1 - bf)));
+        status.setAlpha(Math.round(0xC8 * a * (1 - bf)));
         if (!belowOld.isEmpty()) c.drawText(belowOld, mid - belowOldW / 2, BELOW_Y * k, status);
-        status.setAlpha(Math.round(0x9E * a * bf));
+        status.setAlpha(Math.round(0xC8 * a * bf));
         if (!below.isEmpty()) c.drawText(below, mid - belowW / 2, BELOW_Y * k, status);
     }
 

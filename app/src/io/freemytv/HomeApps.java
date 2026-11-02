@@ -193,69 +193,14 @@ final class HomeApps {
             "com.google.android.videos",            // Google Play Movies (discontinued)
             "com.disney.starplus"));                // Star+ (merged into Disney+)
 
-    /**
-     * All Apps' order after the Dock (by package, else by the name the TV shows, so a renamed or regional build still
-     * lands in place); the rest follow by name. An app here is never hidden, and never goes in the utilities folder.
-     */
-    private static final Pattern[][] GRID_ORDER = {
-        order("com\\.apple\\.android\\.music", "^apple music$"),
-        order("youtube\\.tvmusic", "^youtube music$"),
-        order("^com\\.spotify\\.", "^spotify$"),
-        order("^com\\.disney\\.disneyplus", "^disney"),
-        order("^com\\.tubitv", "^tubi$"),
-        order("youtube\\.tvunplugged", "^youtube tv$"),
-        order("twitch", "^twitch$"),
-        order("^com\\.hulu\\.", "^hulu$"),
-        order("^com\\.wbd\\.stream$|hbonow|hbomax", "^(hbo )?max$"),
-        order("peacock", "^peacock"),
-        order("^com\\.cbs\\.|paramount", "^paramount"),
-        order("^com\\.instagram\\.", "^instagram$"),
-        order("^com\\.roblox\\.", "^roblox$"),
-        // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
-        order("alexa", "alexa"),
-        order("^com\\.tcl\\.tv$", "^tv$"),
-        order("tclplus|com\\.tcl\\.tv\\.plus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
-        order("(?i)media_?center|mediaplayer|videoplayer", "^media ?player$"),
-        order("instructions|userguide|manual", "^user ?guide$"),
-        order("quickpanel|com\\.tcl\\.suspension", "^quick ?panel$"),
-        order("t_?solo", "^t-?solo$"),
-        order("^com\\.tcl\\.dashboard$|tclhome", "^tcl home$"),
-        order("exhibit", "^t-?exhibition$"),
-    };
-
     /** The TV's own devices page (TCL): remotes, Bluetooth audio and accessories. */
     static final String TV_DEVICES = "com.android.tv.settings.DEVICES";
-    /** GRID_ORDER's first TCL app (Works with Alexa): it and the ones after it go in the TCL folder. */
-    private static final int TCL_FIRST = 13;
-    /** A browser (TCL's BrowseHere): TV & Utilities', not the TCL folder's. */
-    private static final Pattern BROWSER = Pattern.compile("browse", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * One of TCL's utilities, for the TCL folder: GRID_ORDER's last ones, or another com.tcl app it doesn't place (TCL's
-     * browser goes in TV & Utilities).
-     */
-    static boolean tclApp(String pkg, String label) {
-        int r = gridRank(pkg, label);
-        if (r < GRID_ORDER.length) return r >= TCL_FIRST;
-        boolean browser = (pkg != null && BROWSER.matcher(pkg).find()) || (label != null && BROWSER.matcher(label).find());
-        return pkg != null && pkg.startsWith("com.tcl.") && !browser;
-    }
-
-    private static Pattern[] order(String pkg, String label) {
-        return new Pattern[] {Pattern.compile(pkg), Pattern.compile(label, Pattern.CASE_INSENSITIVE)};
-    }
-
-    /** Where an app goes in All Apps (GRID_ORDER's index), or GRID_ORDER.length when it isn't listed. */
-    static int gridRank(String pkg, String label) {
-        for (int i = 0; i < GRID_ORDER.length; i++) {
-            if ((pkg != null && GRID_ORDER[i][0].matcher(pkg).find()) || (label != null && GRID_ORDER[i][1].matcher(label.trim()).find())) return i;
-        }
-        return GRID_ORDER.length;
-    }
-
+    /** A second "TCL Home", not on the TV's own list of apps (com.tcl.dashboard is that one): it would match by name. */
+    private static final String TCL_HOME_TWIN = "com.tcl.tv.tclhome_passive";
     /** Kept out of All Apps: HIDDEN, unless it is one GRID_ORDER names. */
     private static boolean hidden(String pkg, String label) {
-        return HIDDEN.contains(pkg) && gridRank(pkg, label) == GRID_ORDER.length;
+        if (TCL_HOME_TWIN.equals(pkg)) return true;
+        return HIDDEN.contains(pkg) && AppGrid.gridRank(pkg, label) == AppGrid.UNPLACED;
     }
 
     /**
@@ -453,13 +398,17 @@ final class HomeApps {
     static List<Item> folders(List<Item> apps) {
         List<Item> tcl = new ArrayList<>(), util = new ArrayList<>(), rest = new ArrayList<>();
         for (Item it : apps) {
-            if (it.kind == APP && it.pkg != null && tclApp(it.pkg, it.label)) {
+            if (it.kind == APP && it.pkg != null && AppGrid.tclApp(it.pkg, it.label)) {
                 tcl.add(it);
                 continue;
             }
-            boolean utility = it.kind == APP && it.pkg != null && !Wallpaper.videoApp(it.pkg)
-                    && gridRank(it.pkg, it.label) == GRID_ORDER.length   // the ones placed in the grid stay there
-                    && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()));
+            if (it.kind == SETTINGS) {   // mahitTV's own settings: with the TV's tools, not a lone tile among the apps
+                util.add(it);
+                continue;
+            }
+            boolean utility = it.kind == APP && it.pkg != null && (AppGrid.tvUtility(it.pkg, it.label) || (!Wallpaper.videoApp(it.pkg)
+                    && AppGrid.gridRank(it.pkg, it.label) == AppGrid.UNPLACED   // the ones placed in the grid stay there
+                    && (UTILITY.matcher(it.pkg).find() || (it.label != null && UTILITY.matcher(it.label).find()))));
             (utility ? util : rest).add(it);
         }
         appleFolder(rest);
@@ -478,7 +427,7 @@ final class HomeApps {
         Item music = null;
         for (int i = 0; i < rest.size(); i++) {
             Item it = rest.get(i);
-            if (it.kind == APP && gridRank(it.pkg, it.label) == 0) {
+            if (it.kind == APP && AppGrid.gridRank(it.pkg, it.label) == 0) {
                 music = it;
                 at = i;
                 break;
@@ -937,7 +886,7 @@ final class HomeApps {
             it.kind = APP;
             it.pkg = pkg;
             it.key = pkg;
-            it.label = app[1];
+            it.label = "com.tcl.tv".equals(pkg) ? Ui.tr("Live TV") : app[1];   // TCL calls its channels app just "TV"
             compose(c, it, true);
             items.add(it);
         }
@@ -946,7 +895,7 @@ final class HomeApps {
         }
         // GRID_ORDER first, in its order; then the rest by name.
         Collections.sort(items, (a, b) -> {
-            int ra = gridRank(a.pkg, a.label), rb = gridRank(b.pkg, b.label);
+            int ra = AppGrid.gridRank(a.pkg, a.label), rb = AppGrid.gridRank(b.pkg, b.label);
             return ra != rb ? Integer.compare(ra, rb) : a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT));
         });
         synchronized (HomeApps.class) {
@@ -1213,7 +1162,7 @@ final class HomeApps {
             boolean sys = (ri.activityInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             String label = String.valueOf(ri.loadLabel(pm));
             // A system app with a phone-style entry only: with Settings > Show system apps, or when GRID_ORDER names it.
-            boolean wanted = gridRank(pkg, label) < GRID_ORDER.length || SYSTEM_SHOWN.contains(pkg);
+            boolean wanted = AppGrid.gridRank(pkg, label) < AppGrid.UNPLACED || SYSTEM_SHOWN.contains(pkg);
             if (sys && (!SystemApps.listed(system, wanted, HomeMode.factoryMenu(pkg)) || pkg.equals(c.getPackageName())
                     || hidden(pkg, label))) continue;
             if (!seen.add(pkg)) continue;

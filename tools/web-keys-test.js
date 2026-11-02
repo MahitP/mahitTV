@@ -275,9 +275,10 @@ var browser = null;
     'Peacock TV', 'Paramount+', 'Instagram', 'Roblox', 'TCL', 'TV & Utilities'];
   assert.deepStrictEqual(lists.grid, wantGrid, 'All Apps follows the TV\'s order, the folders at its end: ' + JSON.stringify(lists.grid));
   assert.ok(lists.grid.length <= 18, 'All Apps fits one screen (3 rows of 6 under the Dock): ' + lists.grid.length);
-  assert.deepStrictEqual(lists.tcl, ['Works with Alexa', 'TV', 'TCL TV+', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition'],
-    'the TCL folder holds TCL\'s 9 apps in order: ' + JSON.stringify(lists.tcl));
-  assert.ok(lists.utilities.indexOf('Google TV Freeplay') >= 0, 'Google TV Freeplay is in TV & Utilities: ' + JSON.stringify(lists.utilities));
+  assert.deepStrictEqual(lists.tcl, ['Works with Alexa', 'Media Player', 'User Guide', 'Quick Panel', 'T-Solo', 'TCL Home', 'T-Exhibition'],
+    'the TCL folder holds TCL\'s 7 utilities in order: ' + JSON.stringify(lists.tcl));
+  assert.deepStrictEqual(lists.utilities.slice(0, 4), ['Live TV', 'TCL TV+', 'Google TV Freeplay', 'BrowseHere'],
+    'TV & Utilities starts with what\'s for watching: ' + JSON.stringify(lists.utilities));
 
   // Arrow keys: ↓ onto All Apps' shorter last row lands on its last app; ↑ from the tabs reaches Control Center's
   // bubble without switching tabs, and ← goes back to that tab.

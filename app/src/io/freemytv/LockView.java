@@ -37,6 +37,9 @@ final class LockView extends View implements Choreographer.FrameCallback {
 
         /** The lock is gone. */
         void onLockGone();
+
+        /** `covers`: it's opaque and in place, so nothing of the home screen behind it shows. */
+        void onLockCovers(boolean covers);
     }
 
     private static final int CARDS = 0, PIN = 1, LEAVING = 2;
@@ -57,6 +60,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private final Activity activity;
     private final Scene scene;
     private final Listener listener;
+    private boolean covering;
     private List<ProfileManager.Profile> profiles = new ArrayList<>();
     private Bitmap[] avatars = new Bitmap[0];
     private String[] names = new String[0];
@@ -166,6 +170,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
         mode = CARDS;
         selected = -1;
         setVisibility(GONE);
+        updateCover();
         listener.onLockGone();
     }
 
@@ -414,11 +419,13 @@ final class LockView extends View implements Choreographer.FrameCallback {
         }
         for (Spring s : dotPop) moving |= s.step(dt);
         applyEnter();
+        updateCover();
         invalidate();
         if (mode == LEAVING && leave.settled() && leave.target == 1) {
             setVisibility(GONE);
             setAlpha(1);
             mode = CARDS;
+            updateCover();
             listener.onLockGone();
             return;
         }
@@ -429,6 +436,13 @@ final class LockView extends View implements Choreographer.FrameCallback {
     }
 
     /** The arrival (1.04 → 1, fading in) and, for Guest, the fade as the card zooms in. */
+    private void updateCover() {
+        boolean now = getVisibility() == VISIBLE && mode != LEAVING && enter.target == 1 && enter.settled();
+        if (now == covering) return;
+        covering = now;
+        listener.onLockCovers(now);
+    }
+
     private void applyEnter() {
         float e = Ui.clamp(enter.value), z = 1.04f - 0.04f * enter.value;
         setScaleX(z);
@@ -661,7 +675,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private void drawPad(Canvas c, float alpha) {
         float top = HUD_TOP * k + 40 * k * (1 - Ui.clamp(pin.value));
         hud.set(w / 2 - HUD_W * k / 2, top, w / 2 + HUD_W * k / 2, top + HUD_H * k);
-        scene.glass(c, hud, 56 * k, night ? 0xFF1C1C22 : WHITE, night ? 0.42f : 0.5f, WHITE, 0.06f, 0.04f, 1, alpha);
+        Ui.plate(c, hud, 56 * k, night, alpha, fill, ring, k);
 
         // Dots (they shake together on a wrong PIN; each pops as its digit comes; gold when right).
         float dy = hud.top + 88 * k, gap = 64 * k, x0 = w / 2 - gap * 1.5f + shake.value * k;

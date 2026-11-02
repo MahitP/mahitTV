@@ -241,7 +241,7 @@ final class Click {
      * <li>A warm sub-bass horizon swell, C2 + G2 (65.41 / 98.00 Hz: sines with a touch of their third harmonic, a
      * triangle's warmth without its buzz), from 0.05 s with a 260 ms raised-cosine attack as the seam opens, gone by
      * 2.60 s.</li>
-     * <li>The crystalline Cmaj9 bloom (C4 E4 G4 B4 D5) as the glyphs condense: rolled 45 ms apart from 0.48 s, each a
+     * <li>The crystalline Cmaj9(#11) bloom (C4 E4 G4 B4 D5, then a quiet F♯5 on top) as the glyphs condense: rolled 45 ms apart from 0.48 s, each a
      * chorus of two voices detuned ∓1.8 cents into the left and right channels, 88% sine and 12% a 2:1 FM bell (its
      * index dying away like struck glass), into a 2.2 s reverb; it fades out from 2.90 s.</li>
      * <li>The prismatic shimmer (E5 G5 B5 D6) as the −28° beam crosses the word, 1.15–1.85 s: velvet sine pings 18 dB
@@ -253,7 +253,8 @@ final class Click {
     private static String chord(Context c) throws IOException {
         new File(c.getCacheDir(), "chime-mahittv.wav").delete();         // the golden intro's chord
         new File(c.getCacheDir(), "chime-mahittv-glass.wav").delete();   // the first glass chord (mono)
-        File f = new File(c.getCacheDir(), "chime-mahittv-horizon.wav");
+        new File(c.getCacheDir(), "chime-mahittv-horizon.wav").delete();   // the chord without its #11
+        File f = new File(c.getCacheDir(), "chime-mahittv-lydian.wav");
         if (f.exists() && f.length() > 44) return f.getPath();
         final int rate = CHIME_RATE;
         final double seconds = 3.2;
@@ -274,8 +275,9 @@ final class Click {
             }
         }
 
-        // Layer 2: the Cmaj9 glass bloom, chorused across the channels, into the reverb.
-        double[] notes = {261.63, 329.63, 392.00, 493.88, 587.33}, levels = {0.11, 0.10, 0.10, 0.085, 0.075};
+        // Layer 2: the Cmaj9(#11) glass bloom, chorused across the channels, into the reverb. The #11 is last and quietest:
+        // it opens the chord up without turning its tritone over the C into tension.
+        double[] notes = {261.63, 329.63, 392.00, 493.88, 587.33, 739.99}, levels = {0.11, 0.10, 0.10, 0.085, 0.075, 0.05};
         double down = Math.pow(2, -1.8 / 1200), up = Math.pow(2, 1.8 / 1200);
         for (int j = 0; j < notes.length; j++) {
             double start = 0.48 + 0.045 * j;

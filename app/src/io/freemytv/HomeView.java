@@ -579,6 +579,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             this.kind = kind;
         }
 
+        // Without a GPU layer, fading a view that may overlap itself means a full-screen offscreen pass for each of them
+        // on every frame. These fade for a moment and their parts barely overlap, so the alpha goes on each draw instead.
+        @Override public boolean hasOverlappingRendering() {
+            return !Ui.LEGACY;
+        }
+
         @Override protected void onDraw(Canvas c) {
             if (labelPaint == null) return;
             c.translate(-getLeft(), -getTop());
@@ -1197,7 +1203,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         boolean chevronMoving = chevronShown.step(dt) | breathe(up);
         // Control Center's rows come in one after another while it opens.
-        boolean ccStagger = drawer.target > 0.5f && !Ui.LEGACY && !Spring.instant
+        boolean ccStagger = drawer.target > 0.5f && Ui.SMALL_MOTION && !Spring.instant
                 && up - drawerOpenedAt < CC_ROW_MS * (drawerItems.size() / 2 + 3) + CC_ROW_IN_MS;
         if (ccStagger) drawerLayer.invalidate();
         boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen) | glare.step(dt);
@@ -1219,7 +1225,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean sheetMoving = sheet.step(dt);
         if (sheetMoving) {
             recordLift(up);
-            if (!Ui.LEGACY) sheetLayer.invalidate();   // the rows trail one another as the grid comes up
+            if (Ui.SMALL_MOTION) sheetLayer.invalidate();   // the rows trail one another as the grid comes up
         } else {
             liftCount = 0;
         }
@@ -1924,8 +1930,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else {
             night = want ? 1 : 0;
             nightAt = 0;
+            horizonFollowsNight();
             nightChanged();
         }
+    }
+
+    /** The Frosted Horizon on screen takes the night's colours (or stays, when its day or night look was the one picked). */
+    private void horizonFollowsNight() {
+        if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon()) scene.setHorizon(Wallpaper.dark(Prefs.wallpaper(), nightTarget));
+    }
+
+    /** Day to night is under way behind a Frosted Horizon that follows it: the two looks crossfade (drawLightSky). */
+    private boolean horizonFading() {
+        String picked = Prefs.wallpaper();
+        return nightAt != 0 && Wallpaper.dark(picked, true) != Wallpaper.dark(picked, false);
     }
 
     /** Advances the day ⇄ night transition; true while it runs. */
@@ -1936,6 +1954,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (t >= 1) {
             night = to;
             nightAt = 0;
+            horizonFollowsNight();
         }
         nightChanged();
         return true;
@@ -2509,7 +2528,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lift = Math.max(fc, Ui.clamp(l));
         // Two shadows, crossfaded with the lift (at the resting size; the transform enlarges them, the blur stays
         // cached): resting y 6, blur 18, 18%; lifted y 28 (12 pressed), blur 46, 48%.
-        if (lift < 0.99f) {
+        // A small-memory TV's GPU can't also afford this for all 18 of All Apps' tiles on every frame (measured: 45 fps).
+        if (lift < 0.99f && !(Ui.LEGACY && sheet.value > 0.5f && lift < 0.01f)) {
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
             tmp.offset(0, 6 * k);
             tmp.inset(4 * k, 4 * k);
@@ -2569,7 +2589,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float px = swayX.value * 6 * k * fc, py = swayY.value * 4 * k * fc;
         if (emblem) drawEmblem(c, it, style == null ? 0 : style[2], s, px, py, 1 + 0.03f * fc);
         float sheenA = fc * (1 - Ui.clamp(scrub.value));   // no sheen while scrubbing fast
-        if (fc > 0.5f && it != glareFor && !Ui.LEGACY && !Spring.instant && scrub.value < 0.01f) {
+        if (fc > 0.5f && it != glareFor && Ui.SMALL_MOTION && !Spring.instant && scrub.value < 0.01f) {
             glareFor = it;   // a new arrival: the glare crosses from the side the focus came from
             float from = lastDx < 0 ? 1.3f : -1.3f;
             glare.snap(from);
@@ -3118,7 +3138,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 int left = sleepOn ? SleepTimer.minutesLeft(getContext()) : 0;
                 it.detail = left > 0 ? SleepTimer.duration(left) : Ui.tr("state|Off");
             }
-            else if (it.kind == HomeApps.BRIGHTNESS) it.detail = PERCENT[Prefs.brightness()];
+            else if (it.kind == HomeApps.BRIGHTNESS) it.detail = PERCENT[Prefs.brightness()] + "%";
         }
     }
 
@@ -3612,7 +3632,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * in a layer of its own until it's in. Returns the save count to restore, or -1 when the row is already in.
      */
     private int rowIn(Canvas c, int row, long since, float l, float t, float r, float b) {
-        if (drawer.target < 0.5f || Ui.LEGACY || Spring.instant) return -1;
+        if (drawer.target < 0.5f || !Ui.SMALL_MOTION || Spring.instant) return -1;
         float u = Ui.clamp((since - CC_ROW_MS * row) / (float) CC_ROW_IN_MS);
         if (u >= 1) return -1;
         float e = 1 - (1 - u) * (1 - u) * (1 - u);   // ease out
@@ -4161,13 +4181,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the grid
 
-    // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the apps slide; the card stays put).
+    // As tvOS 9.2's folders: 3 rows in view, the rest a scroll away (the apps slide; the card stays put).
     private static final int FOLDER_ROWS = 3;
-    /** 3, or 4 for a folder of 10 to 12 (TCL's apps), so it shows whole. */
+    /** AppGrid.folderColumns: as many across as keep its rows even. */
     private int FOLDER_COLUMNS = 3;
     private final Spring folderScroll = new Spring(Spring.SPATIAL_SCROLL, 0).px();
     private int folderTop;
     private static final float FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_RADIUS = 40;
+    private static final float FOLDER_ROW = GRID_H + 84;   // room for a focused app's name above the next row
+    private final Paint folderRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private HomeApps.Item folderOpen;
     private int folderIndex;
     private final Spring folderShown = new Spring(Spring.SHEET_OPEN, 0);
@@ -4234,11 +4256,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         click.sheet(true, 0.5f);
         folderOpen = folder;
         folderIndex = 0;
-        FOLDER_COLUMNS = folder.children.size() > 9 && folder.children.size() <= 12 ? 4 : 3;
+        FOLDER_COLUMNS = AppGrid.folderColumns(folder.children.size());
         int n = folder.children.size(), cols = Math.min(FOLDER_COLUMNS, n), rows = Math.min(FOLDER_ROWS, (n + FOLDER_COLUMNS - 1) / FOLDER_COLUMNS);
         folderTop = 0;
         folderScroll.snap(0);
-        float cw = (2 * FOLDER_PAD + cols * GRID_W + (cols - 1) * FOLDER_GAP) * k, ch = (156 + rows * (GRID_H + 70) + 24) * k;
+        float cw = (2 * FOLDER_PAD + cols * GRID_W + (cols - 1) * FOLDER_GAP) * k, ch = (156 + rows * FOLDER_ROW + 24) * k;
         folderCard.set((w - cw) / 2, (h - ch) / 2, (w + cw) / 2, (h + ch) / 2);
         snap(folderCard);
         folderFrom.set(from);
@@ -4248,7 +4270,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < n; i++) {
             folderFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
             float x = folderCard.left + (FOLDER_PAD + (i % FOLDER_COLUMNS) * (GRID_W + FOLDER_GAP)) * k;
-            float y = folderCard.top + (132 + (i / FOLDER_COLUMNS) * (GRID_H + 70)) * k;
+            float y = folderCard.top + (132 + (i / FOLDER_COLUMNS) * FOLDER_ROW) * k;
             folderCells[i] = new RectF(x, y, x + GRID_W * k, y + GRID_H * k);
             folderLabels[i] = TextUtils.ellipsize(folder.children.get(i).label, gridLabel, GRID_W * 1.3f * k, TextUtils.TruncateAt.END).toString();
         }
@@ -4273,8 +4295,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void moveFolder(int dx, int dy) {
-        int n = folderOpen.children.size(), next = folderIndex + dx + dy * FOLDER_COLUMNS;
-        if (next < 0 || next >= n || (dx != 0 && next / FOLDER_COLUMNS != folderIndex / FOLDER_COLUMNS)) {
+        int next = AppGrid.folderMove(folderIndex, dx, dy, folderOpen.children.size(), FOLDER_COLUMNS);
+        if (next < 0) {
             deadEnd(dx, dy);
             return;
         }
@@ -4282,14 +4304,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int row = next / FOLDER_COLUMNS;
         if (row < folderTop) folderTop = row;
         if (row > folderTop + FOLDER_ROWS - 1) folderTop = row - FOLDER_ROWS + 1;
-        folderScroll.target = folderTop * (GRID_H + 70) * k;
+        folderScroll.target = folderTop * FOLDER_ROW * k;
         for (int i = 0; i < folderFocus.length; i++) folderFocus[i].target = i == folderIndex ? 1 : 0;
         gridDirty = true;
         click.move();
         spoken.focusMoved();
     }
 
-    /** The open folder: the grid dims, the card springs from the folder's tile, the white badge, its apps 3 across (9 in view, then they scroll). */
+    /** The open folder: the grid dims, the card springs from the folder's tile, the white badge, its apps in even rows (3 in view, then they scroll). */
     private void drawFolder(Canvas c) {
         float e = Ui.clamp(folderShown.value);
         fill.setShader(null);
@@ -4303,7 +4325,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tmp.offset(0, 30 * k);
         shadow.setColor(Ui.alpha(0xFF000000, 0.32f * e));
         shadows.draw(c, tmp, FOLDER_RADIUS * k, SHADOW_BLUR * k, shadow);
-        scene.glass(c, folderCard, FOLDER_RADIUS * k, dark() > 0.5f ? 0xFF282C36 : 0xFFF6F7FA, 0.9f, WHITE, 0.06f, 0.04f, 1, e);
+        // A clean card, as on the web: at this opacity the glass only showed as a smudge along its edge.
+        fill.setColor(Ui.alpha(dark() > 0.5f ? 0xFF282C36 : 0xFFF6F7FA, 0.985f * e));
+        c.drawRoundRect(folderCard, FOLDER_RADIUS * k, FOLDER_RADIUS * k, fill);
+        folderRim.setStyle(Paint.Style.STROKE);
+        folderRim.setStrokeWidth(1.5f * k);
+        folderRim.setColor(Ui.alpha(WHITE, (dark() > 0.5f ? 0.14f : 0.7f) * e));
+        c.drawRoundRect(folderCard, FOLDER_RADIUS * k, FOLDER_RADIUS * k, folderRim);
         fill.setColor(Ui.alpha(0xFFFFFFFF, e));
         c.drawRoundRect(folderBadge, folderBadge.height() / 2, folderBadge.height() / 2, fill);
         ccLabel.setColor(Ui.alpha(INK, e));
@@ -4330,7 +4358,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** How far row `r` trails the grid's lift (each row 18 ms behind the one above, while it moves). */
     private float rowLag(int r) {
-        if (liftCount == 0 || r == 0 || Ui.LEGACY) return 0;
+        if (liftCount == 0 || r == 0 || !Ui.SMALL_MOTION) return 0;
         long now = liftAt[liftHead];
         return (sheet.value - liftAgo(now - ROW_LAG_MS * r)) * TV_GRID_LIFT * k;
     }
@@ -4394,7 +4422,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (a <= 0) return;
         float padX = 28 * k, padY = 18 * k, icon = 26 * k, iconW = Symbols.width(getContext(), "bell", icon);
         float tw = toast.getWidth() + iconW + 16 * k, th = toast.getHeight();
-        float toastTop = 64 * k - (1 - a) * 16 * k;
+        float toastTop = 124 * k - (1 - a) * 16 * k;   // under the tab bar and the clock, never over them
         tmp.set((w - tw) / 2f - padX, toastTop, (w + tw) / 2f + padX, toastTop + th + 2 * padY);
         int save = c.saveLayerAlpha(tmp.left - 4, tmp.top - 4, tmp.right + 4, tmp.bottom + 4, Math.round(255 * a));
         scene.glass(c, tmp, Math.min(tmp.height() / 2, 32 * k), SMOKE, 0.55f, 0, 0, 0.02f, 1);
@@ -4552,7 +4580,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             wake();
             invalidateAll();
         }
+
+        @Override public void onLockCovers(boolean covers) {
+            lockCovers = covers;
+            invalidate();
+        }
     };
+
+    // Under the opaque lock none of the home screen shows: still drawing it took "Who's Watching?" to 42 fps on a 2.45 GB TCL.
+    private boolean lockCovers;
+
+    @Override protected boolean drawChild(Canvas c, View child, long drawingTime) {
+        if (lockCovers && (child instanceof Layer || child == house || child == welly)) return false;
+        return super.drawChild(c, child, drawingTime);
+    }
 
     private final Intro.Listener introListener = new Intro.Listener() {
         @Override public void onIntroEnding() {
@@ -5910,7 +5951,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         android.graphics.ColorFilter v = dt > dd && dt > ds ? veil(dt, SLATE)
                 : dd > ds ? veil(dd, 0xFF000000) : veil(ds, blend(0xFFFFFFFF, 0xFF000000, night));
         if (bgTo == null || (fading && bgFrom == null)) {
-            if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon()) {
+            if (backgroundMode == BACKGROUND_PROFILE && scene.isHorizon() && !horizonFading()) {
                 scene.drawBackground(c);
                 // Over the Frosted Horizon the dims are see-through layers, not a filter: Home and Welly tint it slate
                 // (as web/home.css), so its colours stay under their white text.
@@ -5950,8 +5991,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.translate(w / 2f + tx, h / 2f);
             c.scale(sc, sc);
             c.translate(-w / 2f, -h / 2f);
-            drawImage(c, b.image, alpha);
-            drawImage(c, b.soft, alpha * Math.max(Ui.clamp(sheet.value), Ui.clamp(tabAway.value)));
+            float soft = Math.max(Ui.clamp(sheet.value), Ui.clamp(tabAway.value));
+            if (soft < 0.995f || b.soft == null) drawImage(c, b.image, alpha);   // the frosted copy covers it once it's opaque
+            drawImage(c, b.soft, alpha * soft);
             c.restore();
             return;
         }

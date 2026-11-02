@@ -393,14 +393,16 @@
     [/twitch/i, /^twitch$/i], [/hulu/i, /^hulu$/i], [/(^|\.)hbo|wbd/i, /^(hbo )?max$/i], [/peacock/i, /^peacock/i],
     [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i],
     // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
-    [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i],
-    [/tclplus|tcl\.tv\.plus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
+    [/alexa/i, /alexa/i],
     [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
     [/quick.?panel|tcl\.suspension/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
-    [/exhibit/i, /^t-?exhibition$/i]
+    [/exhibit/i, /^t-?exhibition$/i],
+    // From here (TV_FIRST) what's for watching and the TV's general tools, first in TV & Utilities.
+    [/^com\.tcl\.tv$/i, /^(live )?tv$/i], [/tclplus|tcl\.tv\.plus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
+    [/freeplay/i, /freeplay/i], [/browse/i, /browse/i]
   ];
 
-  var TCL_FIRST = 13;
+  var TCL_FIRST = 13, TV_FIRST = 20;
 
   /**
    * One of TCL's utilities, for the TCL folder (as HomeApps.tclApp): GRID_ORDER's last ones, or another com.tcl app it
@@ -408,7 +410,7 @@
    */
   function tclApp(app) {
     var r = gridRank(app);
-    if (r < GRID_ORDER.length) return r >= TCL_FIRST;
+    if (r < GRID_ORDER.length) return r >= TCL_FIRST && r < TV_FIRST;
     return /^com\.tcl\./i.test(app.id || '') && !/browse/i.test((app.id || '') + ' ' + (app.title || ''));
   }
 
@@ -434,7 +436,8 @@
   function folders(list) {
     var tcl = list.filter(tclApp);
     var util = list.filter(function (x) {
-      return tcl.indexOf(x) < 0 && !shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title));
+      var rank = gridRank(x);
+      return tcl.indexOf(x) < 0 && ((rank >= TV_FIRST && rank < GRID_ORDER.length) || (!shelfKey(x) && gridRank(x) === GRID_ORDER.length && (UTILITY.test(x.id) || UTILITY.test(x.title))));
     });
     var rest = list.filter(function (x) { return tcl.indexOf(x) < 0 && util.indexOf(x) < 0; });
     appleFolder(rest);
@@ -2528,10 +2531,16 @@
 
   // MARK: - Folders: a frosted squircle with four of its apps in All Apps; OK zooms it open over the home screen
 
-  // As tvOS 9.2's folders: 3 columns, 9 apps in view, the rest a scroll away (the grid slides; the card stays put).
-  // A folder of 10 to 12 takes 4 columns instead, so it shows whole (TCL's apps).
-  var FOLDER_COLS = 3, FOLDER_ROWS = 3, FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_ROW = TILE_H + 70;
+  // As tvOS 9.2's folders: 3 rows in view, the rest a scroll away (the grid slides; the card stays put).
+  var FOLDER_COLS = 3, FOLDER_ROWS = 3, FOLDER_GAP = 40, FOLDER_PAD = 60, FOLDER_ROW = TILE_H + 84;
   var folderOpen = null, folderCard = null, folderGrid = null, folderTop = 0, folderFrom = {x: 0, y: 0};
+
+  /** As many across as keep a folder's rows even (AppGrid.folderColumns): 2×2, 3×2, 4×2, 3×3, 4×3; past 12, 3 and a scroll. */
+  function folderColumns(n) {
+    if (n === 3 || n === 5 || n === 6 || n === 9) return 3;
+    if (n <= 4) return 2;
+    return n <= 12 ? 4 : 3;
+  }
 
   /** The folder's tile: frosted glass, its first four apps as a 2×2 of little tiles. */
   function folderFace(folder, box) {
@@ -2548,7 +2557,7 @@
   function openFolder(folder, fromFx) {
     Sound.sheet(true, 0.5);
     folderOpen = folder;
-    FOLDER_COLS = folder.apps.length > 9 && folder.apps.length <= 12 ? 4 : 3;
+    FOLDER_COLS = folderColumns(folder.apps.length);
     var layer = $('folder'), n = folder.apps.length, cols = Math.min(FOLDER_COLS, n), rows = Math.min(FOLDER_ROWS, Math.ceil(n / FOLDER_COLS));
     layer.innerHTML = '';
     killFx(fxFolder);
