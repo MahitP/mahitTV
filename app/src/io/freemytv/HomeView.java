@@ -5042,6 +5042,34 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         gridDirty = true;
     }
 
+    /** How long Play waits for a title's page before opening its app's home instead. */
+    private static final long PLAY_WAIT_MS = 2000;
+    private Recs.Pick lookingFor, looked;
+    private final Runnable playLooked = new Runnable() {
+        @Override public void run() {
+            handler.removeCallbacks(this);
+            Recs.Pick p = lookingFor;
+            lookingFor = null;
+            if (p == null || !running || sheetOpen || zone != Z_HERO || currentPick() != p) return;   // they moved on
+            looked = p;
+            activate();
+        }
+    };
+
+    /** True: open it now. False: its page is being looked up, and activate() comes again when that's done. */
+    private boolean playNow(Recs.Pick p) {
+        if (looked == p) return true;
+        if (lookingFor != null) return false;   // a second press while it looks
+        if (!recs.canLookUpLink(p)) return true;
+        click.open();
+        lookingFor = p;
+        handler.postDelayed(playLooked, PLAY_WAIT_MS);
+        recs.lookUpLink(p, () -> {
+            if (lookingFor == p) playLooked.run();
+        });
+        return false;
+    }
+
     private void activate() {
         wake();
         if (reordering) {   // TalkBack's click while moving an app: drop it
@@ -5080,7 +5108,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         } else if (zone == Z_HERO) {
             Recs.Pick p = currentPick();
-            if (p == null || p.pkg == null) return;
+            if (p == null || p.pkg == null || !playNow(p)) return;
             it = HomeApps.app(p);
             r = heroButton;
         } else if (zone == Z_STATUS) {
@@ -5134,7 +5162,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = shelf.get(shelfIndex);
             r = tileRects[shelfIndex];
         }
-        click.open();
+        if (looked == null) click.open();   // else it played when Play was pressed
+        looked = null;
         if (it.kind == HomeApps.ALL_APPS) {
             openSheet();
             return;

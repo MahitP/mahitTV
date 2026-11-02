@@ -149,6 +149,19 @@ public final class RecsWatchTest {
         check(!SystemApps.listed(true, false, true), "never a factory menu with Show system apps");
         check(!SystemApps.listed(false, true, true), "never a factory menu by name either");
 
+        String gti = "amzn1.dv.gti.ad2d34d7-a239-4105-896e-de360fdb0eba";
+        check(WatchArtworkPolicy.tvLink("https://www.amazon.com/gp/video/detail/" + gti).equals("https://app.primevideo.com/detail?gti=" + gti),
+                "Prime Video's TV app takes its own address, not amazon.com's");
+        check(WatchArtworkPolicy.tvLink("https://www.amazon.com/gp/video/detail/" + gti + "/ref=x?tag=y").equals("https://app.primevideo.com/detail?gti=" + gti),
+                "what follows the id goes");
+        check(WatchArtworkPolicy.tvLink("https://www.amazon.co.uk/gp/video/detail/" + gti).equals("https://app.primevideo.com/detail?gti=" + gti),
+                "another country's Amazon too");
+        String asin = "https://www.amazon.com/gp/video/detail/B09QHF1H7T";
+        check(WatchArtworkPolicy.tvLink(asin).equals(asin), "without that id it stays: the app's home opens, as before");
+        String apple = "https://tv.apple.com/us/show/severance/umc.cmc.1srk2goyh2q2zdxcx605w8vtx";
+        check(WatchArtworkPolicy.tvLink(apple).equals(apple), "other services' addresses stay as they are");
+        check(WatchArtworkPolicy.tvLink("https://evil.example/gp/video/detail/" + gti).startsWith("https://evil.example"), "only Amazon's");
+        check(WatchArtworkPolicy.tvLink(null) == null, "no address");
         System.out.println("RecsWatchTest: " + checks + " checks passed");
     }
 }

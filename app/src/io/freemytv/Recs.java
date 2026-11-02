@@ -220,6 +220,7 @@ final class Recs {
     private final Context context;
     private final SharedPreferences cache;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService links = Executors.newSingleThreadExecutor();   // Play doesn't wait behind downloads
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<Listener> listeners = new ArrayList<>();
     private final Map<String, Backdrop> images = new LinkedHashMap<>(16, 0.75f, true);   // this hour's, built and ready to draw
@@ -1479,12 +1480,25 @@ final class Recs {
         return !key.isEmpty() && cache.getInt("wm:refused", 0) != key.hashCode() && Prefs.topContent().equals(Prefs.TOP_PICKS);
     }
 
+    /** A Dock app's title has no page until Play asks for one: looking up every title would spend the month's quota. */
+    boolean canLookUpLink(Pick p) {
+        return p != null && p.link == null && p.app != null && p.id > 0 && !YOUTUBE_KIND.equals(p.kind) && linksOn();
+    }
+
+    /** Finds p's page (at once when it was looked up before); `done` runs on the main thread, found or not. */
+    void lookUpLink(Pick p, Runnable done) {
+        links.execute(() -> {
+            findLink(p);
+            main.post(done);
+        });
+    }
+
     /** Sets p.link from what was looked up before, or looks it up (2 requests of the free plan's 2,500 a month). */
     private void findLink(Pick p) {
         if (!linksOn() || p.id < 0 || p.pkg == null || p.link != null) return;
         String saved = cache.getString(linkKey(p), null);
         if (saved != null) {
-            p.link = saved.isEmpty() ? null : saved;
+            p.link = saved.isEmpty() ? null : WatchArtworkPolicy.tvLink(saved);
             return;
         }
         if (System.currentTimeMillis() < linkRetryAt) return;
@@ -1511,7 +1525,7 @@ final class Recs {
                 }
             }
             cache.edit().putString(linkKey(p), link).apply();
-            p.link = link.isEmpty() ? null : link;
+            p.link = link.isEmpty() ? null : WatchArtworkPolicy.tvLink(link);
         } catch (Exception e) {
             if ("Watchmode returned HTTP 401".equals(e.getMessage())) {
                 cache.edit().putInt("wm:refused", watchmodeKey().hashCode()).apply();
@@ -1817,6 +1831,9 @@ final class Recs {
             // Watchmode links of titles no longer in the list go (the refused-key mark stays).
             Set<String> keep = new HashSet<>();
             for (Pick p : picks) keep.add(linkKey(p));
+            synchronized (appLists) {
+                for (List<Pick> list : appLists.values()) for (Pick p : list) keep.add(linkKey(p));
+            }
             for (String k : cache.getAll().keySet()) if ((k.startsWith("wm:") || k.startsWith("wm2:")) && !k.equals("wm:refused") && !keep.contains(k)) e.remove(k);
             e.apply();
         } catch (Exception ignored) {
@@ -1928,6 +1945,20 @@ final class WatchResolveCoordinator<P, L, R> {
 
 /** Pure known-artwork reuse, outside Recs initialization so its package binding can be tested on the JVM. */
 final class WatchArtworkPolicy {
+    private static final String PRIME_ID = "/gp/video/detail/amzn1.dv.gti.";
+
+    /**
+     * A web address as the TV's app takes it. Watchmode gives Prime Video's on amazon.com, which the TV app doesn't
+     * answer (it would open on its home), and it takes the same id on app.primevideo.com.
+     */
+    static String tvLink(String url) {
+        if (url == null || !url.startsWith("https://www.amazon.")) return url;
+        int at = url.indexOf(PRIME_ID);
+        if (at < 0) return url;
+        String id = url.substring(at + PRIME_ID.length()).split("[/?#]", 2)[0];
+        return "https://app.primevideo.com/detail?gti=amzn1.dv.gti." + id;
+    }
+
     private WatchArtworkPolicy() {}
 
     static Recs.Pick knownPick(List<Recs.Pick> known, Recs.MediaChoice choice) {
