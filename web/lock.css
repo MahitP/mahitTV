@@ -3,7 +3,7 @@
 
 /* The startup covers the screen from the first paint (studio midnight, as its first frame), so the home screen never
  * flashes before the lock. At the hand-off it turns transparent: the lock's identical Horizon is already under it. */
-#intro { z-index: 7; background: #090D16; }
+#intro { z-index: 7; background: #070B12; }
 #intro.handoff { background: none; }
 #intro canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
 /* While the startup and the lock cover the screen, the home's background (art, aerial, blur) doesn't paint yet: its

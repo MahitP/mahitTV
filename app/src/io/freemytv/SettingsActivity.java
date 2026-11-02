@@ -1527,7 +1527,7 @@ public class SettingsActivity extends Activity {
                 R_HOME = 60, R_SCREENSAVER = 61, R_TOP_BUTTONS = 62, R_REMOTE = 63, R_SLEEP = 64, R_TV_SETTINGS = 65,
                 R_LANGUAGE = 66, R_SYSTEM_APPS = 67, R_APP_COUNT = 68, R_SAVER_STYLE = 69, R_CLEAN = 72,
                 R_SAVER_SCENE = 73, R_SAVER_CLOCK = 74, R_PHOTOS_REMOVE = 75,
-                R_GLASS = 17, R_SETTINGS_STYLE = 18, R_TEXT_SIZE = 19, R_SHELF_MODE = 30, R_SETUP = 76,
+                R_GLASS = 17, R_SETTINGS_STYLE = 18, R_TEXT_SIZE = 19, R_SHELF_MODE = 30, R_SETUP = 76, R_INTRO_PREVIEW = 77,
                 R_RESET = 70, R_RESTORE = 71,
                 // The TV's own Settings, as its menu lists them (TCL Google TV): each opens that page there.
                 R_TV_CHANNELS = 80, R_TV_DISPLAY = 81, R_TV_NETWORK = 82, R_TV_ACCOUNTS = 83, R_TV_PRIVACY = 84, R_TV_APPS = 85,
@@ -1641,7 +1641,7 @@ public class SettingsActivity extends Activity {
                     if ("nature".equals(Prefs.saverStyle())) add(R_SAVER_SCENE, R_SAVER_CLOCK);
                     add(R_SCREENSAVER);
                     group(G_STARTUP);
-                    add(R_INTRO, R_SOUNDS, R_MOTION, R_TRANSPARENCY);
+                    add(R_INTRO, R_INTRO_PREVIEW, R_SOUNDS, R_MOTION, R_TRANSPARENCY);
                     break;
                 case S_LOCATION:
                     group(G_WEATHER);
@@ -1890,6 +1890,7 @@ public class SettingsActivity extends Activity {
                 case R_SETTINGS_STYLE: return Ui.tr("Settings Style");
                 case R_SHELF_MODE: return Ui.tr("Top Shelf");
                 case R_SETUP: return Ui.tr("Run Setup Again");
+                case R_INTRO_PREVIEW: return Ui.tr("Preview Startup Animation");
                 case R_PHOTOS: return Ui.tr("My Photos");
                 case R_INTRO: return Ui.tr("Startup animation & chime");
                 case R_SOUNDS: return Ui.tr("Navigation sounds");
@@ -2002,7 +2003,7 @@ public class SettingsActivity extends Activity {
                     return host == null || host.isEmpty() ? Ui.tr("Set") : host;
                 }
                 case R_HOME: return homeValue();
-                case R_SCREENSAVER: return "";
+                case R_SCREENSAVER: case R_INTRO_PREVIEW: return "";
                 case R_LANGUAGE: {
                     String lang = Prefs.language();
                     return lang.equals("auto") ? Ui.tr("Automatic") : Ui.languageName(lang);
@@ -2030,7 +2031,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
-                case R_CLEAN: case R_CITY: case R_SCREENSAVER: case R_SETUP:
+                case R_CLEAN: case R_CITY: case R_SCREENSAVER: case R_SETUP: case R_INTRO_PREVIEW:
                 case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
                 case R_TV_SYSTEM: case R_TV_ACCESSIBILITY: case R_TV_REMOTES:
                     return true;
@@ -2312,6 +2313,11 @@ public class SettingsActivity extends Activity {
                 case R_SCREENSAVER:
                     pause();
                     activity.showPreview();
+                    return false;
+                case R_INTRO_PREVIEW:
+                    // The whole startup and its sound, then "Who's Watching?", as the home screen comes back.
+                    HomeView.replayIntro = true;
+                    activity.finish();
                     return false;
                 case R_SETUP:
                     // The welcome setup: the home screen shows it as it comes back (Prefs.setupDone false).

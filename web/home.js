@@ -2692,7 +2692,8 @@
         {label: tr('Settings Style'), choice: {title: tr('Settings Style'), current: Prefs.settingsStyle(),
           options: [['full', tr('Full Screen (tvOS)')], ['sidebar', tr('Floating Sidebar')]],
           set: function (v) { Prefs.set('settingsStyle', v); }}},
-        {label: tr('Startup animation & chime'), toggle: Prefs.intro(), step: function () { Prefs.set('intro', !Prefs.intro()); }}
+        {label: tr('Startup animation & chime'), toggle: Prefs.intro(), step: function () { Prefs.set('intro', !Prefs.intro()); }},
+        {label: tr('Preview Startup Animation'), opens: true, step: function () { replayIntro(); }}
       ]},
       {header: tr('Screensaver'), rows: saver, footer: tr('It starts after 5 minutes without a button press.')}
     ];
@@ -3595,6 +3596,20 @@
     };
   }
 
+  /**
+   * I (in a browser), or Settings → Preview Startup Animation: the whole startup and its sound again, as at power-on,
+   * into "Who's Watching?" (it plays even with Startup animation off; I again starts it over).
+   */
+  function replayIntro() {
+    if (Setup.showing()) return;
+    hideSaver();
+    aerialVideo.hide();
+    closeSheets();
+    if (st.zone === Z.DRAWER) closeDrawer();
+    Profiles.lock();
+    Intro.play($('intro'), function () { showLock({from: 'intro'}); }, true);
+  }
+
   function runSetup() {
     closeSheets();
     if (st.zone === Z.DRAWER) closeDrawer();
@@ -3642,6 +3657,10 @@
 
   var okDown = false, pressed = null, lastKey = 0, lastKeyAt = 0;
 
+  function inField(n) {
+    return !!n && (n.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName || ''));
+  }
+
   function isArrow(k) { return k === TV.keys.left || k === TV.keys.right || k === TV.keys.up || k === TV.keys.down; }
 
   document.addEventListener('keydown', function (e) {
@@ -3652,6 +3671,8 @@
     if (volumeKey(e, typing)) { e.preventDefault(); return; }
     // [ and ] in a browser: the brightness down and up (as − and + step the volume), over everything too.
     if (!typing && (k === 219 || k === 221)) { e.preventDefault(); stepBrightness(k === 221 ? 1 : -1); return; }
+    // I: the startup again, with its sound. Not while typing in a field.
+    if (k === 73 && !typing && !e.repeat && !inField(e.target) && !Setup.showing()) { e.preventDefault(); replayIntro(); return; }
     // The intro and the lock take every other key while they show.
     if (Intro.showing()) { Intro.key(k); e.preventDefault(); return; }
     if (Setup.showing()) { Setup.key(k, TV.keys); e.preventDefault(); return; }
@@ -3859,7 +3880,7 @@
   }, 30000);
 
   // For the browser preview and tests.
-  window.FreeMyTV = {state: st, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
+  window.FreeMyTV = {state: st, replayIntro: replayIntro, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
     lock: lockNow, showLock: showLock, openSettings: openSettings, recents: openRecents, forecast: openForecast,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // Control Center, Home and the volume, for the tests and the screenshots.
