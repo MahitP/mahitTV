@@ -68,7 +68,7 @@ before you do it, and let them do the taps on the TV.
    *Install anyway* (updates don't ask again). Always through adb: an APK opened on the TV (a file manager, a browser)
    can get *App blocked to protect your device*, with no way past it, where Play Protect blocks sideloaded apps with an
    accessibility service or a notification listener (#378). On TCL, also `adb shell "appops set io.freemytv AUTO_START allow || appops set io.freemytv APP_AUTO_START allow"`
-   (some firmware calls the operation `APP_AUTO_START`; this tries both):
+   (some firmware calls the operation `APP_AUTO_START`; this tries both; on TCL, mahitTV also tries this itself over its own ADB just before a switch, `HomeMode.allowAutoStart`, and only the app-op changes):
    TCL's `TclAppBoot` blocks background jobs by default, so the switch (and the watchdog) never run. The log shows
    `forbid bind service ... ModeJob`. An uninstall takes the permission back (moving from their own build to the
    release means uninstalling, #375), so run it after every new install. When a switch's job hasn't started 10 s after

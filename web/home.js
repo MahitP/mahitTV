@@ -394,9 +394,9 @@
     [/paramount|cbs/i, /^paramount/i], [/instagram/i, /^instagram$/i], [/roblox/i, /^roblox$/i],
     // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
     [/alexa/i, /alexa/i], [/^com\.tcl\.tv$/i, /^tv$/i],
-    [/tclplus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
+    [/tclplus|tcl\.tv\.plus|tcl\.vod|waterfall/i, /^tcl ?tv\+?$/i],
     [/media.?(center|player)/i, /^media ?player$/i], [/user.?guide|instructions/i, /^user ?guide$/i],
-    [/quick.?panel/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
+    [/quick.?panel|tcl\.suspension/i, /^quick ?panel$/i], [/t_?solo/i, /^t-?solo$/i], [/tcl.?home|tcl\.dashboard/i, /^tcl home$/i],
     [/exhibit/i, /^t-?exhibition$/i]
   ];
 
@@ -1730,7 +1730,7 @@
   // the row (on the volume they change it), ↑ ↓ go to the nearest entry of the next row. The tiles inside are flat (the
   // panel is the glass: never glass on glass).
   var CC = {left: 1300, top: 124, pad: 28, body: 504, gap: 16, col: 260, tileW: 244, tileH: 72, tileGap: 12,
-    whoH: 104, platterH: 152, volumeH: 72, cellH: 92, cellGap: 12, inputH: 60, inputGap: 6, headH: 52};
+    whoH: 104, platterH: 152, volumeH: 72, mediaH: 96, cellH: 92, cellGap: 12, inputH: 60, inputGap: 6, headH: 52};
   /** Which panel is drawn: 'controls' (the bubble) or 'profile' (the pill); how tall it is closed and with Inputs open. */
   var ccMode = 'controls', ccHeights = {closed: 0, open: 0};
 
@@ -1738,10 +1738,12 @@
   function fitDrawer() {
     $('drawer').style.height = ((ccSub ? ccHeights.open : ccHeights.closed) + 2 * CC.pad) + 'px';
   }
-  var PREVIEW = !!window.PREVIEW_PICKS;
+  var PREVIEW = !!window.PREVIEW_BUILD;
   // The preview stands in for the Google TV app (what LG and Samsung web apps can't do shows a note); these two only
   // keep a state there so the tiles can be tried.
   var previewCC = {dnd: false, sleep: 0};
+  /** Android's playback card follows a real media session; LG and Samsung have none, and the preview shows a sample. */
+  var previewMedia = {at: 0, playing: true, songs: [['Sample Song', 'Sample Artist · Spotify'], ['Second Song', 'Sample Artist · Spotify'], ['Third Song', 'Sample Artist · Spotify']]};
   var ccItems = [], ccRows = [], ccGroup = null, ccInputsNode = null, ccInputItems = [], ccSub = false, ccVolume = null, ccBright = null;
   var ccLastRow = 0, drawerWeather = false, recentList = [], recentRow = null;
 
@@ -1818,6 +1820,7 @@
         detail: function () { return previewCC.sleep ? sleepName(previewCC.sleep) : onOff(false); }});
     }
     t.push({label: tr('Brightness'), symbol: 'sunny', run: cycleBrightness, detail: function () { return Prefs.brightness() + '%'; }});
+    if (PREVIEW) t.push({label: tr('Listen Alone'), symbol: 'airpods', run: googleOnly});   // TCL's T-Solo, where the TV has it
     return t;
   }
 
@@ -1898,9 +1901,36 @@
     return pills.length ? y - CC.tileGap : y;
   }
 
-  /** Control Center: the grid of pills, then the volume. Returns how tall it is. */
+  /** The playback card (as HomeView's): what's playing and its three buttons. OK plays or pauses, ← → skip. */
+  function ccMediaRow(row) {
+    var v = el('div', 'ccmedia', row), song = el('div', 'song', v), line = el('div', 'line', song), sub = el('div', 'sub', song);
+    var buttons = el('div', 'mediabtns', v);
+    el('span', 'mb prev', buttons);
+    var play = el('span', 'mb play', buttons);
+    el('span', 'mb next', buttons);
+    function show() {
+      var s = previewMedia.songs[previewMedia.at];
+      line.textContent = s[0];
+      sub.textContent = s[1];
+      setClass(play, 'paused', !previewMedia.playing);
+    }
+    var item = ccAdd(v, new Fx(v, {grow: 0.02}), function () { previewMedia.playing = !previewMedia.playing; show(); }, 'hslider', CC.body / 2);
+    item.step = function (dx) {
+      var n = previewMedia.songs.length;
+      previewMedia.at = (previewMedia.at + (dx > 0 ? 1 : n - 1)) % n;
+      show();
+    };
+    show();
+  }
+
+  /** Control Center: the playback card (in the preview), the grid of pills, then the volume. Returns how tall it is. */
   function renderControls(d) {
-    var y = ccPillRows(d, 0, ccControls(), false);
+    var y = 0;
+    if (PREVIEW) {
+      ccMediaRow(ccRow(d, 0, CC.mediaH));
+      y = CC.mediaH + CC.tileGap;
+    }
+    y = ccPillRows(d, y, ccControls(), false);
     if (volumeLevel !== null) {
       y += CC.gap;
       ccVolume = ccVolumeRow(ccRow(d, y, CC.volumeH));
@@ -2826,6 +2856,7 @@
         person().role === 'guest' ? {label: tr('City'), value: Prefs.city() || tr('Unavailable'), fixed: true}
           : {label: tr('City'), value: Prefs.city() || tr('Unavailable'), opens: true, city: true,
             step: function () { openCities(); }},
+        dateTimeRow(),
         {label: tr('Temperature'), choice: {title: tr('Temperature'), current: unit, options: [['auto', tr('unit|Automatic')], ['C', '°C'], ['F', '°F']],
           set: function (v) { Prefs.set('temperature', v); renderPanels(); }}}
       ]},
@@ -2901,6 +2932,17 @@
     return [row(tr('Channels & Inputs')), row(tr('Display & Sound')), row(tr('Network & Internet'), PREVIEW ? CONFIG.previewWifi : ''),
       row(tr('Accounts & Profiles')), row(tr('Privacy')), row(tr('Apps')), row(tr('tv|System')), row(tr('Accessibility')),
       row(tr('Remotes & Accessories'), PREVIEW ? bt[0] : '')];
+  }
+
+  /** The time zone, and where to change it: only the TV can (TimeCheck). */
+  function zoneWrong() {
+    return Data.zoneLooksWrong(-new Date().getTimezoneOffset(), Prefs.longitude());
+  }
+
+  function dateTimeRow() {
+    var name = (TV.zone() || '').replace(/_/g, ' '), value = zoneWrong() ? tr('Check the time zone') : name;
+    if (!TV.canOpenSettings && !PREVIEW) return {label: tr('Date & Time'), value: value, fixed: true};
+    return {label: tr('Date & Time'), value: value, opens: true, step: function () { (TV.canOpenSettings ? tvSettings : googleOnly)(); }};
   }
 
   /** The Top Shelf's modes (Settings and the welcome setup). */
@@ -4217,7 +4259,7 @@
   // Power-on: the Liquid Glass startup handing off to "Who's Watching?"; with Startup animation off, the lock at once
   // (preview builds skip both with ?nolock).
   Lock.init($('lock'), {onUnlock: unlocked});
-  if (window.PREVIEW_PICKS && /[?&]nolock\b/.test(location.search)) {
+  if (window.PREVIEW_BUILD && /[?&]nolock\b/.test(location.search)) {
     Intro.skip($('intro'));
     Profiles.unlock(Profiles.current());
   } else {
@@ -4226,6 +4268,7 @@
       else Setup.show($('setup'), setupOptions(function () { showLock({from: 'intro'}); }));   // a new TV: the welcome setup first
     });
   }
+  if (!PREVIEW && zoneWrong()) setTimeout(function () { toast(tr("The TV's clock looks set to the wrong time zone. Fix it in Home Settings › Location & Media.")); }, 8000);
   // The Top Shelf pages by itself while the focus is elsewhere (and not on an app whose pick it shows).
   setInterval(function () {
     if (!saverOn && st.zone === Z.SHELF && st.tab === TAB.TV) page(1);   // the focused app's picks, when it has several
@@ -4270,8 +4313,8 @@
     nowPlaying: nowPlaying};
   // Preview-only controller seam for deterministic browser tests.  It calls the
   // same focus/background path as a remote key; production packages have no
-  // PREVIEW_PICKS and never expose it.
-  if (window.PREVIEW_PICKS) {
+  // PREVIEW_BUILD and never expose it.
+  if (window.PREVIEW_BUILD) {
     window.Home = window.Home || {};
     window.Home.previewWallpaperPicker = function (category, option) {
       openWallpaperPicker();

@@ -99,6 +99,11 @@ public class NowPlaying extends NotificationListenerService {
         private MediaController progressOf;
         private long progressAt;
         private final Runnable progressTick = () -> progress(true);
+        /** Control Center's playback card: the session it follows (Transport.pick), and what it says. */
+        private MediaController media;
+        volatile String mediaTitle, mediaDetail;
+        volatile boolean mediaPlaying;
+        private long mediaActions;
 
         Watch(Context c, Runnable changed) {
             context = c;
@@ -163,9 +168,70 @@ public class NowPlaying extends NotificationListenerService {
             }
             playing(playingNow);
             title = nowTitle;
-            if (Objects.equals(now, text)) return;
+            boolean mediaChanged = updateMedia();
+            if (Objects.equals(now, text) && !mediaChanged) return;
             text = now;
             changed.run();
+        }
+
+        /** The session the card follows and what it says; true if any of it changed. */
+        private boolean updateMedia() {
+            int[] states = new int[controllers.size()];
+            for (int i = 0; i < states.length; i++) {
+                PlaybackState s = controllers.get(i).getPlaybackState();
+                states[i] = s == null ? PlaybackState.STATE_NONE : s.getState();
+            }
+            int at = Transport.pick(states);
+            MediaController mc = at < 0 ? null : controllers.get(at);
+            String newTitle = null, newDetail = null;
+            boolean nowPlaying = false;
+            long actions = 0;
+            if (mc != null) {
+                nowPlaying = Transport.isPlaying(states[at]);
+                actions = mc.getPlaybackState().getActions();
+                String line = describe(mc);
+                MediaMetadata m = mc.getMetadata();
+                CharSequence t = m == null ? null : m.getDescription().getTitle();
+                newTitle = !TextUtils.isEmpty(t) ? t.toString().trim() : line == null ? mc.getPackageName() : line;
+                newDetail = line == null || line.equals(newTitle) ? "" : line.startsWith(newTitle + " · ") ? line.substring(newTitle.length() + 3) : line;
+            }
+            boolean same = mc == media && Objects.equals(newTitle, mediaTitle) && Objects.equals(newDetail, mediaDetail)
+                    && nowPlaying == mediaPlaying && actions == mediaActions;
+            media = mc;
+            mediaTitle = newTitle;
+            mediaDetail = newDetail;
+            mediaPlaying = nowPlaying;
+            mediaActions = actions;
+            return !same;
+        }
+
+        boolean hasMedia() {
+            return media != null;
+        }
+
+        /** OK on the card. TransportControls are calls to the player: off the UI thread. */
+        void playPause() {
+            MediaController mc = media;
+            if (mc == null) return;
+            boolean pause = mediaPlaying;
+            WRITER.execute(() -> {
+                if (pause) mc.getTransportControls().pause(); else mc.getTransportControls().play();
+            });
+        }
+
+        /** Whether the player takes a skip that way: Netflix and other video apps often don't. */
+        boolean canSkip(int dx) {
+            return (mediaActions & (dx > 0 ? PlaybackState.ACTION_SKIP_TO_NEXT : PlaybackState.ACTION_SKIP_TO_PREVIOUS)) != 0;
+        }
+
+        /** ← or → on the card; false when the player can't, for the dead-end knock. */
+        boolean skip(int dx) {
+            MediaController mc = media;
+            if (mc == null || !canSkip(dx)) return false;
+            WRITER.execute(() -> {
+                if (dx > 0) mc.getTransportControls().skipToNext(); else mc.getTransportControls().skipToPrevious();
+            });
+            return true;
         }
 
         /**

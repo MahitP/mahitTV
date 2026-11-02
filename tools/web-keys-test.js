@@ -27,6 +27,16 @@ var site = process.env.SITE ? path.resolve(process.env.SITE) : path.join(root, '
 var types = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ttf': 'font/ttf'};
 
 // The example settings, as CI has: with a TMDB key of your own, the preview has no sample picks and no test seam.
+// The preview's seeded Docks name apps its sample list has, or a slot quietly goes empty. Mahit's is the TV's: six, StbEmu last.
+(function () {
+  var tv = fs.readFileSync(path.join(root, 'web', 'tv.js'), 'utf8'), profiles = fs.readFileSync(path.join(root, 'web', 'profiles.js'), 'utf8');
+  var sample = tv.slice(tv.indexOf('var SAMPLE = ['), tv.indexOf('];', tv.indexOf('var SAMPLE = ['))), seeds = profiles.match(/\[('[^']+'(?:, )?){6}\]\)/g) || [];
+  assert.strictEqual(seeds.length, 2, 'two seeded Docks');
+  seeds.forEach(function (dock) {
+    dock.match(/'[^']+'/g).forEach(function (id) { assert.ok(sample.indexOf('[' + id + ',') >= 0, 'seeded Dock names an app the sample has: ' + id); });
+  });
+  assert.ok(/'com\.mvas\.stb\.emu\.[a-z]+'\]\)$/.test(seeds[0]), 'StbEmu is in slot 6 of Mahit\'s Dock: ' + seeds[0]);
+})();
 if (!process.env.SITE) child.execFileSync('python3', ['webos/build.py', '--preview', '--config', 'config.example.properties'], {cwd: root, stdio: 'inherit'});
 var server = http.createServer(function (req, res) {
   var file = path.join(site, decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html');
@@ -188,7 +198,9 @@ var browser = null;
     var cc = FreeMyTV.cc(), out = [], i, k;
     for (i = 0; i < cc.length; i++) if (cc[i].label === 'Sleep Timer') {
       FreeMyTV.state.drawer = i;
-      for (k = 0; k < 5; k++) { FreeMyTV.activate(); out.push(document.querySelectorAll('#drawer .cctile')[i].querySelector('.detail').textContent); }
+      var tiles = document.querySelectorAll('#drawer .cctile'), tile = null;
+      for (k = 0; k < tiles.length; k++) if (tiles[k].textContent.indexOf('Sleep Timer') === 0) tile = tiles[k];
+      for (k = 0; k < 5; k++) { FreeMyTV.activate(); out.push(tile.querySelector('.detail').textContent); }
     }
     return out;
   });
@@ -305,8 +317,35 @@ var browser = null;
   s = await state(page);
   assert.strictEqual(s.zone, 'drawer', 'OK on the bubble opens Control Center');
   var controls = await page.evaluate(function () { return FreeMyTV.cc().filter(function (it) { return it.kind === 'tile'; }).map(function (it) { return it.label; }); });
-  assert.deepStrictEqual(controls, ['Power', 'Audio Output', 'Wi-Fi', 'Bluetooth', 'Dark Mode', 'Do Not Disturb', 'Sleep Timer', 'Brightness'],
+  assert.deepStrictEqual(controls, ['Power', 'Audio Output', 'Wi-Fi', 'Bluetooth', 'Dark Mode', 'Do Not Disturb', 'Sleep Timer', 'Brightness', 'Listen Alone'],
     'Control Center: its pills in order, two a row');
+  // The playback card, first: OK plays and pauses, ← → skip, and it never leaves the panel.
+  var media = await page.evaluate(function () {
+    FreeMyTV.state.drawer = 0;
+    var card = document.querySelector('#drawer .ccmedia'), play = card.querySelector('.mb.play'), out = {top: card.getBoundingClientRect().top < document.querySelector('#drawer .cctile').getBoundingClientRect().top};
+    out.before = card.querySelector('.line').textContent;
+    out.pausedBefore = play.className.indexOf('paused') >= 0;
+    FreeMyTV.activate();
+    out.pausedAfter = play.className.indexOf('paused') >= 0;
+    FreeMyTV.activate();
+    return out;
+  });
+  assert.ok(media.top && media.pausedBefore === false && media.pausedAfter === true, 'the card is first, and OK pauses it: ' + JSON.stringify(media));
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(150);
+  var skipped = await page.evaluate(function () { return {song: document.querySelector('#drawer .ccmedia .line').textContent, zone: FreeMyTV.state.zone}; });
+  assert.ok(skipped.song !== media.before && skipped.zone === 'drawer', '→ skips, in place: ' + JSON.stringify(skipped));
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(150);
+  skipped = await page.evaluate(function () { return {song: document.querySelector('#drawer .ccmedia .line').textContent, zone: FreeMyTV.state.zone}; });
+  assert.ok(skipped.song === media.before && skipped.zone === 'drawer', '← skips back, and doesn\'t close the panel: ' + JSON.stringify(skipped));
+  // As TimeCheckTest, on the web's copy: New Jersey in GMT is wrong; the sun's day is the same whatever the zone.
+  var zone = await page.evaluate(function () {
+    var h = 3600000, rise = 1793000000000, set = rise + 10 * h;
+    return [Data.zoneLooksWrong(0, -74.5), Data.zoneLooksWrong(-300, -74.5), Data.zoneLooksWrong(-240, '-74.5'), Data.zoneLooksWrong(780, -171.8), Data.zoneLooksWrong(0, ''),
+      Data.sunriseOfDay(set + 2 * h, rise, set) === rise, Data.sunriseOfDay(rise - h, rise, set) === rise, Data.sunriseOfDay(rise + 72 * h + h, rise, set) === rise + 72 * h];
+  });
+  assert.deepStrictEqual(zone, [true, false, false, false, false, true, true, true], 'the time zone check and the sun\'s day');
   var grid = await page.evaluate(function () {
     var t = document.querySelectorAll('#drawer .cctile'), out = [];
     for (var i = 0; i < t.length; i++) { var r = t[i].getBoundingClientRect(); out.push([Math.round(r.left), Math.round(r.top)]); }

@@ -248,6 +248,9 @@ public class SettingsActivity extends Activity {
         private final Spoken spoken;
         private long startedAt, lastNanos, pendingAt, lastSky;
         private long requestedAt;   // the switch asked for: its stamp, to tell whether its job ever started
+        private boolean allowingBoot;   // TCL's background permission on its way, before the switch's request
+        private boolean zoneWrong;      // the TV's time zone can't be the city's (TimeCheck)
+        private String zoneName = "";
         private boolean stalled;    // it didn't: a TV maker's background blocker (stalledText says what to do)
         private final boolean phone;   // installed on a phone: the settings say where it goes (HomeMode.phone)
         private final List<String[]> services = new ArrayList<>();   // {key, name} of the streaming services on this TV
@@ -281,6 +284,9 @@ public class SettingsActivity extends Activity {
                 sleepLeft = SleepTimer.minutesLeft(getContext());
                 hasKey = Recs.hasKey(getContext());
                 recs = Recs.status(getContext());
+                java.util.TimeZone zone = java.util.TimeZone.getDefault();
+                zoneName = zone.getID().replace('_', ' ');
+                zoneWrong = TimeCheck.zoneLooksWrong(zone.getOffset(System.currentTimeMillis()) / 60_000, Prefs.longitude());
                 // The TV's own accessibility settings, shown in Appearance (read here, not on every frame).
                 android.content.ContentResolver cr = getContext().getContentResolver();
                 reduceMotion = Settings.Global.getFloat(cr, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
@@ -1642,7 +1648,7 @@ public class SettingsActivity extends Activity {
                 R_RESET = 70, R_RESTORE = 71,
                 // The TV's own Settings, as its menu lists them (TCL Google TV): each opens that page there.
                 R_TV_CHANNELS = 80, R_TV_DISPLAY = 81, R_TV_NETWORK = 82, R_TV_ACCOUNTS = 83, R_TV_PRIVACY = 84, R_TV_APPS = 85,
-                R_TV_SYSTEM = 86, R_TV_ACCESSIBILITY = 87, R_TV_REMOTES = 88,
+                R_TV_SYSTEM = 86, R_TV_ACCESSIBILITY = 87, R_TV_REMOTES = 88, R_DATE_TIME = 89,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
         private static final String[] LIGHTS = {"parents.bulb", "mine.lamp", "mine.bulb", "living.bulb"};
@@ -1758,7 +1764,7 @@ public class SettingsActivity extends Activity {
                     break;
                 case S_LOCATION:
                     group(G_WEATHER);
-                    add(R_CITY, R_TEMPERATURE, R_WEATHER, R_FORECAST);
+                    add(R_CITY, R_TEMPERATURE, R_DATE_TIME, R_WEATHER, R_FORECAST);
                     group(G_WIDGETS);
                     add(R_PLAYING, R_QUOTES);
                     for (int i = 0; i < (dollar() ? 4 : 3); i++) add(R_COIN + i);
@@ -1915,10 +1921,13 @@ public class SettingsActivity extends Activity {
                 case R_TV_NETWORK: tries.add(new Intent(Settings.ACTION_WIFI_SETTINGS)); tries.add(new Intent(Settings.ACTION_WIRELESS_SETTINGS)); break;
                 case R_TV_ACCOUNTS: tries.add(new Intent(Settings.ACTION_SYNC_SETTINGS)); tries.add(new Intent(Settings.ACTION_ADD_ACCOUNT)); break;
                 case R_TV_PRIVACY: tries.add(new Intent(Settings.ACTION_PRIVACY_SETTINGS)); break;
-                case R_TV_APPS: tries.add(new Intent(Settings.ACTION_APPLICATION_SETTINGS)); break;
+                case R_TV_APPS: tries.add(new Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)); tries.add(new Intent(Settings.ACTION_APPLICATION_SETTINGS)); break;
                 case R_TV_SYSTEM: tries.add(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)); break;
                 case R_TV_ACCESSIBILITY: tries.add(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
-                default: tries.add(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); break;   // Remotes & Accessories
+                default:   // Remotes & Accessories
+                    tries.add(new Intent(HomeApps.TV_DEVICES).setPackage("com.android.tv.settings"));
+                    tries.add(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                    break;
             }
             tries.add(new Intent(Settings.ACTION_SETTINGS));
             for (Intent i : tries) {
@@ -2017,6 +2026,7 @@ public class SettingsActivity extends Activity {
                 case R_MOTION: return Ui.tr("Reduce motion");
                 case R_TRANSPARENCY: return Ui.tr("Reduce transparency");
                 case R_CITY: return Ui.tr("City");
+                case R_DATE_TIME: return Ui.tr("Date & Time");
                 case R_TEMPERATURE: return Ui.tr("Temperature");
                 case R_WEATHER: return Ui.tr("Weather widget");
                 case R_FORECAST: return Ui.tr("Forecast");
@@ -2106,6 +2116,7 @@ public class SettingsActivity extends Activity {
                 case R_MOTION: return onOff(reduceMotion);
                 case R_TRANSPARENCY: return onOff(highContrast);
                 case R_CITY: return !cityStatus.isEmpty() ? cityStatus : Prefs.city().isEmpty() ? "—" : Prefs.city();
+                case R_DATE_TIME: return zoneWrong ? Ui.tr("Check the time zone") : zoneName;
                 case R_TEMPERATURE: {
                     String unit = Prefs.temperature();
                     return unit.equals("C") ? "°C" : unit.equals("F") ? "°F" : Ui.tr("unit|Automatic");
@@ -2172,7 +2183,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
-                case R_CLEAN: case R_CITY: case R_SCREENSAVER: case R_SETUP: case R_PICKS_FROM: case R_TRAKT: case R_INTRO_PREVIEW:
+                case R_CLEAN: case R_CITY: case R_DATE_TIME: case R_SCREENSAVER: case R_SETUP: case R_PICKS_FROM: case R_TRAKT: case R_INTRO_PREVIEW:
                 case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
                 case R_TV_SYSTEM: case R_TV_ACCESSIBILITY: case R_TV_REMOTES:
                     return true;
@@ -2487,6 +2498,9 @@ public class SettingsActivity extends Activity {
                 case R_CITY:
                     askCity();
                     return false;
+                case R_DATE_TIME:
+                    openDateTime();
+                    return false;
                 case R_CHECK:
                     checkLights();
                     return false;
@@ -2579,6 +2593,36 @@ public class SettingsActivity extends Activity {
             } catch (android.content.ActivityNotFoundException e) {
                 activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             }
+        }
+
+        /** The TV's date and time page: only there can the time zone be changed. */
+        private void openDateTime() {
+            try {
+                activity.startActivity(new Intent(Settings.ACTION_DATE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (android.content.ActivityNotFoundException e) {
+                activity.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            }
+        }
+
+        /** mahitTV mode: on TCL, first what lets the switch's job start, asking for USB debugging as the switch itself would. */
+        private void requestFree() {
+            stalled = false;
+            final Context app = getContext().getApplicationContext();
+            if (!RemoteKeys.TCL) {
+                requestedAt = HomeMode.request(app, HomeMode.FREE);
+                pendingAt = SystemClock.uptimeMillis();
+                return;
+            }
+            if (allowingBoot) return;
+            allowingBoot = true;
+            new Thread(() -> {
+                HomeMode.allowAutoStart(app, () -> handler.post(() -> say(Ui.tr("Accept “Allow USB debugging?” on the TV (tick “Always allow”)."))));
+                handler.post(() -> {
+                    allowingBoot = false;
+                    requestedAt = HomeMode.request(app, HomeMode.FREE);
+                    pendingAt = SystemClock.uptimeMillis();
+                });
+            }, "auto-start").start();
         }
 
         private void say(String text) {
@@ -4034,9 +4078,7 @@ public class SettingsActivity extends Activity {
                     askPin(PIN_MANAGER, THEN_ORIGINAL, ProfileManager.manager(c), R_HOME);   // Original: the manager's call
                 } else {
                     if (!already && !busy()) {
-                        requestedAt = HomeMode.request(c, HomeMode.FREE);
-                        stalled = false;
-                        pendingAt = SystemClock.uptimeMillis();
+                        requestFree();
                     }
                     openSection(S_SYSTEM, R_HOME);
                 }

@@ -83,6 +83,8 @@ final class HomeApps {
     static final int FOLDER = 22;
     /** FaceTime, Fitness+, Podcasts (and Apple Music when it isn't installed): AppleGuideActivity's AirPlay steps. */
     static final int APPLE_GUIDE = 23;
+    /** Control Center's playback card: what a media session is playing, with its controls (the home screen handles it). */
+    static final int MEDIA = 24;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -212,15 +214,17 @@ final class HomeApps {
         // From here (TCL_FIRST) TCL's apps, in the TCL folder in this order.
         order("alexa", "alexa"),
         order("^com\\.tcl\\.tv$", "^tv$"),
-        order("tclplus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
-        order("mediacenter|mediaplayer|videoplayer", "^media ?player$"),
+        order("tclplus|com\\.tcl\\.tv\\.plus|com\\.tcl\\.vod|waterfall", "^tcl ?tv\\+?$|^tcl channel$"),
+        order("(?i)media_?center|mediaplayer|videoplayer", "^media ?player$"),
         order("instructions|userguide|manual", "^user ?guide$"),
-        order("quickpanel", "^quick ?panel$"),
+        order("quickpanel|com\\.tcl\\.suspension", "^quick ?panel$"),
         order("t_?solo", "^t-?solo$"),
         order("^com\\.tcl\\.dashboard$|tclhome", "^tcl home$"),
         order("exhibit", "^t-?exhibition$"),
     };
 
+    /** The TV's own devices page (TCL): remotes, Bluetooth audio and accessories. */
+    static final String TV_DEVICES = "com.android.tv.settings.DEVICES";
     /** GRID_ORDER's first TCL app (Works with Alexa): it and the ones after it go in the TCL folder. */
     private static final int TCL_FIRST = 13;
     /** A browser (TCL's BrowseHere): TV & Utilities', not the TCL folder's. */
@@ -549,6 +553,7 @@ final class HomeApps {
      */
     static List<Item> drawerShortcuts(Context c) {
         List<Item> items = new ArrayList<>();
+        items.add(shortcut(MEDIA, "media", Ui.tr("Now Playing"), "play"));   // shown only while a session has something
         // Control Center, two a row in this order: Power | Audio Output, Wi-Fi | Bluetooth, Dark Mode | Do Not Disturb,
         // Sleep Timer | Brightness; the projector's extras where it has them; the volume under them.
         items.add(shortcut(POWER, "power", Ui.tr("Power"), "power"));
@@ -569,6 +574,7 @@ final class HomeApps {
                 c.getPackageManager().resolveActivity(tcorrection, 0) != null ? tcorrection : new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
+        device(c, items, "listen-alone", Ui.tr("Listen Alone"), "airpods", new Intent("tcl.intent.action.LISTEN_ALONE"));   // TCL's T-Solo
         items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
         // The profile panel: Inputs | Screensaver, then Lock, Home Settings and TV Settings.
         items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
@@ -1017,7 +1023,9 @@ final class HomeApps {
                 plain = new Intent(Settings.ACTION_SETTINGS);   // a TV without that page: its settings
                 break;
             case BLUETOOTH:
-                intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+                // TCL's Android 14 has no Bluetooth page of its own: its devices' page is where the remote and AirPods are.
+                intent = new Intent(TV_DEVICES).setPackage("com.android.tv.settings");
+                if (a.getPackageManager().resolveActivity(intent, 0) == null) intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
                 plain = new Intent(Settings.ACTION_SETTINGS);
                 break;
             case AUDIO:

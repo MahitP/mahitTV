@@ -561,24 +561,24 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* The tiles inside the panels (the weather, the pills, the cluster, the inputs, the round buttons): flat, quiet fills.
    The panel is the glass; a rim or highlight on each tile too would be glass on glass. */
-#weather, .cctile, .cccell, .ccvolume, .inrow {
+#weather, .cctile, .cccell, .ccvolume, .ccmedia, .inrow {
   position: absolute;
   color: inherit;
   background: rgba(255, 255, 255, 0.62);
 }
-.night #weather, .night .cctile, .night .cccell, .night .ccvolume, .night .inrow,
-.has-photo #weather, .has-photo .cctile, .has-photo .cccell, .has-photo .ccvolume, .has-photo .inrow {
+.night #weather, .night .cctile, .night .cccell, .night .ccvolume, .night .ccmedia, .night .inrow,
+.has-photo #weather, .has-photo .cctile, .has-photo .cccell, .has-photo .ccvolume, .has-photo .ccmedia, .has-photo .inrow {
   background: rgba(255, 255, 255, 0.09);
 }
-.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .cccell, .has-photo.art-bright .ccvolume,
+.has-photo.art-bright #weather, .has-photo.art-bright .cctile, .has-photo.art-bright .cccell, .has-photo.art-bright .ccvolume, .has-photo.art-bright .ccmedia,
 .has-photo.art-bright .inrow { background: rgba(255, 255, 255, 0.62); }
 /* Focused: white, dark ink, a soft lift (tvOS's focused platter). */
-#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .inrow.focus {
+#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .ccmedia.focus, .inrow.focus {
   background: #FFF;
   color: #1C1C1E;
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
-#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .inrow.focus { z-index: 2; }
+#weather.focus, .cctile.focus, .cccell.focus, .ccvolume.focus, .ccmedia.focus, .inrow.focus { z-index: 2; }
 
 /* The weather: city, temperature and sky in the left 220 px; four hours (or days) in their own columns to its right. */
 #weather { left: 0; top: 0; width: 504px; height: 152px; border-radius: 26px; }
@@ -620,6 +620,23 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* The volume under Control Center's grid: speaker, track and level in one capsule; ← → change it, OK mutes. */
 .ccvolume { left: 0; top: 0; width: 504px; height: 72px; border-radius: 36px; }
+.ccmedia { position: absolute; left: 0; top: 0; width: 504px; height: 96px; border-radius: 32px; }
+.ccmedia .song { position: absolute; left: 24px; top: 20px; width: 290px; }
+.ccmedia .line, .ccmedia .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccmedia .line { font-size: 22px; font-weight: 600; line-height: 30px; }
+.ccmedia .sub { font-size: 17px; line-height: 24px; opacity: 0.65; }
+.ccmedia .mediabtns { position: absolute; right: 16px; top: 24px; width: 156px; height: 48px; }
+.ccmedia .mb { position: absolute; top: 0; width: 52px; height: 48px; }
+.ccmedia .mb.prev { left: 0; } .ccmedia .mb.play { left: 52px; } .ccmedia .mb.next { left: 104px; }
+.ccmedia .mb::before, .ccmedia .mb::after { content: ''; position: absolute; }
+.ccmedia .mb.play::before, .ccmedia .mb.play::after { left: 18px; top: 13px; width: 6px; height: 22px; background: currentColor; }
+.ccmedia .mb.play::after { left: 28px; }
+.ccmedia .mb.play.paused::before { left: 18px; top: 12px; width: 0; height: 0; background: none; border-left: 19px solid currentColor; border-top: 12px solid transparent; border-bottom: 12px solid transparent; }
+.ccmedia .mb.play.paused::after { display: none; }
+.ccmedia .mb.next::before { left: 16px; top: 14px; width: 0; height: 0; border-left: 14px solid currentColor; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+.ccmedia .mb.next::after { left: 32px; top: 14px; width: 3px; height: 20px; background: currentColor; }
+.ccmedia .mb.prev::before { left: 22px; top: 14px; width: 0; height: 0; border-right: 14px solid currentColor; border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+.ccmedia .mb.prev::after { left: 17px; top: 14px; width: 3px; height: 20px; background: currentColor; }
 .ccvolume > .sym { position: absolute; left: 22px; top: 22px; width: 28px; height: 28px; }
 .ccvolume .track { position: absolute; left: 66px; right: 96px; top: 32px; height: 8px; border-radius: 4px; background: rgba(120, 120, 128, 0.24); overflow: hidden; }
 .ccvolume .fill { width: 100%; height: 8px; border-radius: 4px; background: currentColor; -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }

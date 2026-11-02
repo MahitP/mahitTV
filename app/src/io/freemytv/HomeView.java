@@ -793,6 +793,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(rotate);
         handler.postDelayed(rotate, ROTATE_MS);
         playing.start();
+        warnTimeZone();
         checkNotices();
         if (!again) reload();
         updatePalette();
@@ -2285,6 +2286,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         fitPlaying();
         heroDirty = statusDirty = true;
         pillWide.target = playing.text != null ? 1 : 0;   // the pill widens for its equalizer
+        refreshMedia();
         wake();
         String title = playing.title, now = playing.text;
         if (NowPlaying.newTitle(title, now, running, shownTitle)) {
@@ -2292,6 +2294,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             bounceBars();
             if (readerOn()) announceForAccessibility(Ui.trf("Now playing: {what}", "what", now.replace(" · ", ", ")));
         }
+    }
+
+    /** Control Center open: its playback card comes or goes, or its text changes, with the focus staying on the same card. */
+    private void refreshMedia() {
+        if (!drawerOpen || allDrawer.isEmpty()) return;
+        if ((kindIndex(HomeApps.MEDIA) >= 0) == playing.hasMedia()) {
+            layoutDrawer();
+            return;
+        }
+        String focused = drawerIndex < drawerItems.size() ? drawerItems.get(drawerIndex).key : null;
+        setDrawerItems(allDrawer);
+        for (int i = 0; i < drawerItems.size(); i++) if (drawerItems.get(i).key.equals(focused)) drawerIndex = i;
+        retarget(true);
+    }
+
+    private static boolean zoneWarned;
+
+    /** The TV's time zone can't be the city's: the clock is off, and only the TV's settings can change it. Once a run. */
+    private void warnTimeZone() {
+        if (zoneWarned) return;
+        zoneWarned = true;
+        int offset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000;
+        if (!TimeCheck.zoneLooksWrong(offset, Prefs.longitude())) return;
+        AppLog.w("time zone " + java.util.TimeZone.getDefault().getID() + " doesn't fit the city");
+        handler.postDelayed(() -> showToast(Ui.tr("The TV's clock looks set to the wrong time zone. Fix it in Home Settings › Location & Media.")), 8000);
     }
 
     /**
@@ -2744,6 +2771,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             clearProfiles();
             weatherCard.setEmpty();
         }
+        // The playback card first, while a session has something; then the rest under it.
+        int mediaAt = kindIndex(HomeApps.MEDIA);
+        if (mediaAt >= 0) {
+            drawerRects[mediaAt].set(left, top, right, top + CC_MEDIA_H * k);
+            snap(drawerRects[mediaAt]);
+            top = drawerRects[mediaAt].bottom + CC_ROW_GAP * k;
+            fitMedia(body);
+        }
         // The pills two a row in their order, the volume's bar under them, then the cells sharing the last row.
         int cells = 0, pill = 0, cell = 0;
         for (HomeApps.Item it : drawerItems) if (ccShape(it.kind) == CC_ROUND) cells++;
@@ -2828,9 +2863,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // The shapes the cards take by kind: pills two a row (Control Center's and the profile panel's Inputs | Screensaver),
     // the volume's bar the whole width, and the profile panel's cells (Lock, Home Settings, TV Settings) sharing a row.
-    private static final int CC_CIRCLE = 2, CC_SLIDER = 3, CC_PILL = 4, CC_ROUND = 5;
+    private static final int CC_CIRCLE = 2, CC_SLIDER = 3, CC_PILL = 4, CC_ROUND = 5, CC_MEDIA = 6;
     /** The rows under the weather, by the shapes in them (drawDrawer). */
-    private static final int[][] CC_ROWS = {{CC_PILL}, {CC_SLIDER}, {CC_ROUND}};
+    private static final int[][] CC_ROWS = {{CC_MEDIA}, {CC_PILL}, {CC_SLIDER}, {CC_ROUND}};
+    /** The playback card: its height and each of its three buttons' width. */
+    private static final float CC_MEDIA_H = 92, CC_MEDIA_SLOT = 52;
     private static final float CC_HEAD_H = 128, CC_PLATTER_H = 152;
     private static final float CC_CELL_W = 122, CC_CELL_H = 92, CC_CELL_GAP = 12, CC_CIRCLE_D = 64, CC_SLIDER_W = 114, CC_ROUND_D = 72;
     private final RectF clusterPlate = new RectF();
@@ -2839,6 +2876,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static int ccShape(int kind) {
         switch (kind) {
             case HomeApps.VOLUME: return CC_SLIDER;
+            case HomeApps.MEDIA: return CC_MEDIA;
             case HomeApps.LOCK: case HomeApps.SETTINGS: case HomeApps.ANDROID_SETTINGS: return CC_ROUND;
             default: return CC_PILL;
         }
@@ -2925,7 +2963,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private List<HomeApps.Item> panelItems(List<HomeApps.Item> all) {
         List<HomeApps.Item> out = new ArrayList<>();
-        for (HomeApps.Item it : all) if (profileCard(it.kind) == ccProfile) out.add(it);
+        for (HomeApps.Item it : all) {
+            if (it.kind == HomeApps.MEDIA && (playing == null || !playing.hasMedia())) continue;
+            if (profileCard(it.kind) == ccProfile) out.add(it);
+        }
         return out;
     }
 
@@ -3346,6 +3387,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         switch (ccShape(drawerItems.get(i).kind)) {
             case CC_CIRCLE: drawCcCircle(c, i); break;
             case CC_SLIDER: drawCcSlider(c, i); break;
+            case CC_MEDIA: drawCcMedia(c, i); break;
             case CC_PILL: drawDrawerTile(c, i); break;
             default: drawCcRound(c, i); break;
         }
@@ -3673,6 +3715,84 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawText(drawerDetails[i], tx, cy + 20 * k, ccDetail);
         }
         c.restore();
+    }
+
+    private final Shape mediaShape = new Shape();
+    private final android.graphics.Path mediaGlyph = new android.graphics.Path();
+    private String mediaLine, mediaSub;
+
+    /** The card's title and detail cut to fit beside its buttons, once (never while drawing). */
+    private void fitMedia(float body) {
+        if (ccLabel == null || ccDetail == null || playing == null) return;
+        float room = body - (24 + 3 * CC_MEDIA_SLOT + 24) * k;
+        String t = playing.mediaTitle, d = playing.mediaDetail;
+        mediaLine = t == null ? null : TextUtils.ellipsize(t, new TextPaint(ccLabel), room, TextUtils.TruncateAt.END).toString();
+        mediaSub = d == null || d.isEmpty() ? null : TextUtils.ellipsize(d, new TextPaint(ccDetail), room, TextUtils.TruncateAt.END).toString();
+    }
+
+    /** What's playing and ⏮ ⏯ ⏭, the skips dimmed where the player has none: OK plays or pauses, ← → skip, as the volume's row. */
+    private void drawCcMedia(Canvas c, int i) {
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.02f * drawerFocus[i].value - PRESS * press.value * f;
+        RectF base = drawerRects[i];
+        float r = CC_CARD_RADIUS * k;
+        c.save();
+        c.translate(bumpX * f, bumpY * f);
+        c.scale(s, s, base.centerX(), base.centerY());
+        if (f > 0.01f) {
+            tmp.set(base);
+            tmp.offset(0, 12 * k * f);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.32f * f));
+            shadows.draw(c, tmp, r, KEY_BLUR * k, shadowSoft);
+        }
+        if (f < 0.99f) drawerCard(c, base, mediaShape, r, 1 - f);
+        if (f > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+            c.save();
+            c.translate(base.left, base.top);
+            c.drawPath(mediaShape.of(base.width(), base.height(), r), fill);
+            c.restore();
+        }
+        int ink = blend(tone(L_INK, 0xF2FFFFFF), INK, f);
+        float cy = base.centerY(), tx = base.left + 24 * k;
+        ccLabel.setColor(ink);
+        if (mediaLine != null) c.drawText(mediaLine, tx, mediaSub != null ? cy - 4 * k : cy + Ui.halfCap(ccLabel), ccLabel);
+        if (mediaSub != null) {
+            ccDetail.setColor(blend(tone(L_DIM, 0xADFFFFFF), 0x991C1C1E, f));
+            c.drawText(mediaSub, tx, cy + 20 * k, ccDetail);
+        }
+        float slot = CC_MEDIA_SLOT * k, next = base.right - 20 * k - slot / 2;
+        fill.setShader(null);
+        mediaSkip(c, next - 2 * slot, cy, -1, playing.canSkip(-1) ? ink : Ui.alpha(ink, 0.3f));
+        fill.setColor(ink);
+        mediaGlyph.reset();
+        float g = k, mid = next - slot;
+        if (playing.mediaPlaying) {
+            c.drawRect(mid - 8 * g, cy - 11 * g, mid - 2 * g, cy + 11 * g, fill);
+            c.drawRect(mid + 2 * g, cy - 11 * g, mid + 8 * g, cy + 11 * g, fill);
+        } else {
+            mediaGlyph.moveTo(mid - 8 * g, cy - 12 * g);
+            mediaGlyph.lineTo(mid - 8 * g, cy + 12 * g);
+            mediaGlyph.lineTo(mid + 11 * g, cy);
+            mediaGlyph.close();
+            c.drawPath(mediaGlyph, fill);
+        }
+        mediaSkip(c, next, cy, 1, playing.canSkip(1) ? ink : Ui.alpha(ink, 0.3f));
+        c.restore();
+    }
+
+    /** ⏭ (or ⏮, `dir` −1): a triangle and a bar. */
+    private void mediaSkip(Canvas c, float x, float y, int dir, int color) {
+        float g = k;
+        fill.setColor(color);
+        mediaGlyph.reset();
+        mediaGlyph.moveTo(x - dir * 9 * g, y - 10 * g);
+        mediaGlyph.lineTo(x - dir * 9 * g, y + 10 * g);
+        mediaGlyph.lineTo(x + dir * 5 * g, y);
+        mediaGlyph.close();
+        c.drawPath(mediaGlyph, fill);
+        float bar = x + dir * 7 * g;
+        c.drawRect(Math.min(bar, bar + dir * 3 * g), y - 10 * g, Math.max(bar, bar + dir * 3 * g), y + 10 * g, fill);
     }
 
     /** The weather: the place, now (large), the condition and the day's high and low, and the next 4 hours or days. */
@@ -4766,6 +4886,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // profile; ← → on the volume change it; ← with nothing there closes the panel.
                 if (drawerItems.isEmpty()) return;
                 HomeApps.Item cur = drawerItems.get(drawerIndex);
+                if (ccShape(cur.kind) == CC_MEDIA && dx != 0) {
+                    if (playing.skip(dx)) click.move();
+                    else deadEnd(dx, 0);
+                    wake();
+                    return;
+                }
                 if (ccShape(cur.kind) == CC_SLIDER && dx != 0) {
                     boolean moved = stepVolume(dx);
                     if (!moved) deadEnd(dx, 0);
@@ -4967,6 +5093,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (it.kind == HomeApps.VOLUME) return;   // ← → change it
+        if (it.kind == HomeApps.MEDIA) {
+            playing.playPause();
+            return;
+        }
         if (it.kind == HomeApps.POWER) {
             // The screen off now, through mahitTV's own ADB (a fixed key command in HomeMode).
             final Context ctx = getContext().getApplicationContext();

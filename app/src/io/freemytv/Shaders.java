@@ -497,6 +497,10 @@ final class Shaders {
         long midnight = cal.getTimeInMillis();
         long rise = midnight + timeOfDay(sunrise, (5 * 60 + 30) * 60_000L);
         long set = midnight + timeOfDay(sunset, (17 * 60 + 40) * 60_000L);
+        if (sunrise != 0 && sunset != 0) {   // instants, so a TV in the wrong time zone still follows the real sun
+            rise = TimeCheck.sunriseOfDay(now, sunrise, sunset);
+            set = TimeCheck.sunsetAfter(rise, sunrise, sunset);
+        }
         long m = 60_000L;
         long[] at = {rise - 60 * m, rise - 15 * m, rise + 45 * m, set - 45 * m, set, set + 45 * m, set + 105 * m};
         int[][] key = {NIGHT, DAWN, DAY, DAY, SUNSET, DUSK, NIGHT};
