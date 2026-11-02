@@ -180,6 +180,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Intro intro;
     /** The intro has played in this process (first creation); the screen came on while we weren't showing. */
     private static boolean booted, introPending;
+    /** Settings → Preview Startup Animation: the whole startup and "Who's Watching?" as the home screen comes back. */
+    static boolean replayIntro;
     private long touchedAt;
     private int zone = Z_SHELF;
     // The tabs: tabAway = the TV tab's content hidden and the background frosted and dimmed (Home or Welly); the two
@@ -830,7 +832,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (tab == TAB_HOME) house.refresh();
         // The gate (§3): the intro and the lock the first time in this process and when the screen comes on; the lock
         // alone after more than 10 minutes away; within them, straight back to the same profile.
-        if (!booted || introPending) {
+        if (replayIntro) {
+            booted = true;
+            introPending = replayIntro = false;
+            gate(true, true);
+        } else if (!booted || introPending) {
             booted = true;
             introPending = false;
             gate(true);
@@ -4297,11 +4303,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Locks and shows the gate: the intro first (`withIntro`, when Settings has it on), then "Who's Watching?". */
     private void gate(boolean withIntro) {
+        gate(withIntro, false);
+    }
+
+    /** `preview`: the intro plays even with Startup animation off (Settings → Preview Startup Animation). */
+    private void gate(boolean withIntro, boolean preview) {
         ProfileManager.lock(getContext());
         if (sheetOpen) closeSheet();
         weatherOverlay.hide();     // the next profile starts on its own home, not on the last one's forecast
         recentsOverlay.hide();
-        if (withIntro && Prefs.intro()) {
+        if (withIntro && (preview || Prefs.intro())) {
             intro.start();
         } else {
             intro.stop();
