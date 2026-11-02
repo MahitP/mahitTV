@@ -46,7 +46,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
      * The entrance (TVOS-LAUNCHER-MERGE-SPEC.md §1.5): the header rises 24 px (TITLE_SETTLE); card i starts 30 ms after
      * card i − 1, rising 48 px from 0.92× and fading in (CARD_ENTER); the focused card grows (SNAPPY_FOCUS) 0.20 s in.
      */
-    private static final float HEADER_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92f, CARD_STAGGER = 0.03f, FOCUS_AT = 0.20f;
+    private static final float HEADER_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92f, CARD_STAGGER = 0.032f, FOCUS_AT = 0.20f;
     private static final float PIN_AVATAR_Y = 300, PIN_AVATAR_SCALE = 0.72f;
     private static final float HUD_W = 1060, HUD_TOP = 520, HUD_H = 300, KEY = 72, KEY_GAP = 14;
     private static final int GOLD = 0xFFF5D061, INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;

@@ -10,7 +10,7 @@ var Lock = (function () {
   var CARD = 240, GAP = 96, CARD_TOP = 380, PIN_TOP = 120;
   // The entrance from the startup (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1.5): the header rises 24 px, each card 48 px
   // from 0.92×, 30 ms after the one before; the Horizon behind them is already there.
-  var TITLE_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92, STAGGER = 0.03;
+  var TITLE_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92, STAGGER = 0.032;
   var P = Motion.P, BUMP = Motion.BUMP_VELOCITY;
 
   var layer = null, bg = null, title = null, hud = null, prompt = null, dotsBox = null, msg = null, row = null;

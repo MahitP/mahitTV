@@ -28,7 +28,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 const BAR = ['ArrowUp', 'ArrowUp'];          // from the Dock: full screen on the pick, then the tab bar
 // name: { setup keys, action (keys or {down|up|js}), frames, step ms, crop [x, y, w, h] or null }
 // The startup (TVOS-LAUNCHER-MERGE-SPEC.md Part 2 §1): frames at fixed moments (ms after the page loads), from power-on.
-const STARTUP_TIMES = [100, 400, 800, 1200, 1600, 2200, 2600];
+const STARTUP_TIMES = [250, 650, 1150, 1450, 2000, 2650];
 const SCENARIOS = {
   'startup-day': { startup: true, theme: 'light', times: STARTUP_TIMES, crop: null },
   'startup-night': { startup: true, theme: 'dark', times: STARTUP_TIMES, crop: null },

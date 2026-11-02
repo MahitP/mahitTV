@@ -2,8 +2,9 @@
 /*
  * 1920×1080 screenshots of the web home screen (the LG/Samsung build, which follows HomeView) into previews/:
  * light and dark, the Dock focused, the Top Shelf focused, the app grid open, the clock without picks, and the Home and
- * Welly tabs (a light on, an answered prompt), and mahitTV's profiles: the golden intro, "Who's Watching?", the PIN pad
- * (mid-entry, a wrong PIN, the unlock), each profile's Dock and Welly's Continue Watching, and Settings' resets.
+ * Welly tabs (a light on, an answered prompt), and mahitTV's profiles: the Liquid Glass intro, "Who's Watching?", the PIN pad
+ * (mid-entry, a wrong PIN, the unlock), each profile's Dock and Welly's Continue Watching, and Settings' resets; and the
+ * startup's six-frame motion strips (`node tools/screenshots.js startup` for only those).
  * The home screen shots open index.html?nolock (preview builds only), which skips the intro and the lock.
  * Needs Playwright (npm i playwright; its Chromium). Builds the preview first:
  *     python3 webos/build.py --preview && node tools/screenshots.js
@@ -135,7 +136,7 @@ async function shootProfiles(browser, theme) {
   const key = async (k, wait) => { await page.keyboard.press(k); await page.waitForTimeout(wait === undefined ? 350 : wait); };
   const type = async (digits, wait) => { for (const d of digits) await key(d, wait === undefined ? 150 : wait); };
   await page.goto(BASE);
-  await page.waitForTimeout(1050); await shot('intro');                 // the wordmark mid-sweep, sparks rising
+  await page.waitForTimeout(1450); await shot('intro');                 // the Liquid Glass wordmark at the caustic peak
   await page.waitForTimeout(2200); await shot('whos-watching');         // the manager's card focused
   await key('ArrowRight', 500); await shot('whos-watching-dhruvin');
   await key('ArrowLeft', 500);
@@ -156,6 +157,63 @@ async function shootProfiles(browser, theme) {
   await key('Enter', 700); await shot('settings-reset');
   await context.close();
   return files;
+}
+
+/**
+ * The startup's motion strip ("Anamorphic Horizon & Optical Liquid Glass Ignition"): six 1920×1080 frames on the page's
+ * fake clock, from power-on, tiled 3 × 2 at half size with their moment: previews/startup-motion-strip-<day|night>.png.
+ */
+const STARTUP_STRIP = [
+  [250, 'Act I · the horizon seam opens'],
+  [650, 'Act II · glyphs condense into glass'],
+  [1150, 'Act III · the caustic beam enters'],
+  [1450, 'Act III · prismatic peak, glass ring'],
+  [2000, 'Act III · the resonance settles'],
+  [2650, "Act IV · into \u201cWho\u2019s Watching?\u201d"],
+];
+async function shootStartupStrip(browser, theme) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await context.addInitScript(themed(theme), { theme, ids: PROFILE_IDS });
+  // A TV that has been set up: the startup hands off to "Who's Watching?", not the welcome setup.
+  await context.addInitScript((theme) => {
+    try { localStorage.setItem('fmtv.prefs', JSON.stringify({ theme, setupDone: true })); } catch (e) {}
+  }, theme);
+  const page = await context.newPage();
+  // The page's clock is paused before it loads: its first frame is the startup's 0 s, and time moves only when we
+  // say so, so every frame is at exactly its moment.
+  const noon = new Date('2026-11-01T12:00:00');
+  await page.clock.install({ time: noon });
+  await page.clock.pauseAt(new Date(noon.getTime() + 1000));
+  await page.goto(BASE);
+  const frames = [];
+  let at = 0;
+  for (const [ms, label] of STARTUP_STRIP) {
+    await page.clock.runFor(ms - at);
+    at = ms;
+    frames.push({ ms, label, src: 'data:image/png;base64,' + (await page.screenshot()).toString('base64') });
+  }
+  await context.close();
+  // The sheet: an HTML page of the six frames, shot at its own size.
+  const W = 960, H = 540, PAD = 18, LABEL = 46, COLS = 3;
+  const rows = Math.ceil(frames.length / COLS), sw = COLS * (W + PAD) + PAD, sh = rows * (H + LABEL + PAD) + PAD + 64;
+  const sheet = await browser.newContext({ viewport: { width: sw, height: sh }, deviceScaleFactor: 1 });
+  const sp = await sheet.newPage();
+  const cells = frames.map((f) => `<figure><figcaption><b>${(f.ms / 1000).toFixed(2)} s</b> ${f.label}</figcaption><img src="${f.src}"></figure>`).join('');
+  await sp.setContent(`<!doctype html><html><head><style>
+    body { margin: 0; background: #0B0F17; color: #E5E9F0; font: 500 22px -apple-system, "SF Pro Display", Inter, "Helvetica Neue", Arial, sans-serif; }
+    h1 { margin: 0; padding: ${PAD + 4}px ${PAD}px 0; height: 46px; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+    h1 span { color: #8B96A8; font-weight: 500; }
+    main { display: flex; flex-wrap: wrap; gap: ${PAD}px; padding: ${PAD}px; }
+    figure { margin: 0; width: ${W}px; }
+    figcaption { height: ${LABEL - 8}px; line-height: ${LABEL - 8}px; white-space: nowrap; overflow: hidden; color: #AEB7C6; }
+    figcaption b { color: #FFF; margin-right: 10px; }
+    img { display: block; width: ${W}px; height: ${H}px; border-radius: 10px; }
+  </style></head><body><h1>mahitTV startup · ${theme === 'dark' ? 'Night' : 'Day'} <span>Anamorphic Horizon &amp; Optical Liquid Glass Ignition</span></h1><main>${cells}</main></body></html>`);
+  await sp.waitForFunction(() => Array.from(document.images).every((i) => i.complete));
+  const file = path.join(OUT, `startup-motion-strip-${theme === 'dark' ? 'night' : 'day'}.png`);
+  await sp.screenshot({ path: file, fullPage: true });
+  await sheet.close();
+  return file;
 }
 
 /** Welly's Continue Watching for one profile (from the "What am I watching?" pill): web-mahittv-welly-<id>.png. */
@@ -476,6 +534,10 @@ async function shootAppleWallpapers(browser) {
     }
     await browser.close(); server.close(); return;
   }
+  if (only === 'startup') {
+    for (const theme of ['light', 'dark']) console.log('wrote', path.relative(ROOT, await shootStartupStrip(browser, theme)));
+    await browser.close(); server.close(); return;
+  }
   if (only === 'welly-bloub') {
     for (const f of await shootWellyBloub(browser)) console.log('wrote', path.relative(ROOT, f));
     await browser.close(); server.close(); return;
@@ -499,6 +561,7 @@ async function shootAppleWallpapers(browser) {
     for (const shot of SHOTS) console.log('wrote', path.relative(ROOT, await shoot(browser, theme, shot)));
   }
   for (const shot of HOME_SHOTS) console.log('wrote', path.relative(ROOT, await shootHome(browser, shot)));
+  for (const theme of ['light', 'dark']) console.log('wrote', path.relative(ROOT, await shootStartupStrip(browser, theme)));
   for (const theme of ['light', 'dark']) {
     for (const f of await shootProfiles(browser, theme)) console.log('wrote', path.relative(ROOT, f));
   }
