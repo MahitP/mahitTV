@@ -1583,7 +1583,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (watched != null && seenPicks.add(Recs.key(watched))) mediaPicks.add(watched);
             for (Recs.Pick p : picks) if (watchPkg.equals(p.pkg) && seenPicks.add(Recs.key(p))) mediaPicks.add(p);
             for (Recs.Pick p : recs.forApp(watchPkg)) {
-                if (mediaPicks.size() < Recs.SHELF_PAGES && seenPicks.add(Recs.key(p))) mediaPicks.add(p);
+                if (mediaPicks.size() < Recs.APP_PAGES && seenPicks.add(Recs.key(p))) mediaPicks.add(p);
             }
             if (mediaPicks.isEmpty()) {
                 backgroundMode = BACKGROUND_PROFILE;
@@ -3682,7 +3682,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < profileRects.length && i < profileAvatars.length; i++) {
             RectF r = profileRects[i];
             float f = Ui.clamp(profileFocus[i].value), s = 1 + 0.1f * profileFocus[i].value - PRESS * press.value * f;
-            float rad = r.width() / 2;
+            float rad = r.width() * ProfileManager.CORNER;
             c.save();
             c.translate(bumpX * f, bumpY * f);
             c.scale(s, s, r.centerX(), r.centerY());
@@ -3697,13 +3697,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             } else {
                 fill.setShader(null);
                 fill.setColor(0xFF8E8E93);
-                c.drawCircle(r.centerX(), r.centerY(), rad, fill);
+                c.drawRoundRect(r, rad, rad, fill);
             }
             if (i == current || f > 0.01f) {
                 rim.setShader(null);
                 rim.setColor(Ui.alpha(0xFFFFFFFF, i == current ? Math.max(0.85f, f) : f));
                 rim.setStrokeWidth((3 + f) * k);
-                c.drawCircle(r.centerX(), r.centerY(), rad + 5 * k, rim);
+                c.drawRoundRect(r.left - 5 * k, r.top - 5 * k, r.right + 5 * k, r.bottom + 5 * k, rad + 5 * k, rad + 5 * k, rim);
                 rim.setStrokeWidth(2.5f * k);
             }
             c.restore();
@@ -5816,7 +5816,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         profiles = ProfileManager.all(getContext());
         int size = Math.round(PILL_AVATAR * k);
         int current = ProfileManager.currentIndex(getContext());
-        Bitmap avatar = ProfileManager.avatar(getContext(), profiles.get(current), size);
+        Bitmap avatar = ProfileManager.avatar(getContext(), profiles.get(current), size, ProfileManager.CORNER_NESTED);
         if (pillAvatarProfile >= 0 && current != pillAvatarProfile && pillAvatar != null && !Spring.instant) {
             pillAvatarFrom = pillAvatar;   // another profile: the avatars cross-dissolve
             avatarFade.snap(0);
@@ -6365,7 +6365,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (pop) {
                 c.save();
                 pillClip.rewind();
-                pillClip.addCircle(ax + d / 2, ay + d / 2, d / 2, android.graphics.Path.Direction.CW);
+                pillClip.addRoundRect(ax, ay, ax + d, ay + d, d * ProfileManager.CORNER_NESTED, d * ProfileManager.CORNER_NESTED, android.graphics.Path.Direction.CW);
                 c.clipPath(pillClip);
                 float z = 1 + 0.12f * f;
                 c.scale(z, z, ax + d / 2, ay + d / 2);

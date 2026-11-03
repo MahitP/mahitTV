@@ -326,9 +326,9 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   transition: background-color 0.17s cubic-bezier(0.22, 1, 0.36, 1), color 0.17s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.17s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #pill .time { display: inline-block; margin-right: 20px; vertical-align: top; }
-#pill .avatar { position: relative; display: inline-block; width: 49px; height: 49px; margin-top: 4px; border-radius: 25px; background-size: cover; background-position: center; vertical-align: top; }
+#pill .avatar { position: relative; display: inline-block; width: 49px; height: 49px; margin-top: 4px; border-radius: 18px; background-size: cover; background-position: center; vertical-align: top; }
 /* Another profile: the old face over the new one, fading out. */
-#pill .avatar .prev { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 25px; background-size: cover; background-position: center; -webkit-transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+#pill .avatar .prev { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 18px; background-size: cover; background-position: center; -webkit-transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
 /* Focused: white, with a brighter rim (the scale and the avatar's pop are springs in home.js). */
 #pill.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
 /* What's playing (FreeMyTV.nowPlaying): three bars and the title, left of the time. */
@@ -554,7 +554,9 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 /* Its rows (home.js places them): the profiles, the weather platter, the bento, the volume, the round buttons. */
 #drawer .ccrow, #drawer .ccgroup, #drawer .ccinputs { position: absolute; left: 0; right: 0; }
 #drawer .who { position: absolute; top: 0; text-align: center; }
-#drawer .who .face { display: block; width: 72px; height: 72px; margin: 0 auto; border-radius: 36px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22); }
+#drawer .who .face { display: block; width: 72px; height: 72px; margin: 0 auto; border-radius: 16px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22); }
+/* Round art (a disc on transparent corners) is read closer, so the disc fills the shape (Profiles.fitAvatar). */
+#pill .avatar.round, #drawer .who .face.round, #setup .who .face.round { background-size: 142%; }
 #drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.22); }
 #drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.36); }
 #drawer .who .name { display: block; margin-top: 8px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

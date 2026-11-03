@@ -1197,6 +1197,7 @@
     }
     avatar.setAttribute('data-url', url);
     avatar.style.backgroundImage = url;
+    Profiles.fitAvatar(person(), avatar);
     // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes.
     $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
     var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24;
@@ -1955,6 +1956,7 @@
       who.style.width = step + 'px';
       var faceEl = el('span', 'face', who);
       faceEl.style.backgroundImage = avatarUrl(list[w]);
+      Profiles.fitAvatar(list[w], faceEl);
       el('span', 'name', who, list[w].name);
       ccAdd(who, new Fx(faceEl, {grow: 0.12}), profileRun(list[w]), 'who', x0 + w * step + step / 2);
     }
@@ -3996,7 +3998,7 @@
       glass: function (v) { Prefs.set('glass', v); checkNight(); },
       topShelf: function (v) { Prefs.set('topShelf', v); follow(); },
       temperature: function (v) { Prefs.set('temperature', v); renderPanels(); },
-      people: function () { return people().map(function (p) { return {name: p.name, avatar: avatarUrl(p)}; }); },
+      people: function () { return people().map(function (p) { return {name: p.name, avatar: avatarUrl(p), profile: p}; }); },
       city: function () { return Data.city; },
       done: function () { Prefs.set('setupDone', true); done(); }
     };

@@ -10,6 +10,7 @@ var Profiles = (function () {
   var GRACE_MS = 10 * 60 * 1000, TRIES = 5, WAIT_MS = 30000, LOG_MAX = 30;
   var STATE = 'mahittv.state';
   var list = null, unlocked = false, guest = {}, wrong = {}, waitUntil = {};
+  var probe = null, probeCtx = null;
 
   function read(key, fallback) {
     try { var v = JSON.parse(localStorage.getItem(key)); return v === null || v === undefined ? fallback : v; } catch (e) { return fallback; }
@@ -166,6 +167,31 @@ var Profiles = (function () {
     index: function () { return Math.max(0, all().indexOf(current())); },
     manager: function () { var l = all(); for (var i = 0; i < l.length; i++) if (l[i].role === 'manager') return l[i]; return l[0]; },
     store: store,
+    /**
+     * A round avatar (a disc on transparent corners) is drawn larger, so its disc fills the rounded square instead of
+     * floating in it (the `round` class). Where the image can't be read back (file:// on some TVs), it stays as it is.
+     */
+    fitAvatar: function (p, face) {
+      var img = new Image();
+      face.className = face.className.replace(/\s*\bround\b/g, '');
+      img.onload = function () {
+        try {
+          // One small canvas kept on the CPU (willReadFrequently): reading back a GPU canvas stalls the page for a moment
+          // per avatar, right while the cards come in.
+          if (!probe) {
+            probe = document.createElement('canvas');
+            probe.width = probe.height = 16;
+            probeCtx = probe.getContext('2d', {willReadFrequently: true}) || probe.getContext('2d');
+          }
+          probeCtx.clearRect(0, 0, 16, 16);
+          probeCtx.drawImage(img, 0, 0, 16, 16);
+          var d = probeCtx.getImageData(0, 0, 16, 16).data;
+          if (d[3] < 40 && d[(15 * 16 + 15) * 4 + 3] < 40) face.className += ' round';
+        } catch (e) {}
+      };
+      img.src = this.avatarUrl(p);
+    },
+
     /** The avatar's URL: profiles/<id>.png (yours), the named avatar, memoji/guest, else a bundled default. */
     avatarUrl: function (p) {
       var files = (window.CONFIG && CONFIG.profileAvatars) || [];

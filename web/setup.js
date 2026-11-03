@@ -89,6 +89,7 @@ var Setup = (function () {
     for (var i = 0; i < list.length; i++) {
       var p = el('div', 'who', box), face = el('span', 'face', p);
       face.style.backgroundImage = list[i].avatar;
+      Profiles.fitAvatar(list[i].profile, face);
       el('span', 'name', p, list[i].name);
     }
     var city = el('div', 'city', parent);

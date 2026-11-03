@@ -240,14 +240,23 @@ final class ProfileManager {
 
     // MARK: - Avatars
 
+    /** An avatar's corner, as a share of its size: a tile's continuous corner. */
+    static final float CORNER = 0.225f;
+    /** In a capsule (the pill): rounder, so it nests in the capsule's end. */
+    static final float CORNER_NESTED = 0.36f;
+
     /**
-     * `p`'s avatar as a circle `size` px wide (made once per profile and size, off the draw path): assets/profiles/<id>.png
+     * `p`'s avatar as a rounded square `size` px wide, `corner` its share of the size (made once per profile and size, off the draw path): assets/profiles/<id>.png
      * (yours), else the one named in config.properties, else memoji.png for the manager, guest.png for Guest, and the
      * bundled defaults in turn for the others.
      */
-    static synchronized Bitmap avatar(Context c, Profile p, int size) {
+    static Bitmap avatar(Context c, Profile p, int size) {
+        return avatar(c, p, size, CORNER);
+    }
+
+    static synchronized Bitmap avatar(Context c, Profile p, int size, float corner) {
         if (p == null || size <= 0) return null;
-        String key = p.id + "@" + size;
+        String key = p.id + "@" + size + "/" + corner;
         if (AVATARS.containsKey(key)) return AVATARS.get(key);
         Bitmap out = null;
         String path = avatarPath(c, p);
@@ -255,14 +264,18 @@ final class ProfileManager {
             try (InputStream in = c.getAssets().open(path)) {
                 Bitmap src = BitmapFactory.decodeStream(in);
                 if (src != null) {
-                    // Centre square, filtered down to the size, then cut into a circle (anti-aliased).
+                    // Centre square, filtered down to the size, then cut to the shape (anti-aliased). Round art (a disc on
+                    // transparent corners, as the default avatars) is read closer, so the disc fills the shape.
                     int side = Math.min(src.getWidth(), src.getHeight());
+                    if (src.getPixel(0, 0) >>> 24 == 0) side = Math.round(side / 1.42f);
                     Bitmap square = Bitmap.createBitmap(src, (src.getWidth() - side) / 2, (src.getHeight() - side) / 2, side, side);
                     Bitmap small = Ui.downscale(square, size, size);
                     out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
                     Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
                     paint.setShader(new BitmapShader(small, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
-                    new Canvas(out).drawCircle(size / 2f, size / 2f, size / 2f, paint);
+                    android.graphics.Path shape = new android.graphics.Path();
+                    Corners.continuous(shape, size, size, size * corner);
+                    new Canvas(out).drawPath(shape, paint);
                 }
             } catch (Exception | OutOfMemoryError e) {
                 AppLog.w("avatar " + path + ": " + e.getMessage());

@@ -87,7 +87,7 @@
 /* The profiles and the city (the last step). */
 #setup .people { margin-top: 40px; font-size: 0; white-space: nowrap; }
 #setup .who { display: inline-block; width: 150px; vertical-align: top; }
-#setup .who .face { display: block; width: 104px; height: 104px; margin: 0 auto; border-radius: 52px; background-size: cover; background-position: center; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); }
+#setup .who .face { display: block; width: 104px; height: 104px; margin: 0 auto; border-radius: 23px; background-size: cover; background-position: center; box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2); }
 #setup .who .name { display: block; margin-top: 12px; font-size: 22px; font-weight: 600; }
 #setup .city { margin-top: 26px; font-size: 26px; font-weight: 600; }
 #setup .city .sym { width: 30px; height: 30px; margin-right: 10px; vertical-align: -5px; }
