@@ -51,7 +51,7 @@ final class Ui {
     static final boolean LEGACY = Build.VERSION.SDK_INT < 31 || smallMemory();
 
     /**
-     * Motion that only redraws a little (the focus's glare, rows that trail one another): what the older GPUs in LEGACY
+     * Motion that only redraws a little (the focus's glare, rows that trail one another, Welly's orb): what the older GPUs in LEGACY
      * can't spare, but the same 2.45 GB TCL holds 60 fps with. Ken Burns and the like redraw the whole screen, so they stay
      * with !LEGACY: full-screen frames already take that GPU past 16 ms.
      */

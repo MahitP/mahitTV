@@ -235,11 +235,11 @@ final class Shaders {
         "  }\n" +
         // Vibrancy: what's behind keeps its color, a little stronger.
         "  half l = dot(bg, half3(0.2126, 0.7152, 0.0722));\n" +
-        "  bg = mix(half3(l), bg, 1.35) * 1.02;\n" +
+        "  bg = mix(half3(l), bg, 1.6) * 1.02;\n" +
         "  half3 col = mix(bg, tint.rgb, tint.a) + half3(lift);\n" +
         "  float ny = d.y / halfSize.y;\n" +
-        "  col *= half(1.0 - 0.10 * smoothstep(0.1, 1.0, ny));\n" +
-        "  col += half3(0.05 * (1.0 - smoothstep(-1.0, -0.2, ny)));\n" +
+        "  col *= half(1.0 - 0.07 * smoothstep(0.1, 1.0, ny));\n" +
+        "  col += half3(0.06 * (1.0 - smoothstep(-1.0, -0.2, ny)));\n" +
         // Key light from the top left: a catchlight on the rim where it faces the light, fading along the sides, a
         // faint bounce opposite, and a soft inner halo.
         "  float2 L = light;\n" +
@@ -248,6 +248,8 @@ final class Shaders {
         "  float rim = 1.0 - smoothstep(0.0, 2.2, inner);\n" +
         "  float halo = 1.0 - smoothstep(0.0, 14.0, inner);\n" +
         "  float spec = rim * (0.18 + 0.82 * facing + 0.35 * back) + halo * (0.14 * facing + 0.06 * back);\n" +
+        // The glass's thickness: just inside the rim it darkens a touch, away from the light.
+        "  col *= half(1.0 - 0.14 * (1.0 - facing) * (1.0 - smoothstep(1.5, 12.0, inner)));\n" +
         "  col += half3(spec * specular);\n" +
         "  col += half3((hash(xy) - 0.5) * 0.0039);\n" +
         "  return half4(col * half(aa), half(aa));\n" +

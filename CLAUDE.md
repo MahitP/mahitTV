@@ -272,7 +272,10 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   shadows from cached bitmaps (`Shadows`) and rounds images with a shader instead of clipPath: their GPUs (a Mi Box
   3's Mali-450) choked on those, a 2 GB TCL on Android 12 went into swap with the layers (#361), and a 2.45 GB TCL on
   Android 14 went from 35 to 60 fps on the Dock without them. Android 13 and newer under 3 GB keep the motion that redraws
-  little (`Ui.SMALL_MOTION`: the focus's glare, the grid's trailing rows, Control Center's rows). Measure smoothness
+  little (`Ui.SMALL_MOTION`: the focus's glare, the grid's trailing rows, Control Center's rows, Welly's orb at full rate).
+  Under LEGACY the Home and Welly tabs still keep a GPU layer, ready while hidden at alpha 0, so a tab swap is only a fade;
+  the Dock's glass keeps one too where it's a shader; and the house draws its faces as one `drawVertices` batch while
+  anything moves (`HouseView.batching`), anti-aliased only on the frame it comes to rest on. Measure smoothness
   from `dumpsys gfxinfo ... framestats` (the gaps between `IntendedVsync`): its percentiles are latency, not frame rate.
   Android 11 to 12L (API 30–32) run the screensaver as `ScreensaverAlone`, in the main process: AOSP starts their
   DreamActivity in the app's default process (13 moved it to the dream's own), and it only works with the dream in that
@@ -312,7 +315,7 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   wins over `CONFIG.tmdbKey`, and `Data.keyChanged()` fetches the picks again.
 - Continue Watching gets `READ_TV_LISTINGS` with `pm grant` through the TV's own ADB only when picked in Home Settings;
   *Original* revokes it with `pm revoke`. Watch Next pictures load only from the TV (`content://`, `android.resource://`),
-  never from the network. The app talks only to TMDB, Open-Meteo, Binance, Watchmode (with a `watchmode_key`), your Plex
+  never from the network. The app talks only to TMDB, Open-Meteo, YouTube's public channel feeds and thumbnails (`YouTubeFeed`: no account, no key), Binance, Watchmode (with a `watchmode_key`), your Plex
   server (with a `plex_url`), your Immich server (with `immich_server` and its key), Trakt (with a `trakt_client_id`,
   once the person signs in on the TV) and GitHub's releases (Updates): new sources (such as Stremio) must not add
   network calls without the owner's OK.

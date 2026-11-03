@@ -43,7 +43,12 @@ final class Wallpaper {
             "com.wbd.stream", "com.hbo.hbonow",
             "com.amazon.amazonvideo.livingroom", "com.amazon.firebat", "com.amazon.avod",
             "com.google.android.youtube.tv", "com.amazon.firetv.youtube",
-            "com.apple.atve.androidtv.appletv", "com.apple.atve.sony.appletv", "com.apple.atve.amazon.appletv"
+            "com.apple.atve.androidtv.appletv", "com.apple.atve.sony.appletv", "com.apple.atve.amazon.appletv",
+            "com.hulu.livingroomplus", "com.hulu.plus",
+            "com.cbs.ott", "com.cbs.ca",
+            "com.peacocktv.peacockandroid", "com.peacock.peacockfiretv",
+            "com.crunchyroll.crunchyroid", "com.tubitv", "com.google.android.youtube.tvunplugged",
+            "com.mvas.stb.emu.free", "com.mvas.stb.emu.pro"
     };
     /** Music sessions have their own Now Playing surface and must never request TMDB artwork. */
     private static final String[] MUSIC_APPS = {
@@ -219,6 +224,12 @@ final class Wallpaper {
     }
 
     static boolean videoApp(String pkg) { return contains(VIDEO_APPS, pkg); }
+
+    /** IPTV has no catalogue on TMDB: its Top Shelf shows what's in theaters. */
+    static boolean theaterApp(String pkg) { return pkg != null && pkg.startsWith("com.mvas.stb.emu."); }
+
+    /** YouTube isn't on TMDB: its Top Shelf shows videos (YouTubeFeed). */
+    static boolean youTubeApp(String pkg) { return "com.google.android.youtube.tv".equals(pkg) || "com.amazon.firetv.youtube".equals(pkg); }
 
     static boolean musicApp(String pkg) { return contains(MUSIC_APPS, pkg); }
 
