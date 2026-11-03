@@ -73,7 +73,7 @@ var Lock = (function () {
       el('div', 'ring', node);
       var face = el('div', 'face', node);
       face.style.backgroundImage = 'url(' + Profiles.avatarUrl(p) + ')';
-      roundness(Profiles.avatarUrl(p), face);
+      Profiles.fitAvatar(p, face);
       el('div', 'spec', face);
       var label = el('div', 'label', node, p.name);
       if (Profiles.needsPin(p)) el('span', 'glyph-lock', label);
@@ -109,30 +109,6 @@ var Lock = (function () {
     node.onclick = function () { if (mode === 'pin') { pad = k; focus(); digit(keys[k].n); } };
   }
 
-  /**
-   * A round avatar (a disc on transparent corners) is drawn larger, so its disc fills the squircle instead of floating
-   * in it. Where the image can't be read back (file:// on some TVs), it stays as it is.
-   */
-  var probe = null, probeCtx = null;
-  function roundness(url, face) {
-    var img = new Image();
-    img.onload = function () {
-      try {
-        // One small canvas kept on the CPU (willReadFrequently): reading back a GPU canvas stalls the page for a frame
-        // per avatar, right while the cards come in.
-        if (!probe) {
-          probe = document.createElement('canvas');
-          probe.width = probe.height = 16;
-          probeCtx = probe.getContext('2d', {willReadFrequently: true}) || probe.getContext('2d');
-        }
-        probeCtx.clearRect(0, 0, 16, 16);
-        probeCtx.drawImage(img, 0, 0, 16, 16);
-        var d = probeCtx.getImageData(0, 0, 16, 16).data;
-        if (d[3] < 40 && d[(15 * 16 + 15) * 4 + 3] < 40) setClass(face, 'round', true);
-      } catch (e) {}
-    };
-    img.src = url;
-  }
 
   // MARK: - Focus and motion
 

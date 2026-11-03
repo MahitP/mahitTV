@@ -513,7 +513,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
             gap *= f;
             total = 1760 * k;
         }
-        avatarSize = Math.round(size * 0.84f);
+        avatarSize = Math.round(size);   // the photo is the card
         if (focus.length != n) {
             focus = new Spring[n];
             cardIn = new Spring[n];
@@ -532,12 +532,12 @@ final class LockView extends View implements Choreographer.FrameCallback {
         for (int i = 0; i < n; i++) {
             ProfileManager.Profile p = profiles.get(i);
             cardX[i] = (w - total) / 2 + i * (size + gap) + size / 2;
-            avatars[i] = ProfileManager.avatar(getContext(), p, Math.round(avatarSize));
+            avatars[i] = ProfileManager.avatar(getContext(), p, Math.round(avatarSize * (1 + FOCUS_GROW)));   // sharp when focused
             names[i] = TextUtils.ellipsize(p.name, tp, size + gap - 40 * k, TextUtils.TruncateAt.END).toString();
             nameW[i] = namePaint.measureText(names[i]);
             pins[i] = ProfileManager.needsPin(getContext(), p);
         }
-        Corners.continuous(squircle, size, size, size * 0.225f);
+        Corners.continuous(squircle, size, size, size * ProfileManager.CORNER);
         fill.setShader(new LinearGradient(0, 0, 0, size, 0x4DFFFFFF, 0x1AFFFFFF, Shader.TileMode.CLAMP));
         goldRing.setShader(new LinearGradient(0, 0, size, size, GOLD_RING, null, Shader.TileMode.CLAMP));
         ring.setShader(new LinearGradient(0, 0, 0, size, 0xFFFFFFFF, 0x99FFFFFF, Shader.TileMode.CLAMP));
@@ -624,11 +624,17 @@ final class LockView extends View implements Choreographer.FrameCallback {
         c.save();
         c.translate(cx - s / 2, cy - s / 2);
         c.scale(scale, scale, s / 2, s / 2);
-        fill.setAlpha(Math.round(255 * alpha));
-        c.drawPath(squircle, fill);
         if (avatars[i] != null) {
             image.setAlpha(Math.round(255 * alpha));
-            c.drawBitmap(avatars[i], (s - avatars[i].getWidth()) / 2f, (s - avatars[i].getHeight()) / 2f, image);
+            tmp.set(0, 0, s, s);
+            c.drawBitmap(avatars[i], null, tmp, image);
+            // A hairline of light at rest, so a dark photo keeps its edge on the night sky.
+            ring.setStrokeWidth(1.5f * k / scale);
+            ring.setAlpha(Math.round(255 * alpha * 0.3f * (1 - f)));
+            c.drawPath(squircle, ring);
+        } else {
+            fill.setAlpha(Math.round(255 * alpha));
+            c.drawPath(squircle, fill);
         }
         if (f > 0.01f) {
             Paint p = profiles.get(i).manager() ? goldRing : ring;

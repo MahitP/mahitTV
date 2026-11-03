@@ -784,6 +784,8 @@ final class Recs {
 
     private static final String YOUTUBE_KIND = "youtube";
     private static final int APP_TITLES = 5;   // SHELF_PAGES
+    /** The Top Shelf's most pages on one Dock app: its titles, and what they opened or this hour's picks on it; or a channel list. */
+    static final int APP_PAGES = 8;
     private static final long APP_LIST_EVERY = 12 * 3600_000L, APP_LIST_RETRY = 15 * 60_000L;
     /** Lists by package, what's being fetched, and when each was last tried: read on the main thread, written on `io`. */
     private final Map<String, List<Pick>> appLists = new HashMap<>();
@@ -951,8 +953,10 @@ final class Recs {
             }
         }
         List<Pick> out = new ArrayList<>();
-        for (YouTubeFeed.Video v : YouTubeFeed.newest(feeds, APP_TITLES * 2)) {
-            if (out.size() >= APP_TITLES) break;
+        // All of a list of their own, not just the few who posted last.
+        int pages = Config.YOUTUBE_CHANNELS.trim().isEmpty() ? APP_TITLES : APP_PAGES;
+        for (YouTubeFeed.Video v : YouTubeFeed.newest(feeds, pages * 2)) {
+            if (out.size() >= pages) break;
             Pick p = new Pick();
             p.kind = YOUTUBE_KIND;
             p.id = v.id.hashCode() & Integer.MAX_VALUE;
