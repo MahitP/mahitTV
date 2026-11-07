@@ -222,9 +222,10 @@ final class Shaders {
         "  float2 sg = float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);\n" +
         "  float2 n = (q.x > 0.0 && q.y > 0.0) ? normalize(q) * sg : (q.x > q.y ? float2(sg.x, 0.0) : float2(0.0, sg.y));\n" +
         "  float inner = -sd;\n" +
-        // Lensing: the rim band bends the image outward, harder near the edge, with a little color dispersion.
-        "  float e = clamp(inner / band, 0.0, 1.0);\n" +
-        "  float bend = pow(1.0 - e, 2.2);\n" +
+        // Lensing: the rim band bends the image outward as a dome's edge does (a circle's profile: steep at the rim,
+        // flat inside, as Kyant's AndroidLiquidGlass models it), with a little color dispersion.
+        "  float x = 1.0 - clamp(inner / band, 0.0, 1.0);\n" +
+        "  float bend = 1.0 - sqrt(max(1.0 - x * x, 0.0));\n" +
         "  float2 p = xy + offset - n * (bend * refraction);\n" +
         "  half3 bg;\n" +
         "  if (bend > 0.01) {\n" +
@@ -240,12 +241,13 @@ final class Shaders {
         "  float ny = d.y / halfSize.y;\n" +
         "  col *= half(1.0 - 0.07 * smoothstep(0.1, 1.0, ny));\n" +
         "  col += half3(0.06 * (1.0 - smoothstep(-1.0, -0.2, ny)));\n" +
-        // Key light from the top left: a catchlight on the rim where it faces the light, fading along the sides, a
-        // faint bounce opposite, and a soft inner halo.
+        // Key light from the top left, as iOS 26 draws it (measured by Glisse): the rim's line is brightest at the very
+        // edge and gone 1.2 px in; it lights the whole top and left side, fading over the two corners between, and its
+        // reflection the right side and bottom; a soft inner halo.
         "  float2 L = light;\n" +
-        "  float facing = pow(clamp(dot(n, L), 0.0, 1.0), 1.5);\n" +
-        "  float back = clamp(-dot(n, L), 0.0, 1.0);\n" +
-        "  float rim = 1.0 - smoothstep(0.0, 2.2, inner);\n" +
+        "  float facing = smoothstep(-0.2, 0.5, dot(n, L));\n" +
+        "  float back = smoothstep(-0.2, 0.5, -dot(n, L));\n" +
+        "  float rim = 1.0 - smoothstep(0.0, 1.22, inner);\n" +
         "  float halo = 1.0 - smoothstep(0.0, 14.0, inner);\n" +
         "  float spec = rim * (0.18 + 0.82 * facing + 0.35 * back) + halo * (0.14 * facing + 0.06 * back);\n" +
         // The glass's thickness: just inside the rim it darkens a touch, away from the light.
