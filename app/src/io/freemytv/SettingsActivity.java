@@ -1948,8 +1948,8 @@ public class SettingsActivity extends Activity {
                 case R_TV_SYSTEM: tries.add(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)); break;
                 case R_TV_ACCESSIBILITY: tries.add(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
                 default:   // Remotes & Accessories
-                    tries.add(new Intent(HomeApps.TV_DEVICES).setPackage("com.android.tv.settings"));
-                    tries.add(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                    Intent bt = HomeApps.bluetoothPage(c);
+                    if (bt != null) tries.add(bt);
                     break;
             }
             tries.add(new Intent(Settings.ACTION_SETTINGS));

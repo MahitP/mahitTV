@@ -3207,6 +3207,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 it.detail = left > 0 ? SleepTimer.duration(left) : Ui.tr("state|Off");
             }
             else if (it.kind == HomeApps.BRIGHTNESS) it.detail = PERCENT[Prefs.brightness()] + "%";
+            else if (it.kind == HomeApps.LISTEN_ALONE) {
+                // The AirPods' name while they play the TV's sound (lit); else what OK does.
+                String air = AirPods.connected(audio);
+                it.connected = air != null;
+                it.detail = air != null ? air : Ui.tr("Pair AirPods");
+            }
         }
     }
 
@@ -3512,7 +3518,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean ccLit(HomeApps.Item it) {
         if (it.kind == HomeApps.SLEEP) return sleepOn;
         if (it.kind == HomeApps.APPEARANCE) return nightTarget;   // Dark Mode
-        return it.connected && (it.kind == HomeApps.WIFI || it.kind == HomeApps.BLUETOOTH || it.kind == HomeApps.DND);
+        return it.connected && (it.kind == HomeApps.WIFI || it.kind == HomeApps.BLUETOOTH || it.kind == HomeApps.DND
+                || it.kind == HomeApps.LISTEN_ALONE);
     }
 
     private void drawCcCircle(Canvas c, int i) {
@@ -7546,6 +7553,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean changed = name == null ? airName != null : !name.equals(airName);
         airName = name;
         volumeHud.setAirPods(name != null);
+        if (changed && !drawerItems.isEmpty()) {   // Listen Alone's line: their name, or "Pair AirPods"
+            showAppearance();
+            layoutDetails();
+            drawerDirty = true;
+        }
         if (changed && pillRect.width() > 0) {
             layoutPill();
             status.invalidate();
