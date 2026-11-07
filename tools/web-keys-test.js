@@ -318,8 +318,8 @@ var browser = null;
   s = await state(page);
   assert.strictEqual(s.zone, 'drawer', 'OK on the bubble opens Control Center');
   var controls = await page.evaluate(function () { return FreeMyTV.cc().filter(function (it) { return it.kind === 'tile'; }).map(function (it) { return it.label; }); });
-  assert.deepStrictEqual(controls, ['Power', 'Audio Output', 'Wi-Fi', 'Bluetooth', 'Dark Mode', 'Do Not Disturb', 'Sleep Timer', 'Brightness', 'Listen Alone'],
-    'Control Center: its pills in order, two a row');
+  assert.deepStrictEqual(controls, ['Power', 'Audio Output', 'Wi-Fi', 'Bluetooth', 'Dark Mode', 'Do Not Disturb', 'Sleep Timer', 'Brightness', 'Speaker Mode', 'Listen Alone'],
+    'Control Center: its pills in order, two a row (Speaker Mode | Listen Alone last)');
   // The playback card, first: OK plays and pauses, ← → skip, and it never leaves the panel.
   var media = await page.evaluate(function () {
     FreeMyTV.state.drawer = 0;

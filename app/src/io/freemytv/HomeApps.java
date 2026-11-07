@@ -85,6 +85,8 @@ final class HomeApps {
     static final int APPLE_GUIDE = 23;
     /** Control Center's playback card: what a media session is playing, with its controls (the home screen handles it). */
     static final int MEDIA = 24;
+    /** Control Center's Listen Alone: AirPods (Bluetooth headphones) on the TV, through its pairing screen. */
+    static final int LISTEN_ALONE = 25;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -194,8 +196,34 @@ final class HomeApps {
             "com.google.android.videos",            // Google Play Movies (discontinued)
             "com.disney.starplus"));                // Star+ (merged into Disney+)
 
-    /** The TV's own devices page (TCL): remotes, Bluetooth audio and accessories. */
+    /** TCL's Device Preferences (its general device settings: not Bluetooth's list). */
     static final String TV_DEVICES = "com.android.tv.settings.DEVICES";
+    /** Android TV's Remotes & Accessories: the Bluetooth devices, connected and paired, and "Pair accessory". */
+    static final String TV_ACCESSORIES = "com.android.tv.settings.ACCESSORIES_CONNECTED_DEVICES";
+    /** Android TV's pairing screen: it searches and lists the Bluetooth devices ready to pair (AirPods with their case open). */
+    static final String TV_PAIRING = "com.google.android.intent.action.CONNECT_INPUT";
+
+    /**
+     * The TV's Bluetooth page: Remotes & Accessories where the TV has it (TCL's Android 14 has no
+     * android.settings.BLUETOOTH_SETTINGS, and its DEVICES action opens Device Preferences instead), else Android's, else
+     * the pairing screen; null where none answers.
+     */
+    static Intent bluetoothPage(Context c) {
+        return firstOf(c, new Intent(TV_ACCESSORIES).setPackage("com.android.tv.settings"), new Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+                new Intent(TV_PAIRING).setPackage("com.android.tv.settings"));
+    }
+
+    /** Pairing new Bluetooth audio (Listen Alone): the TV's pairing screen, else its Bluetooth page. */
+    static Intent pairingPage(Context c) {
+        Intent pair = firstOf(c, new Intent(TV_PAIRING).setPackage("com.android.tv.settings"));
+        return pair != null ? pair : bluetoothPage(c);
+    }
+
+    private static Intent firstOf(Context c, Intent... tries) {
+        PackageManager pm = c.getPackageManager();
+        for (Intent i : tries) if (pm.resolveActivity(i, 0) != null) return i;
+        return null;
+    }
     /** A second "TCL Home", not on the TV's own list of apps (com.tcl.dashboard is that one): it would match by name. */
     private static final String TCL_HOME_TWIN = "com.tcl.tv.tclhome_passive";
     /** Kept out of All Apps: HIDDEN, unless it is one GRID_ORDER names. */
@@ -584,7 +612,10 @@ final class HomeApps {
                 c.getPackageManager().resolveActivity(tcorrection, 0) != null ? tcorrection : new Intent("action.htcsettings.prjsettings"));
         device(c, items, "mirroring", Ui.tr("Screen Mirroring"), "cast",
                 new Intent().setComponent(new ComponentName("com.softwinner.miracastReceiver", "com.softwinner.miracastReceiver.Miracast")));
-        device(c, items, "listen-alone", Ui.tr("Listen Alone"), "airpods", new Intent("tcl.intent.action.LISTEN_ALONE"));   // TCL's T-Solo
+        // TCL's T-Solo plays the TV's sound on a phone: Speaker Mode. Beside it, Listen Alone: AirPods (or any Bluetooth
+        // headphones) on the TV, through its pairing screen, or its Bluetooth page once they're connected.
+        device(c, items, "speaker-mode", Ui.tr("Speaker Mode"), "speaker_phone", new Intent("tcl.intent.action.LISTEN_ALONE"));
+        if (pairingPage(c) != null) items.add(shortcut(LISTEN_ALONE, "listen-alone", Ui.tr("Listen Alone"), "airpods"));
         items.add(shortcut(VOLUME, "volume", Ui.tr("Volume"), "volume"));
         // The profile panel: Inputs | Screensaver, then Lock, Home Settings and TV Settings.
         items.add(shortcut(INPUT_SHEET, "cc-inputs", Ui.tr("Inputs"), "input"));
@@ -1032,10 +1063,15 @@ final class HomeApps {
                 plain = new Intent(Settings.ACTION_SETTINGS);   // a TV without that page: its settings
                 break;
             case BLUETOOTH:
-                // TCL's Android 14 has no Bluetooth page of its own: its devices' page is where the remote and AirPods are.
-                intent = new Intent(TV_DEVICES).setPackage("com.android.tv.settings");
-                if (a.getPackageManager().resolveActivity(intent, 0) == null) intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
-                plain = new Intent(Settings.ACTION_SETTINGS);
+                intent = bluetoothPage(a);
+                plain = new Intent(Settings.ACTION_SETTINGS);   // a TV with none of them: its settings
+                if (intent == null) intent = plain;
+                break;
+            case LISTEN_ALONE:
+                // AirPods already on the TV: its Bluetooth page (they're there to switch); else the pairing screen.
+                intent = AirPods.connected(a.getSystemService(android.media.AudioManager.class)) != null ? bluetoothPage(a) : pairingPage(a);
+                plain = bluetoothPage(a);
+                if (intent == null) intent = plain;
                 break;
             case AUDIO:
                 // The TV's sound output page (nothing is changed here); a TV without one: its settings.

@@ -1829,7 +1829,13 @@
         detail: function () { return previewCC.sleep ? sleepName(previewCC.sleep) : onOff(false); }});
     }
     t.push({label: tr('Brightness'), symbol: 'sunny', run: cycleBrightness, detail: function () { return Prefs.brightness() + '%'; }});
-    if (PREVIEW) t.push({label: tr('Listen Alone'), symbol: 'airpods', run: googleOnly});   // TCL's T-Solo, where the TV has it
+    if (PREVIEW) {
+      // As on a TCL Google TV: Speaker Mode (T-Solo: the TV's sound on a phone), and beside it Listen Alone (AirPods on
+      // the TV, through its pairing screen); here, A's stand-in AirPods.
+      t.push({label: tr('Speaker Mode'), symbol: 'speaker_phone', run: googleOnly});
+      t.push({label: tr('Listen Alone'), symbol: 'airpods', run: toggleAirPods, active: function () { return !!airpods; },
+        detail: function () { return airpods || tr('Pair AirPods'); }});
+    }
     return t;
   }
 
