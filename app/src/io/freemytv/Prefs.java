@@ -512,9 +512,31 @@ final class Prefs {
     }
 
     static void setShelf(List<String> packages) {
+        putOwn("shelf", joined(packages));
+    }
+
+    /**
+     * The Dock as moved on the home screen (hold OK on an app): no new `version`, which would make the home screen start
+     * over when it comes back; it already shows the change.
+     */
+    static void setShelfQuietly(List<String> packages) {
+        pp().edit().putString("shelf", joined(packages)).apply();
+    }
+
+    private static String joined(List<String> packages) {
         StringBuilder sb = new StringBuilder();
         for (String p : packages) sb.append(sb.length() == 0 ? "" : ",").append(p);
-        putOwn("shelf", sb.toString());
+        return sb.toString();
+    }
+
+    // MARK: - All Apps' layout (the current profile's order and folders: AppLayout), saved as it's moved
+
+    static AppLayout layout() {
+        return AppLayout.parse(pp().getString("layout", null));
+    }
+
+    static void setLayout(AppLayout layout) {
+        pp().edit().putString("layout", layout.encode()).apply();
     }
 
     // MARK: - Sleep timer

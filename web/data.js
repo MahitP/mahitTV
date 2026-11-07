@@ -70,7 +70,7 @@ var Prefs = (function () {
     return v[name] === undefined ? fallback : v[name];
   }
   // Kept per profile (MAHITTV-PROFILES-SPEC.md §1.3); the rest is for the whole TV.
-  var OWN = ['theme', 'shelf', 'shelfConfig', 'wallpaper', 'sounds'];
+  var OWN = ['theme', 'shelf', 'shelfConfig', 'wallpaper', 'sounds', 'layout'];
   return {
     version: 0,
     language: function () { return pick('language', CONFIG.language || 'auto'); },
@@ -102,6 +102,8 @@ var Prefs = (function () {
     quotes: function () { return pick('quotes', CONFIG.showCrypto !== false); },
     coin: function (i) { var c = pick('coins', null); return c ? c[i] !== false : true; },
     /** The current profile's Dock: its own, else default_dock_apps, else null (the built-in list). */
+    /** All Apps as this profile arranged it (layout.js): {grid, folders}, or null. */
+    layout: function () { return pick('layout', null); },
     shelf: function () { return pick('shelf', null) || ((CONFIG.defaultDock && CONFIG.defaultDock.length) ? CONFIG.defaultDock.slice() : null); },
     /** The profile's normalized wallpaper catalogue ID; Horizon Auto is the default. */
     wallpaper: function () {

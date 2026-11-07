@@ -1084,3 +1084,163 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .flat .cell.focus .face { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4) !important; }
 .flat #home, .flat #drawer, .flat #cards, .flat .card, .flat #tiles, .flat .tile { will-change: transform; }
 .flat #top { will-change: opacity; }
+
+/* MARK: - Moving apps (home.js: startMove). The cursor is white with a dark edge and a soft shadow, so it reads on the
+   light grid as on the dark one: a line between two apps, an outline (ring) on one. The carried app rides above it. */
+#move { z-index: 6; pointer-events: none; display: none; }
+#move.on { display: block; }
+#move .line, #move .ring, #move .carry { position: absolute; left: 0; top: 0; opacity: 0; }
+#move .line {
+  width: 8px;
+  height: 178px;
+  border-radius: 4px;
+  background: #FFF;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.4), 0 0 0 6px rgba(0, 0, 0, 0.14), 0 3px 10px rgba(0, 0, 0, 0.32);
+}
+#move .ring {
+  width: 278px;
+  height: 180px;
+  box-sizing: border-box;
+  border: 6px solid #FFF;
+  border-radius: 41px;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.4), inset 0 0 0 1.5px rgba(0, 0, 0, 0.36), 0 0 0 6px rgba(0, 0, 0, 0.14), 0 3px 12px rgba(0, 0, 0, 0.32);
+}
+.night #move .line { box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 3px 10px rgba(0, 0, 0, 0.45); }
+.night #move .ring { box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25), inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 3px 12px rgba(0, 0, 0, 0.45); }
+#move .carry .face { top: 0; left: 0; box-shadow: 0 28px 46px rgba(0, 0, 0, 0.4); }
+/* The tile the carried app lands on waits until it's there. */
+.tile.landing, .cell.landing { visibility: hidden; }
+/* Behind an outlined app, the folder-to-be: the folder tile's frosted card, a little bigger than the app. */
+.cell::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  right: -12px;
+  bottom: -12px;
+  border-radius: 36px;
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), inset 0 1.5px 0 rgba(255, 255, 255, 0.65);
+  opacity: 0;
+  -webkit-transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.night .cell::before { background: rgba(255, 255, 255, 0.14); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+.cell.forming::before { opacity: 1; }
+
+/* The hint: what OK does here, and the keys. Under the tab bar over the home screen; at the bottom over All Apps. */
+#movehint {
+  position: absolute;
+  left: 50%;
+  top: 124px;
+  height: 62px;
+  padding: 0 26px 0 14px;
+  border-radius: 31px;
+  white-space: nowrap;
+  font-size: 25px;
+  line-height: 62px;
+  color: #FFF;
+  background: rgba(17, 17, 19, 0.86);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  opacity: 0;
+  -webkit-transform: translate(-50%, -12px);
+  transform: translate(-50%, -12px);
+  -webkit-transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1), -webkit-transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1), transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 47;
+  pointer-events: none;
+}
+#movehint.low { top: 982px; }
+#movehint.on { opacity: 1; -webkit-transform: translate(-50%, 0); transform: translate(-50%, 0); }
+#movehint > * { display: inline-block; vertical-align: middle; }
+#movehint .mini { position: relative; width: 58px; height: 35px; border-radius: 9px; overflow: hidden; margin-right: 16px; background: rgba(255, 255, 255, 0.2); color: #FFF; }
+#movehint .mini img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+#movehint .mini .sym { position: absolute; left: 17px; top: 6px; }
+#movehint .name { font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+#movehint .sep { width: 2px; height: 28px; margin: 0 18px; background: rgba(255, 255, 255, 0.25); }
+#movehint .where { color: rgba(255, 255, 255, 0.78); font-weight: 500; max-width: 620px; overflow: hidden; text-overflow: ellipsis; margin-right: 44px; }
+#movehint .key {
+  height: 32px;
+  min-width: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1.6px solid rgba(255, 255, 255, 0.7);
+  border-radius: 9px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 29px;
+  text-align: center;
+  margin-right: 10px;
+}
+#movehint .verb { font-weight: 600; margin-right: 28px; }
+#movehint .cancel { color: rgba(255, 255, 255, 0.78); font-weight: 500; }
+
+/* An open folder's name, focused (↑ from its first row): it lifts and turns dark; OK renames it. */
+#folder .badge {
+  -webkit-transition: -webkit-transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#folder .badge.focus { background: #1D1D1F; color: #FFF; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3); -webkit-transform: translateX(-50%) scale(1.12); transform: translateX(-50%) scale(1.12); }
+.night #folder .badge.focus { background: #FFF; color: #1D1D1F; }
+
+/* Naming a folder: the folder-to-be, its name big, the suggestions as pills (focused: inverted, as tvOS's buttons). */
+#namecard { z-index: 8; opacity: 0; visibility: hidden; color: #1D1D1F; }
+.night #namecard { color: #FFF; }
+#namecard .veil { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(22, 33, 45, 0.4); }
+.night #namecard .veil { background: rgba(0, 0, 0, 0.5); }
+#namecard .card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1040px;
+  margin-left: -520px;
+  -webkit-transform-origin: 50% 0;
+  transform-origin: 50% 0;
+  margin-top: -300px;
+  padding: 56px 64px 60px;
+  box-sizing: border-box;
+  border-radius: 40px;
+  text-align: center;
+  background: rgba(246, 247, 250, 0.985);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), 0 40px 90px rgba(0, 0, 0, 0.32);
+}
+.night #namecard .card { background: rgba(40, 44, 54, 0.985); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 40px 90px rgba(0, 0, 0, 0.45); }
+#namecard .preview { position: relative; display: inline-block; vertical-align: top; }
+#namecard .title { margin-top: 36px; font-size: 22px; font-weight: 600; letter-spacing: 0.04em; opacity: 0.6; }
+#namecard .big { margin-top: 18px; height: 70px; font-size: 58px; font-weight: 600; line-height: 70px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#namecard .caption { margin-top: 6px; font-size: 25px; font-weight: 500; opacity: 0.6; }
+#namecard .pills { margin-top: 44px; }
+#namecard .pill {
+  display: inline-block;
+  height: 64px;
+  margin: 0 9px 18px;
+  padding: 0 30px;
+  border-radius: 32px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 64px;
+  background: rgba(0, 0, 0, 0.08);
+  -webkit-transition: -webkit-transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.night #namecard .pill { background: rgba(255, 255, 255, 0.14); }
+#namecard .pill.focus { background: #1D1D1F; color: #FFF; box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28); -webkit-transform: scale(1.06); transform: scale(1.06); }
+.night #namecard .pill.focus { background: #FFF; color: #1D1D1F; }
+#namecard .field {
+  display: none;
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  top: 286px;
+  height: 84px;
+  border: none;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font: inherit;
+  font-size: 58px;
+  font-weight: 600;
+  color: inherit;
+}
+#namecard .card.typing .field { display: block; }
+#namecard .card.typing .big { visibility: hidden; }

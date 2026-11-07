@@ -259,6 +259,18 @@ final class HomeApps {
         return items;
     }
 
+    /** The packages the Dock shows: installed, and within the limit (as shelf() reads them). */
+    static List<String> dockShown(Context c) {
+        List<String> out = new ArrayList<>();
+        PackageManager pm = c.getPackageManager();
+        int max = maxShelf(c);
+        for (String pkg : shelfPackages(c)) {
+            if (out.size() >= max) break;
+            if (launchIntent(pm, pkg) != null) out.add(pkg);
+        }
+        return out;
+    }
+
     private static String[] known(String pkg) {
         for (String[] d : SHELF) if (d[2].equals(pkg)) return d;
         return null;
@@ -484,6 +496,54 @@ final class HomeApps {
             GUIDES.put(key, it);
         }
         return it;
+    }
+
+    /** A folder's tile (All Apps), holding `children`. */
+    static Item folderItem(String key, String label, List<Item> children) {
+        Item folder = shortcut(FOLDER, key, label, "folder");
+        folder.children = children;
+        return folder;
+    }
+
+    /**
+     * All Apps (after folders()) as this profile arranged it (AppLayout): its order and folders. `dock`: the packages
+     * the Dock shows, never in the grid as well.
+     */
+    static List<Item> arrange(List<Item> list, AppLayout layout, java.util.Collection<String> dock) {
+        if (layout.isEmpty()) return list;
+        Map<String, Item> byKey = new HashMap<>();
+        List<String> natural = new ArrayList<>();
+        Map<String, List<String>> auto = new HashMap<>();
+        Map<String, String> names = new HashMap<>();
+        for (Item it : list) {
+            natural.add(it.key);
+            byKey.put(it.key, it);
+            names.put(it.key, it.label);
+            if (it.kind == FOLDER && it.children != null) {
+                List<String> kids = new ArrayList<>();
+                for (Item k : it.children) {
+                    kids.add(k.key);
+                    byKey.put(k.key, k);
+                }
+                auto.put(it.key, kids);
+            }
+        }
+        Map<String, List<String>> folders = new HashMap<>();
+        List<Item> out = new ArrayList<>();
+        for (String key : layout.arrange(natural, auto, dock, folders)) {
+            List<String> kids = folders.get(key);
+            if (kids == null) {
+                Item it = byKey.get(key);
+                if (it != null) out.add(it);
+                continue;
+            }
+            List<Item> children = new ArrayList<>();
+            for (String k : kids) if (byKey.containsKey(k)) children.add(byKey.get(k));
+            AppLayout.Folder mine = layout.folders.get(key);
+            String label = mine != null && !mine.name.isEmpty() ? mine.name : names.containsKey(key) ? names.get(key) : Ui.tr("Folder");
+            out.add(folderItem(key, label, children));
+        }
+        return out;
     }
 
     /** `apps` as a folder at the end of `into`; one app stays an app, none adds nothing. */
@@ -872,10 +932,8 @@ final class HomeApps {
     /** Installed, enabled TV apps that are not on the home screen (the TV's Settings is among them), plus our own. */
     static List<Item> others(Context c) {
         PackageManager pm = c.getPackageManager();
-        Set<String> skip = new HashSet<>();
-        // A built-in app is skipped only while it is on the shelf: one the person took off must still be listed here.
-        List<String> onShelf = shelfPackages(c);
-        for (String[] d : SHELF) if (onShelf.contains(d[2])) skip.add(d[2]);
+        // What the Dock shows isn't listed here too: an app is in one place (moving one moves it between them).
+        Set<String> skip = new HashSet<>(dockShown(c));
         // The TV's live channels app (TCL's "TV") is listed too: Live TV in Control Center's Inputs opens the same.
         skip.add(c.getPackageName());
         List<Item> items = new ArrayList<>();

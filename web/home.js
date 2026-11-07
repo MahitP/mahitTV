@@ -380,7 +380,7 @@
       if (!out.length) out = apps.slice(0, FEW_APPS);
     }
     shelf = out;
-    others = folders(gridOrder(apps.filter(function (x) { return shelf.indexOf(x) < 0; })));
+    others = arrangeGrid(folders(gridOrder(apps.filter(function (x) { return shelf.indexOf(x) < 0; }))));
   }
 
   /*
@@ -783,6 +783,7 @@
     }
     if (pending.length) moving = true;
     for (k in mv) if (mv.hasOwnProperty(k) && mv[k].step(dt)) moving = true;
+    if (moveTick(dt)) moving = true;
     if (stepAll(detail, dt)) moving = true;
     if (stepAll(rowLag, dt)) moving = true;
     if (stepAll(drawerRows, dt)) moving = true;
@@ -894,6 +895,7 @@
     }
     if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
     drawFolder();
+    drawMove();
     drawAir();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
@@ -1648,6 +1650,9 @@
 
   function renderShelf() {
     var n = Math.min(shelf.length, SHELF_VISIBLE), gap = TILE_GAP, pad = DOCK_PAD_X, tw = TILE_W, th = TILE_H;
+    var tilesWidth = n * tw + Math.max(0, n - 1) * gap;
+    // While an app moves the glass keeps its width (dockSlots), the tiles centred in it.
+    n = Math.min(Math.max(n, dockSlots), SHELF_VISIBLE);
     var width = n * tw + Math.max(0, n - 1) * gap, left = (1920 - width) / 2;
     var platter = $('platter');
     platter.style.display = n ? '' : 'none';
@@ -1665,7 +1670,7 @@
     shadows.innerHTML = '';
     killFx(fxTiles);
     tileStep = tw + gap;
-    tileLeft = left;
+    tileLeft = (1920 - tilesWidth) / 2;
     shelfFirst = Math.max(0, Math.min(shelfFirst, shelf.length - n));
     for (var i = 0; i < shelf.length; i++) {
       var t = el('div', 'tile', tiles), sh = el('div', 'lift-shadow', shadows);
@@ -2392,6 +2397,7 @@
 
   /** Home: the TV tab with the Dock focused, everything else closed (the screensaver, sheets, Recent Apps, the forecast). */
   function goHome() {
+    if (mm || naming) cancelMove(true);
     if (saverOn) hideSaver();
     if (Forecast.showing()) { homing = true; Forecast.close(); homing = false; }
     if (ccSub) closeInputsSheet(true);
@@ -2627,6 +2633,637 @@
     A(layer, a);
     V(layer, a);
     if (folderCard) T(folderCard, 'translate(' + r2(folderFrom.x * (1 - a)) + 'px, ' + r2(folderFrom.y * (1 - a)) + 'px) scale(' + r4(0.3 + 0.7 * a) + ')');
+  }
+
+  // MARK: - Moving apps (hold OK on one in the Dock, All Apps or an open folder), as the Android app: it rises out of
+  // its place and rides a cursor that goes line, outline, line… (white, with a dark edge, on the light grid as on the
+  // dark one). A line puts it between two apps; an outline makes a folder of the two (on a folder: into it; on a Dock
+  // app: they swap). OK does it, Back puts everything back. The board itself is in layout.js.
+
+  var HOLD_MS = 500, PART = 12, RING_W = TILE_W + 34, RING_H = TILE_H + 34, LINE_H = TILE_H + 32;
+  var mm = null, naming = null, holdTimer = 0, dockSlots = 0, wiggle = 0;
+  mv.curX = spring([0.26, 0.86]).px();
+  mv.curY = spring([0.26, 0.86]).px();
+  mv.lineA = spring([0.22, 1]);
+  mv.ringA = spring([0.22, 1]);
+  mv.moveA = spring([0.3, 1]);
+  mv.carryX = spring([0.36, 0.8]).px();
+  mv.carryY = spring([0.36, 0.8]).px();
+  mv.carryS = spring([0.36, 0.86], 1);
+  mv.carryA = spring([0.24, 1], 1);
+  mv.nameA = spring(P.SHEET_OPEN);
+
+  /** Something that can move has the focus: a Dock app, anything in All Apps, an app in an open folder. */
+  function canMove() {
+    if (mm || naming || st.tab !== TAB.TV) return false;
+    if (st.zone === Z.FOLDER) return !!(folderOpen && folderOpen.apps[st.folder]);
+    if (st.zone === Z.APPS) return !!others[st.grid];
+    return st.zone === Z.SHELF && !!shelf[st.shelf];
+  }
+
+  function dockable(x) { return !x.folder && !x.guide; }
+
+  /** Where a Dock tile and a grid cell are, on the page (the grid sits GRID_LIFT under the Dock and scrolls with it). */
+  function dockAt(i) { return {x: tileLeft + i * tileStep - mv.dock.x, y: DOCK_TOP + DOCK_PAD_Y}; }
+  function cellAt(i) { return {x: GRID_LEFT + (i % COLS) * (TILE_W + TILE_GAP), y: GRID_TOP + GRID_LIFT + Math.floor(i / COLS) * GRID_ROW}; }
+
+  function slideOf(fx) {
+    if (!fx.sx) { fx.sx = spring([0.32, 0.86]).px(); fx.sy = spring([0.32, 0.86]).px(); }
+    return fx;
+  }
+
+  /** Before the lists change: where each tile is now (with its slide), by its id. */
+  function positions() {
+    var at = {}, i, p;
+    for (i = 0; i < shelf.length; i++) {
+      p = dockAt(i);
+      at[shelf[i].id] = {x: p.x + (fxTiles[i] && fxTiles[i].sx ? fxTiles[i].sx.x : 0), y: p.y};
+    }
+    for (i = 0; i < others.length; i++) {
+      p = cellAt(i);
+      var fx = fxCells[i];
+      at[others[i].id] = {x: p.x + (fx && fx.sx ? fx.sx.x : 0), y: p.y + (fx && fx.sy ? fx.sy.x : 0)};
+    }
+    return at;
+  }
+
+  /** New lists drawn, each tile sliding from where it was (`before`); a new folder from its first app's place. */
+  function showLists(dock, grid, before) {
+    shelf = dock;
+    others = grid;
+    renderShelf();
+    if (st.zone === Z.APPS) renderApps();
+    fitLogos($('tiles'));
+    fitLogos($('apps'));
+    var i, from, p;
+    for (i = 0; i < fxTiles.length; i++) {
+      from = before[shelf[i].id];
+      p = dockAt(i);
+      if (from && Math.abs(from.y - p.y) < 1) slideOf(fxTiles[i]).sx.snap(from.x - p.x);
+      slideOf(fxTiles[i]).sx.set(0);
+    }
+    for (i = 0; i < fxCells.length; i++) {
+      from = before[others[i].id] || (others[i].folder && others[i].apps.length ? before[others[i].apps[0].id] : null);
+      p = cellAt(i);
+      slideOf(fxCells[i]);
+      if (from) { fxCells[i].sx.snap(from.x - p.x); fxCells[i].sy.snap(from.y - p.y); }
+      fxCells[i].sx.set(0);
+      fxCells[i].sy.set(0);
+    }
+    Motion.kick();
+  }
+
+  /** A key's app or folder; a folder whose apps changed is a new one (the one from before stays, for Back). */
+  function boardItem(key) {
+    var kids = mm.board.folders[key], it = mm.items[key];
+    if (!kids) return it || mm.made[key];
+    if (it && it.apps && sameIds(it.apps, kids)) return it;
+    var made = mm.made[key];
+    if (made && sameIds(made.apps, kids)) return made;
+    var apps = [];
+    for (var i = 0; i < kids.length; i++) if (mm.items[kids[i]]) apps.push(mm.items[kids[i]]);
+    made = mm.made[key] = {id: key, title: it ? it.title : made ? made.title : tr('Folder'), folder: true, apps: apps};
+    return made;
+  }
+
+  function sameIds(apps, ids) {
+    if (apps.length !== ids.length) return false;
+    for (var i = 0; i < ids.length; i++) if (apps[i].id !== ids[i]) return false;
+    return true;
+  }
+
+  function showBoard(before) {
+    var dock = [], grid = [], i, it;
+    for (i = 0; i < mm.board.dock.length; i++) if ((it = mm.items[mm.board.dock[i]])) dock.push(it);
+    for (i = 0; i < mm.board.grid.length; i++) if ((it = boardItem(mm.board.grid[i]))) grid.push(it);
+    showLists(dock, grid, before);
+  }
+
+  /** It rises out of its place (the others close up behind it), and the cursor shows where it was. */
+  function startMove() {
+    if (!canMove()) return;
+    var dock = [], grid = [], folders = {}, can = {}, items = {}, i, j, x;
+    for (i = 0; i < shelf.length; i++) {
+      dock.push(shelf[i].id);
+      items[shelf[i].id] = shelf[i];
+      if (dockable(shelf[i])) can[shelf[i].id] = true;
+    }
+    for (i = 0; i < others.length; i++) {
+      x = others[i];
+      grid.push(x.id);
+      items[x.id] = x;
+      if (dockable(x)) can[x.id] = true;
+      if (!x.folder) continue;
+      folders[x.id] = [];
+      for (j = 0; j < x.apps.length; j++) {
+        folders[x.id].push(x.apps[j].id);
+        items[x.apps[j].id] = x.apps[j];
+        if (dockable(x.apps[j])) can[x.apps[j].id] = true;
+      }
+    }
+    var board = new Layout.Board(dock, grid, folders, can, COLS, Infinity), from;
+    mm = {board: board, items: items, made: {}, shelf0: shelf.slice(), others0: others.slice(), grid0: st.zone !== Z.SHELF,
+      shelfAt: st.shelf, gridAt: st.grid, carried: null, landing: null, at: Date.now()};
+    if (st.zone === Z.FOLDER) {
+      var card = folderCard, cell = folderGrid.children[st.folder], fk = folderOpen.id, fi = st.folder;
+      from = {x: parseFloat(card.style.left) + parseFloat(cell.style.left), y: parseFloat(card.style.top) + 92 + parseFloat(cell.style.top) + mv.folderScroll.x + mv.lift.x};
+      closeFolder(true);
+      st.zone = Z.APPS;
+      board.lift(Layout.FROM_FOLDER, fi, fk);
+    } else if (st.zone === Z.APPS) {
+      from = cellAt(st.grid);
+      board.lift(Layout.FROM_GRID, st.grid, null);
+    } else {
+      from = dockAt(st.shelf);
+      board.lift(Layout.FROM_DOCK, st.shelf, null);
+    }
+    mm.carried = items[board.lifted];
+    dockSlots = Math.min(shelf.length, SHELF_VISIBLE);
+    var layer = $('move');
+    layer.innerHTML = '';
+    mm.line = el('div', 'line', layer);
+    mm.ring = el('div', 'ring', layer);
+    var carry = mm.carry = el('div', 'cell carry', layer), f = el('div', 'face', carry);
+    if (mm.carried.folder) folderFace(mm.carried, f);
+    else face(mm.carried, f, wordFit(mm.carried.title, TILE_W, 34));
+    fitLogos(layer);
+    mv.carryX.snap(from.x + TILE_W / 2);
+    mv.carryY.snap(from.y + TILE_H / 2);
+    mv.carryS.snap(1.23);
+    mv.carryA.snap(1);
+    mv.moveA.set(1);
+    mv.lineA.snap(1);
+    mv.ringA.snap(0);
+    var before = positions();
+    before[board.lifted] = null;
+    showBoard(before);
+    aimCursor(true);
+    setClass(layer, 'on', true);
+  }
+
+  /** The page at `lift` (the Dock's row: the top; a grid row: with the one above it), rows trailing as they do. */
+  function setLift(lift) {
+    if (lift === mv.lift.to) return;
+    mv.lift.set(lift);
+    for (var i = 0; i < rowLag.length; i++) later(rowLag[i], lift, 18 * i);
+  }
+
+  /** All Apps comes up under the Dock once the cursor goes below it. */
+  function enterGrid() {
+    if (st.zone === Z.APPS) return;
+    Sound.sheet(true, 0.5);
+    st.zone = Z.APPS;
+    setClass($('apps'), 'open', true);
+    setClass(body, 'grid-open', true);
+    setClass(body, 'dock-focus', false);
+    renderApps();
+    fitLogos($('apps'));
+  }
+
+  /**
+   * The cursor to the board's place, and around it: the apps beside a line part a little, an outlined app shrinks
+   * onto the folder-to-be (an outlined folder grows to take it, a Dock app dips to swap), the row comes into view.
+   */
+  function aimCursor(snap) {
+    var b = mm.board, r = b.row, p = b.pos, c = b.count(r), ring = p % 2 === 1, inDock = r === Layout.DOCK;
+    var item = ring ? (p - 1) / 2 : -1, gap = ring ? -1 : p / 2, half = TILE_GAP / 2, x, y, i, j;
+    if (!inDock) enterGrid();
+    if (inDock) {
+      var show = ring ? item : Math.min(gap, c - 1);
+      if (show >= 0) { st.shelf = show; revealShelf(); }
+      var off = tileLeft - mv.dock.to;
+      y = DOCK_TOP + DOCK_PAD_Y + TILE_H / 2;
+      if (!c) x = 960;
+      else if (ring) x = off + item * tileStep + TILE_W / 2;
+      else if (gap === 0) x = off - half;
+      else if (gap === c) x = off + (c - 1) * tileStep + TILE_W + half;
+      else x = off + gap * tileStep - half;
+      setLift(st.zone === Z.APPS ? GRID_LIFT : 0);
+    } else {
+      var base = r * COLS;
+      y = cellAt(base).y + TILE_H / 2;
+      if (!c) x = GRID_LEFT - half;
+      else if (ring) x = cellAt(base + item).x + TILE_W / 2;
+      else if (gap === c) x = cellAt(base + c - 1).x + TILE_W + half;
+      else x = cellAt(base + gap).x - half;
+      setLift(GRID_LIFT + Math.max(0, Math.min(b.rows() - 2, r - 1)) * GRID_ROW);
+    }
+    for (i = 0; i < fxTiles.length; i++) {
+      fxTiles[i].f.set(inDock && i === item ? -0.3 : 0);
+      slideOf(fxTiles[i]).sx.set(inDock && gap >= 0 ? (i === gap - 1 ? -PART : i === gap ? PART : 0) : 0);
+    }
+    var cells = $('apps').lastChild.children;
+    for (i = 0; i < fxCells.length; i++) {
+      j = i - (inDock ? 0 : r * COLS);
+      var here = !inDock && j >= 0 && j < c, on = here && j === item;
+      fxCells[i].f.set(on ? (others[i].folder ? 0.25 : -0.3) : 0);
+      slideOf(fxCells[i]).sx.set(here && gap >= 0 ? (j === gap - 1 ? -PART : j === gap ? PART : 0) : 0);
+      if (cells[i]) setClass(cells[i], 'forming', on && !others[i].folder);
+    }
+    mv.curX.set(x);
+    mv.curY.set(y);
+    mv.lineA.set(ring ? 0 : 1);
+    mv.ringA.set(ring ? 1 : 0);
+    if (snap) { mv.curX.snap(x); mv.curY.snap(y); }
+    updateHint();
+    Motion.kick();
+  }
+
+  function moveCursor(dx, dy) {
+    lastMove = {dx: dx, dy: dy, at: Date.now()};
+    if (mm.board.move(dx, dy)) { aimCursor(false); Sound.tick(0.5); return; }
+    mv.curX.impulse(dx * BUMP * 0.5);
+    mv.curY.impulse(dy * BUMP * 0.5);
+    Sound.bump(0.5 + 0.2 * dx);
+  }
+
+  /** Keys while moving; true when taken. */
+  function moveKey(e) {
+    var k = e.keyCode;
+    if (isArrow(k)) {
+      moveCursor(k === TV.keys.left ? -1 : k === TV.keys.right ? 1 : 0, k === TV.keys.up ? -1 : k === TV.keys.down ? 1 : 0);
+      return true;
+    }
+    if (k === TV.keys.ok) {
+      // The press that lifted it is still down (its repeats and release do nothing); a new press does it.
+      if (!e.repeat && !okDown) commitMove();
+      return true;
+    }
+    if (k === TV.keys.back || k === 27 || k === 8) { cancelMove(false); return true; }
+    return true;
+  }
+
+  function commitMove() {
+    if (!mm || mm.landing) return;
+    if (mm.board.action() === Layout.NEW_FOLDER) { startNaming(null); return; }
+    drop(null);
+  }
+
+  /** It goes where the cursor is (a new folder named `name`), everything slides into place, and it's saved. */
+  function drop(name) {
+    var b = mm.board, key = 'folder:u' + Date.now().toString(36), lifted = b.lifted, before = positions();
+    var kind = b.drop(key);
+    if (kind === Layout.NEW_FOLDER) {
+      var kids = [];
+      for (var i = 0; i < b.folders[key].length; i++) kids.push(mm.items[b.folders[key][i]]);
+      mm.made[key] = {id: key, title: name || tr('Folder'), folder: true, apps: kids};
+    }
+    dockSlots = 0;
+    showBoard(before);
+    saveMove(kind);
+    Sound.select();
+    land(mm.items[lifted]);
+  }
+
+  function folderHolding(it) {
+    for (var i = 0; i < others.length; i++) if (others[i].folder && others[i].apps.indexOf(it) >= 0) return others[i];
+    return null;
+  }
+
+  /** After OK or Back: the carried tile flies to its place (into its folder, if it's in one); the focus follows it. */
+  function land(it) {
+    var di = shelf.indexOf(it), gi = others.indexOf(it), fade = di < 0 && gi < 0, dest = it, i;
+    if (fade) { dest = folderHolding(it); gi = dest ? others.indexOf(dest) : -1; }
+    for (i = 0; i < fxTiles.length; i++) { fxTiles[i].f.set(0); slideOf(fxTiles[i]).sx.set(0); }
+    for (i = 0; i < fxCells.length; i++) { fxCells[i].f.set(0); slideOf(fxCells[i]).sx.set(0); }
+    var cells = $('apps').lastChild.children;
+    for (i = 0; i < cells.length; i++) setClass(cells[i], 'forming', false);
+    if (di >= 0) {
+      if (st.zone === Z.APPS) { setClass($('apps'), 'open', false); Sound.sheet(false, 0.5); }
+      st.zone = Z.SHELF;
+      st.shelf = di;
+    } else if (gi >= 0) {
+      enterGrid();
+      st.grid = gi;
+    }
+    mm.landing = {item: dest, fade: fade, at: Date.now()};
+    var node = landingNode();
+    if (node && !fade) setClass(node, 'landing', true);
+    mv.moveA.set(0);
+    setClass($('movehint'), 'on', false);
+    updateFocus();
+  }
+
+  function landingNode() {
+    if (!mm || !mm.landing || !mm.landing.item) return null;
+    var di = shelf.indexOf(mm.landing.item), gi = others.indexOf(mm.landing.item);
+    if (di >= 0) return $('tiles').children[di];
+    if (gi >= 0) return $('apps').lastChild.children[gi];
+    return null;
+  }
+
+  /** Landed (or a key came first): the move is over and the tile it landed on shows again. */
+  function endLanding() {
+    if (!mm) return;
+    var node = landingNode();
+    if (node) setClass(node, 'landing', false);
+    mm = null;
+    setClass($('move'), 'on', false);
+    $('move').innerHTML = '';
+    setClass($('movehint'), 'on', false);
+    updateFocus();
+  }
+
+  /** Back (or Home): everything as it was, and it flies back to its place (at once with `snap`). */
+  function cancelMove(snap) {
+    if (naming) closeNaming();
+    if (!mm) return;
+    if (mm.landing) { if (snap) endLanding(); return; }
+    var it = mm.items[mm.board.lifted], before = positions();
+    before[mm.board.lifted] = null;
+    dockSlots = 0;
+    if (mm.grid0) enterGrid();
+    showLists(mm.shelf0, mm.others0, before);
+    if (!mm.grid0 && st.zone === Z.APPS) { setClass($('apps'), 'open', false); st.zone = Z.SHELF; }
+    st.shelf = mm.shelfAt;
+    st.grid = mm.gridAt;
+    Sound.sheet(false, 0.5);
+    land(it);
+    if (snap) endLanding();
+  }
+
+  /** Saves what OK did: the Dock when it changed, and All Apps' order and the person's folders (Layout.read's shape). */
+  function saveMove(kind) {
+    if (kind === Layout.NONE) return;
+    var b = mm.board, ids = [], i;
+    for (i = 0; i < mm.shelf0.length; i++) ids.push(mm.shelf0[i].id);
+    if (ids.join('\n') !== b.dock.join('\n')) Prefs.set('shelf', b.dock.slice());
+    var l = Layout.read(Prefs.layout()), keep = [];
+    l.grid = b.grid.slice();
+    for (i = 0; i < l.folders.length; i++) if (!b.dissolved[l.folders[i].key]) keep.push(l.folders[i]);
+    l.folders = keep;
+    var mine = [];
+    for (i = 0; i < keep.length; i++) mine.push(keep[i].key);
+    for (var t in b.touched) if (b.touched.hasOwnProperty(t) && mine.indexOf(t) < 0) mine.push(t);
+    for (i = 0; i < mine.length; i++) {
+      if (!b.folders[mine[i]]) continue;   // not in All Apps now (its apps on the Dock): kept as it was
+      var f = Layout.folderOf(l, mine[i]), item = boardItem(mine[i]);
+      if (!f) l.folders.push(f = {key: mine[i], name: '', apps: []});
+      f.name = item ? item.title : f.name;
+      f.apps = b.folders[mine[i]].slice();
+    }
+    Prefs.set('layout', l);
+  }
+
+  /** All Apps as this profile arranged it (layout.js): its order and its folders. */
+  function arrangeGrid(list) {
+    var l = Layout.read(Prefs.layout());
+    if (!l.grid.length && !l.folders.length) return list;
+    var byId = {}, natural = [], auto = {}, dock = [], out = {}, res = [], i, j;
+    for (i = 0; i < shelf.length; i++) dock.push(shelf[i].id);
+    for (i = 0; i < list.length; i++) {
+      natural.push(list[i].id);
+      byId[list[i].id] = list[i];
+      if (!list[i].folder) continue;
+      auto[list[i].id] = [];
+      for (j = 0; j < list[i].apps.length; j++) { auto[list[i].id].push(list[i].apps[j].id); byId[list[i].apps[j].id] = list[i].apps[j]; }
+    }
+    var keys = Layout.arrange(l, natural, auto, dock, out);
+    for (i = 0; i < keys.length; i++) {
+      if (!out[keys[i]]) { if (byId[keys[i]]) res.push(byId[keys[i]]); continue; }
+      var apps = [], mine = Layout.folderOf(l, keys[i]);
+      for (j = 0; j < out[keys[i]].length; j++) if (byId[out[keys[i]][j]]) apps.push(byId[out[keys[i]][j]]);
+      res.push({id: keys[i], title: mine && mine.name ? mine.name : byId[keys[i]] ? byId[keys[i]].title : tr('Folder'), folder: true, apps: apps});
+    }
+    return res;
+  }
+
+  /** One frame: the carried tile rides above the cursor and wiggles (landing: flies to its place), the tiles slide. */
+  function moveTick(dt) {
+    var moving = false, i, fx;
+    for (i = 0; i < fxTiles.length; i++) {
+      fx = fxTiles[i];
+      if (fx.sx && fx.sx.step(dt)) moving = true;
+      if (fx.sx && fx.ex !== fx.sx.x) { fx.ex = fx.sx.x; fx.dirty = true; }
+    }
+    for (i = 0; i < fxCells.length; i++) {
+      fx = fxCells[i];
+      if (!fx.sx) continue;
+      if (fx.sx.step(dt) | fx.sy.step(dt)) moving = true;
+      if (fx.ex !== fx.sx.x || fx.ey !== fx.sy.x) { fx.ex = fx.sx.x; fx.ey = fx.sy.x; fx.dirty = true; }
+    }
+    if (!mm) return moving;
+    var now = Date.now();
+    if (mm.landing) {
+      var it = mm.landing.item, di = shelf.indexOf(it), gi = others.indexOf(it), p = null;
+      if (di >= 0) p = {x: dockAt(di).x + (fxTiles[di] && fxTiles[di].sx ? fxTiles[di].sx.x : 0), y: dockAt(di).y};
+      else if (gi >= 0) p = {x: cellAt(gi).x + fxCells[gi].sx.x, y: cellAt(gi).y + fxCells[gi].sy.x};
+      if (p) { mv.carryX.set(p.x + TILE_W / 2); mv.carryY.set(p.y + TILE_H / 2); }
+      mv.carryS.set(mm.landing.fade ? 0.3 : 1.23);
+      mv.carryA.set(mm.landing.fade || !p ? 0 : 1);
+      var settled = Math.abs(mv.carryX.x - mv.carryX.to) < 1 && Math.abs(mv.carryY.x - mv.carryY.to) < 1 && Math.abs(mv.carryS.x - mv.carryS.to) < 0.01;
+      if (settled || now - mm.landing.at > 700) { endLanding(); return true; }
+    } else {
+      var ringOn = mm.board.pos % 2 === 1;
+      mv.carryX.set(mv.curX.to);
+      mv.carryY.set(mv.curY.to - (ringOn ? RING_H : LINE_H) / 2 - TILE_H * 0.54 / 2 + (ringOn ? 26 : 18));
+      mv.carryS.set(0.54);
+      mv.carryA.set(1);
+    }
+    var amp = mm.landing ? Math.max(0, 1 - (now - mm.landing.at) / 180) : 1;
+    wiggle = 1.6 * amp * Math.sin((now - mm.at) * 2 * Math.PI / 300);
+    return true;
+  }
+
+  function drawMove() {
+    var hint = $('movehint');
+    // Every frame (A and V only write what changed), so the card's last frame is always its resting one.
+    var na = Motion.clamp(mv.nameA.x, 0, 1), card = $('namecard');
+    A(card, na);
+    V(card, na);
+    if (naming && naming.card) T(naming.card, 'scale(' + r4(0.94 + 0.06 * na) + ')');
+    if (!mm) return;
+    T($('move'), 'translateY(' + r2(-mv.lift.x) + 'px)');
+    setClass(hint, 'low', mv.lift.to > 300);
+    var a = Motion.clamp(mv.moveA.x, 0, 1), x = mv.curX.x, y = mv.curY.x, la = Motion.clamp(mv.lineA.x, 0, 1), ra = Motion.clamp(mv.ringA.x, 0, 1);
+    T(mm.line, 'translate(' + r2(x - 4) + 'px,' + r2(y - LINE_H / 2) + 'px) scaleY(' + r4(0.4 + 0.6 * la) + ')');
+    A(mm.line, a * la);
+    T(mm.ring, 'translate(' + r2(x - RING_W / 2) + 'px,' + r2(y - RING_H / 2) + 'px) scale(' + r4(0.86 + 0.14 * ra) + ')');
+    A(mm.ring, a * ra);
+    T(mm.carry, 'translate(' + r2(mv.carryX.x - TILE_W / 2) + 'px,' + r2(mv.carryY.x - TILE_H / 2) + 'px) rotate(' + r2(wiggle) + 'deg) scale(' + r4(mv.carryS.x) + ')');
+    A(mm.carry, mv.carryA.x);
+  }
+
+  /** The hint: what OK does at the cursor, in words and on the keys. Over the home screen at the top, over All Apps at the bottom. */
+  function updateHint() {
+    var b = mm.board, t = b.target(), a = b.before(), c = b.after(), dock = b.row === Layout.DOCK, where, verb;
+    function name(key) { var it = boardItem(key); return it ? it.title : ''; }
+    switch (b.action()) {
+      case Layout.NONE: where = tr('Where it was'); verb = tr('Done'); break;
+      case Layout.NEW_FOLDER: where = trf('New folder with {app}', {app: name(t)}); verb = tr('Make Folder'); break;
+      case Layout.ADD: where = trf('Add to {folder}', {folder: name(t)}); verb = tr('Add'); break;
+      case Layout.SWAP: where = trf('Swap with {app}', {app: name(t)}); verb = tr('Swap'); break;
+      default:
+        verb = tr('Place');
+        if (a && c) where = dock ? trf('In the Dock, between {a} and {b}', {a: name(a), b: name(c)}) : trf('Between {a} and {b}', {a: name(a), b: name(c)});
+        else if (c) where = dock ? tr('First in the Dock') : trf('Before {app}', {app: name(c)});
+        else if (a) where = dock ? tr('Last in the Dock') : trf('After {app}', {app: name(a)});
+        else where = dock ? tr('In the Dock') : tr('Here');
+    }
+    var h = $('movehint');
+    h.innerHTML = '';
+    var mini = el('div', 'mini', h);
+    if (mm.carried.folder) sym('folder', mini, 24);
+    else face(mm.carried, mini, 11);
+    el('b', 'name', h, mm.carried.title);
+    el('i', 'sep', h);
+    el('span', 'where', h, where);
+    el('span', 'key', h, tr('OK'));
+    el('b', 'verb', h, verb);
+    el('span', 'key', h, tr('Back'));
+    el('span', 'cancel', h, tr('Cancel'));
+    fitLogos(h);
+    setClass(h, 'on', true);
+  }
+
+  // MARK: - Naming a folder: a new one (OK on an outlined app) or the open one (its name, ↑ from its first row)
+
+  /** A suggested folder name (layout.js, in English) in the person's language: literal calls, so they're packed and translated. */
+  function folderName(n) {
+    var names = {
+      'Streaming': tr('folder|Streaming'),
+      'Movies & TV': tr('folder|Movies & TV'),
+      'Watch': tr('folder|Watch'),
+      'Kids': tr('folder|Kids'),
+      'Family': tr('folder|Family'),
+      'Live TV': tr('folder|Live TV'),
+      'Channels': tr('folder|Channels'),
+      'Sports': tr('folder|Sports'),
+      'News': tr('folder|News'),
+      'Music': tr('folder|Music'),
+      'Listen': tr('folder|Listen'),
+      'Games': tr('folder|Games'),
+      'Play': tr('folder|Play'),
+      'Fitness': tr('folder|Fitness'),
+      'Health': tr('folder|Health'),
+      'Learning': tr('folder|Learning'),
+      'Explore': tr('folder|Explore'),
+      'Photos': tr('folder|Photos'),
+      'Memories': tr('folder|Memories'),
+      'Social': tr('folder|Social'),
+      'Shopping': tr('folder|Shopping'),
+      'Utilities': tr('folder|Utilities'),
+      'Tools': tr('folder|Tools'),
+      'TV': tr('folder|TV'),
+      'Entertainment': tr('folder|Entertainment'),
+      'Fun': tr('folder|Fun'),
+      'Favorites': tr('folder|Favorites'),
+      'My Apps': tr('folder|My Apps')
+    };
+    return names.hasOwnProperty(n) ? names[n] : n;   // a brand (YouTube, TCL): as it is
+  }
+
+  function startNaming(folder) {
+    var kids = folder ? folder.apps.slice() : [boardItem(mm.board.target()), mm.carried], labels = [], ids = [], taken = {}, i;
+    for (i = 0; i < kids.length; i++) { labels.push(kids[i].title); ids.push(kids[i].id); }
+    for (i = 0; i < others.length; i++) if (others[i].folder && others[i] !== folder) taken[others[i].title.toLowerCase()] = true;
+    var names = folder ? [folder.title] : [], sug = Layout.suggest(labels, ids);
+    for (i = 0; i < sug.length && names.length < (folder ? 5 : 4); i++) {
+      var n = folderName(sug[i]);
+      if (!taken[n.toLowerCase()] && names.indexOf(n) < 0) names.push(n);
+    }
+    var layer = $('namecard');
+    layer.innerHTML = '';
+    el('div', 'veil', layer);
+    var card = el('div', 'card', layer), tile = el('div', 'cell preview', card), f = el('div', 'face', tile);
+    folderFace({apps: kids}, f);
+    el('div', 'title', card, folder ? tr('Rename Folder') : tr('New Folder'));
+    var big = el('div', 'big', card, names[0]);
+    el('div', 'caption', card, kids.length === 2 ? trf('{a} and {b}', {a: labels[0], b: labels[1]}) : plural('plural|one:{n} app|other:{n} apps', kids.length));
+    var pills = el('div', 'pills', card), nodes = [];
+    for (i = 0; i <= names.length; i++) nodes.push(el('div', 'pill', pills, i < names.length ? names[i] : tr('Type a Name…')));
+    var input = el('input', 'field', card);
+    input.type = 'text';
+    input.placeholder = tr('Folder Name');
+    input.maxLength = 40;
+    fitLogos(layer);
+    naming = {folder: folder || null, names: names, index: 0, pills: nodes, big: big, input: input, card: card};
+    setClass($('movehint'), 'on', false);
+    focusName();
+    mv.nameA.tune(P.SHEET_OPEN).set(1);
+    Sound.sheet(true, 0.5);
+    Motion.kick();
+  }
+
+  function focusName() {
+    for (var i = 0; i < naming.pills.length; i++) setClass(naming.pills[i], 'focus', i === naming.index);
+    naming.big.textContent = naming.names[Math.min(naming.index, naming.names.length - 1)];
+  }
+
+  /** Keys on the naming card: ← → the names, ↑ ↓ the row above or below, OK picks, Back goes back. */
+  function nameKey(e) {
+    var k = e.keyCode, typing = document.activeElement === naming.input;
+    if (typing) {
+      if (k === 13 || k === TV.keys.ok || k === 65376) { finishNaming(naming.input.value.replace(/^\s+|\s+$/g, '')); return true; }
+      if (k === 27 || k === TV.keys.back || k === 65385) { naming.input.blur(); setClass(naming.card, 'typing', false); return true; }
+      return false;   // the letters go in the field
+    }
+    if (isArrow(k)) {
+      var n = naming.pills.length, next = naming.index;
+      if (k === TV.keys.left || k === TV.keys.right) {
+        next += k === TV.keys.left ? -1 : 1;
+      } else {
+        var from = naming.pills[naming.index], best = Infinity, up = k === TV.keys.up;
+        next = -1;
+        for (var i = 0; i < n; i++) {
+          var dy = naming.pills[i].offsetTop - from.offsetTop;
+          if (up ? dy > -1 : dy < 1) continue;
+          var d = Math.abs(dy) * 4 + Math.abs(naming.pills[i].offsetLeft - from.offsetLeft);
+          if (d < best) { best = d; next = i; }
+        }
+      }
+      if (next < 0 || next >= n) { Sound.bump(0.5); return true; }
+      naming.index = next;
+      focusName();
+      Sound.tick(0.5);
+      return true;
+    }
+    if (k === TV.keys.ok) {
+      if (e.repeat || okDown) return true;
+      if (naming.index < naming.names.length) { finishNaming(naming.names[naming.index]); return true; }
+      setClass(naming.card, 'typing', true);
+      naming.input.value = naming.names[0];
+      naming.input.focus();
+      naming.input.select();
+      return true;
+    }
+    if (k === TV.keys.back || k === 27 || k === 8) { closeNaming(); Sound.sheet(false, 0.5); return true; }
+    return true;
+  }
+
+  function finishNaming(name) {
+    if (!naming || !name) return;
+    var folder = naming.folder;
+    closeNaming();
+    if (folder) renameFolder(folder, name);
+    else drop(name);
+  }
+
+  function closeNaming() {
+    if (!naming) return;
+    if (document.activeElement === naming.input) naming.input.blur();
+    naming = null;
+    mv.nameA.tune(P.SHEET_CLOSE).set(0);
+    if (mm && !mm.landing) updateHint();
+    Motion.kick();
+  }
+
+  /** The open folder's new name, at once and kept with the profile's layout (the folder is theirs now). */
+  function renameFolder(folder, name) {
+    folder.title = name;
+    var badge = folderCard && folderCard.querySelector('.badge');
+    if (badge) badge.textContent = name;
+    var l = Layout.read(Prefs.layout()), f = Layout.folderOf(l, folder.id), i;
+    if (!l.grid.length) for (i = 0; i < others.length; i++) l.grid.push(others[i].id);
+    if (!f) l.folders.push(f = {key: folder.id, name: '', apps: []});
+    f.name = name;
+    f.apps = [];
+    for (i = 0; i < folder.apps.length; i++) f.apps.push(folder.apps[i].id);
+    Prefs.set('layout', l);
+    renderApps();
+    fitLogos($('apps'));
+    Sound.select();
+    updateFocus();
   }
 
   function openApps(index) {
@@ -3673,6 +4310,7 @@
         if (others[st.grid]) { launchMotion(fxCells[st.grid]); launcher(others[st.grid].id, others[st.grid].title)(); }
         return;
       case Z.FOLDER:
+        if (st.folder < 0 && folderOpen) { startNaming(folderOpen); return; }   // the folder's name: rename it
         var fa = folderOpen && folderOpen.apps[st.folder];
         if (fa && fa.guide) { openGuide(fa.guide); return; }
         if (fa) { launchMotion(fxFolder[st.folder]); closeFolder(true); launcher(fa.id, fa.title)(); }
@@ -3804,6 +4442,8 @@
         settingsMove(dx, dy);
         break;
       case Z.FOLDER:
+        if (st.folder < 0) { if (dy > 0) st.folder = 0; setClass(folderCard.querySelector('.badge'), 'focus', st.folder < 0); break; }
+        if (dy < 0 && st.folder < FOLDER_COLS) { st.folder = -1; setClass(folderCard.querySelector('.badge'), 'focus', true); break; }
         var fg = st.folder + dx + dy * FOLDER_COLS, fn = folderOpen ? folderOpen.apps.length : 0;
         // ↓ from a row whose next row is shorter: the last app.
         if (dy > 0 && fg >= fn && Math.floor(st.folder / FOLDER_COLS) < Math.floor((fn - 1) / FOLDER_COLS)) fg = fn - 1;
@@ -3865,7 +4505,7 @@
   /** The pointer focuses what it's over (the Magic Remote, or a mouse when previewing). */
   function hover(node, zone, index) {
     node.onmouseover = function () {
-      if (keyAt > mouseAt) return;
+      if (keyAt > mouseAt || mm || naming) return;
       if (saverOn || (sheetOpen() !== (zone === Z.APPS || zone === Z.SETTINGS || zone === Z.EDIT || zone === Z.LANG || zone === Z.CITY || zone === Z.KEY || zone === Z.ABOUT ||
           zone === Z.RECENTS))) return;
       if (zone === Z.DRAWER && st.zone !== Z.DRAWER) return;
@@ -4033,6 +4673,7 @@
 
   /** In, as `p`: the home screen becomes theirs (Dock, theme, wallpaper, Welly) and the TV tab unfolds. */
   function unlocked(p) {
+    cancelMove(true);
     touchedAt = Date.now();
     idleAt = Date.now();
     hideSaver();
@@ -4117,6 +4758,10 @@
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
     if (Forecast.showing()) { if (Forecast.key(k, TV.keys)) e.preventDefault(); return; }
     if (launching) endLaunch(true);
+    // Naming a folder, or moving an app: those take the keys (the volume and Home were handled above).
+    if (naming) { if (nameKey(e)) e.preventDefault(); return; }
+    if (mm && mm.landing) endLanding();
+    if (mm) { e.preventDefault(); moveKey(e); return; }
     // Welly's text field has the keyboard: the field keeps the letters and the ← →, Welly takes OK and ↑ ↓ Back.
     if (st.zone === Z.WELLY && Welly.typing()) {
       var r = Welly.typingKey(k, TV.keys);
@@ -4144,6 +4789,19 @@
       if (st.zone === Z.WELLY) { okDown = 'welly'; activate(); return; }
       pressed = focusedFx();
       if (pressed) pressed.p.set(1);
+      // Held (~0.5 s) on something that can move: it lifts to be moved; the release after a hold opens nothing.
+      if (canMove()) {
+        Sound.holdStart();
+        holdTimer = setTimeout(function () {
+          holdTimer = 0;
+          if (!okDown) return;
+          okDown = 'held';
+          if (pressed) pressed.p.set(0);
+          pressed = null;
+          Sound.holdCommit();
+          startMove();
+        }, HOLD_MS);
+      }
       return;
     }
     else if (k === TV.keys.back || k === 27 || k === 8) back();
@@ -4155,6 +4813,8 @@
     if (k === 72) { homeUp(); return; }
     if (isArrow(k)) { setScrub(false); return; }
     if (k !== TV.keys.ok || !okDown) return;
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; Sound.holdCancel(); }
+    if (okDown === 'held') { okDown = false; e.preventDefault(); return; }
     if (okDown === 'welly') {
       okDown = false;
       if (window.Welly && Welly.release) Welly.release();
@@ -4225,6 +4885,7 @@
   function reopened() {
     // LG: with handlesRelaunch the app has to come to the front itself, or opening it again while it runs shows nothing.
     if (window.PalmSystem && window.PalmSystem.activate) window.PalmSystem.activate();
+    cancelMove(true);
     reset();
     if (Profiles.needsLock() && !Intro.showing() && !Lock.showing()) showLock({from: 'idle'});
     loadApps(function () { renderShelf(); renderDrawer(); Data.refresh(); });
@@ -4234,6 +4895,7 @@
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
+    cancelMove(true);   // leaving (or coming back) mid-move: everything as it was, before the lists load again
     if (document.hidden) { aerialVideo.hide(); hideSaver(); return; }
     idleAt = Date.now();
     endLaunch(true);   // back from the app: the page is in place again

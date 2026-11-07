@@ -62,7 +62,7 @@ if [ "$what" = all ] || [ "$what" = android ]; then
     exit 1
   fi
   wallpaper_classes="$(mktemp -d)"
-  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java app/src/io/freemytv/TraktOauth.java tools/TraktOauthTest.java app/src/io/freemytv/TimeCheck.java tools/TimeCheckTest.java app/src/io/freemytv/Transport.java tools/TransportTest.java app/src/io/freemytv/TclAppBoot.java tools/TclAppBootTest.java app/src/io/freemytv/AppGrid.java app/src/io/freemytv/YouTubeFeed.java tools/FolderSortTest.java tools/YouTubeFeedTest.java
+  javac -d "$wallpaper_classes" app/src/io/freemytv/Wallpaper.java app/src/io/freemytv/WallpaperPicker.java app/src/io/freemytv/AerialCache.java app/src/io/freemytv/AerialRequest.java tools/WallpaperTest.java tools/WallpaperPickerTest.java tools/AerialCacheTest.java tools/AerialRequestTest.java tools/DockRecessTest.java app/src/io/freemytv/RowAccess.java tools/RowAccessTest.java app/src/io/freemytv/TraktOauth.java tools/TraktOauthTest.java app/src/io/freemytv/TimeCheck.java tools/TimeCheckTest.java app/src/io/freemytv/Transport.java tools/TransportTest.java app/src/io/freemytv/TclAppBoot.java tools/TclAppBootTest.java app/src/io/freemytv/AppGrid.java app/src/io/freemytv/YouTubeFeed.java tools/FolderSortTest.java tools/YouTubeFeedTest.java app/src/io/freemytv/AppLayout.java app/src/io/freemytv/FolderNames.java tools/AppLayoutTest.java tools/FolderNamesTest.java
   java -cp "$wallpaper_classes" io.freemytv.WallpaperTest
   java -cp "$wallpaper_classes" io.freemytv.WallpaperPickerTest
   java -cp "$wallpaper_classes" io.freemytv.AerialCacheTest
@@ -74,6 +74,8 @@ if [ "$what" = all ] || [ "$what" = android ]; then
   java -cp "$wallpaper_classes" io.freemytv.TransportTest   # the session Control Center's playback card follows
   java -cp "$wallpaper_classes" io.freemytv.TclAppBootTest   # TCL's background permission, and nothing else
   java -cp "$wallpaper_classes" io.freemytv.FolderSortTest   # which folder each of this TV's apps goes in
+  java -cp "$wallpaper_classes" io.freemytv.AppLayoutTest   # moving apps: the cursor, OK, and the saved layout
+  java -cp "$wallpaper_classes" io.freemytv.FolderNamesTest   # a new folder's suggested names
   java -cp "$wallpaper_classes" io.freemytv.YouTubeFeedTest   # the YouTube tile's videos
   ./build.sh
   watch_classes="$(mktemp -d)"
@@ -114,6 +116,8 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/home-background-dom-test.js
   node tools/web-keys-test.js   # H (Dock / Recent Apps), S (screensaver), + and − (volume HUD), one Inputs tile
   node tools/web-sound-test.js  # the interface sounds: tick, knock, select, sheets, the hold's tension, the setting
+  node tools/web-layout-test.js   # moving apps: the board and folder names, as AppLayoutTest
+  node tools/web-move-test.js     # moving apps in the browser: hold, Back, a new folder, kept after a reload
 
   python3 webos/build.py --generic
   python3 tizen/build.py --generic
