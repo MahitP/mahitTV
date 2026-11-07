@@ -77,15 +77,16 @@ Shader math (`Shaders.LIQUID`, mirrored in `Scene.bitmapGlass` and CSS where pos
 
 - **Shape (v4):** Apple's continuous corner: a superellipse of exponent **2.62** spanning **1.245 r**
   (`corner = (|qx|^2.62 + |qy|^2.62)^(1/2.62)`, with `q` measured from 1.245 r inside each corner) — see §0b #1.
-- **Lensing:** a rim band `band = 34 px`; `bend = (1 − e)^2.2` with `e = clamp(inner / band)`; sample offset
+- **Lensing:** a rim band `band = 34 px`; `bend = 1 − √(1 − x²)` (a dome's edge) with `x = 1 − clamp(inner / band)`; sample offset
   `−n · bend · 26 px`; chromatic dispersion `±0.28 · offset` on R and B.
 - **Vibrancy:** `bg = mix(luma, bg, 1.35) · 1.02`; then tint `mix(bg, tint, a)` with a day 0.24 / night 0.18 (27's
   "less transparent" default sits between the old 0.30 and 0.14), (a contrast floor for text-bearing glass was planned for the pill, which was
   dropped: the status is plain text with a shadow).
-- **Light:** key light from the top left `L = normalize(−0.45, −0.89)`. Specular rim: `rim = 1 − smoothstep(0, 2.2, inner)`;
-  `spec = rim · (0.18 + 0.82 · facing^1.5 + 0.35 · back)` + inner halo `(1 − smoothstep(0, 14, inner)) · (0.14 · facing + 0.06 · back)`,
-  i.e. a bright catchlight at the top-left corner fading along the top and left edges, a faint bounce at the bottom
-  right. A top sheen `+0.05` over the upper 40%, a bottom shade `−10%`.
+- **Light:** key light from the top left `L = normalize(−0.45, −0.89)`. Specular rim (iOS 26's, as Glisse measured it):
+  `rim = 1 − smoothstep(0, 1.22, inner)`; `facing = smoothstep(−0.2, 0.5, n·L)`, `back = smoothstep(−0.2, 0.5, −n·L)`;
+  `spec = rim · (0.18 + 0.82 · facing + 0.35 · back)` + inner halo `(1 − smoothstep(0, 14, inner)) · (0.14 · facing + 0.06 · back)`,
+  i.e. a thin bright line along the whole top and left edges, fading over the top-right and bottom-left corners, its
+  fainter reflection along the right and bottom. A top sheen `+0.05` over the upper 40%, a bottom shade `−10%`.
 - **Fallback (Android 8–12):** the soft copy baked with saturation 1.35, the cached squircle path (exponent 4), tint floor
   0.24, a diagonal rim: top-left stroke gradient (`0xC0` → `0x18` along the top-left → bottom-right diagonal) plus the
   bottom echo.
