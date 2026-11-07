@@ -389,6 +389,39 @@ final class WellyBrain {
         return "";
     }
 
+    /**
+     * Up to three short names for a new folder of these apps (by their names only), from the first brain that answers.
+     * Nothing goes in Welly's memory; empty when there's no brain or none answers. Off the UI thread.
+     */
+    static List<String> folderNames(List<String> apps) {
+        List<String> out = new ArrayList<>();
+        StringBuilder list = new StringBuilder();
+        for (String a : apps) list.append(list.length() == 0 ? "" : ", ").append(a);
+        String language = Ui.locale().getDisplayLanguage(Locale.ENGLISH);
+        for (Brain b : chain()) {
+            try {
+                String system = (b.name.startsWith("ollama:qwen3") ? "/no_think\n" : "")
+                        + "You name folders on a TV's home screen. Reply with exactly three short folder names (one or two"
+                        + " words each) in " + language + ", comma-separated, and nothing else.";
+                JSONArray msgs = new JSONArray()
+                        .put(new JSONObject().put("role", "system").put("content", system))
+                        .put(new JSONObject().put("role", "user").put("content", "A folder with: " + list));
+                JSONObject answer = post(b, new JSONObject().put("model", b.model).put("messages", msgs));
+                JSONArray choices = answer.optJSONArray("choices");
+                JSONObject msg = choices == null || choices.length() == 0 ? null : choices.getJSONObject(0).optJSONObject("message");
+                String text = msg == null ? "" : clean(msg.optString("content", ""));
+                for (String n : text.split("[,\\n]")) {
+                    n = n.replaceAll("^[\\s\\d.)*•\"'-]+|[\\s\"'.]+$", "").trim();
+                    if (n.length() >= 2 && n.length() <= 20 && out.size() < 3 && !out.contains(n)) out.add(n);
+                }
+                if (!out.isEmpty()) return out;
+            } catch (IOException | JSONException | RuntimeException e) {
+                AppLog.w("folder names: " + b.name + ": " + e.getMessage());
+            }
+        }
+        return out;
+    }
+
     /** Strips a reasoning model's <think> block and markdown emphasis. */
     private static String clean(String s) {
         if ("null".equals(s)) return "";

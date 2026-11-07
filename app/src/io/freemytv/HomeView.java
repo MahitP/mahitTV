@@ -127,7 +127,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 44, KEY_BLUR = 16;
     private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, TABBAR = 8;
-    private static final int CHEVRON = 9;
+    private static final int CHEVRON = 9, MOVE = 10;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -168,11 +168,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         @Override public void click(int id) { activate(); }
         // The weather card opens the forecast; the quotes are only read.
         @Override public boolean clickable(int id) { return (id - 1) / 1000 != WIDGETS || (id - 1) % 1000 == 0; }
-        @Override public boolean holdable(int id) { return (id - 1) / 1000 == GRID && canToggleShelf((id - 1) % 1000); }
+        @Override public boolean holdable(int id) { int g = (id - 1) / 1000; return board == null && (g == GRID || g == Z_SHELF); }
         @Override public void hold(int id) { a11yHold(); }
     });
     private final RectF a11yRect = new RectF();
-    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar;
+    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar, moveLayer;
     private final HouseView house;
     private final WellyView welly;
     /** "Who's Watching?" over everything, and the golden intro over that (MAHITTV-PROFILES-SPEC.md §2–3). */
@@ -289,18 +289,44 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private int shelfFirst;
     private final int shelfVisible;
 
-    // Moving apps on the shelf (as on Apple TV): hold OK on a tile, then ← → move it, OK drops it, Back cancels. The
-    // lifted tile wiggles; the others slide to their new places (each slot's x offset is a spring that returns to 0).
-    private static final long HOLD_MS = 500, WIGGLE_MS = 300;
-    private static final float LIFT_GROW = 0.08f, WIGGLE_DEG = 1.5f;
-    private boolean reordering, reorderAnim, okHeld, holdArmed;
-    private int liftIndex = -1;
-    private long reorderAt;
-    private float wiggle;
-    private Spring[] tileSlide = new Spring[0];
-    private final Spring moveLift = new Spring(0.3f, 0.72f, 0);
-    private List<HomeApps.Item> reorderOrigin;
+    // Moving apps (hold OK on one in the Dock, All Apps or an open folder): it rises out of its place and rides a
+    // cursor that goes line, outline, line…, in both themes white with a dark edge. A line between two apps puts it
+    // there; an outline on an app makes a folder of the two (on a folder: into it; on a Dock app: they swap). OK does
+    // it, Back puts everything back as it was. The tiles slide to their new places (FLIP: each starts from where it was).
+    private static final long HOLD_MS = 500, WIGGLE_MS = 300, LAND_MS = 700;
+    private static final float LIFT_GROW = 0.08f, WIGGLE_DEG = 1.6f, CARRY_SCALE = 0.5f;
+    /** The cursor, in 1920-px units: the line's width and how far past the tiles it reaches; the outline's gap and stroke. */
+    private static final float LINE_W = 8, LINE_REACH = 16, RING_GAP = 11, RING_STROKE = 6, PART = 12;
+    /** An outlined app shrinks into the folder-to-be (its focus spring at −0.3); an outlined folder grows to take it. */
+    private static final float HOVER_FOLDER = -0.3f, HOVER_INTO = 0.25f;
+    private static final int MOVING = 1, NAMING = 2, LANDING = 3;
+    private boolean okHeld, holdArmed;
     private final Runnable holdStart = () -> { if (this.okDown && this.holdArmed) hold(); };
+    private AppLayout.Board board;
+    private int moveState;
+    /** What's moving (drawn on the move layer), and the tile it lands on (hidden until it's there). */
+    private HomeApps.Item carried, landing;
+    private boolean landFade;
+    private long moveAt, landAt;
+    private float wiggle;
+    private final Map<String, HomeApps.Item> moveItems = new HashMap<>(), madeFolders = new HashMap<>();
+    private List<HomeApps.Item> shelfBefore, othersBefore;
+    private boolean sheetBefore;
+    private int zoneBefore, shelfIndexBefore, gridIndexBefore, shelfFirstBefore;
+    private int dockSlots;   // the Dock keeps its width while something moves
+    private Spring[] tileSlide = new Spring[0], gridSlideX = new Spring[0], gridSlideY = new Spring[0];
+    private final Spring carryX = new Spring(0.36f, 0.8f, 0).px(), carryY = new Spring(0.36f, 0.8f, 0).px();
+    private final Spring carryS = new Spring(0.36f, 0.86f, 1), carryA = new Spring(0.24f, 1, 1);
+    private final Spring cursorX = new Spring(0.26f, 0.86f, 0).px(), cursorY = new Spring(0.26f, 0.86f, 0).px();
+    private final Spring cursorW = new Spring(0.26f, 0.9f, 0).px(), cursorH = new Spring(0.26f, 0.9f, 0).px();
+    private final Spring moveShown = new Spring(0.3f, 1, 0);
+    private final Map<HomeApps.Item, float[]> flipFrom = new HashMap<>();
+    private final android.graphics.Path cursorPath = new android.graphics.Path();
+    private final Paint cursorPaint = new Paint(Paint.ANTI_ALIAS_FLAG), cursorEdge = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF cursorRect = new RectF(), moveRect = new RectF(), hintRect = new RectF();
+    private final Shape formShape = new Shape();
+    private String hintName = "", hintWhere = "", hintVerb = "";
+    private Paint hintBold, hintText, hintKey;
 
     // Corner capsule
     private List<HomeApps.Item> statusItems = new ArrayList<>();
@@ -423,9 +449,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring sheet = new Spring(Spring.SPATIAL_SCROLL, 0);   // the grid's lift: smooth
     private final Spring scroll = new Spring(Spring.SPATIAL_SCROLL, 0);
     private final RectF focusedCell = new RectF(), gridFocusCell = new RectF();
-    private boolean sheetOpen, shelfEdited;
+    private boolean sheetOpen;
     private int gridIndex;
-    private long toggledAt;
 
     // Toasts
     private final ArrayDeque<String> toasts = new ArrayDeque<>();
@@ -603,7 +628,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case SHEET: drawSheet(c); break;
                 case TABBAR: drawTabBar(c); break;
                 case CHEVRON: drawChevron(c, w / 2f, TV_CHEVRON_Y * k); break;
-                default: drawToast(c); drawAirToast(c); break;
+                case MOVE: drawMove(c); break;
+                default:
+                    drawToast(c);
+                    drawAirToast(c);
+                    drawMoveHint(c);
+                    drawNaming(c);
+                    break;
             }
             scene.setOffset(0, 0);
         }
@@ -679,6 +710,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerLayer = new Layer(a, DRAWER);
         sheetLayer = new Layer(a, SHEET);
         toastLayer = new Layer(a, TOAST);
+        moveLayer = new Layer(a, MOVE);   // the cursor and the carried tile, over the Dock and All Apps (only while moving)
+        moveLayer.setVisibility(INVISIBLE);
         tabBar = new Layer(a, TABBAR);
         chevronLayer = new Layer(a, CHEVRON);
         house = new HouseView(a);
@@ -713,7 +746,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // whatever moved. It's only drawn again when the photo behind it changes.
         if (Ui.SMALL_MOTION) platter.setLayerType(LAYER_TYPE_HARDWARE, null);
         // The Home and Welly tabs sit on the background, under the TV tab's layers and the tab bar.
-        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, chevronLayer, drawerLayer, sheetLayer, toastLayer}) {
+        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, chevronLayer, drawerLayer, sheetLayer, moveLayer, toastLayer}) {
             // TalkBack reads the items (Spoken); Welly speaks for itself.
             if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
@@ -871,7 +904,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         setLiveVideoVisible(false);
         running = false;
         welly.pause();
-        cancelReorder(true);
+        cancelMove(true);
         handler.removeCallbacks(holdStart);
         okHeld = holdArmed = false;
         Choreographer.getInstance().removeFrameCallback(this);
@@ -904,7 +937,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wake();
         weatherOverlay.hide();   // Home (and All Apps) leave the forecast and Recent Apps too
         recentsOverlay.hide();
-        cancelReorder(!animated);
+        cancelMove(!animated);
         zone = Z_SHELF;
         shelfIndex = 0;
         sheetOpen = false;
@@ -1217,8 +1250,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean ccStagger = drawer.target > 0.5f && Ui.SMALL_MOTION && !Spring.instant
                 && up - drawerOpenedAt < CC_ROW_MS * (drawerItems.size() / 2 + 3) + CC_ROW_IN_MS;
         if (ccStagger) drawerLayer.invalidate();
-        boolean tilesMoving = step(tileFocus, dt) | (swaying && !sheetOpen) | glare.step(dt);
-        if (reorderAnim) tilesMoving |= stepReorder(dt, up);
+        boolean tilesMoving = step(tileFocus, dt) | step(tileSlide, dt) | (swaying && !sheetOpen) | glare.step(dt);
+        boolean moveMoving = stepMove(dt, up) | stepNaming(dt);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt) | bubbleFocus.step(dt);
         boolean airMoving = airToast.step(dt);
         if (airMoving) toastLayer.invalidate();
@@ -1231,7 +1264,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 | volumeFocus.step(dt)
                 | weatherFocus.step(dt) | volumeLevel.step(dt) | brightLevel.step(dt) | ccScroll.step(dt);
         boolean scrollMoving = scroll.step(dt);
-        boolean gridMoving = step(gridFocus, dt) | scrollMoving | (swaying && sheetOpen) | folderShown.step(dt) | step(folderFocus, dt) | folderScroll.step(dt);
+        boolean gridMoving = step(gridFocus, dt) | step(gridSlideX, dt) | step(gridSlideY, dt) | scrollMoving | (swaying && sheetOpen) | folderShown.step(dt) | step(folderFocus, dt) | folderScroll.step(dt)
+                | badgeFocus.step(dt);
         boolean drawerMoving = drawer.step(dt);
         boolean sheetMoving = sheet.step(dt);
         if (sheetMoving) {
@@ -1277,7 +1311,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
                 || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving || barsMoving
-                || chevronMoving || ccStagger || airMoving || !toasts.isEmpty();
+                || chevronMoving || ccStagger || airMoving || moveMoving || !toasts.isEmpty();
         idle = !busy;
         if (busy) {
             Choreographer.getInstance().postFrameCallback(this);
@@ -2212,9 +2246,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void setShelf(List<HomeApps.Item> list) {
         wake();
-        cancelReorder(true);    // the list changed under the move (an app installed or removed)
         boolean same = list.size() == shelf.size();
-        for (int i = 0; same && i < list.size(); i++) same = list.get(i).key.equals(shelf.get(i).key);
+        for (int i = 0; same && i < list.size(); i++) same = dockKey(list.get(i)).equals(dockKey(shelf.get(i)));
         shelf = list;
         if (!same || tileFocus.length != list.size()) {
             tileFocus = new Spring[list.size()];
@@ -2235,12 +2268,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void layoutShelf() {
-        int n = Math.min(shelf.size(), shelfVisible);
+        placeShelf();
+        emblems.clear();
+        darkEmblems.clear();
+    }
+
+    /** The Dock's glass and tiles (without dropping the logos' cache: moving an app only changes their places). */
+    private void placeShelf() {
+        int n = Math.min(shelf.size(), shelfVisible), slots = Math.min(Math.max(n, dockSlots), shelfVisible);
         float padX = TV_DOCK_PAD_X * k, pad = TV_DOCK_PAD * k, gap = TV_TILE_GAP * k, tw = TV_TILE_W * k, th = TV_TILE_H * k;
-        // The Dock: up to 6 tiles in tvOS's 5:3, centred (x 85–1835 with 6); with more apps, it scrolls.
+        // The Dock: up to 6 tiles in tvOS's 5:3, centred (x 85–1835 with 6); with more apps, it scrolls. While an app
+        // moves it keeps its width (dockSlots), its tiles centred in it.
         float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
+        float glass = slots * tw + Math.max(0, slots - 1) * gap, glassLeft = (w - glass) / 2f;
         float top = TV_DOCK_TOP * k;
-        platterRect.set(left - padX, top, left + width + padX, top + th + 2 * pad);
+        platterRect.set(glassLeft - padX, top, glassLeft + glass + padX, top + th + 2 * pad);
         snap(platterRect);
         shelfFirst = Math.max(0, Math.min(shelfFirst, shelf.size() - n));
         float x = left - shelfFirst * (tw + gap), y = top + pad;
@@ -2249,8 +2291,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             snap(tileRects[i]);
             x += tw + gap;
         }
-        emblems.clear();
-        darkEmblems.clear();
     }
 
     /** Scrolls the shelf, one app at a time, so the focused app is shown: the tiles slide there (unless `snap`). */
@@ -2266,13 +2306,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shelfFirst = first;
         tilesDirty = true;
         if (snap) return;
-        reorderAnim = true;   // the same slides as moving an app
         wake();
     }
 
     /** Shelf layer: the glass bar and its shadow (it only changes with the background). */
     private void drawPlatter(Canvas c) {
-        if (shelf.isEmpty()) return;
+        if (shelf.isEmpty() && dockSlots == 0) return;
         float radius = TV_DOCK_RADIUS * k;   // concentric with the tiles (24 + 40)
         tmp.set(platterRect);
         tmp.offset(0, 16 * k);
@@ -2464,7 +2503,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 top = i;
             }
         }
-        if (liftIndex >= 0 && liftIndex < shelf.size() && moveLift.value > 0.02f) top = liftIndex;
         int last = Math.min(shelf.size(), shelfFirst + shelfVisible);
         // Scrolling, tiles slide in and out through the glass's sides (only those that show any part are drawn). Only
         // then: on a shelf that fits, the clip would cut the end tiles' shadows in a straight line.
@@ -2478,17 +2516,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if ((pass == 0) == (i == top)) continue;
                 float slid = i < tileSlide.length ? tileSlide[i].value : 0;
                 if (tileRects[i].right + slid <= platterRect.left || tileRects[i].left + slid >= platterRect.right) continue;
-                // Moving apps: the tile slides from where it was and the lifted one wiggles (only then: no extra work
-                // otherwise).
+                // Moving apps: the tile slides from where it was (only then: no extra work otherwise).
                 float dx = i < tileSlide.length ? tileSlide[i].value : 0;
-                float angle = i == liftIndex ? wiggle * moveLift.value : 0;
-                if (dx == 0 && angle == 0) {
+                if (dx == 0) {
                     drawShelfTile(c, i);
                     continue;
                 }
                 c.save();
                 c.translate(dx, 0);
-                c.rotate(angle, tileRects[i].centerX(), tileRects[i].centerY());
                 drawShelfTile(c, i);
                 c.restore();
             }
@@ -2535,10 +2570,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawShelfTile(Canvas c, int i) {
-        // Lifted to be moved: a little bigger than focused, with a deeper shadow.
-        float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
+        if (moveState == LANDING && shelf.get(i) == landing && !landFade) return;   // the carried tile is on its way here
         float go = launchZone == Z_SHELF && i == launchIndex ? launch.value : 0;
-        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, l, go);
+        drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, 0, go);
     }
 
     /**
@@ -4002,7 +4036,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         click.focusAt(focusPan());   // the tick of this move plays where the focus lands
         revealShelf(snap);
         // Only the group whose focus changed is redrawn (moving along the shelf doesn't redraw the hero or capsule).
-        boolean tilesChanged = aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
+        // Moving: the cursor shows where things go, and the tiles' springs show what it's on (aimCursor), not the focus.
+        boolean tilesChanged = !moving() && aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
         int swayNow = !snap && !sheetOpen && zone == Z_SHELF ? shelfIndex : -1;
         if (swayNow >= 0 && swayNow != swayTile) {
             swayTile = swayNow;
@@ -4098,9 +4133,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void setOthers(List<HomeApps.Item> list) {
         list = HomeApps.folders(list);   // the TV's utilities in one folder at the end
+        List<String> dock = new ArrayList<>();
+        for (HomeApps.Item it : shelf) dock.add(dockKey(it));
+        list = HomeApps.arrange(list, Prefs.layout(), dock);   // as this profile arranged it
         others = list;
         gridFocus = new Spring[list.size()];
-        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(scrubbing ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS, 0);
+        gridSlideX = new Spring[list.size()];
+        gridSlideY = new Spring[list.size()];
+        for (int i = 0; i < gridFocus.length; i++) {
+            gridFocus[i] = new Spring(scrubbing ? Spring.FAST_FOCUS : Spring.SNAPPY_FOCUS, 0);
+            gridSlideX[i] = new Spring(0.32f, 0.86f, 0).px();
+            gridSlideY[i] = new Spring(0.32f, 0.86f, 0).px();
+        }
         gridLabels = null;
         gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
         retargetGrid(true);
@@ -4124,7 +4168,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (w <= 0) return 0.5f;
         RectF r = null;
         if (folderOpen != null) {
-            r = folderIndex < folderCells.length ? folderCells[folderIndex] : null;
+            r = folderIndex >= 0 && folderIndex < folderCells.length ? folderCells[folderIndex] : folderBadge;
         } else if (sheetOpen) {
             return (gridIndex % COLUMNS + 0.5f) / COLUMNS;
         } else if (zone == Z_SHELF) {
@@ -4168,10 +4212,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         retargetGrid(false);   // the focused app shrinks as the grid goes down
         motionDirty = true;
         retarget(false);
-        if (shelfEdited) {     // the grid was kept as it was while open: apps that went to the shelf leave it now
-            shelfEdited = false;
-            reload();
-        }
+        if (appsStale && board == null) reload();   // the grid was kept as it was while open: its new lists now
     }
 
     private void retargetGrid(boolean snap) {
@@ -4180,7 +4221,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             swayTile = -1;
             sway();
         }
-        for (int i = 0; i < gridFocus.length; i++) {
+        for (int i = 0; i < gridFocus.length && !moving(); i++) {
             gridFocus[i].target = sheetOpen && i == gridIndex ? 1 : 0;
             if (snap) gridFocus[i].snap(gridFocus[i].target);
         }
@@ -4230,7 +4271,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Paint folderRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private HomeApps.Item folderOpen;
     private int folderIndex;
-    private final Spring folderShown = new Spring(Spring.SHEET_OPEN, 0);
+    private final Spring folderShown = new Spring(Spring.SHEET_OPEN, 0), badgeFocus = new Spring(Spring.SNAPPY_FOCUS, 0);
     private Spring[] folderFocus = new Spring[0];
     private RectF[] folderCells = new RectF[0];
     private String[] folderLabels = new String[0];
@@ -4315,6 +4356,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         folderBadgeW = ccLabel.measureText(folder.label) + 60 * k;
         folderBadge.set(folderCard.centerX() - folderBadgeW / 2, folderCard.top + 34 * k, folderCard.centerX() + folderBadgeW / 2, folderCard.top + 86 * k);
         folderFocus[0].target = 1;
+        badgeFocus.snap(0);
         folderShown.tune(Spring.SHEET_OPEN);
         folderShown.target = 1;
         gridDirty = motionDirty = true;
@@ -4333,11 +4375,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void moveFolder(int dx, int dy) {
-        int next = AppGrid.folderMove(folderIndex, dx, dy, folderOpen.children.size(), FOLDER_COLUMNS);
+        // Above the first row, the folder's name (OK renames it); from there, ↓ comes back to the apps.
+        int next = folderIndex < 0 ? (dy > 0 ? 0 : -2)
+                : AppGrid.folderMove(folderIndex, dx, dy, folderOpen.children.size(), FOLDER_COLUMNS);
+        if (next == -1 && dy < 0 && folderIndex / FOLDER_COLUMNS == 0) {
+            folderIndex = -1;
+            badgeFocus.target = 1;
+            for (Spring f : folderFocus) f.target = 0;
+            gridDirty = true;
+            click.move();
+            announceForAccessibility(Ui.trf("{folder}. OK to rename it", "folder", folderOpen.label));
+            return;
+        }
         if (next < 0) {
             deadEnd(dx, dy);
             return;
         }
+        badgeFocus.target = 0;
         folderIndex = next;
         int row = next / FOLDER_COLUMNS;
         if (row < folderTop) folderTop = row;
@@ -4370,10 +4424,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         folderRim.setStrokeWidth(1.5f * k);
         folderRim.setColor(Ui.alpha(WHITE, (dark() > 0.5f ? 0.14f : 0.7f) * e));
         c.drawRoundRect(folderCard, FOLDER_RADIUS * k, FOLDER_RADIUS * k, folderRim);
-        fill.setColor(Ui.alpha(0xFFFFFFFF, e));
+        // The name's badge; focused (↑ from the first row), it lifts and, on the light card, turns dark: OK renames.
+        float bf = Ui.clamp(badgeFocus.value), bs = 1 + 0.12f * bf;
+        c.save();
+        c.scale(bs, bs, folderBadge.centerX(), folderBadge.centerY());
+        if (bf > 0.01f) {
+            tmp.set(folderBadge);
+            tmp.offset(0, 8 * k);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.3f * bf * e));
+            shadows.draw(c, tmp, folderBadge.height() / 2, KEY_BLUR * k, shadowSoft);
+        }
+        int badge = blend(0xFFFFFFFF, tone(INK, 0xFFFFFFFF), bf);
+        fill.setColor(Ui.alpha(badge, e));
         c.drawRoundRect(folderBadge, folderBadge.height() / 2, folderBadge.height() / 2, fill);
-        ccLabel.setColor(Ui.alpha(INK, e));
+        ccLabel.setColor(Ui.alpha(blend(INK, tone(WHITE, INK), bf), e));
         c.drawText(folderOpen != null ? folderOpen.label : "", folderBadge.left + 30 * k, folderBadge.centerY() + Ui.halfCap(ccLabel), ccLabel);
+        c.restore();
         if (folderOpen != null) {
             // The apps in their window (the rows in view, with room for a focused tile's lift and name), scrolled.
             c.save();
@@ -4381,7 +4447,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.translate(0, -folderScroll.value);
             int top = folderIndex;
             for (int i = 0; i < folderCells.length; i++) if (i != top) drawAppTile(c, folderOpen.children.get(i), folderCells[i], folderFocus[i].value, 0, 0);
-            if (top < folderCells.length) {
+            if (top >= 0 && top < folderCells.length) {
                 drawAppTile(c, folderOpen.children.get(top), folderCells[top], folderFocus[top].value, 0, 0);
                 float fc = Ui.clamp(folderFocus[top].value);
                 gridLabel.setColor(Ui.alpha(tone(L_INK, WHITE), fc * e));
@@ -4405,11 +4471,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP;
         float left = (1920 - gridWidth) / 2 * k;
         int r = i / COLUMNS, col = i % COLUMNS;
-        float y = GRID_TOP * k + r * GRID_ROW * k - shift;
+        float y = GRID_TOP * k + r * GRID_ROW * k - shift + slide(gridSlideY, i);
         if (y > h || y + GRID_ROW * k < 0) return;
-        float x = left + col * (GRID_W + GRID_GAP) * k;
+        float x = left + col * (GRID_W + GRID_GAP) * k + slide(gridSlideX, i);
         gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
+        HomeApps.Item it = others.get(i);
+        if (moveState == LANDING && it == landing && !landFade) return;   // the carried tile is on its way here
         float f = gridFocus[i].value, fc = Ui.clamp(f);
+        // Moving: an outlined app shrinks into the folder-to-be (its focus below 0), drawn behind it.
+        if (f < -0.01f && it.kind != HomeApps.FOLDER) drawForming(c, gridCell, Ui.clamp(f / HOVER_FOLDER));
         if (others.get(i).kind == HomeApps.FOLDER) drawFolderTile(c, others.get(i), gridCell, f);
         else drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex ? launch.value : 0);
         if (sheetOpen && i == gridIndex) {
@@ -4524,11 +4594,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             final List<HomeApps.Item> top = apps ? HomeApps.topButtons() : null;   // they change with Prefs too
             handler.post(() -> {
                 if (top != null) setLightButtons(top);
-                if (s != null) setShelf(s);
+                if (s != null && board == null) setShelf(s);
+                else if (s != null) appsStale = true;   // moving: the lists come when it's done
                 setStatusItems(st);
                 setDrawerItems(d);
                 setInputItems(in);
-                if (o != null && !sheetOpen) setOthers(o);
+                if (o != null && !sheetOpen && board == null) setOthers(o);
                 else if (o != null) appsStale = true;   // All Apps is open: its list comes next time
             });
         });
@@ -4762,7 +4833,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
         if (recentsOverlay.showing()) return recentsOverlay.onKey(e);
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
-        if (reordering) return reorderKey(e, down);
+        if (naming) return namingKey(e, down);
+        if (board != null) return moveKey(e, down);
         int code = e.getKeyCode();
         if (code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST) {
             // The remote's voice button, anywhere on the home screen: Welly listens.
@@ -4807,7 +4879,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         okDown = true;
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
-                        holdArmed = sheetOpen ? canToggleShelf(gridIndex) : canReorder();
+                        holdArmed = canMove();
                         if (holdArmed) {
                             handler.postDelayed(holdStart, HOLD_MS);
                             click.holdStart();   // the tension builds toward the hold, from the frame OK goes down
@@ -5072,8 +5144,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void activate() {
         wake();
-        if (reordering) {   // TalkBack's click while moving an app: drop it
-            dropReorder();
+        if (naming) {   // TalkBack's click on the naming card: that name
+            chooseName();
+            return;
+        }
+        if (board != null) {   // TalkBack's click while moving: OK
+            if (moveState == MOVING) commitMove();
             return;
         }
         HomeApps.Item it;
@@ -5093,6 +5169,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         if (!sheetOpen && zone == Z_WELLY) return;   // Welly handles its own OK
+        if (folderOpen != null && folderIndex < 0) {   // the folder's name: rename it
+            click.open();
+            startNaming(folderOpen);
+            return;
+        }
         if (folderOpen != null) {
             it = folderOpen.children.get(folderIndex);
             r = folderCells[folderIndex];
@@ -5273,7 +5354,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    // MARK: - Holding OK: All Apps puts the app on the shelf or takes it off; on the shelf, the app is lifted to move
+    // MARK: - Holding OK: what's under the focus lifts, to be moved (moving apps: see the fields' note)
 
     private void hold() {
         if (!holdArmed) return;   // the timer and the remote's long-press repeat: whichever comes first, once
@@ -5281,105 +5362,1034 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(holdStart);
         click.holdCommit();
         press.target = 0;
-        if (sheetOpen) toggleShelf(); else startReorder();
+        startMove();
     }
 
-    /** TalkBack's long click on an app in All Apps (once per press, if the remote's hold also arrives). */
+    /** TalkBack's long click: the focused item lifts (once per press, if the remote's hold also arrives). */
     private void a11yHold() {
-        if (SystemClock.uptimeMillis() - toggledAt < 1000) return;
-        if (okDown) okHeld = true;     // the remote's release must not open the app
-        toggleShelf();
+        if (okDown) okHeld = true;     // the remote's release must not open it
+        if (board != null || !canMove()) return;
+        click.holdCommit();
+        startMove();
     }
 
-    private boolean canToggleShelf(int i) {
-        if (!sheetOpen || i >= others.size()) return false;
-        HomeApps.Item it = others.get(i);
-        return it.kind == HomeApps.APP && it.pkg != null;
-    }
-
-    /** Puts the focused app at the end of the shelf, or takes it off if it's there; a toast says which. */
-    private void toggleShelf() {
-        handler.removeCallbacks(holdStart);
-        holdArmed = false;
-        if (!canToggleShelf(gridIndex)) return;
-        okHeld = true;
-        toggledAt = SystemClock.uptimeMillis();
-        final HomeApps.Item it = others.get(gridIndex);
-        final Context c = getContext().getApplicationContext();
-        click.open();
-        LOADER.execute(() -> {
-            // On the shelf means shown there: installed and within the limit, as in Settings > Shelf.
-            List<String> list = new ArrayList<>(HomeApps.shelfPackages(c));
-            PackageManager pm = c.getPackageManager();
-            int max = HomeApps.maxShelf(c), shown = 0;
-            boolean on = false;
-            for (String p : list) {
-                if (shown >= max) break;
-                if (HomeApps.launchIntent(pm, p) == null) continue;
-                shown++;
-                on |= p.equals(it.pkg);
-            }
-            final String text;
-            list.remove(it.pkg);
-            if (on) {
-                text = Ui.trf("Removed from the shelf: {app}", "app", it.label);
-            } else {
-                if (shown >= max) {
-                    handler.post(() -> showToast(Ui.tr("The shelf is full. Make room in mahitTV › Shelf.")));
-                    return;
-                }
-                list.add(it.pkg);
-                text = Ui.trf("Added to the shelf: {app}", "app", it.label);
-            }
-            Prefs.setShelf(list);   // here, so the next hold reads the new list
-            handler.post(() -> {
-                shelfEdited = true;
-                showToast(text);
-                reload();
-            });
-        });
-    }
-
-    // MARK: - Moving apps on the shelf
-
-    private boolean canReorder() {
-        if (sheetOpen || zone != Z_SHELF || shelfIndex >= shelf.size() || shelf.size() < 2) return false;
+    /** Something that can move has the focus: a Dock app, anything in All Apps, an app in an open folder. */
+    private boolean canMove() {
+        if (board != null || naming || tab != TAB_TV || drawerOpen) return false;
+        if (folderOpen != null) return folderIndex >= 0 && folderIndex < folderOpen.children.size();
+        if (sheetOpen) return gridIndex < others.size();
+        if (zone != Z_SHELF || shelfIndex >= shelf.size()) return false;
         HomeApps.Item it = shelf.get(shelfIndex);
         return it.kind == HomeApps.APP && it.pkg != null;
     }
 
-    private void startReorder() {
-        handler.removeCallbacks(holdStart);
-        holdArmed = false;
-        if (reordering || !canReorder()) return;
-        wake();
-        reordering = reorderAnim = okHeld = true;
-        reorderOrigin = new ArrayList<>(shelf);
-        liftIndex = shelfIndex;
-        reorderAt = SystemClock.uptimeMillis();
-        moveLift.target = 1;
-        click.open();
-        showToast(Ui.tr("← → to move · OK to drop · Back to cancel"));
-        retarget(false);    // TalkBack reads "Moving <app>, position i of n"
+    /** Moving (the cursor is out), as opposed to landing after OK or Back. */
+    private boolean moving() {
+        return board != null && moveState != LANDING;
     }
 
-    /** Keys while moving an app: nothing else on the home screen gets them (system keys still go to the system). */
-    private boolean reorderKey(KeyEvent e, boolean down) {
-        switch (e.getKeyCode()) {
+    private static String dockKey(HomeApps.Item it) {
+        return it.pkg != null ? it.pkg : it.key;
+    }
+
+    /** It rises out of its place (the others close up behind it) and the cursor shows where it was. */
+    private void startMove() {
+        handler.removeCallbacks(holdStart);
+        holdArmed = false;
+        if (!canMove()) return;
+        wake();
+        okHeld = true;   // the press that lifted it: its repeats and release do nothing
+        shelfBefore = new ArrayList<>(shelf);
+        othersBefore = new ArrayList<>(others);
+        sheetBefore = sheetOpen;
+        zoneBefore = zone;
+        shelfIndexBefore = shelfIndex;
+        gridIndexBefore = gridIndex;
+        shelfFirstBefore = shelfFirst;
+        // The board works on keys (a Dock app by its package); each key's tile is kept here.
+        moveItems.clear();
+        madeFolders.clear();
+        List<String> dock = new ArrayList<>(), grid = new ArrayList<>();
+        Map<String, List<String>> folders = new java.util.LinkedHashMap<>();
+        java.util.Set<String> dockable = new java.util.HashSet<>();
+        for (HomeApps.Item it : shelf) {
+            dock.add(dockKey(it));
+            moveItems.put(dockKey(it), it);
+            if (it.kind == HomeApps.APP && it.pkg != null) dockable.add(dockKey(it));
+        }
+        for (HomeApps.Item it : others) {
+            grid.add(it.key);
+            moveItems.put(it.key, it);
+            if (it.kind == HomeApps.APP && it.pkg != null) dockable.add(it.key);
+            if (it.kind != HomeApps.FOLDER || it.children == null) continue;
+            List<String> kids = new ArrayList<>();
+            for (HomeApps.Item c : it.children) {
+                kids.add(c.key);
+                moveItems.put(c.key, c);
+                if (c.kind == HomeApps.APP && c.pkg != null) dockable.add(c.key);
+            }
+            folders.put(it.key, kids);
+        }
+        board = new AppLayout.Board(dock, grid, folders, dockable, COLUMNS, HomeApps.maxShelf(getContext()));
+        // Where it rises from, in page coordinates (the Dock's layer; the grid sits TV_GRID_LIFT under it).
+        RectF from = moveRect;
+        boolean lifted;
+        if (folderOpen != null) {
+            HomeApps.Item folder = folderOpen;
+            int i = folderIndex;
+            from.set(folderCells[i]);
+            from.offset(0, sheetLayer.getTranslationY() - tiles.getTranslationY() - folderScroll.value);
+            closeFolder();
+            lifted = board.lift(AppLayout.Board.FROM_FOLDER, i, folder.key);
+        } else if (sheetOpen) {
+            gridPage(gridIndex, from);
+            lifted = board.lift(AppLayout.Board.FROM_GRID, gridIndex, null);
+        } else {
+            from.set(tileRects[shelfIndex]);
+            from.offset(slide(tileSlide, shelfIndex), 0);
+            lifted = board.lift(AppLayout.Board.FROM_DOCK, shelfIndex, null);
+        }
+        if (!lifted) {
+            board = null;
+            return;
+        }
+        carried = moveItems.get(board.lifted);
+        moveState = MOVING;
+        moveAt = SystemClock.uptimeMillis();
+        landing = null;
+        dockSlots = Math.min(shelf.size(), shelfVisible);
+        carryX.snap(from.centerX());
+        carryY.snap(from.centerY());
+        carryS.snap((1 + FOCUS_GROW) / carryBase());   // focused, as it was
+        carryA.snap(1);
+        flipStart();
+        showBoard();
+        aimCursor(true);
+        moveShown.target = 1;
+        moveLayer.setVisibility(VISIBLE);
+        click.open();
+        spoken.focusMoved();
+    }
+
+    /** The size the carried tile is drawn at before carryS: an app lifted (LIFT_GROW), a folder focused. */
+    private float carryBase() {
+        return carried != null && carried.kind == HomeApps.FOLDER ? 1 + FOCUS_GROW : 1 + LIFT_GROW;
+    }
+
+    private static float slide(Spring[] s, int i) {
+        return i >= 0 && i < s.length ? s[i].value : 0;
+    }
+
+    /** Grid slot `i` in page coordinates: the grid, scrolled with the Dock, sits TV_GRID_LIFT under it. */
+    private void gridPage(int i, RectF out) {
+        float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP;
+        float x = ((1920 - gridWidth) / 2 + (i % COLUMNS) * (GRID_W + GRID_GAP)) * k;
+        float y = (GRID_TOP + TV_GRID_LIFT + (i / COLUMNS) * GRID_ROW) * k;
+        out.set(x, y, x + GRID_W * k, y + GRID_H * k);
+    }
+
+    private final Map<String, float[]> flipKeys = new HashMap<>();
+
+    /** Before the lists change: where each tile is now (page coordinates, with its slide), to slide from there. */
+    private void flipStart() {
+        flipFrom.clear();
+        flipKeys.clear();
+        for (int i = 0; i < shelf.size() && i < tileRects.length; i++) {
+            float[] at = {tileRects[i].left + slide(tileSlide, i), tileRects[i].top};
+            flipFrom.put(shelf.get(i), at);
+            flipKeys.put(dockKey(shelf.get(i)), at);
+        }
+        for (int i = 0; i < others.size(); i++) {
+            gridPage(i, cursorRect);
+            float[] at = {cursorRect.left + slide(gridSlideX, i), cursorRect.top + slide(gridSlideY, i)};
+            flipFrom.put(others.get(i), at);
+            flipKeys.put(others.get(i).key, at);
+        }
+    }
+
+    /** Where a tile was before (flipStart), by itself, by its key, or (a new folder) by its first app; null: nowhere. */
+    private float[] flipOf(HomeApps.Item it) {
+        float[] f = flipFrom.get(it);
+        if (f == null) f = flipKeys.get(dockKey(it));
+        if (f == null) f = flipKeys.get(it.key);
+        if (f == null && it.kind == HomeApps.FOLDER && it.children != null && !it.children.isEmpty()) f = flipFrom.get(it.children.get(0));
+        return f;
+    }
+
+    /** The Dock and All Apps as the board has them now. */
+    private void showBoard() {
+        List<HomeApps.Item> dock = new ArrayList<>(), grid = new ArrayList<>();
+        for (String k : board.dock) {
+            HomeApps.Item it = moveItems.get(k);
+            if (it != null) dock.add(it);
+        }
+        for (String k : board.grid) {
+            HomeApps.Item it = boardItem(k);
+            if (it != null) grid.add(it);
+        }
+        setMoveLists(dock, grid);
+    }
+
+    /** A grid key's tile. A folder whose apps changed is a new tile: the one from before stays as it was, for Back. */
+    private HomeApps.Item boardItem(String key) {
+        HomeApps.Item it = moveItems.get(key);
+        List<String> kids = board == null ? null : board.folders.get(key);
+        if (kids == null) return it != null ? it : madeFolders.get(key);
+        if (it != null && it.children != null && sameKeys(it.children, kids)) return it;
+        HomeApps.Item made = madeFolders.get(key);
+        if (made != null && sameKeys(made.children, kids)) return made;
+        List<HomeApps.Item> children = new ArrayList<>();
+        for (String k : kids) {
+            HomeApps.Item c = moveItems.get(k);
+            if (c != null) children.add(c);
+        }
+        String label = it != null ? it.label : made != null ? made.label : Ui.tr("Folder");
+        made = HomeApps.folderItem(key, label, children);
+        madeFolders.put(key, made);
+        return made;
+    }
+
+    private static boolean sameKeys(List<HomeApps.Item> items, List<String> keys) {
+        if (items.size() != keys.size()) return false;
+        for (int i = 0; i < keys.size(); i++) if (!items.get(i).key.equals(keys.get(i))) return false;
+        return true;
+    }
+
+    /** New lists for the Dock and All Apps: each tile keeps its focus spring and slides from where it was. */
+    private void setMoveLists(List<HomeApps.Item> dock, List<HomeApps.Item> grid) {
+        Spring[] focus = new Spring[dock.size()], tslide = new Spring[dock.size()];
+        RectF[] rects = new RectF[dock.size()];
+        for (int i = 0; i < dock.size(); i++) {
+            int was = shelf.indexOf(dock.get(i));
+            focus[i] = was >= 0 && was < tileFocus.length ? tileFocus[was] : new Spring(Spring.SNAPPY_FOCUS, 0);
+            tslide[i] = new Spring(0.32f, 0.86f, 0).px();
+            rects[i] = new RectF();
+        }
+        shelf = dock;
+        tileFocus = focus;
+        tileSlide = tslide;
+        tileRects = rects;
+        shelfIndex = Math.max(0, Math.min(shelfIndex, dock.size() - 1));
+        placeShelf();
+        for (int i = 0; i < dock.size(); i++) {
+            float[] f = flipOf(dock.get(i));
+            if (f != null && Math.abs(f[1] - tileRects[i].top) < 1) tslide[i].value = f[0] - tileRects[i].left;   // along the Dock
+        }
+        Spring[] gfocus = new Spring[grid.size()], sx = new Spring[grid.size()], sy = new Spring[grid.size()];
+        for (int i = 0; i < grid.size(); i++) {
+            int was = others.indexOf(grid.get(i));
+            gfocus[i] = was >= 0 && was < gridFocus.length ? gridFocus[was] : new Spring(Spring.SNAPPY_FOCUS, 0);
+            sx[i] = new Spring(0.32f, 0.86f, 0).px();
+            sy[i] = new Spring(0.32f, 0.86f, 0).px();
+        }
+        others = grid;
+        gridFocus = gfocus;
+        gridSlideX = sx;
+        gridSlideY = sy;
+        gridLabels = null;
+        for (int i = 0; i < grid.size(); i++) {
+            float[] f = flipOf(grid.get(i));
+            if (f == null) continue;
+            gridPage(i, cursorRect);
+            sx[i].value = f[0] - cursorRect.left;
+            sy[i].value = f[1] - cursorRect.top;
+        }
+        tilesDirty = gridDirty = motionDirty = true;
+        platter.invalidate();
+        wake();
+    }
+
+    /**
+     * The cursor to the board's place, and everything around it: the two apps beside a line part a little, an
+     * outlined app shrinks into the folder-to-be (an outlined folder grows to take it, a Dock app dips to swap), the
+     * row scrolls into view, and All Apps comes up once the cursor goes below the Dock.
+     */
+    private void aimCursor(boolean snap) {
+        int r = board.row, p = board.pos, count = board.count(r);
+        boolean ring = p % 2 == 1, inDock = r == AppLayout.Board.DOCK;
+        int item = ring ? (p - 1) / 2 : -1, gap = ring ? -1 : p / 2;
+        float th = TV_TILE_H * k, half = TV_TILE_GAP * k / 2;
+        if (!inDock && !sheetOpen) {
+            sheetOpen = true;
+            sheet.target = 1;
+            click.sheet(true, 0.5f);
+            motionDirty = true;
+        }
+        float cx, cy;
+        if (inDock) {
+            int show = ring ? item : Math.min(gap, count - 1);
+            if (show >= 0) {
+                shelfIndex = show;
+                revealShelf(snap);
+            }
+            cy = (TV_DOCK_TOP + TV_DOCK_PAD) * k + th / 2;
+            if (count == 0) cx = w / 2f;
+            else if (ring) cx = tileRects[item].centerX();
+            else if (gap == 0) cx = tileRects[0].left - half;
+            else if (gap == count) cx = tileRects[count - 1].right + half;
+            else cx = (tileRects[gap - 1].right + tileRects[gap].left) / 2;
+            scroll.target = 0;
+        } else {
+            int base = r * COLUMNS;
+            gridPage(base, cursorRect);
+            cy = cursorRect.centerY();
+            if (count == 0) {
+                cx = cursorRect.left - half;
+            } else if (ring) {
+                gridPage(base + item, cursorRect);
+                cx = cursorRect.centerX();
+            } else if (gap == count) {
+                gridPage(base + count - 1, cursorRect);
+                cx = cursorRect.right + half;
+            } else {
+                gridPage(base + gap, cursorRect);
+                cx = cursorRect.left - half;
+            }
+            int rows = board.rows(), visible = Math.min(rows, VISIBLE_ROWS);
+            float target = scroll.target;
+            if (r < target) target = r;
+            else if (r > target + visible - 1) target = r - visible + 1;
+            scroll.target = Math.max(0, Math.min(rows - visible, target));
+        }
+        if (snap) scroll.snap(scroll.target);
+        for (int i = 0; i < tileFocus.length; i++) {
+            tileFocus[i].target = inDock && i == item ? HOVER_FOLDER : 0;
+            tileSlide[i].target = inDock && gap >= 0 ? (i == gap - 1 ? -PART * k : i == gap ? PART * k : 0) : 0;
+        }
+        int base = inDock ? 0 : r * COLUMNS;
+        for (int i = 0; i < gridFocus.length; i++) {
+            int j = i - base;
+            boolean here = !inDock && j >= 0 && j < count;
+            boolean folder = others.get(i).kind == HomeApps.FOLDER;
+            gridFocus[i].target = here && j == item ? (folder ? HOVER_INTO : HOVER_FOLDER) : 0;
+            gridSlideX[i].target = here && gap >= 0 ? (j == gap - 1 ? -PART * k : j == gap ? PART * k : 0) : 0;
+        }
+        float ring2 = 2 * (RING_GAP + RING_STROKE) * k;
+        cursorX.target = cx;
+        cursorY.target = cy;
+        cursorW.target = ring ? TV_TILE_W * k + ring2 : LINE_W * k;
+        cursorH.target = ring ? th + ring2 : th + 2 * LINE_REACH * k;
+        if (snap) {
+            cursorX.snap(cx);
+            cursorY.snap(cy);
+            cursorW.snap(cursorW.target);
+            cursorH.snap(0);   // the line grows out of the gap it left
+        }
+        tilesDirty = gridDirty = motionDirty = true;
+        updateHint();
+        wake();
+    }
+
+    /** An arrow while moving: the cursor's next place, or a nudge where there's none. */
+    private void moveCursor(int dx, int dy) {
+        lastDx = dx;
+        lastDy = dy;
+        if (board.move(dx, dy)) {
+            aimCursor(false);
+            click.move();
+            return;
+        }
+        cursorX.impulse(dx * Spring.BUMP_VELOCITY * 0.5f * k);
+        cursorY.impulse(dy * Spring.BUMP_VELOCITY * 0.5f * k);
+        carryX.impulse(dx * Spring.BUMP_VELOCITY * 0.3f * k);
+        carryY.impulse(dy * Spring.BUMP_VELOCITY * 0.3f * k);
+        click.bump();
+        wake();
+    }
+
+    /** Keys while moving: nothing else on the home screen gets them (volume and power still go to the system). */
+    private boolean moveKey(KeyEvent e, boolean down) {
+        int code = e.getKeyCode();
+        if (moveState == LANDING) {   // a key while it lands: it's there at once, and the key does what it always does
+            if (down) endLanding(true);
+            return false;
+        }
+        switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                if (down) shiftReorder(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1);
-                return true;
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) {
+                    moveCursor(code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 0,
+                            code == KeyEvent.KEYCODE_DPAD_UP ? -1 : code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : 0);
+                }
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                // The press that lifted the app is still held: its repeats and release do nothing; a new press drops it.
-                if (down && e.getRepeatCount() == 0) {
+                // The press that lifted it is still held: its repeats and release do nothing; a new press does it.
+                if (down && e.getRepeatCount() == 0 && !okHeld) {
+                    okDown = false;
+                    commitMove();
+                } else if (!down) {
                     okDown = okHeld = false;
-                    dropReorder();
+                }
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+                if (down) {
+                    if (e.getRepeatCount() == 0) backDown = true;
+                } else {
+                    if (backDown && !e.isCanceled()) cancelMove(false);
+                    backDown = false;
+                }
+                return true;
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_VOLUME_MUTE:
+            case KeyEvent.KEYCODE_POWER:
+            case KeyEvent.KEYCODE_SLEEP:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    /** OK while moving: a folder is named first; anything else goes where the cursor is. */
+    private void commitMove() {
+        if (board == null || moveState != MOVING) return;
+        if (board.action() == AppLayout.Board.NEW_FOLDER) {
+            startNaming(null);
+            return;
+        }
+        drop(null);
+    }
+
+    /** It goes where the cursor is (a new folder named `name`), the tiles slide to their places, and it's saved. */
+    private void drop(String name) {
+        if (board == null || moveState != MOVING) return;
+        String lifted = board.lifted;
+        String key = "folder:u" + Long.toString(System.currentTimeMillis(), 36);
+        flipStart();
+        int kind = board.drop(key);
+        if (kind == AppLayout.Board.NEW_FOLDER) {
+            List<HomeApps.Item> kids = new ArrayList<>();
+            for (String k : board.folders.get(key)) kids.add(moveItems.get(k));
+            madeFolders.put(key, HomeApps.folderItem(key, name == null || name.trim().isEmpty() ? Ui.tr("Folder") : name.trim(), kids));
+        }
+        dockSlots = 0;
+        showBoard();
+        saveMove(kind);
+        HomeApps.Item it = moveItems.get(lifted);
+        land(it, kind == AppLayout.Board.NONE ? Ui.trf("{app} stays where it was", "app", it.label) : moveDone(kind, it));
+        click.open();
+    }
+
+    /** What TalkBack says once it's done. */
+    private String moveDone(int kind, HomeApps.Item it) {
+        switch (kind) {
+            case AppLayout.Board.NEW_FOLDER:
+            case AppLayout.Board.ADD: {
+                HomeApps.Item f = folderHolding(it);
+                return Ui.trf("{app} is in {folder}", "app", it.label, "folder", f != null ? f.label : Ui.tr("Folder"));
+            }
+            case AppLayout.Board.SWAP: return Ui.trf("{app} is in the Dock", "app", it.label);
+            default: return Ui.trf("Moved {app}", "app", it.label);
+        }
+    }
+
+    private HomeApps.Item folderHolding(HomeApps.Item it) {
+        for (HomeApps.Item f : others) if (f.kind == HomeApps.FOLDER && f.children != null && f.children.contains(it)) return f;
+        return null;
+    }
+
+    /**
+     * After OK or Back: the carried tile flies to `it`'s place (into its folder, if it's in one), the focus follows it
+     * there (the Dock: All Apps goes down; the grid: it stays up), and the cursor fades.
+     */
+    private void land(HomeApps.Item it, String said) {
+        int inDock = shelf.indexOf(it), inGrid = others.indexOf(it);
+        landFade = inDock < 0 && inGrid < 0;
+        landing = it;
+        if (landFade) {
+            HomeApps.Item f = folderHolding(it);
+            landing = f;
+            inGrid = f != null ? others.indexOf(f) : -1;
+        }
+        moveState = LANDING;
+        landAt = SystemClock.uptimeMillis();
+        moveShown.target = 0;
+        for (Spring f : tileFocus) f.target = 0;   // no more dips or folders-to-be
+        for (Spring f : gridFocus) f.target = 0;
+        if (inDock >= 0) {
+            zone = Z_SHELF;
+            shelfIndex = inDock;
+            if (sheetOpen) closeSheet();
+            else retarget(false);
+            tileFocus[inDock].snap(1);   // hidden until it lands, then focused at once
+        } else if (inGrid >= 0) {
+            gridIndex = inGrid;
+            if (!sheetOpen) openSheet(inGrid);
+            retargetGrid(false);
+            if (!landFade) gridFocus[inGrid].snap(1);
+        } else {
+            retarget(false);
+        }
+        for (Spring s : tileSlide) s.target = 0;
+        for (Spring s : gridSlideX) s.target = 0;
+        tilesDirty = gridDirty = true;
+        if (said != null) announceForAccessibility(said);
+        spoken.focusMoved();
+        wake();
+    }
+
+    /** Landed (or a key came first: `now`): the move is over and the tile it landed on shows again. */
+    private void endLanding(boolean now) {
+        if (board == null) return;
+        if (now) {
+            carryX.snap(carryX.target);
+            carryY.snap(carryY.target);
+            moveShown.snap(0);
+        }
+        board = null;
+        carried = landing = null;
+        moveState = 0;
+        madeFolders.clear();
+        moveItems.clear();
+        shelfBefore = othersBefore = null;
+        moveLayer.setVisibility(INVISIBLE);
+        tilesDirty = gridDirty = true;
+        toastLayer.invalidate();
+        if (appsStale) reload();   // the lists with the new layout (and a moved app's own tile)
+        wake();
+    }
+
+    /** Back (or leaving the home screen): everything goes back as it was; it flies to its place, unless `snap`. */
+    private void cancelMove(boolean snap) {
+        if (naming) closeNaming(snap);
+        if (board == null) return;
+        if (moveState == LANDING) {
+            if (snap) endLanding(true);
+            return;
+        }
+        HomeApps.Item it = moveItems.get(board.lifted);
+        flipStart();
+        dockSlots = 0;
+        shelfFirst = shelfFirstBefore;
+        setMoveLists(new ArrayList<>(shelfBefore), new ArrayList<>(othersBefore));
+        zone = zoneBefore;
+        shelfIndex = Math.max(0, Math.min(shelfIndexBefore, shelf.size() - 1));
+        gridIndex = Math.max(0, Math.min(gridIndexBefore, others.size() - 1));
+        if (sheetOpen && !sheetBefore) {
+            closeSheet();
+        } else if (!sheetOpen && sheetBefore) {
+            sheetOpen = true;
+            sheet.target = 1;
+            motionDirty = true;
+        }
+        if (sheetBefore) {
+            HomeApps.Item f = folderHolding(it);
+            int at = others.indexOf(f != null ? f : it);
+            if (at >= 0) gridIndex = at;
+        }
+        land(it, Ui.trf("{app} is back where it was", "app", it.label));
+        click.sheet(false, 0.5f);
+        if (snap) {
+            for (Spring s : tileSlide) s.snap(0);
+            for (Spring s : gridSlideX) s.snap(0);
+            for (Spring s : gridSlideY) s.snap(0);
+            sheet.snap(sheet.target);
+            scroll.snap(scroll.target);
+            motionDirty = true;
+            endLanding(true);
+        }
+    }
+
+    /** Saves what OK did: the Dock (when it changed) and All Apps' order and the person's folders. */
+    private void saveMove(int kind) {
+        if (kind == AppLayout.Board.NONE) return;
+        List<String> before = new ArrayList<>();
+        for (HomeApps.Item it : shelfBefore) before.add(dockKey(it));
+        if (!before.equals(board.dock)) {
+            // The shown apps in their new order, then what the saved list has that the Dock didn't show (not installed).
+            List<String> save = new ArrayList<>(board.dock), saved = Prefs.shelf();
+            if (saved != null) for (String p : saved) if (!before.contains(p) && !save.contains(p)) save.add(p);
+            Prefs.setShelfQuietly(save);
+        }
+        AppLayout l = Prefs.layout();
+        l.grid.clear();
+        l.grid.addAll(board.grid);
+        for (String key : board.dissolved) l.folders.remove(key);
+        java.util.Set<String> mine = new java.util.LinkedHashSet<>(l.folders.keySet());
+        mine.addAll(board.touched);
+        for (String key : mine) {
+            List<String> apps = board.folders.get(key);
+            if (apps == null) continue;   // not in All Apps now (its apps on the Dock, or not installed): kept as it was
+            HomeApps.Item f = boardItem(key);
+            AppLayout.Folder saved = l.folder(key, f != null ? f.label : "");
+            saved.apps.clear();
+            saved.apps.addAll(apps);
+        }
+        Prefs.setLayout(l);
+        appsStale = true;
+    }
+
+    /**
+     * One frame of moving: the cursor, the carried tile (riding just above the cursor and wiggling; landing, flying to
+     * its place), the hint's fade. Returns true while any of it moves.
+     */
+    private boolean stepMove(float dt, long up) {
+        boolean hint = moveShown.step(dt);
+        if (board == null) {
+            if (hint) toastLayer.invalidate();
+            return hint;
+        }
+        if (moveState == LANDING) {
+            landTarget();
+        } else {
+            boolean ring = board.pos % 2 == 1;
+            float carriedH = TV_TILE_H * k * CARRY_SCALE * (1 + LIFT_GROW);
+            carryX.target = cursorX.target;
+            carryY.target = cursorY.target - cursorH.target / 2 - carriedH / 2 + (ring ? 26 : 18) * k;
+            carryS.target = CARRY_SCALE * (1 + LIFT_GROW) / carryBase();
+            carryA.target = 1;
+        }
+        boolean moving = carryX.step(dt) | carryY.step(dt) | carryS.step(dt) | carryA.step(dt)
+                | cursorX.step(dt) | cursorY.step(dt) | cursorW.step(dt) | cursorH.step(dt);
+        float amp = moveState == LANDING ? Ui.clamp(1 - (up - landAt) / 180f) : 1;
+        wiggle = WIGGLE_DEG * amp * (float) Math.sin((up - moveAt) * (2 * Math.PI / WIGGLE_MS));
+        moveLayer.invalidate();
+        if (hint || (moveShown.value > 0.01f && sheet.value > 0.01f && sheet.value < 0.99f)) toastLayer.invalidate();
+        if (moveState == LANDING && (!moving || up - landAt > LAND_MS)) endLanding(false);
+        return true;
+    }
+
+    /** Landing: where the tile it lands on is now (it may still be sliding, or the page moving). */
+    private void landTarget() {
+        if (landing == null) {
+            carryA.target = 0;
+            return;
+        }
+        int i = shelf.indexOf(landing);
+        if (i >= 0) {
+            cursorRect.set(tileRects[i]);
+            cursorRect.offset(tileSlide[i].value, 0);
+        } else {
+            int j = others.indexOf(landing);
+            if (j < 0) {
+                carryA.target = 0;
+                return;
+            }
+            gridPage(j, cursorRect);
+            cursorRect.offset(gridSlideX[j].value, gridSlideY[j].value);
+        }
+        carryX.target = cursorRect.centerX();
+        carryY.target = cursorRect.centerY();
+        carryS.target = landFade ? 0.3f : (1 + FOCUS_GROW) / carryBase();
+        carryA.target = landFade ? 0 : 1;
+    }
+
+    // MARK: - Drawing what moves: the cursor and the carried tile (the move layer, in page coordinates), the hint
+
+    private void drawMove(Canvas c) {
+        if (board == null) return;
+        c.save();
+        c.translate(tiles.getTranslationX(), tiles.getTranslationY());
+        float a = Ui.clamp(moveShown.value);
+        if (a > 0.01f) drawCursor(c, a);
+        if (carried != null) drawCarried(c);
+        c.restore();
+    }
+
+    /**
+     * The cursor: one shape that's a line (narrow: a solid capsule) or an outline (wide: a ring), so it morphs from one
+     * to the other. White, over a dark halo and a crisp dark edge, so it reads on the light grid as on the dark one.
+     */
+    private void drawCursor(Canvas c, float a) {
+        float cw = Math.max(cursorW.value, 1), ch = cursorH.value, stroke = RING_STROKE * k;
+        if (ch < 2) return;
+        float radius = Math.min(Math.min(cw, ch) / 2, (TV_TILE_RADIUS + RING_GAP + RING_STROKE) * k);
+        float cx = cursorX.value, cy = cursorY.value;
+        cursorRect.set(cx - cw / 2, cy - ch / 2, cx + cw / 2, cy + ch / 2);
+        cursorPath.reset();
+        cursorPath.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+        cursorPath.addRoundRect(cursorRect, radius, radius, android.graphics.Path.Direction.CW);
+        if (cw - 2 * stroke > 0.5f && ch - 2 * stroke > 0.5f) {
+            moveRect.set(cursorRect);
+            moveRect.inset(stroke, stroke);
+            float r = Math.max(0, radius - stroke);
+            cursorPath.addRoundRect(moveRect, r, r, android.graphics.Path.Direction.CW);
+        }
+        // The halo: a shadow 3 px down, then a soft dark band along the edges.
+        c.save();
+        c.translate(0, 3 * k);
+        cursorPaint.setStyle(Paint.Style.FILL);
+        cursorPaint.setColor(Ui.alpha(0xFF000000, tone(0.22f, 0.4f) * a));
+        c.drawPath(cursorPath, cursorPaint);
+        c.restore();
+        cursorEdge.setStyle(Paint.Style.STROKE);
+        cursorEdge.setStrokeJoin(Paint.Join.ROUND);
+        cursorEdge.setStrokeWidth(7 * k);
+        cursorEdge.setColor(Ui.alpha(0xFF000000, tone(0.16f, 0.22f) * a));
+        c.drawPath(cursorPath, cursorEdge);
+        cursorPaint.setColor(Ui.alpha(0xFFFFFFFF, a));
+        c.drawPath(cursorPath, cursorPaint);
+        cursorEdge.setStrokeWidth(1.5f * k);
+        cursorEdge.setColor(Ui.alpha(0xFF000000, tone(0.4f, 0.2f) * a));
+        c.drawPath(cursorPath, cursorEdge);
+    }
+
+    /** The carried tile: lifted (its deep shadow), half size above the cursor, wiggling; it fades into a folder. */
+    private void drawCarried(Canvas c) {
+        float alpha = Ui.clamp(carryA.value), s = carryS.value;
+        if (alpha < 0.01f || s <= 0) return;
+        float tw = TV_TILE_W * k, th = TV_TILE_H * k, x = carryX.value, y = carryY.value;
+        int save;
+        if (alpha < 0.99f) {
+            float rx = tw * s, ry = th * s;
+            save = c.saveLayerAlpha(x - rx, y - ry, x + rx, y + ry + 40 * k, Math.round(255 * alpha));
+        } else {
+            save = c.save();
+        }
+        c.translate(x, y);
+        c.rotate(wiggle);
+        c.scale(s, s);
+        moveRect.set(-tw / 2, -th / 2, tw / 2, th / 2);
+        if (carried.kind == HomeApps.FOLDER) drawFolderTile(c, carried, moveRect, 1);
+        else drawAppTile(c, carried, moveRect, 0, 1, 0);
+        c.restoreToCount(save);
+    }
+
+    /** Behind an outlined app, the folder-to-be: the folder tile's frosted card, a little bigger than the app. */
+    private void drawForming(Canvas c, RectF cell, float a) {
+        float grow = 12 * k;
+        moveRect.set(cell.left - grow, cell.top - grow, cell.right + grow, cell.bottom + grow);
+        formShape.of(moveRect.width(), moveRect.height(), TV_TILE_RADIUS * k + grow);
+        drawerCard(c, moveRect, formShape, TV_TILE_RADIUS * k + grow, a);
+    }
+
+    /** The hint's text for where the cursor is: what OK does there, in words and on the OK key. */
+    private void updateHint() {
+        if (board == null || carried == null) return;
+        String t = board.target(), a = board.before(), b = board.after();
+        boolean dock = board.row == AppLayout.Board.DOCK;
+        switch (board.action()) {
+            case AppLayout.Board.NONE:
+                hintWhere = Ui.tr("Where it was");
+                hintVerb = Ui.tr("Done");
+                break;
+            case AppLayout.Board.NEW_FOLDER:
+                hintWhere = Ui.trf("New folder with {app}", "app", label(t));
+                hintVerb = Ui.tr("Make Folder");
+                break;
+            case AppLayout.Board.ADD:
+                hintWhere = Ui.trf("Add to {folder}", "folder", label(t));
+                hintVerb = Ui.tr("Add");
+                break;
+            case AppLayout.Board.SWAP:
+                hintWhere = Ui.trf("Swap with {app}", "app", label(t));
+                hintVerb = Ui.tr("Swap");
+                break;
+            default:
+                hintVerb = Ui.tr("Place");
+                if (a != null && b != null) {
+                    hintWhere = dock ? Ui.trf("In the Dock, between {a} and {b}", "a", label(a), "b", label(b))
+                            : Ui.trf("Between {a} and {b}", "a", label(a), "b", label(b));
+                } else if (b != null) {
+                    hintWhere = dock ? Ui.tr("First in the Dock") : Ui.trf("Before {app}", "app", label(b));
+                } else if (a != null) {
+                    hintWhere = dock ? Ui.tr("Last in the Dock") : Ui.trf("After {app}", "app", label(a));
+                } else {
+                    hintWhere = dock ? Ui.tr("In the Dock") : Ui.tr("Here");
+                }
+        }
+        hintName = carried.label;
+        if (hintBold == null) {
+            hintBold = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
+            hintText = Ui.text(Ui.medium, 25 * k, 0xC7FFFFFF);
+            hintKey = Ui.text(Ui.semibold, 17 * k, 0xFFFFFFFF);
+            hintKey.setTextAlign(Paint.Align.CENTER);
+        }
+        hintName = TextUtils.ellipsize(hintName, new TextPaint(hintBold), 260 * k, TextUtils.TruncateAt.END).toString();
+        hintWhere = TextUtils.ellipsize(hintWhere, new TextPaint(hintText), 620 * k, TextUtils.TruncateAt.END).toString();
+        announceForAccessibility(hintWhere);
+        toastLayer.invalidate();
+    }
+
+    private String label(String key) {
+        HomeApps.Item it = boardItem(key);
+        return it != null ? it.label : "";
+    }
+
+    /** The hint: on the home screen under the tab bar (where toasts show); over All Apps at the bottom, under the grid. */
+    private void drawMoveHint(Canvas c) {
+        float a = Ui.clamp(moveShown.value);
+        if (a < 0.01f || carried == null || naming || hintBold == null) return;
+        float s = smoothstep(0.3f, 0.7f, Ui.clamp(sheet.value));
+        if (s < 0.99f) drawHintAt(c, 124 * k, a * (1 - s));
+        if (s > 0.01f) drawHintAt(c, h - 98 * k, a * s);
+    }
+
+    private void drawHintAt(Canvas c, float top, float a) {
+        float hh = 62 * k, pad = 14 * k, miniW = 58 * k, miniH = 35 * k;
+        String ok = Ui.tr("OK"), back = Ui.tr("Back"), cancel = Ui.tr("Cancel");
+        float nameW = hintBold.measureText(hintName), whereW = hintText.measureText(hintWhere);
+        float okW = Math.max(40 * k, hintKey.measureText(ok) + 20 * k), backW = hintKey.measureText(back) + 20 * k;
+        float verbW = hintText.measureText(hintVerb), cancelW = hintText.measureText(cancel);
+        float width = pad + miniW + 16 * k + nameW + 36 * k + whereW + 44 * k + okW + 10 * k + verbW + 28 * k + backW + 10 * k
+                + cancelW + 26 * k;
+        hintRect.set((w - width) / 2, top, (w + width) / 2, top + hh);
+        int save = c.saveLayerAlpha(hintRect.left - 4, hintRect.top - 4, hintRect.right + 4, hintRect.bottom + 4, Math.round(255 * a));
+        scene.glass(c, hintRect, hh / 2, SMOKE, 0.62f, 0, 0, 0.02f, 1);
+        float x = hintRect.left + pad, cy = hintRect.centerY();
+        moveRect.set(x, cy - miniH / 2, x + miniW, cy + miniH / 2);
+        if (carried.kind == HomeApps.FOLDER) {
+            fill.setShader(null);
+            fill.setColor(0x33FFFFFF);
+            c.drawRoundRect(moveRect, 10 * k, 10 * k, fill);
+            Symbols.draw(getContext(), c, "folder", moveRect.centerX(), cy, 24 * k, 0xF2FFFFFF);
+        } else {
+            drawMini(c, carried, moveRect);
+        }
+        x += miniW + 16 * k;
+        float base = cy + Ui.halfCap(hintBold);
+        c.drawText(hintName, x, base, hintBold);
+        x += nameW + 18 * k;
+        fill.setShader(null);
+        fill.setColor(0x40FFFFFF);
+        c.drawRect(x - 1 * k, cy - 14 * k, x + 1 * k, cy + 14 * k, fill);
+        x += 18 * k;
+        c.drawText(hintWhere, x, base, hintText);
+        x += whereW + 44 * k;
+        x = drawKey(c, ok, x, okW, cy);
+        c.drawText(hintVerb, x + 10 * k, base, hintBold);
+        x += 10 * k + verbW + 28 * k;
+        x = drawKey(c, back, x, backW, cy);
+        c.drawText(cancel, x + 10 * k, base, hintText);
+        c.restoreToCount(save);
+    }
+
+    /** A remote key's cap: its name in a thin rounded frame. Returns where the frame ends. */
+    private float drawKey(Canvas c, String text, float x, float width, float cy) {
+        float kh = 32 * k;
+        moveRect.set(x, cy - kh / 2, x + width, cy + kh / 2);
+        cursorEdge.setStyle(Paint.Style.STROKE);
+        cursorEdge.setStrokeWidth(1.6f * k);
+        cursorEdge.setColor(0xB3FFFFFF);
+        c.drawRoundRect(moveRect, 9 * k, 9 * k, cursorEdge);
+        c.drawText(text, moveRect.centerX(), cy + Ui.halfCap(hintKey), hintKey);
+        return x + width;
+    }
+
+    // MARK: - Naming a folder: made by OK on an outlined app, or renamed from an open folder's title
+
+    private static final int NAME_SUGGESTED = 4, NAME_WELLY = 2;
+    private boolean naming;
+    private String renameKey;                    // renaming this folder (null: a new one, while moving)
+    private final List<String> names = new ArrayList<>();
+    private int wellyFrom = -1, nameIndex, namingSession;
+    private Spring[] nameFocus = new Spring[0];
+    private RectF[] nameRects = new RectF[0];
+    private float[] nameTextW = new float[0];
+    private final Spring namingShown = new Spring(Spring.SHEET_OPEN, 0);
+    private final RectF namingCard = new RectF(), namingTile = new RectF();
+    private String namingCaption = "", namingTitle = "", namingBig = "";
+    private HomeApps.Item namingPreview;
+    private Paint nameBig, namePill, nameCaption, nameTitle;
+    private android.widget.PopupWindow namePopup;
+
+    /** The card that names a folder: a big name over suggestions (the apps' brand or what they're for, then Welly's). */
+    private void startNaming(HomeApps.Item renaming) {
+        List<HomeApps.Item> kids = new ArrayList<>();
+        if (renaming != null) {
+            renameKey = renaming.key;
+            namingPreview = renaming;
+            if (renaming.children != null) kids.addAll(renaming.children);
+            namingTitle = Ui.tr("Rename Folder");
+        } else {
+            renameKey = null;
+            moveState = NAMING;
+            kids.add(boardItem(board.target()));
+            kids.add(carried);
+            namingPreview = HomeApps.folderItem("folder:preview", "", kids);
+            namingTitle = Ui.tr("New Folder");
+        }
+        List<String> labels = new ArrayList<>(), pkgs = new ArrayList<>();
+        for (HomeApps.Item it : kids) {
+            labels.add(it.label);
+            pkgs.add(it.pkg != null ? it.pkg : it.key);
+        }
+        namingCaption = kids.size() == 2 ? Ui.trf("{a} and {b}", "a", labels.get(0), "b", labels.get(1))
+                : Ui.plural("plural|one:{n} app|other:{n} apps", kids.size());
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        for (HomeApps.Item it : others) {
+            if (it.kind == HomeApps.FOLDER && (renaming == null || !it.key.equals(renaming.key))) taken.add(it.label.toLowerCase(Ui.locale()));
+        }
+        names.clear();
+        if (renaming != null) names.add(renaming.label);
+        for (String n : FolderNames.suggest(labels, pkgs)) {
+            String t = folderName(n);
+            if (names.size() >= NAME_SUGGESTED + (renaming != null ? 1 : 0)) break;
+            if (!taken.contains(t.toLowerCase(Ui.locale())) && !names.contains(t)) names.add(t);
+        }
+        wellyFrom = -1;
+        nameIndex = 0;
+        naming = true;
+        layoutNaming();
+        for (Spring f : nameFocus) f.snap(0);
+        nameFocus[0].snap(1);
+        namingShown.tune(Spring.SHEET_OPEN);
+        namingShown.target = 1;
+        click.sheet(true, 0.5f);
+        askWelly(labels, ++namingSession);
+        announceForAccessibility(namingTitle + ". " + names.get(0));
+        toastLayer.invalidate();
+        wake();
+    }
+
+    /** A suggested folder name (FolderNames, in English) in the person's language: literal calls, so translate.py finds them. */
+    private static String folderName(String n) {
+        switch (n) {
+            case "Streaming": return Ui.tr("folder|Streaming");
+            case "Movies & TV": return Ui.tr("folder|Movies & TV");
+            case "Watch": return Ui.tr("folder|Watch");
+            case "Kids": return Ui.tr("folder|Kids");
+            case "Family": return Ui.tr("folder|Family");
+            case "Live TV": return Ui.tr("folder|Live TV");
+            case "Channels": return Ui.tr("folder|Channels");
+            case "Sports": return Ui.tr("folder|Sports");
+            case "News": return Ui.tr("folder|News");
+            case "Music": return Ui.tr("folder|Music");
+            case "Listen": return Ui.tr("folder|Listen");
+            case "Games": return Ui.tr("folder|Games");
+            case "Play": return Ui.tr("folder|Play");
+            case "Fitness": return Ui.tr("folder|Fitness");
+            case "Health": return Ui.tr("folder|Health");
+            case "Learning": return Ui.tr("folder|Learning");
+            case "Explore": return Ui.tr("folder|Explore");
+            case "Photos": return Ui.tr("folder|Photos");
+            case "Memories": return Ui.tr("folder|Memories");
+            case "Social": return Ui.tr("folder|Social");
+            case "Shopping": return Ui.tr("folder|Shopping");
+            case "Utilities": return Ui.tr("folder|Utilities");
+            case "Tools": return Ui.tr("folder|Tools");
+            case "TV": return Ui.tr("folder|TV");
+            case "Entertainment": return Ui.tr("folder|Entertainment");
+            case "Fun": return Ui.tr("folder|Fun");
+            case "Favorites": return Ui.tr("folder|Favorites");
+            case "My Apps": return Ui.tr("folder|My Apps");
+            default: return n;   // a brand (YouTube, TCL): as it is
+        }
+    }
+
+    /** Welly's ideas (when it has a brain), added after ours as they come; never in the way of a choice already made. */
+    private void askWelly(final List<String> labels, final int session) {
+        if (!WellyBrain.configured()) return;
+        new Thread(() -> {
+            final List<String> got = WellyBrain.folderNames(labels);
+            handler.post(() -> {
+                if (!naming || session != namingSession || got.isEmpty()) return;
+                int added = 0;
+                for (String n : got) {
+                    boolean seen = false;
+                    for (String m : names) seen |= m.equalsIgnoreCase(n);
+                    if (seen || added >= NAME_WELLY) continue;
+                    if (wellyFrom < 0) wellyFrom = names.size();
+                    names.add(n);
+                    added++;
+                }
+                if (added == 0) return;
+                layoutNaming();
+                toastLayer.invalidate();
+                wake();
+            });
+        }, "folder-names").start();
+    }
+
+    /** The card's size and its pills (the names, then "Type a Name…"), in rows that fit it. */
+    private void layoutNaming() {
+        if (nameBig == null) {
+            nameBig = Ui.text(Ui.displaySemibold, 58 * k, 0xFFFFFFFF);
+            nameBig.setTextAlign(Paint.Align.CENTER);
+            nameTitle = Ui.text(Ui.semibold, 22 * k, 0xFFFFFFFF);
+            nameTitle.setTextAlign(Paint.Align.CENTER);
+            nameTitle.setLetterSpacing(0.04f);
+            nameCaption = Ui.text(Ui.medium, 25 * k, 0xFFFFFFFF);
+            nameCaption.setTextAlign(Paint.Align.CENTER);
+            namePill = Ui.text(Ui.semibold, 26 * k, 0xFFFFFFFF);
+            namePill.setTextAlign(Paint.Align.CENTER);
+        }
+        int n = names.size() + 1;
+        Spring[] focus = new Spring[n];
+        for (int i = 0; i < n; i++) focus[i] = i < nameFocus.length ? nameFocus[i] : new Spring(Spring.SNAPPY_FOCUS, 0);
+        nameFocus = focus;
+        nameRects = new RectF[n];
+        nameTextW = new float[n];
+        float pillH = 64 * k, gap = 18 * k, padX = 30 * k, maxRow = 1060 * k, icon = 30 * k;
+        float[] widths = new float[n];
+        for (int i = 0; i < n; i++) {
+            nameTextW[i] = namePill.measureText(nameText(i));
+            widths[i] = nameTextW[i] + 2 * padX + (i >= wellyFrom && wellyFrom >= 0 && i < names.size() ? icon : 0);
+        }
+        // Rows: as many as fit, then the next row; each row centred.
+        List<int[]> rows = new ArrayList<>();
+        int start = 0;
+        float rowW = 0, widest = 0;
+        for (int i = 0; i < n; i++) {
+            float add = (i > start ? gap : 0) + widths[i];
+            if (i > start && rowW + add > maxRow) {
+                rows.add(new int[] {start, i});
+                widest = Math.max(widest, rowW);
+                start = i;
+                rowW = widths[i];
+            } else {
+                rowW += add;
+            }
+        }
+        rows.add(new int[] {start, n});
+        widest = Math.max(widest, rowW);
+        float cw = Math.max(820 * k, widest + 2 * 64 * k);
+        float ch = (56 + 146 + 36 + 70 + 44 + 50) * k + rows.size() * pillH + (rows.size() - 1) * gap + 60 * k;
+        namingCard.set((w - cw) / 2, (h - ch) / 2, (w + cw) / 2, (h + ch) / 2);
+        snap(namingCard);
+        float tw = TV_TILE_W * k, th = TV_TILE_H * k, top = namingCard.top + 56 * k;
+        namingTile.set(namingCard.centerX() - tw / 2, top, namingCard.centerX() + tw / 2, top + th);
+        float y = namingTile.bottom + (36 + 70 + 44 + 50) * k;
+        for (int[] r : rows) {
+            float total = 0;
+            for (int i = r[0]; i < r[1]; i++) total += widths[i] + (i > r[0] ? gap : 0);
+            float x = namingCard.centerX() - total / 2;
+            for (int i = r[0]; i < r[1]; i++) {
+                nameRects[i] = new RectF(x, y, x + widths[i], y + pillH);
+                x += widths[i] + gap;
+            }
+            y += pillH + gap;
+        }
+        nameIndex = Math.min(nameIndex, n - 1);
+        for (int i = 0; i < n; i++) nameFocus[i].target = i == nameIndex ? 1 : 0;
+        bigName();
+    }
+
+    /** The big name, cut to the card's width (made when the focus moves, never while drawing). */
+    private void bigName() {
+        namingBig = TextUtils.ellipsize(namingName(), new TextPaint(nameBig), namingCard.width() - 120 * k, TextUtils.TruncateAt.END).toString();
+    }
+
+    private String nameText(int i) {
+        return i < names.size() ? names.get(i) : Ui.tr("Type a Name…");
+    }
+
+    /** The name the card shows big: the focused suggestion (on "Type a Name…", the one before it). */
+    private String namingName() {
+        return names.get(Math.min(nameIndex, names.size() - 1));
+    }
+
+    private boolean namingKey(KeyEvent e, boolean down) {
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (down) moveName(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1, 0);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down) moveName(0, e.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (down && e.getRepeatCount() == 0) {
+                    okDown = false;
+                    okHeld = true;   // its release opens nothing
+                    chooseName();
                 } else if (!down) {
                     okDown = okHeld = false;
                 }
@@ -5389,118 +6399,242 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (e.getRepeatCount() == 0) backDown = true;
                 } else {
                     if (backDown && !e.isCanceled()) {
-                        cancelReorder(false);
-                        click.move();
+                        closeNaming(false);   // a new folder: back to moving, the cursor still on the app
+                        click.sheet(false, 0.5f);
                     }
                     backDown = false;
                 }
                 return true;
-            default:
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_VOLUME_MUTE:
+            case KeyEvent.KEYCODE_POWER:
+            case KeyEvent.KEYCODE_SLEEP:
                 return false;
+            default:
+                return true;
         }
     }
 
-    /** Swaps the lifted app with its neighbor; both slide from where they are to their new slots. */
-    private void shiftReorder(int dx) {
-        int i = shelfIndex, j = i + dx;
-        if (j < 0 || j >= shelf.size()) return;
-        HomeApps.Item it = shelf.get(i);
-        shelf.set(i, shelf.get(j));
-        shelf.set(j, it);
-        Spring f = tileFocus[i];
-        tileFocus[i] = tileFocus[j];
-        tileFocus[j] = f;
-        Spring s = tileSlide[i];
-        tileSlide[i] = tileSlide[j];
-        tileSlide[j] = s;
-        float d = tileRects[i].left - tileRects[j].left;
-        tileSlide[j].value += d;
-        tileSlide[i].value -= d;
-        shelfIndex = liftIndex = j;
-        reorderAnim = true;
-        wake();
-        retarget(false);
-        click.move();
-    }
-
-    /** OK: drops the app where it is and saves the shelf's new order. */
-    private void dropReorder() {
-        if (!reordering) return;
-        reordering = false;
-        moveLift.target = 0;
-        boolean changed = false;
-        for (int i = 0; i < shelf.size() && !changed; i++) changed = shelf.get(i) != reorderOrigin.get(i);
-        reorderOrigin = null;
-        click.open();
-        retarget(false);
-        if (!changed) return;
-        final List<String> order = new ArrayList<>();
-        for (HomeApps.Item it : shelf) order.add(it.pkg);
-        final Context c = getContext().getApplicationContext();
-        LOADER.execute(() -> {
-            // The saved list may hold more than the shelf shows (apps not installed, past the limit): the shown ones
-            // take their new order in the same slots, the others stay where they were.
-            List<String> all = HomeApps.shelfPackages(c), out = new ArrayList<>(all);
-            int next = 0;
-            for (int s = 0; s < out.size() && next < order.size(); s++) {
-                if (order.contains(out.get(s))) out.set(s, order.get(next++));
-            }
-            if (next < order.size()) {
-                out = new ArrayList<>(order);
-                for (String p : all) if (!order.contains(p)) out.add(p);
-            }
-            final List<String> save = out;
-            handler.post(() -> Prefs.setShelf(save));
-        });
-    }
-
-    /** Back, or leaving the home screen: the original order comes back (sliding, unless `snap`). */
-    private void cancelReorder(boolean snap) {
-        if (!reordering && !reorderAnim) return;
-        if (reordering) {
-            reordering = false;
-            moveLift.target = 0;
-            int n = shelf.size();
-            if (reorderOrigin != null && reorderOrigin.size() == n) {
-                HomeApps.Item lifted = shelf.get(shelfIndex);
-                Spring[] focus = new Spring[n], slide = new Spring[n];
-                for (int a = 0; a < n; a++) {
-                    int b = shelf.indexOf(reorderOrigin.get(a));
-                    focus[a] = tileFocus[b];
-                    slide[a] = tileSlide[b];
-                    slide[a].value += tileRects[b].left - tileRects[a].left;
+    /** ← → along the pills; ↑ ↓ to the nearest one in the row above or below. */
+    private void moveName(int dx, int dy) {
+        int n = nameRects.length, next = nameIndex;
+        if (dx != 0) {
+            next = nameIndex + dx;
+        } else {
+            RectF from = nameRects[nameIndex];
+            float best = Float.MAX_VALUE;
+            next = -1;
+            for (int i = 0; i < n; i++) {
+                float rowDy = nameRects[i].centerY() - from.centerY();
+                if (dy < 0 ? rowDy > -1 : rowDy < 1) continue;
+                float d = Math.abs(rowDy) * 4 + Math.abs(nameRects[i].centerX() - from.centerX());
+                if (d < best) {
+                    best = d;
+                    next = i;
                 }
-                shelf = reorderOrigin;
-                tileFocus = focus;
-                tileSlide = slide;
-                shelfIndex = liftIndex = shelf.indexOf(lifted);
             }
-            reorderOrigin = null;
-            retarget(snap);
         }
-        if (snap) {
-            moveLift.snap(0);
-            for (Spring s : tileSlide) s.snap(0);
-            wiggle = 0;
-            liftIndex = -1;
-            reorderAnim = false;
-            tilesDirty = true;
-        } else {
-            wake();
+        if (next < 0 || next >= n) {
+            click.bump();
+            return;
         }
+        nameIndex = next;
+        for (int i = 0; i < n; i++) nameFocus[i].target = i == nameIndex ? 1 : 0;
+        bigName();
+        click.move();
+        announceForAccessibility(nameText(nameIndex));
+        toastLayer.invalidate();
+        wake();
     }
 
-    /** One frame of the move: the slides, the lift and the wiggle. Returns true while any of them moves. */
-    private boolean stepReorder(float dt, long up) {
-        boolean moving = step(tileSlide, dt) | moveLift.step(dt);
-        if (reordering || moveLift.value > 0.001f) {
-            wiggle = WIGGLE_DEG * (float) Math.sin((up - reorderAt) * (2 * Math.PI / WIGGLE_MS));
-            moving = true;
-        } else {
-            wiggle = 0;
+    private void chooseName() {
+        if (nameIndex >= names.size()) {
+            openNameKeyboard();
+            return;
         }
-        reorderAnim = moving;
+        finishNaming(names.get(nameIndex));
+    }
+
+    /** The name is chosen: a new folder is made with it (the move ends), or the open folder takes it. */
+    private void finishNaming(String name) {
+        String key = renameKey;
+        closeNaming(false);
+        if (key == null) {
+            drop(name);
+            return;
+        }
+        click.open();
+        renameFolder(key, name);
+    }
+
+    /** The card goes (Back, or a name chosen). A new folder's: back to moving, the cursor where it was. */
+    private void closeNaming(boolean snap) {
+        if (!naming) return;
+        naming = false;
+        namingSession++;
+        if (namePopup != null) namePopup.dismiss();
+        namingShown.tune(Spring.SHEET_CLOSE);
+        namingShown.target = 0;
+        if (snap) namingShown.snap(0);
+        if (moveState == NAMING) {
+            moveState = MOVING;
+            updateHint();
+        }
+        renameKey = null;
+        toastLayer.invalidate();
+        wake();
+    }
+
+    /** "Type a Name…": the system keyboard, over the big name, with the suggestion in it to change. */
+    private void openNameKeyboard() {
+        if (namePopup != null) return;
+        android.widget.EditText edit = new android.widget.EditText(getContext());
+        edit.setSingleLine(true);
+        edit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        edit.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        edit.setBackground(null);
+        edit.setPadding(0, 0, 0, 0);
+        edit.setGravity(android.view.Gravity.CENTER);
+        edit.setTypeface(Ui.displaySemibold);
+        edit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 58 * k);
+        edit.setTextColor(tone(INK, WHITE));
+        edit.setHintTextColor(Ui.alpha(tone(INK, WHITE), 0.4f));
+        edit.setHint(Ui.tr("Folder Name"));
+        edit.setText(namingName());
+        edit.selectAll();
+        edit.setOnEditorActionListener((v, action, ev) -> {
+            boolean enter = ev != null && ev.getKeyCode() == KeyEvent.KEYCODE_ENTER && ev.getAction() == KeyEvent.ACTION_DOWN;
+            if (action != android.view.inputmethod.EditorInfo.IME_ACTION_DONE && action != android.view.inputmethod.EditorInfo.IME_ACTION_GO && !enter) return false;
+            String typed = edit.getText().toString().trim();
+            if (namePopup != null) namePopup.dismiss();
+            if (!typed.isEmpty()) finishNaming(typed.length() > 40 ? typed.substring(0, 40) : typed);
+            return true;
+        });
+        int pw = Math.round(namingCard.width() - 120 * k), ph = Math.round(84 * k);
+        android.widget.PopupWindow p = new android.widget.PopupWindow(edit, pw, ph, true);
+        p.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));
+        p.setInputMethodMode(android.widget.PopupWindow.INPUT_METHOD_NEEDED);
+        p.setOnDismissListener(() -> {
+            namePopup = null;
+            android.view.inputmethod.InputMethodManager imm = getContext().getSystemService(android.view.inputmethod.InputMethodManager.class);
+            if (imm != null) imm.hideSoftInputFromWindow(edit.getWindowToken(), 0);
+            toastLayer.invalidate();
+        });
+        int[] at = new int[2];
+        getLocationOnScreen(at);
+        namePopup = p;
+        float nameY = namingTile.bottom + (36 + 70) * k;   // the big name's baseline
+        p.showAtLocation(this, android.view.Gravity.NO_GRAVITY, at[0] + Math.round(namingCard.centerX() - pw / 2f),
+                at[1] + Math.round(nameY - ph + 16 * k));
+        edit.requestFocus();
+        edit.postDelayed(() -> {
+            android.view.inputmethod.InputMethodManager imm = getContext().getSystemService(android.view.inputmethod.InputMethodManager.class);
+            if (imm != null) imm.showSoftInput(edit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }, 120);
+        toastLayer.invalidate();
+    }
+
+    /** A folder's new name, shown at once and kept with the profile's layout (the folder is theirs now). */
+    private void renameFolder(String key, String name) {
+        HomeApps.Item folder = null;
+        for (HomeApps.Item it : others) if (it.key.equals(key)) folder = it;
+        if (folder == null || name.trim().isEmpty()) return;
+        folder.label = name.trim();
+        gridLabels = null;
+        if (folderOpen == folder) {
+            folderBadgeW = ccLabel.measureText(folder.label) + 60 * k;
+            folderBadge.set(folderCard.centerX() - folderBadgeW / 2, folderBadge.top, folderCard.centerX() + folderBadgeW / 2, folderBadge.bottom);
+        }
+        AppLayout l = Prefs.layout();
+        if (l.grid.isEmpty()) for (HomeApps.Item it : others) l.grid.add(it.key);
+        AppLayout.Folder f = l.folder(key, folder.label);
+        f.apps.clear();
+        if (folder.children != null) for (HomeApps.Item c : folder.children) f.apps.add(c.key);
+        Prefs.setLayout(l);
+        gridDirty = true;
+        announceForAccessibility(Ui.trf("Renamed to {name}", "name", folder.label));
+        wake();
+    }
+
+    /** One frame of the naming card; true while it moves. */
+    private boolean stepNaming(float dt) {
+        boolean moving = namingShown.step(dt) | step(nameFocus, dt);
+        if (moving) toastLayer.invalidate();
         return moving;
+    }
+
+    /** The naming card, over everything: the folder-to-be, its name big, the suggestions as pills (focused: inverted). */
+    private void drawNaming(Canvas c) {
+        float e = Ui.clamp(namingShown.value);
+        if (e < 0.004f || nameBig == null || namingPreview == null || nameRects.length == 0) return;
+        boolean night = dark() > 0.5f;
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(night ? 0xFF000000 : 0xFF162130, (night ? 0.5f : 0.4f) * e));
+        c.drawRect(0, 0, w, h, fill);
+        c.save();
+        float z = 0.94f + 0.06f * e;
+        c.scale(z, z, namingCard.centerX(), namingCard.centerY());
+        moveRect.set(namingCard);
+        moveRect.offset(0, 30 * k);
+        shadow.setColor(Ui.alpha(0xFF000000, 0.32f * e));
+        shadows.draw(c, moveRect, FOLDER_RADIUS * k, SHADOW_BLUR * k, shadow);
+        fill.setColor(Ui.alpha(night ? 0xFF282C36 : 0xFFF6F7FA, 0.985f * e));
+        c.drawRoundRect(namingCard, FOLDER_RADIUS * k, FOLDER_RADIUS * k, fill);
+        folderRim.setStyle(Paint.Style.STROKE);
+        folderRim.setStrokeWidth(1.5f * k);
+        folderRim.setColor(Ui.alpha(WHITE, (night ? 0.14f : 0.7f) * e));
+        c.drawRoundRect(namingCard, FOLDER_RADIUS * k, FOLDER_RADIUS * k, folderRim);
+        drawFolderTile(c, namingPreview, namingTile, 0);
+        int ink = tone(INK, WHITE), dim = tone(L_DIM, 0xB3FFFFFF);
+        float y = namingTile.bottom + 36 * k + nameTitle.getTextSize();
+        nameTitle.setColor(Ui.alpha(dim, e));
+        c.drawText(namingTitle, namingCard.centerX(), y, nameTitle);
+        y += 70 * k;
+        if (namePopup == null) {
+            nameBig.setColor(Ui.alpha(ink, e));
+            c.drawText(namingBig, namingCard.centerX(), y, nameBig);
+        }
+        y += 44 * k;
+        nameCaption.setColor(Ui.alpha(dim, e));
+        c.drawText(namingCaption, namingCard.centerX(), y, nameCaption);
+        for (int i = 0; i < nameRects.length; i++) {
+            if (i != nameIndex) drawNamePill(c, i, e, ink);
+        }
+        drawNamePill(c, nameIndex, e, ink);
+        c.restore();
+    }
+
+    private void drawNamePill(Canvas c, int i, float e, int ink) {
+        RectF r = nameRects[i];
+        if (r == null) return;
+        float f = Ui.clamp(nameFocus[i].value), s = 1 + 0.06f * f;
+        c.save();
+        c.scale(s, s, r.centerX(), r.centerY());
+        float radius = r.height() / 2;
+        if (f > 0.01f) {
+            moveRect.set(r);
+            moveRect.offset(0, 10 * k);
+            shadowSoft.setColor(Ui.alpha(0xFF000000, 0.28f * f * e));
+            shadows.draw(c, moveRect, radius, KEY_BLUR * k, shadowSoft);
+        }
+        // Resting: a faint fill; focused: inverted (ink on the light card, white on the dark one), as tvOS's buttons.
+        int rest = tone(0x14000000, 0x24FFFFFF), focused = tone(INK, 0xFFFFFFFF);
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(blend(rest, focused, f), e));
+        c.drawRoundRect(r, radius, radius, fill);
+        int text = blend(ink, tone(WHITE, INK), f);
+        boolean welly = wellyFrom >= 0 && i >= wellyFrom && i < names.size();
+        float tx = r.centerX();
+        if (welly) {
+            float icon = 30 * k;
+            tx += icon / 2;
+            Symbols.draw(getContext(), c, "sparkles", tx - nameTextW[i] / 2 - icon / 2 - 4 * k, r.centerY(), 22 * k, Ui.alpha(text, e));
+        }
+        namePill.setColor(Ui.alpha(text, e));
+        c.drawText(nameText(i), tx, r.centerY() + Ui.halfCap(namePill), namePill);
+        c.restore();
     }
 
     // MARK: - TalkBack: every reachable item as a virtual node (Spoken). Id = group * 1000 + index + 1.
@@ -5552,12 +6686,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i >= 3) return label(lightButtons, i - 3);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", 3);
             case Z_CARDS: return i < cards.size() ? pickText(cards.get(i)) : "";
-            case Z_SHELF:
-                if (reordering && i == shelfIndex) {
-                    return Ui.trf("Moving {app}, position {n} of {total}",
-                            "app", label(shelf, i), "n", i + 1, "total", shelf.size());
-                }
-                return label(shelf, i);
+            case Z_SHELF: return label(shelf, i);
             case Z_DRAWER: return label(drawerItems, i);
             case INPUT_LIST: {
                 String state = i < inputStates.length ? inputStates[i] : null;
@@ -5676,7 +6805,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             click.move();
             return;
         }
-        if (sheetOpen || reordering) return;
+        if (sheetOpen || board != null) return;
         if (group == INPUT_LIST) {
             if (!drawerOpen || !ccInputs || i >= inputItems.size()) return;
             inputIndex = i;
@@ -5969,7 +7098,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The remote's voice button: the Welly tab, listening. */
     private void voice() {
         wake();
-        if (reordering) cancelReorder(false);
+        if (board != null) cancelMove(false);
         if (sheetOpen) closeSheet();
         if (drawerOpen) closeDrawer();
         selectTab(TAB_WELLY);
