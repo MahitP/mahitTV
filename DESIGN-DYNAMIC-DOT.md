@@ -82,10 +82,10 @@ The first version (left of Control Center, black) was harder to reach, and it re
 | ♪ What's playing (TV symbol for a video app) | it plays; 30 s after a pause; while focused | the title; the artist · the app | ⏮ ⏯ ⏭ (← → between them); held: open the app |
 | Focus | Do Not Disturb is on (`ACTION_INTERRUPTION_FILTER_CHANGED`) | Do Not Disturb; On | turn it off (×). Control Center turns it on |
 | AirPods | they're connected. Joining opens the dot on them by itself for 3.5 s (the Dynamic Island's alert) | the name; Connected (· Spatial Audio) | Control Center (›) |
-| ☾ The sleep timer | it runs (when its overlay doesn't show it) | Sleep Timer; Off in 25 min | the next preset (15 min, 30 min, 1 h, 2 h, off; + or ×), as Control Center's tile |
+| ☾ The sleep timer | it runs | Sleep Timer; Off in 25 min | − + × (← → between them): the preset below or above (15 min, 30 min, 1 h, 2 h; none: the knock), or off |
 
 - **AirPods** replace the card that used to slide in at the top right. The glyph by the bubble stays.
-- **The sleep timer** replaces the "Off in…" text that sat left of the round buttons.
+- **The sleep timer** replaces the "Off in…" text that sat left of the round buttons, and the banner that showed over every app (Settings' Show Time Left and Position are gone).
 - **The song's title** no longer shows in the tab row's right end. The clock screen keeps its line under the clock.
 
 ## Nothing overlaps
