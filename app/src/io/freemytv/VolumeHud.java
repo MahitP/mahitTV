@@ -10,8 +10,8 @@ import android.view.View;
 
 /**
  * The volume and the brightness, as an iPhone shows its volume: a Liquid Glass pill against the middle of the left
- * edge (centred at y CENTER_Y), filled white from the bottom to the level (SNAPPY_FOCUS), the level's number at its head
- * and the speaker (muted, or 1 to 3 arcs for 1–33, 34–66, 67–100), the sun or AirPods at its foot. It comes out of the edge as
+ * edge (centred at y CENTER_Y), filled white from the bottom to the level (SNAPPY_FOCUS); at its foot, the level's number
+ * above the speaker (muted, or 1 to 3 arcs for 1–33, 34–66, 67–100), the sun or AirPods. It comes out of the edge as
  * a 52 × 250 (1080p px) pill, narrows to a 12 px line IDLE_MS after the last change (the glyph fading), and leaves
  * HIDE_MS after it; each change widens it again (LIQUID_PILL). A press past 0 or 100 stretches it 3% that way
  * (BOUNDARY_BUMP). HomeView shows it for the volume keys and the channel keys (the brightness) while the home screen
@@ -42,7 +42,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         invalidate();
     }
     private boolean posted, leaving;
-    private String number = "0";   // the level, at the pill's head
+    private String number = "0";   // the level, just above the glyph at the pill's foot
     private Paint numberP;
     private long lastNanos;
     private float k = 1;
@@ -179,7 +179,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
 
     @Override protected void onSizeChanged(int width, int height, int ow, int oh) {
         k = width / VIEW_W;
-        numberP = Ui.numbers(Ui.semibold, 19 * k, WHITE);
+        numberP = Ui.numbers(Ui.semibold, 18 * k, WHITE);
         numberP.setTextAlign(Paint.Align.CENTER);
     }
 
@@ -216,7 +216,8 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         // The glyph at its foot: white on the glass, ink where the fill has reached it; gone as it narrows.
         float ga = v * Ui.clamp((wv - 0.4f) / 0.6f);
         if (ga < 0.01f) return;
-        float gx = capsule.centerX(), gy = capsule.bottom - 28 * k, ny = capsule.top + 32 * k;
+        // The level just above the glyph, the two as one group at the pill's foot (as an iPhone's speaker and its arcs).
+        float gx = capsule.centerX(), gy = capsule.bottom - 28 * k, ny = gy - 23 * k;
         c.save();
         c.clipRect(capsule.left, capsule.top, capsule.right, fillTop);
         drawMarks(c, gx, gy, ny, WHITE, ga);
@@ -229,7 +230,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         }
     }
 
-    /** The level at the pill's head (baseline ny) and the glyph at its foot (centred on gx, gy). */
+    /** The level (baseline ny) above the glyph (centred on gx, gy), at the pill's foot. */
     private void drawMarks(Canvas c, float gx, float gy, float ny, int color, float v) {
         int a = Math.round(255 * v);
         if (numberP != null) {

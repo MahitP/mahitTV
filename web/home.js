@@ -2542,7 +2542,7 @@
     if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
-        (level >= 17 ? ' lit' : '') + (level >= 86 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
+        (level >= 17 ? ' lit' : '') + (level >= 26 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
     }
     if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
   }
@@ -2562,7 +2562,7 @@
     sliderLevel(ccBright, b);
     if (hud && hudMode === 'brightness') {
       hud.num.textContent = String(b);
-      hud.node.className = 'bright' + (b >= 17 ? ' lit' : '') + (b >= 86 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+      hud.node.className = 'bright' + (b >= 17 ? ' lit' : '') + (b >= 26 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
     }
   }
 
