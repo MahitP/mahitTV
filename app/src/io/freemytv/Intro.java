@@ -19,33 +19,36 @@ import android.view.KeyEvent;
 import android.view.View;
 
 /**
- * mahitTV's startup, "Anamorphic Horizon & Optical Liquid Glass Ignition", 3.10 s at 60 fps, in four acts:
+ * mahitTV's startup, "Liquid Light", 5.5 s at 60 fps, in five acts (the earlier 3.1 s "Anamorphic Horizon" grown into
+ * a story: light gathers, ignites, becomes the name, and the name hands over):
  * <ol>
- * <li>Act I, lens ignition (0.00–0.75 s): from a calm cinema slate (#070B12), an anamorphic flare ribbon ignites on the
- * horizon line (0.46·H), 2 → 14 px, a pearl core in a warm-to-cyan bloom across 85% of the width; from 0.20 s the seam
- * opens like an aperture (spring 0.55 / 0.84) onto the Frosted Horizon (day, or its night), which breathes under slow
- * atmospheric drift waves (Android 13+: Shaders.HORIZON_RIPPLE; below, a drifting bitmap).</li>
- * <li>Act II, Liquid Glass materialization (0.45–1.85 s): each glyph of "mahitTV" condenses on its own spring
- * (0.48 / 0.86), 22 ms apart: 1.14× → 1, 14 px → 0 and out of a 28 px defocus. Three layers: the refractive frosted body,
- * a 0 18 44 slate shadow with the inner top bevel, the 1.5 px specular rim (Shaders.GLASS_WORD; layered Canvas below).</li>
- * <li>Act III, prismatic caustic sweep (1.15–2.35 s): a −28° volumetric beam crosses the screen (−0.3·W → 1.3·W, slowest
- * over the word, at its centre at 1.45 s), splitting the rim 1.8 px into cyan, white and amber; at 1.45 s a gossamer
- * glass ring spreads from the word over the sky (80 → 980 px, 0.28 → 0).</li>
- * <li>Act IV, zero-cut morph (2.35–3.10 s): "Who's Watching?" appears underneath on the same Horizon bitmap at 1:1 (the
- * drift, the beam and the ring are back to 0 by then, so the sky never changes) and its cards spring in 32 ms apart,
- * while the wordmark exhales (1 → 0.95, 0 → 14 px of blur, out) over 360 ms.</li>
+ * <li>Act 0, the spark (0.00–1.20 s): on a calm cinema slate (#070B12), a point of light appears where the horizon will
+ * be, and 56 motes of dust drift in to it on slow spirals, accelerating as they fall in; the spark beats twice, like a
+ * heart (0.38 s, 0.80 s), each beat a sub-bass thump in the sound.</li>
+ * <li>Act I, ignition (1.05–1.85 s): the spark stretches into the anamorphic flare ribbon (0 → 85% of the width, 2 → 14
+ * px, a pearl core in a warm-to-cyan bloom); from 1.25 s the seam opens like an aperture (spring 0.55 / 0.84) onto the
+ * Frosted Horizon, which breathes under slow atmospheric drift waves (Android 13+: Shaders.HORIZON_RIPPLE).</li>
+ * <li>Act II, Liquid Glass (1.55–3.00 s): each glyph of "mahitTV" condenses on its own spring (0.52 / 0.80), 75 ms
+ * apart, so each lands on its own glass note: 1.14× → 1, 14 px → 0 and out of a 28 px defocus. Three layers: the
+ * refractive frosted body, a slate shadow with the inner top bevel, the 1.5 px specular rim (Shaders.GLASS_WORD).</li>
+ * <li>Act III, caustics (2.55–3.85 s): a −28° volumetric beam crosses the screen left to right, splitting the rim into
+ * cyan, white and amber; a glass ring spreads from the word over the sky. Then the signature (3.80–4.65 s): a second,
+ * quicker glint crosses back right to left as the word takes one slow breath (1 → 1.025 → 1).</li>
+ * <li>Act IV, zero-cut handover (4.85–5.40 s): "Who's Watching?" appears underneath on the same Horizon at 1:1 and the
+ * wordmark exhales (1 → 0.95, 0 → 14 px of blur, out).</li>
  * </ol>
- * The sound (Click.chime: sub swell, Cmaj9(#11) glass bloom, the shimmer that follows the beam) starts with the first frame
- * and carries its own timing. OK or Back jumps to the handover. Reduce motion: the Horizon and the still glass
- * wordmark for 0.7 s, then the handover at once. Everything is made in onSizeChanged, theme() and start(); a frame only
- * moves numbers (no allocation in doFrame or onDraw). The glass bitmaps are built on a background thread; until they're
- * ready the Canvas layers stand in.
+ * The sound (Click.chime) follows the same score: the two heartbeats, an airy riser into the ignition, a note per glyph
+ * as it lands (C major pentatonic, rising), the Cmaj9(#11) glass bloom over a sub swell, the shimmer that follows the
+ * beam and two high glints with the second; it starts with the first frame and carries its own timing. OK or Back jumps
+ * to the handover. Reduce motion: the Horizon and the still glass wordmark for 0.7 s, then the handover at once.
+ * Everything is made in onSizeChanged, theme() and start(); a frame only moves numbers (no allocation in doFrame or
+ * onDraw). The glass bitmaps are built on a background thread; until they're ready the Canvas layers stand in.
  */
 final class Intro extends View implements Choreographer.FrameCallback {
     // MARK: - Every parameter of the startup (seconds; px at 1080p, scaled by k = w / 1920)
 
     /** Act IV: the handover to the lock, the wordmark's exhale after it, the end, and the reduced (no motion) hold. */
-    static final float INTRO_HANDOVER = 2.35f, INTRO_WORD_OUT = 0.36f, INTRO_END = 3.10f, INTRO_REDUCED_HOLD = 0.7f;
+    static final float INTRO_HANDOVER = 4.85f, INTRO_WORD_OUT = 0.55f, INTRO_END = 5.40f, INTRO_REDUCED_HOLD = 0.7f;
     static final float INTRO_WORD_TO_OUT = 0.95f, INTRO_EXHALE_BLUR = 14f;
     /** The intro keeps drawing its own Horizon this long past the handover (the lock's is identical under it). */
     static final float INTRO_SKY_OVERLAP = 0.10f;
@@ -54,29 +57,39 @@ final class Intro extends View implements Choreographer.FrameCallback {
     /** The lock's faint frost over the Horizon (LockView.VEIL_DAY / VEIL_NIGHT): drawn here too, so the handover is exact. */
     static final int INTRO_VEIL_DAY = 0x1AFFFFFF, INTRO_VEIL_NIGHT = 0x24000000;
 
+    /**
+     * Act 0: the spark (when it appears, its two heartbeats and their length, its core and glow radii, px) and the dust
+     * (how many motes, when they fall in, from how far, px).
+     */
+    static final float INTRO_SPARK_IN = 0.15f, INTRO_BEAT_A = 0.38f, INTRO_BEAT_B = 0.80f, INTRO_BEAT = 0.24f;
+    static final float INTRO_SPARK_R = 16f, INTRO_SPARK_GLOW = 140f, INTRO_BEAT_GROW = 0.6f;
+    static final int INTRO_DUST = 56;
+    static final float INTRO_DUST_FROM = 0.02f, INTRO_DUST_TO = 1.12f, INTRO_DUST_REACH = 820f;
+    /** Act I: the ignition: when the spark stretches into the ribbon. */
+    static final float INTRO_IGNITE_AT = 1.05f;
     /** Act I: the flare ribbon (its line, span, thickness, ignition and fade) and its bloom. */
     static final float INTRO_SEAM_Y = 0.46f, INTRO_RIBBON_SPAN = 0.85f, INTRO_RIBBON_THIN = 2f, INTRO_RIBBON_THICK = 14f;
-    static final float INTRO_RIBBON_IGNITE = 0.20f, INTRO_RIBBON_OUT_FROM = 0.30f, INTRO_RIBBON_OUT_TO = 0.75f;
+    static final float INTRO_RIBBON_IGNITE = 0.32f, INTRO_RIBBON_OUT_FROM = 1.35f, INTRO_RIBBON_OUT_TO = 1.85f;
     static final float INTRO_BLOOM_FROM = 22f, INTRO_BLOOM_TO = 160f, INTRO_BLOOM_PEAK = 0.80f;
     static final int INTRO_RIBBON_CORE = 0xFFFFF7ED, INTRO_BLOOM_WARM = 0xFFF5EBD6, INTRO_BLOOM_COOL = 0xFF7DD3FC;
     /** The aperture: opens from here on its spring; its feathered edge is 8 px + 10% of H × open. */
-    static final float INTRO_APERTURE_AT = 0.20f, INTRO_FEATHER = 8f, INTRO_FEATHER_GROW = 0.10f;
+    static final float INTRO_APERTURE_AT = 1.25f, INTRO_FEATHER = 8f, INTRO_FEATHER_GROW = 0.10f;
     static final float[] INTRO_APERTURE = {0.55f, 0.84f};
     /** The atmospheric drift: displacement (px), spatial frequency (per px), light; in with the aperture, out by the handover. */
     static final float INTRO_DRIFT_PX = 6f, INTRO_DRIFT_FREQ = 0.0034f, INTRO_DRIFT_LIGHT = 0.035f;
-    static final float INTRO_DRIFT_IN_TO = 0.75f, INTRO_DRIFT_OUT_FROM = 1.85f;
+    static final float INTRO_DRIFT_IN_TO = 1.85f, INTRO_DRIFT_OUT_FROM = 3.95f;
 
     /** Act II: the wordmark (a name, not translated), size, tracking; the glyphs' start, stagger and spring. */
     static final String INTRO_WORDMARK = "mahitTV";
-    static final float INTRO_WORDMARK_SIZE = 124f, INTRO_WORDMARK_TRACKING = -0.03f;
-    static final float INTRO_WORD_AT = 0.45f, INTRO_GLYPH_STAGGER = 0.022f;
-    static final float[] INTRO_GLYPH = {0.48f, 0.86f};
+    static final float INTRO_WORDMARK_SIZE = 168f, INTRO_WORDMARK_TRACKING = -0.03f;   // big: a name to see from the couch
+    static final float INTRO_WORD_AT = 1.55f, INTRO_GLYPH_STAGGER = 0.075f;
+    static final float[] INTRO_GLYPH = {0.52f, 0.80f};
     /** Each glyph condenses from this scale, this far below, out of this defocus (px). */
     static final float INTRO_GLYPH_FROM = 1.14f, INTRO_GLYPH_RISE = 14f, INTRO_DEFOCUS = 28f;
     /** Layer 1: the frosted body (white, by day and at night), the refraction and its R/B split. */
-    static final float INTRO_BODY_DAY_A = 0.24f, INTRO_BODY_NIGHT_A = 0.16f, INTRO_REFRACTION = 10f, INTRO_FRINGE = 1.5f;
+    static final float INTRO_BODY_DAY_A = 0.40f, INTRO_BODY_NIGHT_A = 0.26f, INTRO_REFRACTION = 10f, INTRO_FRINGE = 1.5f;
     /** Layer 2: the elevation shadow (0 18 px 44 px, slate 0.22) and the inner top bevel's light. */
-    static final int INTRO_SHADOW = 0x380F172A;
+    static final int INTRO_SHADOW = 0x5C0F172A;   // slate 0.36: the glass stands off a light sky
     static final float INTRO_SHADOW_Y = 18f, INTRO_SHADOW_BLUR = 44f, INTRO_BEVEL = 0.82f;
     /** The inner optical shadow: how much the glass's thickness darkens it toward its edges (by day, at night). */
     static final float INTRO_DEPTH_DAY = 0.30f, INTRO_DEPTH_NIGHT = 0.22f;
@@ -84,13 +97,16 @@ final class Intro extends View implements Choreographer.FrameCallback {
     static final float INTRO_RIM = 1.5f;
 
     /** Act III: the caustic beam (when, angle, its width over the word and over the sky, its light on the sky). */
-    static final float INTRO_SWEEP_FROM = 1.15f, INTRO_SWEEP_TO = 1.75f, INTRO_SWEEP_ANGLE = -28f;
+    static final float INTRO_SWEEP_FROM = 2.55f, INTRO_SWEEP_TO = 3.35f, INTRO_SWEEP_ANGLE = -28f;
+    /** The signature: a second, quicker glint back across the word (its light ×0.6), and the word's one breath. */
+    static final float INTRO_GLINT_FROM = 3.80f, INTRO_GLINT_TO = 4.30f, INTRO_GLINT_LIGHT = 0.6f;
+    static final float INTRO_BREATH_FROM = 3.85f, INTRO_BREATH_TO = 4.65f, INTRO_BREATH = 0.025f;
     static final float INTRO_SWEEP_WIDTH = 300f, INTRO_BEAM_WIDTH = 0.09f, INTRO_BEAM_LIGHT = 0.07f, INTRO_SWEEP_LIGHT = 0.42f;
     /** The prism: cyan leading, diamond white, amber trailing, this far apart (px). */
     static final int INTRO_PRISM_A = 0xFF38BDF8, INTRO_PRISM_B = 0xFFFFFFFF, INTRO_PRISM_C = 0xFFFDE68A;
     static final float INTRO_PRISM_PX = 1.8f;
     /** The glass resonance ring: when, its radius (px), ring width and bend (px), peak light. */
-    static final float INTRO_RIPPLE_FROM = 1.45f, INTRO_RIPPLE_TO = 2.35f, INTRO_RIPPLE_R0 = 80f, INTRO_RIPPLE_R1 = 980f;
+    static final float INTRO_RIPPLE_FROM = 2.85f, INTRO_RIPPLE_TO = 3.85f, INTRO_RIPPLE_R0 = 80f, INTRO_RIPPLE_R1 = 980f;
     static final float INTRO_RIPPLE_WIDTH = 36f, INTRO_RIPPLE_AMP = 5f, INTRO_RIPPLE_LIGHT = 0.28f;
 
     private static final int GLYPHS = 7;
@@ -121,6 +137,12 @@ final class Intro extends View implements Choreographer.FrameCallback {
     private final Paint prismB = new Paint(Paint.ANTI_ALIAS_FLAG), prismC = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint band = new Paint(), addLayer = new Paint();
     private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG), livePaint = new Paint(), veil = new Paint();
+    /** Act 0: the spark's core and glow (radial, unit radius, placed by the canvas), and the dust. */
+    private final Paint sparkCore = new Paint(Paint.ANTI_ALIAS_FLAG), sparkGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dust = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final float[] dustX = new float[INTRO_DUST], dustY = new float[INTRO_DUST], dustR = new float[INTRO_DUST];
+    private final float[] dustDelay = new float[INTRO_DUST], dustTurn = new float[INTRO_DUST];
+    private final int[] dustColor = new int[INTRO_DUST];
     private final Matrix topM = new Matrix(), bottomM = new Matrix(), bandM = new Matrix(), beamM = new Matrix(), skyM = new Matrix();
     private final RectF screen = new RectF(), rect = new RectF(), wordBounds = new RectF(), glassRect = new RectF();
     private final float[] sweepDir = {(float) Math.cos(Math.toRadians(INTRO_SWEEP_ANGLE)), (float) Math.sin(Math.toRadians(INTRO_SWEEP_ANGLE))};
@@ -183,6 +205,28 @@ final class Intro extends View implements Choreographer.FrameCallback {
         prismC.setColor(INTRO_PRISM_C);
         softPaint.setColor(0xFFFFFFFF);
         shadePaint.setColor(INTRO_SHADOW);
+        sparkCore.setShader(new android.graphics.RadialGradient(0, 0, 1, new int[] {0xFFFFFFFF, 0xFFFFF7ED, 0x00FFF7ED},
+                new float[] {0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
+        sparkGlow.setShader(new android.graphics.RadialGradient(0, 0, 1, new int[] {0x99F5EBD6, 0x407DD3FC, 0x007DD3FC},
+                new float[] {0f, 0.4f, 1f}, Shader.TileMode.CLAMP));
+        sparkGlow.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
+        sparkCore.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
+        dust.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
+        // The dust: where each mote starts (around the spark, farther toward the sides: the frame is wide), how big, when
+        // it sets off, how far its spiral turns, and its tint (most warm white, a few cyan, a few amber). Seeded: the same
+        // sky of dust every time.
+        java.util.Random rnd = new java.util.Random(7);
+        int[] tints = {0xFFFFF7ED, 0xFFFFFFFF, 0xFF7DD3FC, 0xFFFDE68A};
+        for (int i = 0; i < INTRO_DUST; i++) {
+            double a = rnd.nextDouble() * 2 * Math.PI, d = 0.35 + 0.65 * Math.sqrt(rnd.nextDouble());
+            dustX[i] = (float) (Math.cos(a) * d * INTRO_DUST_REACH);
+            dustY[i] = (float) (Math.sin(a) * d * INTRO_DUST_REACH * 0.55);
+            dustR[i] = 1.2f + 2.3f * rnd.nextFloat();
+            dustDelay[i] = 0.35f * rnd.nextFloat();
+            dustTurn[i] = (rnd.nextBoolean() ? 1 : -1) * (0.4f + 0.6f * rnd.nextFloat());
+            float u = rnd.nextFloat();
+            dustColor[i] = tints[u < 0.55f ? 0 : u < 0.75f ? 1 : u < 0.9f ? 2 : 3];
+        }
         core = makeCore();
         bloom = makeBloom();
         ring = makeRing();
@@ -468,16 +512,30 @@ final class Intro extends View implements Choreographer.FrameCallback {
         drawWord(c);
     }
 
-    /** Where the beam's centre is (screen x): slowest as it crosses the word, at its centre at 1.45 s. */
+    /** The beam's run now: the sweep (left to right) until halfway to the glint, then the glint (right to left). */
+    private boolean glintRun() {
+        return t > (INTRO_SWEEP_TO + INTRO_GLINT_FROM) / 2;
+    }
+
+    /** Where the beam's centre is (screen x): slowest as it crosses the word, at its centre halfway through its run. */
     private float beamX() {
-        float u = Ui.clamp((t - INTRO_SWEEP_FROM) / (INTRO_SWEEP_TO - INTRO_SWEEP_FROM)) * 2 - 1;
+        boolean glint = glintRun();
+        float from = glint ? INTRO_GLINT_FROM : INTRO_SWEEP_FROM, to = glint ? INTRO_GLINT_TO : INTRO_SWEEP_TO;
+        float u = Ui.clamp((t - from) / (to - from)) * 2 - 1;
+        if (glint) u = -u;
         return w * (0.5f + 0.8f * (0.35f * u + 0.65f * u * u * u));
     }
 
-    /** The beam's strength over the sky (in and out at the ends of its run). */
+    /** The beam's strength over the sky (in and out at the ends of its run; the glint's softer). */
     private float beamLight() {
         if (reduced) return 0;
-        return smooth(INTRO_SWEEP_FROM, INTRO_SWEEP_FROM + 0.12f, t) * (1 - smooth(INTRO_SWEEP_TO - 0.12f, INTRO_SWEEP_TO, t));
+        boolean glint = glintRun();
+        float from = glint ? INTRO_GLINT_FROM : INTRO_SWEEP_FROM, to = glint ? INTRO_GLINT_TO : INTRO_SWEEP_TO;
+        return (glint ? INTRO_GLINT_LIGHT : 1) * smooth(from, from + 0.12f, t) * (1 - smooth(to - 0.12f, to, t));
+    }
+
+    private boolean sweepingNow() {
+        return !reduced && (t > INTRO_SWEEP_FROM && t < INTRO_SWEEP_TO || t > INTRO_GLINT_FROM && t < INTRO_GLINT_TO);
     }
 
     /** Slate, the ribbon and the aperture onto the living Horizon; then the Horizon (drift, beam, ring) and the veil. */
@@ -509,11 +567,14 @@ final class Intro extends View implements Choreographer.FrameCallback {
                 c.restore();
             }
         }
-        // The anamorphic ribbon: it ignites (0 → 0.20 s, 2 → 14 px, its span stretching out), then fades as the sky opens.
-        float ignite = reduced ? 0 : smooth(0, INTRO_RIBBON_IGNITE, t);
+        drawSpark(c);
+        // The anamorphic ribbon: the spark stretches into it (2 → 14 px, 0 → 85% of the width, easing out), then it fades
+        // as the sky opens.
+        float ignite = reduced ? 0 : smooth(INTRO_IGNITE_AT, INTRO_IGNITE_AT + INTRO_RIBBON_IGNITE, t);
         float glow = ignite * (1 - smooth(INTRO_RIBBON_OUT_FROM, INTRO_RIBBON_OUT_TO, t));
         if (glow > 0.004f) {
-            float y0 = INTRO_SEAM_Y * h, span = INTRO_RIBBON_SPAN * w * (0.35f + 0.65f * ignite);
+            float stretch = 1 - (1 - ignite) * (1 - ignite) * (1 - ignite);
+            float y0 = INTRO_SEAM_Y * h, span = INTRO_RIBBON_SPAN * w * (0.02f + 0.98f * stretch);
             float bloomHalf = (INTRO_BLOOM_FROM + (INTRO_BLOOM_TO - INTRO_BLOOM_FROM) * r) * k;
             rect.set(pivotX - span * 0.62f, y0 - bloomHalf, pivotX + span * 0.62f, y0 + bloomHalf);
             bloomPaint.setAlpha(Math.round(255 * INTRO_BLOOM_PEAK * glow));
@@ -523,6 +584,49 @@ final class Intro extends View implements Choreographer.FrameCallback {
             corePaint.setAlpha(Math.round(255 * glow));
             c.drawBitmap(core, null, rect, corePaint);
         }
+    }
+
+    /**
+     * Act 0: the dust falling in on its spirals (faster as it nears), then the spark, beating twice and stretching wide
+     * as it ignites into the ribbon.
+     */
+    private void drawSpark(Canvas c) {
+        if (reduced || t > INTRO_IGNITE_AT + 0.4f) return;
+        float sx = pivotX, sy = INTRO_SEAM_Y * h;
+        for (int i = 0; i < INTRO_DUST; i++) {
+            float p = Ui.clamp((t - INTRO_DUST_FROM - dustDelay[i]) / (INTRO_DUST_TO - INTRO_DUST_FROM - dustDelay[i]));
+            if (p <= 0 || p >= 1) continue;
+            float e = p * p * p, left = 1 - e, turn = dustTurn[i] * left * 1.4f;
+            float cs = (float) Math.cos(turn), sn = (float) Math.sin(turn);
+            float x = sx + (dustX[i] * cs - dustY[i] * sn) * left * k, y = sy + (dustX[i] * sn + dustY[i] * cs) * left * k;
+            float a = smooth(0, 0.18f, p) * (1 - smooth(0.82f, 1, p));
+            dust.setColor(Ui.alpha(dustColor[i], 0.85f * a));
+            c.drawCircle(x, y, dustR[i] * k * (0.6f + 0.4f * left), dust);
+        }
+        float in = smooth(INTRO_SPARK_IN, INTRO_SPARK_IN + 0.25f, t), out = 1 - smooth(INTRO_IGNITE_AT + 0.05f, INTRO_IGNITE_AT + 0.4f, t);
+        float a = in * out;
+        if (a <= 0.004f) return;
+        float beat = pulse(t - INTRO_BEAT_A) + pulse(t - INTRO_BEAT_B), gather = smooth(INTRO_SPARK_IN, INTRO_IGNITE_AT, t);
+        float grow = (0.55f + 0.45f * gather) * (1 + INTRO_BEAT_GROW * beat);
+        float wide = 1 + 7 * smooth(INTRO_IGNITE_AT - 0.06f, INTRO_IGNITE_AT + 0.3f, t);   // into the ribbon
+        c.save();
+        c.translate(sx, sy);
+        c.scale(INTRO_SPARK_GLOW * k * grow * wide, INTRO_SPARK_GLOW * k * grow);
+        sparkGlow.setAlpha(Math.round(255 * a * (0.55f + 0.45f * beat)));
+        c.drawCircle(0, 0, 1, sparkGlow);
+        c.restore();
+        c.save();
+        c.translate(sx, sy);
+        c.scale(INTRO_SPARK_R * k * grow * wide, INTRO_SPARK_R * k * grow);
+        sparkCore.setAlpha(Math.round(255 * a));
+        c.drawCircle(0, 0, 1, sparkCore);
+        c.restore();
+    }
+
+    /** A heartbeat: up and down over INTRO_BEAT seconds from 0. */
+    private static float pulse(float x) {
+        if (x <= 0 || x >= INTRO_BEAT) return 0;
+        return (float) Math.sin(Math.PI * x / INTRO_BEAT);
     }
 
     /** The Frosted Horizon, alive (the shader, or a drifting bitmap with the beam and ring on top) or still, then the veil. */
@@ -570,6 +674,9 @@ final class Intro extends View implements Choreographer.FrameCallback {
     /** The glass wordmark: seven glyphs condensing, the caustic sweep, then (after the handover) the exhale. */
     private void drawWord(Canvas c) {
         float zoom = 1, alpha = 1, haze = 0;
+        if (!reduced && t > INTRO_BREATH_FROM && t < INTRO_BREATH_TO) {
+            zoom = 1 + INTRO_BREATH * (float) Math.sin(Math.PI * (t - INTRO_BREATH_FROM) / (INTRO_BREATH_TO - INTRO_BREATH_FROM));
+        }
         if (t >= handoverAt) {
             // Ease-out cubic (as web/intro.js): most of the word is gone before the lock's cards reach it.
             float p = reduced ? 1 : Ui.clamp((t - handoverAt) / INTRO_WORD_OUT), e = 1 - (1 - p) * (1 - p) * (1 - p);
@@ -592,7 +699,7 @@ final class Intro extends View implements Choreographer.FrameCallback {
         }
         if (any <= 0.004f) return;
         float sweepX = beamX();
-        boolean sweeping = !reduced && t > INTRO_SWEEP_FROM && t < INTRO_SWEEP_TO;
+        boolean sweeping = sweepingNow();
         // Layer 2: the elevation shadow, under everything, with the glyphs' mean transform.
         if (shade != null && meanSharp > 0.004f) {
             c.save();

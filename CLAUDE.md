@@ -448,7 +448,7 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   also two Home presses within 700 ms (`HomeActivity.onNewIntent`; not offered on Xiaomi TVs, whose remote sends one
   press as a burst); Top Buttons can add it on its own. Only while it's open, it reads the list through the TV's ADB
   (`dumpsys activity recents`, `ps -A -o NAME`), and ▲ runs `am force-stop`.
-  A card may be closed only where `HomeMode.mayStop` allows it (`mayTurnOff`, plus Amazon's streaming apps) and the app holds neither an enabled accessibility
+  A card may be closed only where `HomeMode.mayForceStop` allows it (`mayTurnOff`, plus TV Settings, the Play Store and Amazon's streaming apps, which only stop: `STOPPABLE`) and the app holds neither an enabled accessibility
   service (Android turns a force-stopped app's service off for good) nor the current keyboard, and only if
   `HomeMode.neededByTv` doesn't keep it (the TV's inputs and the remote's Input key, as before a switch). Its loads carry a
   generation (only the newest answers) and catch every exception: `:home`'s watchdog counts a crash there. It draws

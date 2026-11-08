@@ -231,43 +231,76 @@ final class Click {
         if (current == this) current = null;
     }
 
-    /** The startup's sound is stereo at CD rate; the clicks stay mono at RATE. */
-    private static final int CHIME_RATE = 44_100;
+    /**
+     * The startup's sound is stereo at 32 kHz (its highest note is 2.6 kHz): its 5.8 s stay under SoundPool's 1 MB a
+     * sample, which some TVs still enforce. The clicks stay mono at RATE.
+     */
+    private static final int CHIME_RATE = 32_000;
 
     /**
-     * The startup's acoustic signature ("Anamorphic Horizon & Optical Liquid Glass Ignition"), 3.2 s of 16-bit 44.1 kHz
-     * stereo, synced to Intro's acts from its first frame:
+     * The startup's sound ("Liquid Light"), 5.8 s of 16-bit 32 kHz stereo, scored to Intro's acts from its first frame:
      * <ol>
-     * <li>A warm sub-bass horizon swell, C2 + G2 (65.41 / 98.00 Hz: sines with a touch of their third harmonic, a
-     * triangle's warmth without its buzz), from 0.05 s with a 260 ms raised-cosine attack as the seam opens, gone by
-     * 2.60 s.</li>
-     * <li>The crystalline Cmaj9(#11) bloom (C4 E4 G4 B4 D5, then a quiet F♯5 on top) as the glyphs condense: rolled 45 ms apart from 0.48 s, each a
-     * chorus of two voices detuned ∓1.8 cents into the left and right channels, 88% sine and 12% a 2:1 FM bell (its
-     * index dying away like struck glass), into a 2.2 s reverb; it fades out from 2.90 s.</li>
-     * <li>The prismatic shimmer (E5 G5 B5 D6) as the −28° beam crosses the word, 1.15–1.85 s: velvet sine pings 18 dB
-     * under the chord, panned left to right as the light travels.</li>
+     * <li>The spark's two heartbeats (0.38 s, 0.80 s): a sub thump each, 58 → 41 Hz in 220 ms, the second a little
+     * stronger.</li>
+     * <li>An airy riser into the ignition (0.55–1.05 s): noise through a lowpass opening 300 → 5000 Hz, swelling, then
+     * cut at the ignition, which lands on the sub-bass horizon swell, C2 + G2 (sines with a touch of their third
+     * harmonic), from 1.05 s to 4.9 s.</li>
+     * <li>A glass note per glyph as it lands (C5 D5 E5 G5 A5 C6 D6, from 1.62 s, 75 ms apart), into the room.</li>
+     * <li>The crystalline Cmaj9(#11) bloom (C4 E4 G4 B4 D5, then a quiet F♯5) as the word completes: rolled 45 ms apart
+     * from 2.15 s, each a chorus of two voices detuned ∓1.8 cents into the channels, 88% sine and 12% a 2:1 FM bell.</li>
+     * <li>The prismatic shimmer (E5 G5 B5 D6) as the beam crosses the word left to right, 2.6–3.25 s; then two high
+     * glints (B6, E7) right to left with the second glint, 3.9 and 4.05 s.</li>
      * </ol>
-     * The reverb is a small Schroeder room (four damped combs per channel, offset for width, then two all-passes) whose
-     * combs ring down 60 dB in 2.2 s. Peak-normalised to −3 dBFS. Cached once in the app's cache folder.
+     * All of it into a small Schroeder room (four damped combs per channel, offset for width, then two all-passes) that
+     * rings down 60 dB in 2.4 s; it fades out from 5.0 s. Peak-normalised to −3 dBFS. Cached once in the cache folder.
      */
     private static String chord(Context c) throws IOException {
-        new File(c.getCacheDir(), "chime-mahittv.wav").delete();         // the golden intro's chord
-        new File(c.getCacheDir(), "chime-mahittv-glass.wav").delete();   // the first glass chord (mono)
-        new File(c.getCacheDir(), "chime-mahittv-horizon.wav").delete();   // the chord without its #11
-        File f = new File(c.getCacheDir(), "chime-mahittv-lydian.wav");
+        for (String old : new String[] {"chime-mahittv.wav", "chime-mahittv-glass.wav", "chime-mahittv-horizon.wav",
+                "chime-mahittv-lydian.wav"}) {
+            new File(c.getCacheDir(), old).delete();   // the earlier startups' sounds
+        }
+        File f = new File(c.getCacheDir(), "chime-mahittv-liquid-light-32k.wav");
         if (f.exists() && f.length() > 44) return f.getPath();
         final int rate = CHIME_RATE;
-        final double seconds = 3.2;
+        final double seconds = 5.8;
         int n = (int) Math.round(rate * seconds);
         float[] dryL = new float[n], dryR = new float[n], sendL = new float[n], sendR = new float[n];
 
-        // Layer 1: the sub swell (dry only: a reverb would muddy it).
+        // Layer 1: the heartbeats, a falling sub thump each (dry: a reverb would muddy them).
+        double[][] beats = {{0.38, 0.42}, {0.80, 0.50}};
+        for (double[] b : beats) {
+            int from = (int) Math.round(b[0] * rate);
+            double ph = 0;
+            for (int i = from; i < Math.min(n, from + (int) (0.32 * rate)); i++) {
+                double t = (double) (i - from) / rate, hz = 41 + 17 * Math.exp(-t / 0.06), env = raised(t / 0.008) * Math.exp(-t / 0.09);
+                ph += 2 * Math.PI * hz / rate;
+                float y = (float) (b[1] * env * (Math.sin(ph) + 0.12 * Math.sin(2 * ph)));
+                dryL[i] += y;
+                dryR[i] += y;
+            }
+        }
+
+        // Layer 2: the riser into the ignition: noise through a one-pole lowpass opening as it swells, cut at 1.05 s.
+        java.util.Random noise = new java.util.Random(11);
+        double lowL = 0, lowR = 0;
+        for (int i = (int) (0.55 * rate); i < (int) (1.06 * rate); i++) {
+            double t = (double) i / rate, x = (t - 0.55) / 0.50, cut = 300 * Math.pow(5000 / 300.0, x);
+            double g = 1 - Math.exp(-2 * Math.PI * cut / rate), env = 0.10 * x * x * (1 - raised((t - 1.03) / 0.03));
+            lowL += g * (noise.nextGaussian() - lowL);
+            lowR += g * (noise.nextGaussian() - lowR);
+            dryL[i] += (float) (env * lowL);
+            dryR[i] += (float) (env * lowR);
+            sendL[i] += (float) (0.6 * env * lowL);
+            sendR[i] += (float) (0.6 * env * lowR);
+        }
+
+        // Layer 3: the sub-bass horizon swell, from the ignition (dry only).
         double[][] sub = {{65.41, 0.30}, {98.00, 0.22}};
         for (double[] v : sub) {
             double step = 2 * Math.PI * v[0] / rate;
-            int from = (int) (0.05 * rate), to = (int) (2.60 * rate);
+            int from = (int) (1.05 * rate), to = (int) (4.90 * rate);
             for (int i = from; i < to; i++) {
-                double t = (double) (i - from) / rate, env = raised(t / 0.26) * (1 - raised(((double) i / rate - 1.95) / 0.65));
+                double t = (double) (i - from) / rate, env = raised(t / 0.22) * (1 - raised(((double) i / rate - 4.05) / 0.85));
                 double ph = step * (i - from), s = Math.sin(ph) + 0.08 * Math.sin(3 * ph);
                 float y = (float) (v[1] * env * s);
                 dryL[i] += y;
@@ -275,26 +308,35 @@ final class Click {
             }
         }
 
-        // Layer 2: the Cmaj9(#11) glass bloom, chorused across the channels, into the reverb. The #11 is last and quietest:
-        // it opens the chord up without turning its tritone over the C into tension.
+        // Layer 4: a glass note per glyph as it lands, rising (C major pentatonic), spread from left to right.
+        double[] steps = {523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66};
+        for (int j = 0; j < steps.length; j++) {
+            double pan = -0.6 + 1.2 * j / (steps.length - 1), angle = (pan + 1) * Math.PI / 4;
+            ping(dryL, dryR, sendL, sendR, rate, steps[j], 1.62 + 0.075 * j, 0.07, Math.cos(angle), Math.sin(angle));
+        }
+
+        // Layer 5: the Cmaj9(#11) glass bloom as the word completes, chorused across the channels. The #11 is last and
+        // quietest: it opens the chord up without turning its tritone over the C into tension.
         double[] notes = {261.63, 329.63, 392.00, 493.88, 587.33, 739.99}, levels = {0.11, 0.10, 0.10, 0.085, 0.075, 0.05};
         double down = Math.pow(2, -1.8 / 1200), up = Math.pow(2, 1.8 / 1200);
         for (int j = 0; j < notes.length; j++) {
-            double start = 0.48 + 0.045 * j;
+            double start = 2.15 + 0.045 * j;
             bell(dryL, sendL, rate, notes[j] * down, start, levels[j]);
             bell(dryR, sendR, rate, notes[j] * up, start, levels[j]);
         }
 
-        // Layer 3: the shimmer, left to right with the beam, 18 dB under the chord (≈ 0.126 of its level).
-        double[] pings = {659.25, 783.99, 987.77, 1174.66}, at = {1.15, 1.33, 1.51, 1.69};
+        // Layer 6: the shimmer, left to right with the beam, then the two glints right to left with the second.
+        double[] pings = {659.25, 783.99, 987.77, 1174.66}, at = {2.62, 2.82, 3.02, 3.22};
         for (int j = 0; j < pings.length; j++) {
             double pan = -0.8 + 1.6 * j / (pings.length - 1), angle = (pan + 1) * Math.PI / 4;
             ping(dryL, dryR, sendL, sendR, rate, pings[j], at[j], 0.055, Math.cos(angle), Math.sin(angle));
         }
+        ping(dryL, dryR, sendL, sendR, rate, 1975.53, 3.90, 0.04, Math.sin(Math.PI * 0.4), Math.cos(Math.PI * 0.4));
+        ping(dryL, dryR, sendL, sendR, rate, 2637.02, 4.05, 0.035, Math.sin(Math.PI * 0.15), Math.cos(Math.PI * 0.15));
 
-        // The room: a 2.2 s tail on the glass, wider than the dry sound.
-        float[] wetL = room(sendL, rate, new int[] {1557, 1617, 1491, 1422}, 2.2);
-        float[] wetR = room(sendR, rate, new int[] {1580, 1640, 1514, 1445}, 2.2);
+        // The room: a 2.4 s tail on the glass, wider than the dry sound.
+        float[] wetL = room(sendL, rate, new int[] {1557, 1617, 1491, 1422}, 2.4);
+        float[] wetR = room(sendR, rate, new int[] {1580, 1640, 1514, 1445}, 2.4);
         float dryPeak = 1e-6f, wetPeak = 1e-6f;
         for (int i = 0; i < n; i++) {
             dryPeak = Math.max(dryPeak, Math.max(Math.abs(sendL[i]), Math.abs(sendR[i])));
@@ -303,7 +345,7 @@ final class Click {
         float wet = 0.55f * dryPeak / wetPeak;   // the tail sits a little over half the bloom's peak
         float peak = 1e-6f;
         for (int i = 0; i < n; i++) {
-            double fade = 1 - raised(((double) i / rate - 2.90) / (seconds - 2.90));
+            double fade = 1 - raised(((double) i / rate - 5.0) / (seconds - 5.0));
             dryL[i] = (float) ((dryL[i] + wet * wetL[i]) * fade);
             dryR[i] = (float) ((dryR[i] + wet * wetR[i]) * fade);
             peak = Math.max(peak, Math.max(Math.abs(dryL[i]), Math.abs(dryR[i])));
