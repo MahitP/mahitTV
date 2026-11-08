@@ -67,7 +67,11 @@ The first version (left of Control Center, black) was harder to reach, and it re
 - **↓ ↑ step through the activities in order.**
   - The old one slides out the way you pressed as the next slides in from the other side, inside the shape. The capsule springs to the new width.
   - Past the last (↓) or the first (↑), nothing changes. The dot gets the nudge and the knock every other dead end gives.
-- **← and →:** ← goes back to Welly, and → goes on to the round buttons or the bubble.
+- **← and →:**
+  - On what's playing, ← → move between ⏮ ⏯ ⏭ first; the focus starts on ⏯.
+  - Past them (or on any other activity), ← goes back to Welly and → goes on to the round buttons or the bubble.
+- **Showing where the focus is:** the focused control is a white circle with an ink glyph (the tvOS focus). The tab bar's lens and its selected name step back, so the focus is plainly in the dot and not on Welly.
+- **OK held on what's playing:** its app opens, as tapping the Dynamic Island opens the app. The song keeps playing.
 - **When the focus leaves,** it closes, back to showing the most important activity.
 - **When an activity stops under the focus,** the focus moves to the next one. If none is left, it moves to the bubble.
 
@@ -75,9 +79,9 @@ The first version (left of Control Center, black) was harder to reach, and it re
 
 | | Runs while | Open words | OK |
 |---|---|---|---|
-| ♪ What's playing | it plays; 30 s after a pause; while focused | the title; the artist · the app | play or pause (‖ / ▶) |
+| ♪ What's playing (TV symbol for a video app) | it plays; 30 s after a pause; while focused | the title; the artist · the app | ⏮ ⏯ ⏭ (← → between them); held: open the app |
 | Focus | Do Not Disturb is on (`ACTION_INTERRUPTION_FILTER_CHANGED`) | Do Not Disturb; On | turn it off (×). Control Center turns it on |
-| AirPods | they're connected. Joining opens the dot on them by itself for 3.5 s (the Dynamic Island's alert) | the name; Connected (· Spatial Audio) | Control Center |
+| AirPods | they're connected. Joining opens the dot on them by itself for 3.5 s (the Dynamic Island's alert) | the name; Connected (· Spatial Audio) | Control Center (›) |
 | ☾ The sleep timer | it runs (when its overlay doesn't show it) | Sleep Timer; Off in 25 min | the next preset (15 min, 30 min, 1 h, 2 h, off; + or ×), as Control Center's tile |
 
 - **AirPods** replace the card that used to slide in at the top right. The glyph by the bubble stays.
@@ -89,6 +93,15 @@ The first version (left of Control Center, black) was harder to reach, and it re
 - The pair (the bar and the dot) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
 - An open capsule's width is what its words need (up to 380 px of text), but never more than that space allows. The words are cut with "…" to what's left.
 - All of this is measured when something changes (a song, the focus, the layout), never while drawing.
+
+## Movies and other apps
+
+**Decision:** there's no separate "movies" activity. What's playing covers any app that keeps playing behind the home screen, video or music, and shows the TV symbol for video apps.
+
+**Why:**
+- **Android TV pauses a video app when you leave it** for the home screen. Its docs say so, and only an app that asks for background playback keeps going. So Netflix, YouTube and the rest stop the moment you press Home, and never stay "live" here.
+- **Apple's island works the same way.** It shows what keeps playing through the Now Playing system: music and podcasts. Video only shows in picture in picture.
+- **Video apps that do keep playing** get the TV symbol, with their controls and hold-to-open, as music does. Examples: a live channel, or picture in picture.
 
 ## Later candidates
 

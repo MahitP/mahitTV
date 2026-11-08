@@ -913,7 +913,7 @@
   var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', WALLPAPER: 'wallpaper', ABOUT: 'about',
     TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents', FOLDER: 'folder'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
-  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, live: 0, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
+  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, live: 0, ctrl: 1, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
     recent: 0, ccInput: 0, folder: 0};
   var cards = [];
   var topFromTab = null;   // the tab ↑ left for the bubble (← goes back to it)
@@ -1225,11 +1225,11 @@
 
   function Live(icon, control) {
     this.icon = icon;
-    this.control = control;   // a control at the right end (play/pause, +, ×): AirPods has none
+    this.control = control;   // the room its controls take at the right end
     this.on = false;
     this.w = ISLAND_D;
   }
-  var lives = [new Live('music', true), new Live('moon', true), new Live('airpods', false), new Live('bedtime', true)];
+  var lives = [new Live('music', 164), new Live('moon', 80), new Live('airpods', 80), new Live('bedtime', 80)];
   var island = null, islandShows = -1, islandFrom = -1, islandDir = 1, islandLeft = 0, islandPausedUntil = 0;
   var islandWasPlaying = false, islandFocused = false, airAlertUntil = 0;
 
@@ -1260,10 +1260,20 @@
       f.id = 'live-' + lives[i].icon;
       face.t = el('span', 't', face.txt);
       face.s = el('span', 's', face.txt);
-      if (lives[i].control) {
-        face.ctrl = el('span', i === LIVE_MUSIC ? 'ctrl pp' : i === LIVE_FOCUS ? 'ctrl plus ends' : 'ctrl plus', f);
+      if (i === LIVE_MUSIC) {
+        // What's playing: ⏮ ⏯ ⏭; the focused one a white circle with an ink glyph (the tvOS focus).
+        face.ctrl = el('span', 'ctrls', f);
+        face.btns = [el('span', 'c prev', face.ctrl), el('span', 'c pp', face.ctrl), el('span', 'c next', face.ctrl)];
+        for (var b = 0; b < 3; b++) { el('i', '', face.btns[b]); el('i', '', face.btns[b]); }
+      } else if (i === LIVE_AIR) {
+        face.ctrl = el('span', 'ctrl c', f);
+        sym('chevron_right', face.ctrl);   // Control Center
+        face.btns = [face.ctrl];
+      } else {
+        face.ctrl = el('span', i === LIVE_FOCUS ? 'ctrl c plus ends' : 'ctrl c plus', f);
         el('i', '', face.ctrl);
         el('i', '', face.ctrl);
+        face.btns = [face.ctrl];
       }
       island.faces.push(face);
     }
@@ -1287,7 +1297,7 @@
     islandWasPlaying = playingNow;
     var minutes = PREVIEW ? previewCC.sleep : 0, dnd = PREVIEW && !!previewCC.dnd, any = anyLive();
     if (m) { f[LIVE_MUSIC].t.textContent = m.songs[m.at][0]; f[LIVE_MUSIC].s.textContent = m.songs[m.at][1]; }
-    setClass(f[LIVE_MUSIC].ctrl, 'paused', !playingNow);
+    setClass(f[LIVE_MUSIC].btns[1], 'paused', !playingNow);
     f[LIVE_FOCUS].t.textContent = tr('Do Not Disturb');
     f[LIVE_FOCUS].s.textContent = tr('state|On');
     f[LIVE_AIR].t.textContent = airpods || '';
@@ -1304,7 +1314,7 @@
     if (onIsland() && !lives[st.live].on) {
       var n = nextLive(st.live, 1);
       if (n < 0) n = nextLive(st.live, -1);
-      if (n >= 0) st.live = n; else st.top = 3;   // the last one stopped under the focus: the bubble
+      if (n >= 0) { st.live = n; st.ctrl = 1; } else st.top = 3;   // the last one stopped under the focus: the bubble
       updateFocus();
     }
     if (any !== anyLive()) renderPill(); else layoutIsland();
@@ -1330,7 +1340,13 @@
     var open = shows >= 0 && (focused || alert) ? 1 : 0;
     if (open !== mv.islandOpen.to) mv.islandOpen.tune(open ? ISLAND_OPEN : ISLAND_CLOSE).set(open);
     if (islandShows >= 0) mv.islandWidth.set(lives[islandShows].w);
-    for (var i = 0; i < lives.length; i++) setClass(island.faces[i].node, 'on', i === islandShows || i === islandFrom);
+    for (var i = 0; i < lives.length; i++) {
+      var face = island.faces[i];
+      setClass(face.node, 'on', i === islandShows || i === islandFrom);
+      for (var b = 0; b < face.btns.length; b++) setClass(face.btns[b], 'focus', focused && st.live === i && (i !== LIVE_MUSIC || st.ctrl === b));
+    }
+    // The selected tab's lens and name step back while the focus is in the dot: it's not on Welly.
+    setClass($('tabs'), 'away', focused);
     Motion.kick();
   }
 
@@ -1347,12 +1363,12 @@
     island.node.style.left = (960 + tw / 2 + ISLAND_SPACE) + 'px';
     var room = islandLeft - ISLAND_GAP - ISLAND_LEFT - tw - ISLAND_SPACE;
     for (var i = 0; i < lives.length; i++) {
-      var l = lives[i], f = island.faces[i], frame = 80 + (l.control ? 80 : 24);
+      var l = lives[i], f = island.faces[i], frame = 80 + l.control;
       // + 2: scrollWidth is rounded, and a width a fraction short of the text cuts its last letters with "…".
       var want = Math.min(ISLAND_TEXT, Math.max(f.t.scrollWidth, f.s.scrollWidth) + 2);
       l.w = Math.max(ISLAND_D, Math.min(want + frame, room));
       f.t.style.width = f.s.style.width = Math.max(0, l.w - frame) + 'px';
-      if (f.ctrl) f.ctrl.style.left = (l.w - 52) + 'px';
+      f.ctrl.style.left = (i === LIVE_MUSIC ? l.w - 12 - 144 : l.w - 52) + 'px';
     }
     if (islandShows >= 0) mv.islandWidth.set(lives[islandShows].w);
   }
@@ -1369,7 +1385,11 @@
   /** OK on the open dot: the activity's one control. */
   function liveOk() {
     var m = islandMedia();
-    if (st.live === LIVE_MUSIC && m) {
+    if (st.live === LIVE_MUSIC && m && st.ctrl !== 1) {
+      m.at = (m.at + (st.ctrl === 2 ? 1 : m.songs.length - 1)) % m.songs.length;   // ⏮ ⏭
+      Sound.select();
+      layoutIsland();
+    } else if (st.live === LIVE_MUSIC && m) {
       m.playing = !m.playing;
       Sound.toggle(m.playing);
     } else if (st.live === LIVE_FOCUS) {
@@ -1384,6 +1404,13 @@
     }
     islandUpdate();
     if (st.zone === Z.DRAWER) renderDrawer();
+  }
+
+  /** OK held on what's playing: its app opens (as a tap on the Dynamic Island does). */
+  function canOpenFromIsland() { return onIsland() && st.live === LIVE_MUSIC && !!islandMedia(); }
+  function openFromIsland() {
+    var m = islandMedia(), sub = m.songs[m.at][1], app = sub.slice(sub.lastIndexOf(' · ') + 3);
+    if (!onApp(app)) Sound.error();   // the preview's sample app isn't there
   }
 
   /**
@@ -4674,7 +4701,7 @@
   }
 
   function snapshot() {
-    return [st.zone, st.tab, st.top, st.live, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang, st.recent].join(',');
+    return [st.zone, st.tab, st.top, st.live, st.ctrl, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang, st.recent].join(',');
   }
 
   function move(dx, dy) {
@@ -4713,7 +4740,7 @@
         break;
       case Z.TABS:
         // ← → walk TV · Home · Welly · the pill; focusing a tab selects it, as on tvOS.
-        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = anyLive() ? 2 : 3; st.live = nextLive(-1, 1); topFromTab = null; }
+        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = anyLive() ? 2 : 3; st.live = nextLive(-1, 1); st.ctrl = 1; topFromTab = null; }
         else if (dx) st.tab = Math.max(0, Math.min(TAB.WELLY, st.tab + dx));
         else if (dy > 0) enterTab();
         // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the other tabs.
@@ -4727,11 +4754,12 @@
         break;
       case Z.TOP:
         // The dynamic dot: ↓ ↑ through its activities (nothing past either end: the knock), ← Welly, → the bubble.
-        if (st.top === 2 && dy) { if (nextLive(st.live, dy > 0 ? 1 : -1) >= 0) st.live = nextLive(st.live, dy > 0 ? 1 : -1); }
+        if (st.top === 2 && dy) { if (nextLive(st.live, dy > 0 ? 1 : -1) >= 0) { st.live = nextLive(st.live, dy > 0 ? 1 : -1); st.ctrl = 1; } }
+        else if (st.top === 2 && st.live === LIVE_MUSIC && dx && st.ctrl + dx >= 0 && st.ctrl + dx <= 2) st.ctrl += dx;   // ⏮ ⏯ ⏭
         else if (dx > 0 && st.top === 2) st.top = 3;
         else if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;
-        else if (dx < 0 && st.top === 3 && anyLive()) { st.top = 2; st.live = nextLive(-1, 1); }   // ← the dot
+        else if (dx < 0 && st.top === 3 && anyLive()) { st.top = 2; st.live = nextLive(-1, 1); st.ctrl = 1; }   // ← the dot
         // ← from the dot: Welly, beside it. From the bubble: the tab it was reached from with ↑, else Welly.
         else if (dx < 0) { st.zone = Z.TABS; st.tab = st.top !== 2 && topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
         else if (dy > 0 && st.top !== 2) { topFromTab = null; enterTab(); }
@@ -5129,7 +5157,8 @@
       pressed = focusedFx();
       if (pressed) pressed.p.set(1);
       // Held (~0.5 s) on something that can move: it lifts to be moved; the release after a hold opens nothing.
-      if (canMove()) {
+      // On what's playing in the dynamic dot: its app opens.
+      if (canMove() || canOpenFromIsland()) {
         Sound.holdStart();
         holdTimer = setTimeout(function () {
           holdTimer = 0;
@@ -5138,7 +5167,7 @@
           if (pressed) pressed.p.set(0);
           pressed = null;
           Sound.holdCommit();
-          startMove();
+          if (canOpenFromIsland()) openFromIsland(); else startMove();
         }, HOLD_MS);
       }
       return;

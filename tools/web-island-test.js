@@ -115,6 +115,51 @@ function mid(x) { return (x.l + x.r) / 2; }
   end = await page.evaluate(function () { return {live: FreeMyTV.state.live, top: FreeMyTV.state.top, moved: window.__nudges.some(function (t) { return /,\s*-?[1-9]/.test(t); })}; });
   assert.ok(end.live === 0 && end.top === 2 && end.moved, '↑ past the first: it stays, and knocks: ' + JSON.stringify(end));
 
+  // The song's controls: the focus on ⏯ (a white circle), the tab bar's lens stepped back (the focus isn't on Welly);
+  // → ⏭ and OK: the next song; ← ← ⏮; ← again leaves for Welly.
+  function controls() {
+    return page.evaluate(function () {
+      var f = document.querySelector('#live-music .c.focus');
+      return {focus: f ? f.className.replace(/\s*c\s*|\s*focus\s*/g, ' ').trim() : null, away: document.getElementById('tabs').className.indexOf('away') >= 0,
+        title: document.querySelector('#live-music .t').textContent, zone: FreeMyTV.state.zone};
+    });
+  }
+  var cs = await controls();
+  assert.ok(cs.focus === 'pp' && cs.away, 'on the song: ⏯ has the focus, the lens steps back: ' + JSON.stringify(cs));
+  await tap(page, 'ArrowRight');
+  assert.strictEqual((await controls()).focus, 'next', '→: ⏭');
+  await tap(page, 'Enter');
+  await wait(page, 400);
+  assert.strictEqual((await controls()).title, 'Second Song', 'OK on ⏭: the next song');
+  await tap(page, 'ArrowLeft', 2);
+  assert.strictEqual((await controls()).focus, 'prev', '← ←: ⏮');
+  await tap(page, 'Enter');
+  await wait(page, 400);
+  assert.strictEqual((await controls()).title, 'Sample Song', 'OK on ⏮: back a song');
+  await tap(page, 'ArrowLeft');
+  cs = await controls();
+  assert.ok(cs.zone === 'tabs' && !cs.away, '← past ⏮: out to Welly, the lens back: ' + JSON.stringify(cs));
+  await tap(page, 'ArrowRight');
+  assert.strictEqual((await controls()).focus, 'pp', '→ from Welly: back on ⏯');
+
+  // OK held on the song: its app opens (the sample song's is Spotify).
+  await page.evaluate(function () {
+    window.__launched = [];
+    var launch = TV.launch;
+    TV.launch = function (id) { window.__launched.push(id); return launch.apply(TV, arguments); };
+  });
+  await page.keyboard.down('Enter');
+  await wait(page, 800);
+  await page.keyboard.up('Enter');
+  await wait(page, 300);
+  var opened = await page.evaluate(function () { return {ids: window.__launched, playing: Home.testIsland().playing}; });
+  assert.ok(opened.ids.length === 1 && /spotify/i.test(opened.ids[0]) && opened.playing, 'held: Spotify opens, the song still plays: ' + JSON.stringify(opened));
+  await page.evaluate(function () { FreeMyTV.home(); });
+  while ((await look(page)).zone !== 'tabs') await tap(page, 'ArrowUp');
+  while ((await look(page)).tab !== 2) await tap(page, 'ArrowRight');
+  await tap(page, 'ArrowRight');
+  await wait(page, 600);
+
   // OK on Focus turns Do Not Disturb off: that activity goes, the focus moves on to the next.
   await tap(page, 'ArrowDown');
   await tap(page, 'Enter');
@@ -127,7 +172,7 @@ function mid(x) { return (x.l + x.r) / 2; }
   assert.strictEqual((await look(page)).state.shows, 'music', 'only the song left');
 
   // Paused and left: the song goes after its grace, the dot with it, and the bar centres again.
-  await tap(page, 'ArrowRight');
+  await tap(page, 'ArrowRight', 2);   // ⏭, then out of the dot
   await page.evaluate(function () { Home.testIsland({grace: 400, playing: false}); });
   await wait(page, 1600);
   var gone = await look(page);

@@ -316,7 +316,8 @@ var browser = null;
     out.up = s.zone + ' ' + s.top + ' ' + s.tab;
     FreeMyTV.move(-1, 0);   // the preview's sample song plays: the dynamic dot (beside the tab bar) first
     out.dot = s.zone + ' ' + s.top;
-    FreeMyTV.move(-1, 0);
+    FreeMyTV.move(-1, 0);   // on the song: ⏯ → ⏮
+    FreeMyTV.move(-1, 0);   // past ⏮: out of the dot
     out.left = s.zone + ' ' + s.tab;
     FreeMyTV.home();
     return out;
@@ -334,7 +335,9 @@ var browser = null;
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300);
   assert.strictEqual(await page.evaluate(function () { return FreeMyTV.state.top; }), 2, '→ from Welly reaches the dynamic dot first');
-  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');   // the song's ⏯ → ⏭
+  await page.waitForTimeout(200);
+  await page.keyboard.press('ArrowRight');   // past ⏭: out of the dot
   await page.waitForTimeout(300);
   var top = await page.evaluate(function () {
     var b = document.querySelector('#ccbtn').getBoundingClientRect(), p = document.querySelector('#pill').getBoundingClientRect();
