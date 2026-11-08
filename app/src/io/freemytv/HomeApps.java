@@ -1010,6 +1010,14 @@ final class HomeApps {
         return it;
     }
 
+    /**
+     * Opens an app whose tile the home screen has grown into its launch screen (HomeView.startLaunch): the app's window
+     * fades in over it (no system zoom, which would start again from the tile).
+     */
+    static boolean openFromLaunch(Activity a, Item it) {
+        return open(a, it, ActivityOptions.makeCustomAnimation(a, R.anim.launch_enter, R.anim.launch_hold).toBundle());
+    }
+
     /** Opens the item with the system zoom transition growing out of the card (the app starts opening right away). */
     static boolean open(Activity a, Item it, View from, int x, int y, int w, int h) {
         return open(a, it, ActivityOptions.makeScaleUpAnimation(from, x, y, Math.max(w, 1), Math.max(h, 1)).toBundle());

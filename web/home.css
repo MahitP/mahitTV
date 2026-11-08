@@ -1244,3 +1244,17 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 }
 #namecard .card.typing .field { display: block; }
 #namecard .card.typing .big { visibility: hidden; }
+
+/* MARK: - An app's launch screen (home.js: showCard): the tile grows into a full-screen card in its colours, its logo in
+   the middle, and holds until the app takes over; tvOS's spinner under it once the app is slow. */
+#launchcard { z-index: 9; display: none; pointer-events: none; }
+#launchcard.on { display: block; }
+#launchcard .bg { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
+#launchcard .mark { position: absolute; left: 0; top: 0; color: #FFF; }
+#launchcard .mark img { position: absolute; left: 50%; top: 50%; max-width: 76%; max-height: 62%; -webkit-transform: translate(-50%, -50%); transform: translate(-50%, -50%); }
+#launchcard .mark img.logo { width: 66%; height: 46%; max-width: none; max-height: none; object-fit: contain; }
+#launchcard .mark .word { position: absolute; left: 0; right: 0; top: 50%; margin-top: -20px; height: 40px; line-height: 40px; text-align: center; font-weight: 700; }
+#launchcard .spin { position: absolute; left: 937px; top: 820px; width: 46px; height: 46px; opacity: 0; -webkit-animation: launchspin 1s steps(8) infinite; animation: launchspin 1s steps(8) infinite; }
+#launchcard .spin i { position: absolute; left: 20.5px; top: 0; width: 5px; height: 12px; border-radius: 3px; background: #FFF; -webkit-transform-origin: 2.5px 23px; transform-origin: 2.5px 23px; }
+@-webkit-keyframes launchspin { from { -webkit-transform: rotate(0deg); } to { -webkit-transform: rotate(360deg); } }
+@keyframes launchspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

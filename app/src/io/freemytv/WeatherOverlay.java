@@ -124,6 +124,8 @@ final class WeatherOverlay extends View implements Choreographer.FrameCallback {
     private void dismiss() {
         if (closing || getVisibility() != VISIBLE) return;
         closing = true;
+        Click k = Click.current();
+        if (k != null) k.sheet(false, 0.5f);   // the sheet's whisper out, as Control Center's and All Apps' have
         appear.tune(Spring.SHEET_CLOSE);
         appear.target = 0;
         wake();

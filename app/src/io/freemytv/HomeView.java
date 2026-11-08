@@ -127,7 +127,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 44, KEY_BLUR = 16;
     private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, TABBAR = 8;
-    private static final int CHEVRON = 9, MOVE = 10;
+    private static final int CHEVRON = 9, MOVE = 10, LAUNCH = 11;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -172,7 +172,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         @Override public void hold(int id) { a11yHold(); }
     });
     private final RectF a11yRect = new RectF();
-    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar, moveLayer;
+    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, tabBar, moveLayer, launchLayer;
     private final HouseView house;
     private final WellyView welly;
     /** "Who's Watching?" over everything, and the golden intro over that (MAHITTV-PROFILES-SPEC.md §2–3). */
@@ -486,6 +486,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final int LAUNCH_GRID = -2;
     private int launchZone = -1, launchIndex = -1;
     private long launchAt;
+    /** The launch screen (startLaunch): its zoom from the tile (0) to the whole screen (1), opacity, and spinner. */
+    private static final long LAUNCH_SPIN_MS = 900, LAUNCH_GIVE_UP_MS = 12_000;
+    private final Spring zoom = new Spring(0.42f, 0.9f, 0), launchFade = new Spring(0.2f, 1, 0), spinShown = new Spring(0.3f, 1, 0);
+    private boolean launchUp, launchBack;
+    private HomeApps.Item launchPicture;
+    private Bitmap launchLogo;
+    private LinearGradient launchShader;
+    private float launchPlateW, launchPlateH;
+    private int launchInk = 0xFFFFFFFF;
+    private final RectF launchFrom = new RectF(), launchCard = new RectF(), launchPlate = new RectF();
+    private final Paint launchPaint = new Paint(Paint.ANTI_ALIAS_FLAG), launchImage = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final android.graphics.Matrix launchMatrix = new android.graphics.Matrix();
     /** Back on the home screen (from an app or the screensaver): it settles from 0.98 while fading in (320 ms). */
     private final Spring wakeScale = new Spring(Spring.TITLE_SETTLE, 1), wakeAlpha = new Spring(0.32f, 1f, 1);
     /** An arrow held down (key repeat): focus on FAST_FOCUS, without tilt, sheen or names (scrub: 0 to 1). */
@@ -629,6 +641,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case TABBAR: drawTabBar(c); break;
                 case CHEVRON: drawChevron(c, w / 2f, TV_CHEVRON_Y * k); break;
                 case MOVE: drawMove(c); break;
+                case LAUNCH: drawLaunch(c); break;
                 default:
                     drawToast(c);
                     drawAirToast(c);
@@ -712,6 +725,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         toastLayer = new Layer(a, TOAST);
         moveLayer = new Layer(a, MOVE);   // the cursor and the carried tile, over the Dock and All Apps (only while moving)
         moveLayer.setVisibility(INVISIBLE);
+        launchLayer = new Layer(a, LAUNCH);   // an app's launch screen, over everything of the home screen (startLaunch)
+        launchLayer.setVisibility(INVISIBLE);
         tabBar = new Layer(a, TABBAR);
         chevronLayer = new Layer(a, CHEVRON);
         house = new HouseView(a);
@@ -746,7 +761,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // whatever moved. It's only drawn again when the photo behind it changes.
         if (Ui.SMALL_MOTION) platter.setLayerType(LAYER_TYPE_HARDWARE, null);
         // The Home and Welly tabs sit on the background, under the TV tab's layers and the tab bar.
-        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, chevronLayer, drawerLayer, sheetLayer, moveLayer, toastLayer}) {
+        for (View v : new View[] {sky, house, welly, heroLayer, status, tabBar, platter, tiles, chevronLayer, drawerLayer, sheetLayer, moveLayer, toastLayer, launchLayer}) {
             // TalkBack reads the items (Spoken); Welly speaks for itself.
             if (v != welly) v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             addView(v);
@@ -859,16 +874,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheet.snap(sheet.target);
         // Back from an app or the screensaver: the opening tile's motion is over; the home settles in from 1.04
         // (SPATIAL_SCROLL, the app's window shrinking back into it).
-        launch.snap(0);
-        launchZone = launchIndex = -1;
         press.snap(0);
-        if (!again && !Spring.instant) {
+        if (launchUp && launchBack) {
+            // already shrinking back (a burst of Home presses)
+        } else if (launchUp && !Spring.instant) {
+            returnLaunch();   // the app's screen shrinks back into its tile as the home comes forward
+        } else if (!again && !Spring.instant) {
+            endLaunch();
+            launch.snap(0);
             wakeScale.tune(Spring.SPATIAL_SCROLL);
             wakeScale.snap(1.04f);
             wakeScale.target = 1;
             wakeAlpha.snap(0);
             wakeAlpha.target = 1;
         } else {
+            endLaunch();
+            launch.snap(0);
             wakeScale.snap(1);
             wakeAlpha.snap(1);
         }
@@ -938,6 +959,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         weatherOverlay.hide();   // Home (and All Apps) leave the forecast and Recent Apps too
         recentsOverlay.hide();
         cancelMove(!animated);
+        cancelLaunch();   // Home while an app opens: its screen shrinks back
         zone = Z_SHELF;
         shelfIndex = 0;
         sheetOpen = false;
@@ -1224,7 +1246,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             View v = focusLayer();
             if (v != null) v.invalidate();
         }
-        if (launch.target > 0 && up - launchAt > 1500) launch.target = 0;   // the app never came up: back
+        boolean launching = stepLaunch(dt, up);   // the launch screen holds until the app comes, however long it takes
         boolean homeMoving = launch.step(dt) | wakeScale.step(dt) | wakeAlpha.step(dt);
         if (homeMoving) {
             applyHome();
@@ -1311,7 +1333,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
                 || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving || barsMoving
-                || chevronMoving || ccStagger || airMoving || moveMoving || !toasts.isEmpty();
+                || chevronMoving || ccStagger || airMoving || moveMoving || launching || !toasts.isEmpty();
         idle = !busy;
         if (busy) {
             Choreographer.getInstance().postFrameCallback(this);
@@ -1448,16 +1470,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wake();
     }
 
-    /** An app opens from the focused tile (or Play): the tile grows on, the home recedes. */
-    private void startLaunch() {
-        if (Spring.instant) return;
-        launchZone = sheetOpen ? LAUNCH_GRID : zone == Z_SHELF ? Z_SHELF : -1;
-        launchIndex = sheetOpen ? gridIndex : shelfIndex;
-        launch.snap(0);
-        launch.target = 1;
-        launchAt = SystemClock.uptimeMillis();
-        wake();
-    }
 
     /** Ken Burns on the Top Shelf's photo: true while it moves (only there, and not on Android 8 to 11). */
     private boolean kenBurns(long up) {
@@ -2571,7 +2583,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawShelfTile(Canvas c, int i) {
         if (moveState == LANDING && shelf.get(i) == landing && !landFade) return;   // the carried tile is on its way here
-        float go = launchZone == Z_SHELF && i == launchIndex ? launch.value : 0;
+        float go = launchZone == Z_SHELF && i == launchIndex && !launchUp ? launch.value : 0;
         drawAppTile(c, shelf.get(i), tileRects[i], tileFocus[i].value, 0, go);
     }
 
@@ -4488,7 +4500,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Moving: an outlined app shrinks into the folder-to-be (its focus below 0), drawn behind it.
         if (f < -0.01f && it.kind != HomeApps.FOLDER) drawForming(c, gridCell, Ui.clamp(f / HOVER_FOLDER));
         if (others.get(i).kind == HomeApps.FOLDER) drawFolderTile(c, others.get(i), gridCell, f);
-        else drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex ? launch.value : 0);
+        else drawAppTile(c, others.get(i), gridCell, f, 0, launchZone == LAUNCH_GRID && i == launchIndex && !launchUp ? launch.value : 0);
         if (sheetOpen && i == gridIndex) {
             float s = 1 + FOCUS_GROW, cx = gridCell.centerX(), cy = gridCell.centerY() - TV_FOCUS_LIFT * k;
             gridFocusCell.set(cx - gridCell.width() * s / 2, cy - gridCell.height() * s / 2, cx + gridCell.width() * s / 2, cy + gridCell.height() * s / 2);
@@ -4840,6 +4852,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
         if (recentsOverlay.showing()) return recentsOverlay.onKey(e);
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+        if (launchUp && !launchBack) return launchKey(e, down);
         if (naming) return namingKey(e, down);
         if (board != null) return moveKey(e, down);
         int code = e.getKeyCode();
@@ -5352,13 +5365,247 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
             return;
         }
-        if (sheetOpen || zone == Z_SHELF || zone == Z_HERO) startLaunch();
-        boolean opened = HomeApps.open(activity, it, this, Math.round(r.left), Math.round(r.top),
-                Math.round(r.width()), Math.round(r.height()));
+        // An app: its tile becomes its launch screen at once, and the app's window fades in over it.
+        boolean card = it.kind == HomeApps.APP && (sheetOpen || zone == Z_SHELF || zone == Z_HERO || zone == Z_CARDS);
+        if (card) startLaunch(it, r, sheetOpen ? sheetLayer : zone == Z_SHELF ? tiles : heroLayer, zone == Z_SHELF && !sheetOpen ? 1 + FOCUS_GROW : 1);
+        boolean opened = card ? HomeApps.openFromLaunch(activity, it) : HomeApps.open(activity, it, this, Math.round(r.left),
+                Math.round(r.top), Math.round(r.width()), Math.round(r.height()));
         if (!opened) {
             launch.target = 0;
+            if (card) cancelLaunch();
             showToast(Ui.trf("Couldn't open {app}.", "app", it.label));
         }
+    }
+
+    // MARK: - Opening an app, as tvOS does: the tile becomes its launch screen
+
+    /**
+     * OK on an app: its tile grows into a full-screen launch screen at once (its colours, its logo or picture in the
+     * middle), on a smooth spring, while the home recedes behind it. It stays until the app's window fades in over it
+     * (launch_enter), however long the app takes to start; a slow one gets tvOS's spinner under the logo. `r` is the
+     * tile in `layer`'s coordinates (a Dock tile at rest size; a grid cell or a button as drawn).
+     */
+    private void startLaunch(HomeApps.Item it, RectF r, View layer, float scale) {
+        launchZone = sheetOpen ? LAUNCH_GRID : zone == Z_SHELF ? Z_SHELF : -1;
+        launchIndex = sheetOpen ? gridIndex : shelfIndex;
+        launch.snap(0);
+        launch.target = 1;   // the home recedes behind it
+        launchAt = SystemClock.uptimeMillis();
+        if (Spring.instant) return;
+        float cx = r.centerX() + layer.getTranslationX(), cy = r.centerY() + layer.getTranslationY();
+        float hw = r.width() * scale / 2, hh = r.height() * scale / 2;
+        launchFrom.set(cx - hw, cy - hh, cx + hw, cy + hh);
+        launchLook(it);
+        launchUp = true;
+        launchBack = false;
+        zoom.tune(0.42f, 0.9f);
+        zoom.snap(0);
+        zoom.target = 1;
+        launchFade.snap(1);
+        launchFade.target = 1;
+        spinShown.snap(0);
+        launchLayer.setVisibility(VISIBLE);
+        wake();
+    }
+
+    /**
+     * The launch screen's look, from the app's tile (the Dock's or All Apps' for a pick): its brand colours with its
+     * logo, or its picture over the picture's own colour.
+     */
+    private void launchLook(HomeApps.Item it) {
+        HomeApps.Item look = it;
+        if (it.logo == null && it.tile == null && it.pkg != null) {
+            for (HomeApps.Item s : shelf) if (it.pkg.equals(s.pkg)) look = s;
+            if (look == it) for (HomeApps.Item s : others) if (it.pkg.equals(s.pkg)) look = s;
+        }
+        int[] style = TILE_STYLE.get(look.key);
+        if (style == null) style = look.style;
+        launchPicture = null;
+        launchLogo = null;
+        int top = 0xFF2C2C2E, bottom = 0xFF000000;
+        float w0 = launchFrom.width(), h0 = launchFrom.height();
+        if (look.logo != null && style != null) {
+            top = style[0];
+            bottom = style[1];
+            launchLogo = style[2] == 2 && look.logoDark != null ? look.logoDark : look.logo;
+            // At rest the logo sits in the tile as the Dock draws it: within 62 % × 42 % of it, its own shape.
+            float lw = launchLogo.getWidth(), lh = launchLogo.getHeight(), fit = Math.min(w0 * 0.62f / lw, h0 * 0.42f / lh);
+            launchPlateW = lw * fit * look.logoScale;
+            launchPlateH = lh * fit * look.logoScale;
+        } else if (look.tile != null && look.tileShader != null) {
+            // A picture (the app's TV banner): the whole tile, over the picture's own average colour.
+            launchPicture = look;
+            Bitmap one = Bitmap.createScaledBitmap(look.tile, 1, 1, true);
+            int avg = one.getPixel(0, 0) | 0xFF000000;
+            one.recycle();
+            top = blend(avg, 0xFF000000, 0.15f);
+            bottom = blend(avg, 0xFF000000, 0.45f);
+            launchPlateW = w0;
+            launchPlateH = h0;
+        }
+        launchShader = new LinearGradient(0, 0, 0, 1, top, bottom, Shader.TileMode.CLAMP);
+        float lum = (0.2126f * ((bottom >> 16) & 255) + 0.7152f * ((bottom >> 8) & 255) + 0.0722f * (bottom & 255)) / 255f;
+        launchInk = lum > 0.6f ? 0xFF1C1C1E : 0xFFFFFFFF;
+    }
+
+    /** Back while an app opens (or it never comes): the launch screen shrinks back into its tile. */
+    private void cancelLaunch() {
+        if (!launchUp || launchBack) return;
+        launchBack = true;
+        zoom.tune(0.36f, 0.94f);
+        zoom.target = 0;
+        spinShown.target = 0;
+        launch.target = 0;
+        wake();
+    }
+
+    /**
+     * Back on the home screen from the app (the mirror of opening): the launch screen, whole again, shrinks into the
+     * Dock tile the app came from (from All Apps, which is closed now: into the middle) as the home comes forward.
+     */
+    private void returnLaunch() {
+        launchBack = true;
+        if (launchZone == Z_SHELF && launchIndex >= 0 && launchIndex < tileRects.length) {
+            RectF t = tileRects[launchIndex];
+            float s = 1 + FOCUS_GROW, cx = t.centerX(), cy = t.centerY() + tiles.getTranslationY();
+            launchFrom.set(cx - t.width() * s / 2, cy - t.height() * s / 2, cx + t.width() * s / 2, cy + t.height() * s / 2);
+        } else {
+            float hw = TV_TILE_W * k * (1 + FOCUS_GROW) / 2, hh = TV_TILE_H * k * (1 + FOCUS_GROW) / 2;
+            launchFrom.set(w / 2f - hw, h / 2f - hh, w / 2f + hw, h / 2f + hh);
+        }
+        zoom.tune(0.38f, 0.92f);
+        zoom.snap(1);
+        zoom.target = 0;
+        launchFade.snap(1);
+        launchFade.target = 1;
+        spinShown.snap(0);
+        launch.snap(1);
+        launch.target = 0;   // the home comes forward from behind it
+        launchAt = SystemClock.uptimeMillis();
+        launchLayer.setVisibility(VISIBLE);
+        launchLayer.invalidate();
+    }
+
+    private void endLaunch() {
+        launchUp = launchBack = false;
+        launchPicture = null;
+        launchLogo = null;
+        launchZone = launchIndex = -1;
+        zoom.snap(0);
+        launchLayer.setVisibility(INVISIBLE);
+    }
+
+    /** One frame of the launch screen; true while it shows (its spinner turns, the app may come any frame). */
+    private boolean stepLaunch(float dt, long up) {
+        if (!launchUp) return false;
+        zoom.step(dt);
+        launchFade.step(dt);
+        spinShown.step(dt);
+        if (!launchBack) {
+            if (up - launchAt > LAUNCH_SPIN_MS) spinShown.target = 1;
+            if (up - launchAt > LAUNCH_GIVE_UP_MS) cancelLaunch();   // it never came: back to the tile
+        } else {
+            // Nearly back in the tile: the screen fades into the tile under it.
+            if (zoom.value < 0.18f) launchFade.target = 0;
+            if (launchFade.target == 0 && launchFade.value < 0.01f) {
+                endLaunch();
+                return false;
+            }
+        }
+        launchLayer.invalidate();
+        return true;
+    }
+
+    /** Keys while an app opens: Back stops it (the screen shrinks back), volume goes to the system, the rest wait. */
+    private boolean launchKey(KeyEvent e, boolean down) {
+        int code = e.getKeyCode();
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE
+                || code == KeyEvent.KEYCODE_POWER || code == KeyEvent.KEYCODE_SLEEP) return false;
+        if (code == KeyEvent.KEYCODE_BACK) {
+            if (down && e.getRepeatCount() == 0) backDown = true;
+            else if (!down && backDown && !e.isCanceled()) {
+                backDown = false;
+                cancelLaunch();
+                click.sheet(false, 0.5f);
+            }
+        }
+        if (!down) okDown = okHeld = false;
+        return true;
+    }
+
+    /**
+     * The launch screen: a card from the tile to the whole screen (its corners squaring off as it grows) in the app's
+     * colours, its logo or picture in the middle growing to 1.6× and tvOS's spinner under it once the app is slow.
+     */
+    private void drawLaunch(Canvas c) {
+        if (!launchUp || launchShader == null) return;
+        float z = zoom.value, zc = Ui.clamp(z), a = Ui.clamp(launchFade.value);
+        if (a < 0.004f) return;
+        launchCard.set(launchFrom.left * (1 - z), launchFrom.top * (1 - z), launchFrom.right + (w - launchFrom.right) * z,
+                launchFrom.bottom + (h - launchFrom.bottom) * z);
+        float radius = TV_TILE_RADIUS * k * (1 + FOCUS_GROW) * (1 - zc);
+        int alpha = Math.round(255 * a);
+        // The lift shadow while it's still tile-sized (gone once it fills the screen).
+        if (zc < 0.98f) {
+            launchPlate.set(launchCard);
+            launchPlate.offset(0, 22 * k * (1 - zc));
+            shadowDeep.setColor(Ui.alpha(0xFF000000, 0.45f * (1 - zc) * a));
+            shadows.draw(c, launchPlate, radius, DEEP_BLUR * k, shadowDeep);
+        }
+        launchMatrix.setScale(1, Math.max(1, launchCard.height()));
+        launchMatrix.postTranslate(0, launchCard.top);
+        launchShader.setLocalMatrix(launchMatrix);
+        launchPaint.setShader(launchShader);
+        launchPaint.setAlpha(alpha);
+        c.drawRoundRect(launchCard, radius, radius, launchPaint);
+        launchPaint.setShader(null);
+        float grow = 1 + 0.6f * zc, pw = launchPlateW * grow, ph = launchPlateH * grow;
+        float cx = launchCard.centerX(), cy = launchCard.centerY();
+        launchPlate.set(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2);
+        if (launchLogo != null) {
+            launchImage.setAlpha(alpha);
+            c.drawBitmap(launchLogo, null, launchPlate, launchImage);
+        } else if (launchPicture != null && launchPicture.tileShader != null) {
+            // The picture as a plate with the tile's corners, lifted off its colour once the card has grown around it.
+            float pr = TV_TILE_RADIUS * k * grow * (1 + FOCUS_GROW) / 1.23f;
+            if (zc > 0.02f) {
+                launchCard.set(launchPlate);
+                launchCard.offset(0, 18 * k);
+                shadowDeep.setColor(Ui.alpha(0xFF000000, 0.4f * zc * a));
+                shadows.draw(c, launchCard, pr, DEEP_BLUR * k, shadowDeep);
+            }
+            Bitmap b = launchPicture.tile;
+            float sc = Math.max(pw / b.getWidth(), ph / b.getHeight());
+            launchMatrix.setScale(sc, sc);
+            launchMatrix.postTranslate(cx - b.getWidth() * sc / 2, cy - b.getHeight() * sc / 2);
+            launchPicture.tileShader.setLocalMatrix(launchMatrix);
+            launchImage.setShader(launchPicture.tileShader);
+            launchImage.setAlpha(alpha);
+            c.drawRoundRect(launchPlate, pr, pr, launchImage);
+            launchImage.setShader(null);
+            launchPicture.tileShader.setLocalMatrix(null);
+        }
+        float sa = Ui.clamp(spinShown.value) * zc * a;
+        if (sa > 0.01f) drawSpinner(c, w / 2f, Math.min(h - 120 * k, launchPlate.bottom + 110 * k), sa);
+    }
+
+    /** tvOS's activity indicator: 8 rounded spokes, the lit one stepping round once a second, a fading tail behind it. */
+    private void drawSpinner(Canvas c, float cx, float cy, float a) {
+        long t = SystemClock.uptimeMillis();
+        int lead = (int) ((t / 125) % 8);
+        launchPaint.setStyle(Paint.Style.STROKE);
+        launchPaint.setStrokeCap(Paint.Cap.ROUND);
+        launchPaint.setStrokeWidth(5 * k);
+        float inner = 11 * k, outer = 23 * k;
+        for (int i = 0; i < 8; i++) {
+            int age = (lead - i + 8) % 8;
+            launchPaint.setColor(Ui.alpha(launchInk, a * (1 - age * 0.11f)));
+            double ang = i * Math.PI / 4 - Math.PI / 2;
+            float dx = (float) Math.cos(ang), dy = (float) Math.sin(ang);
+            c.drawLine(cx + dx * inner, cy + dy * inner, cx + dx * outer, cy + dy * outer, launchPaint);
+        }
+        launchPaint.setStyle(Paint.Style.FILL);
+        launchPaint.setStrokeCap(Paint.Cap.BUTT);
     }
 
     // MARK: - Holding OK: what's under the focus lifts, to be moved (moving apps: see the fields' note)
