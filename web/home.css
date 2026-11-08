@@ -331,14 +331,6 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #pill .avatar .prev { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 18px; background-size: cover; background-position: center; -webkit-transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
 /* Focused: white, with a brighter rim (the scale and the avatar's pop are springs in home.js). */
 #pill.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
-/* What's playing (FreeMyTV.nowPlaying): three bars and the title, left of the time. */
-#pill .np { display: inline-block; margin-right: 18px; vertical-align: top; opacity: 0; -webkit-transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
-#pill.playing .np { opacity: 1; }
-#pill .np .bar { display: inline-block; width: 4px; height: 22px; margin-right: 3px; border-radius: 2px; background: currentColor; vertical-align: -3px; -webkit-transform-origin: 50% 100%; transform-origin: 50% 100%; -webkit-animation: eq 0.9s ease-in-out infinite; animation: eq 0.9s ease-in-out infinite; }
-#pill .np .bar:nth-child(2) { -webkit-animation-delay: 0.3s; animation-delay: 0.3s; }
-#pill .np .bar:nth-child(3) { -webkit-animation-delay: 0.6s; animation-delay: 0.6s; margin-right: 12px; }
-@-webkit-keyframes eq { 0%, 100% { -webkit-transform: scaleY(0.35); } 50% { -webkit-transform: scaleY(1); } }
-@keyframes eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
 .no-picks #pill, .night.no-picks #pill { background: rgba(52, 62, 76, 0.52); }
 
 /* Crypto quotes (show_crypto) or what's playing: left of the pill. */
@@ -942,7 +934,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
    !important so they win over every state rule above. */
 @media (prefers-reduced-motion: reduce) {
   #stage *, #stage *::before, #stage *::after { -webkit-animation: none !important; animation: none !important; }
-  #sky .photo, #sky canvas, #toast, #pill, #watch, #tabs .tab, .tile, .cctile, #saver, #saver .photo, #saver .zoom, .box .row, #pill .np, #pill .avatar .prev {
+  #sky .photo, #sky canvas, #toast, #pill, #watch, #tabs .tab, .tile, .cctile, #saver, #saver .photo, #saver .zoom, .box .row, #pill .avatar .prev {
     -webkit-transition-duration: 0.15s !important;
     transition-duration: 0.15s !important;
   }

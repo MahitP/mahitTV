@@ -471,7 +471,7 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   it on but not allowed asks once.
   It unbinds itself as soon as it connects (the permission is all it's for), and the home screen and the screensaver
   watch the sessions only while they show. The line is cut to fit when the title changes, never while drawing; the
-  home screen's bars bounce again only for a new title (`Watch.title`), and TalkBack announces it then.
+  status pill shows nothing for it (no bars, no wider pill), and TalkBack announces a new title (`Watch.title`).
 - *At power-on* (Home Settings, `Prefs.powerOn()`: `tv`, the default, `home` or `live`; #396, #346) acts only after a
   full start, never on a wake from standby. `HomeActivity` keeps the uptime of the first time the home screen came up
   in this start (`HomeMode.noteHomeShown`, the file `home-shown` with `Settings.Global.BOOT_COUNT`). `live`: 10 s later,
