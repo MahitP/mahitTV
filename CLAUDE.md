@@ -445,7 +445,12 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   `brightness.txt`, which both processes read (`Prefs.brightness`).
   The microphone button (`KEYCODE_SEARCH`, `VOICE_ASSIST`, `ASSIST`) opens Welly instead of Google's assistant
   (`RemoteKeys.onMic` → `HomeActivity.EXTRA_WELLY` → `HomeView.listenWelly`), from any app, while mahitTV is the home
-  screen. Where the TV hands that key to Google before any app (as TCL does with volume), it can't be taken without root.
+  screen. Google TV's voice remotes don't send it as a key while Google's assistant (`katniss`) holds the assistant role:
+  the remote service hands the press straight to it. So mahitTV mode makes Welly the assistant (`WellyAssist`, an
+  `ACTION_ASSIST` activity; `HomeMode.assistant`, `cmd role add-role-holder android.app.role.ASSISTANT`), and then the
+  remote sends `KEYCODE_SEARCH`, which `onMic` takes. Original, the watchdog's revert and the boot check give it back
+  (the holder before, else `katniss`), and the speech recognizer Welly listens through stays where it was (TCL Google TV
+  14 tested).
   Welly's tools (`WellyTools`) run the TV: apps (open, close), playback (incl. stop and skipping seconds), volume,
   brightness, Do Not Disturb, the sleep timer, YouTube search, the TV's settings pages, its status and standby.
 - Recent Apps (`RecentApps`, over a 96×54 `ScreenBlur` copy of the window) is off by default: *Home Settings* →

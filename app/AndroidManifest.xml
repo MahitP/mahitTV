@@ -233,6 +233,24 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Panel" />
 
+        <!-- Welly as the TV's assistant: the remote's mic button and every assist request (see WellyAssist). -->
+        <activity
+            android:name=".WellyAssist"
+            android:process=":home"
+            android:exported="true"
+            android:label="Welly"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="io.freemytv.assist"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <action android:name="android.intent.action.SEARCH_LONG_PRESS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".Screensaver"
             android:process=":home"
