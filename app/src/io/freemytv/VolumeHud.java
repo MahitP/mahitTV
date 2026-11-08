@@ -1,6 +1,6 @@
 package io.freemytv;
 
-import android.app.Activity;
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -15,8 +15,8 @@ import android.view.View;
  * a 52 × 250 (1080p px) pill, narrows to a 12 px line IDLE_MS after the last change (the glyph fading), and leaves
  * HIDE_MS after it; each change widens it again (LIQUID_PILL). A press past 0 or 100 stretches it 3% that way
  * (BOUNDARY_BUMP). HomeView shows it for the volume keys and the channel keys (the brightness) while the home screen
- * is in front, and for Control Center's brightness. The view only bounds the pill: it draws in screen coordinates, like
- * HomeView's layers, so the glass reads the background where it really is.
+ * is in front, and for Control Center's brightness; KeysOverlay shows it over every other app. The view only bounds the
+ * pill: it draws in screen coordinates, like HomeView's layers, so the glass reads the background where it really is.
  */
 final class VolumeHud extends View implements Choreographer.FrameCallback {
     /** The pill and its fill, in 1080p px: wide while it changes, a line once it rests. */
@@ -48,6 +48,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
     private final RectF[] arcOvals = {new RectF(), new RectF(), new RectF()};
     private final Path speaker = new Path();
     private final Paint fillP = new Paint(Paint.ANTI_ALIAS_FLAG), glyph = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint plainP = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Runnable hideSoon = this::hide;
     private final Runnable narrow = () -> {
@@ -56,7 +57,8 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         wake();
     };
 
-    VolumeHud(Activity a, Scene scene) {
+    /** `scene` null: over other apps (KeysOverlay), with no backdrop to read; a smoke pill with a rim stands in for the glass. */
+    VolumeHud(Context a, Scene scene) {
         super(a);
         this.scene = scene;
         setFocusable(false);
@@ -187,7 +189,17 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         float tall = full * (1 + STRETCH * bump.value);
         float top = bumpDir < 0 ? cy - full / 2 : cy + full / 2 - tall;
         capsule.set(x, top, x + w, top + tall);
-        scene.glass(c, capsule, w / 2, TINT, 0.5f, WHITE, 0.06f, 0.04f, 1, v);
+        if (scene != null) {
+            scene.glass(c, capsule, w / 2, TINT, 0.5f, WHITE, 0.06f, 0.04f, 1, v);
+        } else {
+            plainP.setStyle(Paint.Style.FILL);
+            plainP.setColor(Ui.alpha(0xFF2A2A30, 0.82f * v));
+            c.drawRoundRect(capsule, w / 2, w / 2, plainP);
+            plainP.setStyle(Paint.Style.STROKE);
+            plainP.setStrokeWidth(1.5f * k);
+            plainP.setColor(Ui.alpha(WHITE, 0.24f * v));
+            c.drawRoundRect(capsule, w / 2, w / 2, plainP);
+        }
         float lv = Ui.clamp(level.value), in = (2 + 3 * wv) * k;
         float fillTop = capsule.bottom - in - (capsule.height() - 2 * in) * lv;
         if (lv > 0.002f) {
