@@ -7732,6 +7732,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** The remote's voice button: the Welly tab, listening. */
+    /** The remote's microphone button from any app (HomeActivity.EXTRA_WELLY): Welly listens, once the screen is up. */
+    void listenWelly() {
+        post(this::voice);
+    }
+
     private void voice() {
         wake();
         if (board != null) cancelMove(false);

@@ -443,6 +443,11 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   over any other app, `KeysOverlay` does, in the service's own TYPE_ACCESSIBILITY_OVERLAY windows (no other permission),
   with a black dimmer for the brightness, since many TCL panels ignore `screen_brightness`. The level lives in
   `brightness.txt`, which both processes read (`Prefs.brightness`).
+  The microphone button (`KEYCODE_SEARCH`, `VOICE_ASSIST`, `ASSIST`) opens Welly instead of Google's assistant
+  (`RemoteKeys.onMic` → `HomeActivity.EXTRA_WELLY` → `HomeView.listenWelly`), from any app, while mahitTV is the home
+  screen. Where the TV hands that key to Google before any app (as TCL does with volume), it can't be taken without root.
+  Welly's tools (`WellyTools`) run the TV: apps (open, close), playback (incl. stop and skipping seconds), volume,
+  brightness, Do Not Disturb, the sleep timer, YouTube search, the TV's settings pages, its status and standby.
 - Recent Apps (`RecentApps`, over a 96×54 `ScreenBlur` copy of the window) is off by default: *Home Settings* →
   *Recent Apps* (`Prefs.recents()`: `off`, `drawer`, `home`) adds the drawer shortcut and the app-switch key, and `home`
   also two Home presses within 700 ms (`HomeActivity.onNewIntent`; not offered on Xiaomi TVs, whose remote sends one

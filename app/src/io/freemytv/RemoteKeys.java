@@ -178,6 +178,7 @@ final class RemoteKeys {
             return c instanceof android.accessibilityservice.AccessibilityService
                     && onHome((android.accessibilityservice.AccessibilityService) c, e);
         }
+        if (isMic(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onMic(c, e);
         if (isVolume(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onVolume(c, e);
         if (isChannel(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onChannel(c, e);
         int keyCode = TCL && e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
@@ -278,6 +279,42 @@ final class RemoteKeys {
 
     static boolean isVolume(int code) {
         return code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE;
+    }
+
+    /** The remote's microphone (or search) button: Google's assistant's, unless mahitTV is the home screen. */
+    static boolean isMic(int code) {
+        return code == KeyEvent.KEYCODE_SEARCH || code == KeyEvent.KEYCODE_VOICE_ASSIST || code == KeyEvent.KEYCODE_ASSIST;
+    }
+
+    private static boolean micDown;
+
+    /**
+     * The microphone button, anywhere while mahitTV is the home screen: Welly instead of Google's assistant (Gemini). The
+     * home screen comes forward on Welly's tab, listening (HomeActivity.EXTRA_WELLY); Google's never hears the key.
+     */
+    private static boolean onMic(Context c, KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_UP) {
+            boolean ours = micDown;
+            micDown = false;
+            return ours;
+        }
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
+        if (e.getRepeatCount() > 0) return micDown;   // held: still the one press
+        if (!homeIsOurs(c)) {
+            micDown = false;
+            return false;
+        }
+        micDown = true;
+        AppLog.w("mic key " + e.getKeyCode() + ": Welly");
+        try {
+            c.startActivity(new Intent(c, HomeActivity.class).putExtra(HomeActivity.EXTRA_WELLY, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (RuntimeException ex) {
+            AppLog.w("couldn't open Welly: " + ex.getMessage());
+            micDown = false;
+            return false;
+        }
+        return true;
     }
 
     static boolean isChannel(int code) {
