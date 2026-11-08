@@ -901,16 +901,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         spoken.readAgain();
         welly.resume();
         if (tab == TAB_HOME) house.refresh();
-        // The gate (§3): the intro and the lock the first time in this process and when the screen comes on; the lock
-        // alone after more than 10 minutes away; within them, straight back to the same profile.
+        // The gate (§3): the intro and "Who's Watching?" only when the TV comes on (the screen on again, or a start
+        // after it was off or restarted); Home and coming back from an app go straight to whoever is signed in. A new
+        // home screen process (Android closes it under a big app) keeps them in; nobody signed in: the lock alone.
         if (replayIntro) {
             booted = true;
             introPending = replayIntro = false;
             gate(true, true);
-        } else if (!booted || introPending) {
-            booted = true;
+        } else if (introPending) {
             introPending = false;
+            booted = true;
             gate(true);
+        } else if (!booted) {
+            booted = true;
+            if (!ProfileManager.resumeSignedIn(getContext())) gate(true);
         } else if (!lock.showing() && !intro.showing() && ProfileManager.needsLock(getContext())) {
             gate(false);
         }
@@ -4660,7 +4664,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** Someone is using the TV: the 10-minute grace starts again (written at most every 30 s). */
+    /** Someone is using the TV: noted for resumeSignedIn (written at most every 30 s). */
     private void touch() {
         long up = SystemClock.uptimeMillis();
         if (touchedAt != 0 && up - touchedAt < 30_000) return;

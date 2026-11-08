@@ -7,7 +7,7 @@
 var Profiles = (function () {
   'use strict';
 
-  var GRACE_MS = 10 * 60 * 1000, TRIES = 5, WAIT_MS = 30000, LOG_MAX = 30;
+  var TRIES = 5, WAIT_MS = 30000, LOG_MAX = 30;
   var STATE = 'mahittv.state';
   var list = null, unlocked = false, guest = {}, wrong = {}, waitUntil = {};
   var probe = null, probeCtx = null;
@@ -159,7 +159,6 @@ var Profiles = (function () {
   }
 
   var api = {
-    GRACE_MS: GRACE_MS,
     sha256: sha256,
     all: all,
     byId: byId,
@@ -201,11 +200,8 @@ var Profiles = (function () {
       if (p.role === 'guest') return 'avatars/guest.png';
       return 'avatars/default-' + (all().indexOf(p) % 4 + 1) + '.png';
     },
-    needsLock: function () {
-      if (!unlocked) return true;
-      var last = state().lastActive || 0;
-      return !last || Date.now() - last > GRACE_MS;
-    },
+    /** Nobody signed in: "Who's Watching?" (when the app starts, or after Lock). Coming back from an app keeps them. */
+    needsLock: function () { return !unlocked; },
     touch: function () { var s = state(); s.lastActive = Date.now(); saveState(s); },
     unlock: function (p) {
       var before = current();

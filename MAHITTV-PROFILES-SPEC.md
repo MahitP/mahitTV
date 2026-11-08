@@ -10,8 +10,9 @@ except what only a Google TV can do (Kasa, Original mode).
 Decisions (2026-10-27): names, roles and starting PINs live in `config.properties` (git-ignored); the source ships
 generic defaults; PINs are stored hashed. mahitTV is the name everywhere on the TV, but the package (`io.freemytv`) and
 file names stay, so updates install over the current app and the Original/watchdog safety net keeps working. Intro +
-lock on every power-on and first launch; within 10 minutes of the last use the TV goes straight back to the same
-profile, after that the lock appears (no intro). Continue Watching logs every launch and, with Now Playing access on,
+lock on every power-on (the screen off and on, or a restart); Home and coming back from an app always go straight back
+to whoever is signed in, however long they were away (even when Android restarted the home screen in between). The lock
+alone shows only when nobody is signed in or someone chose Lock. Continue Watching logs every launch and, with Now Playing access on,
 the title and position the playing app reports.
 
 ---
@@ -60,7 +61,7 @@ Memoji in to replace one; `app/assets/profiles/` is git-ignored (personal).
   Android and the web); reduce motion: the Horizon and a still glass wordmark, then the lock.
 
 ## 3. "Who's Watching?"
-- After the intro, on lock from Control Center / the status pill, and after 10 minutes away.
+- After the intro at power-on, on lock from Control Center / the status pill, and when nobody is signed in.
 - Blurred aerial behind; "Who's Watching?" (Inter Display 57); five avatar cards (squircle 240 px, 96 px apart).
 - Focus 1.18× (SNAPPY_FOCUS), a specular ring (gold for the manager, white glass for others), name and a lock glyph
   fade in; dead ends bump; Back does nothing (it's the gate).
