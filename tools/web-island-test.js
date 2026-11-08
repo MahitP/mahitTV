@@ -44,7 +44,9 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
   var errors = [];
   page.on('pageerror', function (e) { errors.push(e.message); });
   await page.goto('http://127.0.0.1:' + server.address().port + '/index.html?nolock');
-  await wait(page, 1200);
+  // The fonts first: one coming in late changes the pill's width, and everything left of it moves with it.
+  await page.evaluate(function () { return document.fonts ? document.fonts.ready.then(function () {}) : null; });
+  await wait(page, 1500);
 
   // Playing: the dot, then the bubble, then the pill, left to right, a circle as big as the bubble.
   var s = await look(page);
@@ -55,14 +57,19 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
 
   // ↑ to the bubble, ← to the dot: it opens leftward into a capsule with the title, the bubble and pill unmoved.
   while ((await look(page)).zone !== 'top') await tap(page, 'ArrowUp');
-  assert.strictEqual((await look(page)).top, 3, '↑ lands on the bubble');
+  await wait(page, 600);
+  var before = await look(page);
+  assert.strictEqual(before.top, 3, '↑ lands on the bubble');
   await tap(page, 'ArrowLeft');
-  await wait(page, 1200);
+  await wait(page, 1500);
   var open = await look(page);
   assert.strictEqual(open.top, 2, '← from the bubble: the dot');
   assert.ok(open.shape.r - open.shape.l > 250 && open.shape.b - open.shape.t > 66, 'open: a wide, 72 px capsule: ' + JSON.stringify(open.shape));
-  assert.ok(Math.abs(open.shape.r - s.shape.r) < 1.5, 'it grows leftward: its right end stays');
-  assert.ok(Math.abs(open.bubble.l - s.bubble.l) < 1 && Math.abs(open.pill.l - s.pill.l) < 1, 'the bubble and the pill stay put');
+  assert.ok(Math.abs(open.bubble.l - open.shape.r - 14) < 2, 'it grows leftward: its right end stays 14 px from the bubble: '
+    + JSON.stringify([open.shape, open.bubble]));
+  function mid(x) { return (x.l + x.r) / 2; }   // centres: the focused one is grown
+  assert.ok(Math.abs(mid(open.bubble) - mid(before.bubble)) < 1 && Math.abs(mid(open.pill) - mid(before.pill)) < 1,
+    'the bubble and the pill stay put: ' + JSON.stringify([before.bubble, open.bubble, before.pill, open.pill]));
   assert.ok(Number(open.text) > 0.95 && open.title === 'Sample Song', 'the title shows: ' + open.title);
   apart(open.shape, open.tabs, 'open capsule and tab bar');
 
