@@ -472,9 +472,10 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   It unbinds itself as soon as it connects (the permission is all it's for), and the home screen and the screensaver
   watch the sessions only while they show. The line is cut to fit when the title changes, never while drawing; the
   status pill shows nothing for it (no bars, no wider pill), and TalkBack announces a new title (`Watch.title`).
-  The dynamic dot (`DESIGN-DYNAMIC-DOT.md`): beside the tab bar, only while a song plays (30 s after a pause, and
-  while focused), a Liquid Glass dot with the art (`Watch.mediaArt`), the bar and the dot centred together; → from
-  Welly opens it into a capsule with the title and play/pause (OK). It never comes near the right cluster or the logo.
+  The dynamic dot (`DESIGN-DYNAMIC-DOT.md`): beside the tab bar, one Liquid Glass dot with a white symbol per live
+  activity (the song, the sleep timer, AirPods joining, which opens by itself as an alert), the bar and the dots
+  centred together; → from Welly opens one into a capsule with its words and its one control (OK). They never come
+  near the right cluster or the logo.
   The web app has it too (`#island`), shown only in the preview: LG and Samsung can't tell what's playing.
 - *At power-on* (Home Settings, `Prefs.powerOn()`: `tv`, the default, `home` or `live`; #396, #346) acts only after a
   full start, never on a wake from standby. `HomeActivity` keeps the uptime of the first time the home screen came up

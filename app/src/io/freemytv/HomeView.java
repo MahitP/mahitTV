@@ -457,13 +457,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private StaticLayout toast;
     private long toastAt;
 
-    // AirPods: an AirPods or Beats output joining slides a card in at the top right (y 36 → 108) for 3.5 s.
+    // AirPods: an AirPods or Beats output joining opens its live activity in the dynamic dot for 3.5 s.
     private static final long AIR_MS = 3500;
-    private final Spring airToast = new Spring(Spring.AIRPODS_TOAST, 0);
-    private String airName, airShown;
+    private String airName;
     private boolean airSpatial;
-    private Paint airTitle, airSub;
-    private final Runnable airHide = () -> { airToast.target = 0; wake(); };
     private final android.media.AudioDeviceCallback airWatch = new android.media.AudioDeviceCallback() {
         @Override public void onAudioDevicesAdded(android.media.AudioDeviceInfo[] added) {
             String name = AirPods.find(added);
@@ -521,25 +518,45 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float chevronAlpha, chevronY;
     /** The status pill's avatar, cross-dissolving on a profile switch. The pill keeps its size while something plays. */
     private final Spring avatarFade = new Spring(Spring.ROOM_FADE, 1);
-    // MARK: The dynamic dot (DESIGN-DYNAMIC-DOT.md)
+    // MARK: The dynamic dot: live activities (DESIGN-DYNAMIC-DOT.md)
     /**
-     * Beside the tab bar while something plays, as the Dynamic Island's detached circle beside the island: a Liquid
-     * Glass dot as tall as the bar, with the album art. It slides out from under the bar's right end, and the bar and
-     * dot centre together; focused (→ from Welly), it opens rightward into a capsule with the art, the title and
-     * play/pause, the pair re-centring as it grows, never closer than ISLAND_GAP to the buttons at the right nor to the
-     * Top Shelf's logo at the left (ISLAND_LEFT).
+     * Beside the tab bar, one Liquid Glass dot per live activity (a song playing, the sleep timer, AirPods joining), as
+     * the Dynamic Island's detached circles beside the island: as tall as the bar, a white symbol in it like the other
+     * round buttons. They slide out from under the bar's right end, and the bar and the dots centre together; focused
+     * (→ from Welly), one opens rightward into a capsule with its words and its one control. AirPods joining opens by
+     * itself for a moment, as an alert does. Never closer than ISLAND_GAP to the buttons at the right nor to the Top
+     * Shelf's logo at the left (ISLAND_LEFT).
      */
     private static final float ISLAND_D = TAB_H, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_GAP = 32, ISLAND_SPACE = 14;
-    private static final float ISLAND_LEFT = TV_LOGO_X + TV_LOGO_W + ISLAND_GAP;
+    private static final float ISLAND_LEFT = TV_LOGO_X + TV_LOGO_W + ISLAND_GAP, ISLAND_ICON = 28;
     private static final float[] ISLAND_OPEN = {0.40f, 0.76f}, ISLAND_CLOSE = {0.30f, 0.92f};
     private static final long ISLAND_PAUSE_MS = 30000;   // paused: it stays this long, so OK can play it again
-    private final Spring islandShown = new Spring(Spring.LIQUID_PILL, 0), islandOpen = new Spring(ISLAND_OPEN, 0);
-    private boolean onIsland, islandWasPlaying;
+    private static final long ISLAND_LINGER_MS = 900;    // an alert, closed again, stays this long as a dot
+    private static final int LIVE_MUSIC = 0, LIVE_SLEEP = 1, LIVE_AIR = 2;
+
+    /** One live activity: its symbol, its words (cut when they change), and its two springs. */
+    private static final class Live {
+        final String icon;
+        final Spring shown = new Spring(Spring.LIQUID_PILL, 0), open = new Spring(ISLAND_OPEN, 0);
+        final RectF now = new RectF();
+        String title = "", sub = "", titleFit = "", subFit = "";
+        float w, x;
+        long alertUntil;
+
+        Live(String icon) {
+            this.icon = icon;
+        }
+
+        boolean on() {
+            return shown.target > 0.5f;
+        }
+    }
+
+    private final Live[] lives = {new Live("music"), new Live("bedtime"), new Live("airpods")};
+    private boolean onIsland, islandFocused, islandWasPlaying, sleepEnds;
+    private int islandAt;   // the live activity with the focus, while onIsland
     private long islandPausedUntil;
-    private final RectF islandDot = new RectF(), islandNow = new RectF();
-    /** Measured when the song or the layout changes: the open width, the cut title and line, the right cluster's edge. */
-    private float islandW, islandClusterLeft;
-    private String islandTitle, islandSub;
+    private float islandClusterLeft;   // the right cluster's left end, measured with the layout
     private Paint islandTitlePaint, islandSubPaint;
     private final Paint islandArtPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final android.graphics.Matrix islandMatrix = new android.graphics.Matrix();
@@ -669,7 +686,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case LAUNCH: drawLaunch(c); break;
                 default:
                     drawToast(c);
-                    drawAirToast(c);
                     drawMoveHint(c);
                     drawNaming(c);
                     break;
@@ -961,8 +977,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         volumeHud.dismiss();
         volumeKeyDown = false;
         if (audio != null) audio.unregisterAudioDeviceCallback(airWatch);
-        handler.removeCallbacks(airHide);
-        airToast.snap(0);
+        handler.removeCallbacks(islandCheck);
         handler.removeCallbacks(tick);
         handler.removeCallbacks(rotate);
         handler.removeCallbacks(reloadSoon);
@@ -1135,8 +1150,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Symbols.warm(getContext(), "bell", 26 * k);
         Symbols.warm(getContext(), "airpods", 40 * k);
         Symbols.warm(getContext(), "airpods", 24 * k);
-        airTitle = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
-        airSub = Ui.text(Ui.medium, 20 * k, 0xB3FFFFFF);
         Symbols.warm(getContext(), "bedtime", 21 * k);   // the sleep timer's "Off in", at lQuote's size
         layoutShelf();
         layoutStatus();
@@ -1293,7 +1306,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean kenMoving = kenBurns(up);
         if (titleMoving) heroLayer.invalidate();
         if (kenMoving || parallaxMoving) sky.invalidate();
-        boolean pillMoving = avatarFade.step(dt) | islandShown.step(dt) | islandOpen.step(dt);
+        boolean pillMoving = avatarFade.step(dt);
+        for (Live l : lives) pillMoving |= l.shown.step(dt) | l.open.step(dt);
         if (pillMoving) {
             status.invalidate();
             tabBar.invalidate();
@@ -1306,8 +1320,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean tilesMoving = step(tileFocus, dt) | step(tileSlide, dt) | (swaying && !sheetOpen) | glare.step(dt);
         boolean moveMoving = stepMove(dt, up) | stepNaming(dt);
         boolean statusMoving = step(statusFocus, dt) | pillFocus.step(dt) | bubbleFocus.step(dt);
-        boolean airMoving = airToast.step(dt);
-        if (airMoving) toastLayer.invalidate();
         boolean fullMoving = full.step(dt);
         boolean heroMoving = heroFocus.step(dt) | fullMoving;
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
@@ -1364,7 +1376,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
                 || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving
-                || chevronMoving || ccStagger || airMoving || moveMoving || launching || !toasts.isEmpty();
+                || chevronMoving || ccStagger || moveMoving || launching || !toasts.isEmpty();
         idle = !busy;
         if (busy) {
             Choreographer.getInstance().postFrameCallback(this);
@@ -1544,10 +1556,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean here = Prefs.sleepShown() && !android.provider.Settings.canDrawOverlays(getContext());   // else SleepOverlay
         int left = here ? SleepTimer.minutesLeft(getContext()) : 0;
         String text = left == 0 ? "" : Ui.trf("Off in {time}", "time", SleepTimer.duration(left));
+        sleepEnds = here && nextSleep() == 0;
         if (text.equals(sleepText)) return;
-        sleepText = text;
-        sleepTextW = lQuote == null ? 0 : lQuote.measureText(text);
-        statusDirty = true;
+        sleepText = text;   // the sleep timer's live activity (the dynamic dot) shows it
+        updateIsland();
     }
 
     private boolean updateClock() {
@@ -2420,59 +2432,106 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** The song changed: its art for the dot (a shader made here, never while drawing), then the layout. */
+    /** The song changed: its art for the dot (a shader made here, never while drawing). */
     private void fitIsland() {
         Bitmap art = playing.mediaArt;
         if (art != islandArt) {
             islandArt = art;
             islandArtShader = art == null ? null : new BitmapShader(art, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         }
-        if (tvPill != null && islandLive()) layoutPill();
     }
 
     /**
-     * Whether the dot is there: while a song plays, for ISLAND_PAUSE_MS after it pauses, and while it has the focus
-     * (so OK can play it again). Gone at once when the player goes. It goes back under the bubble when it leaves, and
-     * the focus on it moves to the bubble.
+     * Which live activities are there, and their words:
+     * - the song: while it plays, ISLAND_PAUSE_MS after it pauses, and while focused; gone at once when the player goes;
+     * - the sleep timer: while it runs (and SleepOverlay isn't showing it);
+     * - AirPods: joining opens it for AIR_MS, then it stays ISLAND_LINGER_MS as a dot (and while focused).
+     * One that goes takes the focus on it to its neighbour, else to the bubble.
      */
     private void updateIsland() {
         long now = SystemClock.uptimeMillis();
         boolean has = playing.hasMedia(), playingNow = has && playing.mediaPlaying;
         if (islandWasPlaying && !playingNow && has) {
             islandPausedUntil = now + ISLAND_PAUSE_MS;
-            handler.removeCallbacks(islandCheck);
             handler.postDelayed(islandCheck, ISLAND_PAUSE_MS + 50);
         }
         islandWasPlaying = playingNow;
-        boolean live = has && (playingNow || now < islandPausedUntil || zone == Z_STATUS && onIsland);
-        if (live == islandLive()) {
-            if (live && tabBar != null) tabBar.invalidate();   // a new title or play/pause state
-            return;
-        }
-        islandShown.target = live ? 1 : 0;
-        if (Spring.instant) islandShown.snap(islandShown.target);
-        if (!live && onIsland) {
-            onIsland = false;
-            onBubble = true;   // it went away under the focus: the bubble beside it
+        Live music = lives[LIVE_MUSIC], sleep = lives[LIVE_SLEEP], air = lives[LIVE_AIR];
+        music.title = playing.mediaTitle == null ? "" : playing.mediaTitle;
+        music.sub = playing.mediaDetail == null ? "" : playing.mediaDetail;
+        sleep.title = Ui.tr("Sleep Timer");
+        sleep.sub = sleepText;
+        air.title = airName == null ? "" : airName;
+        air.sub = airSpatial ? Ui.tr("Connected · Spatial Audio") : Ui.tr("Connected");
+        boolean changed = turn(LIVE_MUSIC, has && (playingNow || now < islandPausedUntil || focusedLive(LIVE_MUSIC)));
+        changed |= turn(LIVE_SLEEP, !sleepText.isEmpty());
+        changed |= turn(LIVE_AIR, airName != null && (now < air.alertUntil + ISLAND_LINGER_MS || focusedLive(LIVE_AIR)));
+        if (onIsland && !lives[islandAt].on()) {
+            int n = nextLive(islandAt, 1);
+            if (n < 0) n = nextLive(islandAt, -1);
+            if (n >= 0) {
+                islandAt = n;
+            } else {
+                onIsland = false;
+                onBubble = true;   // the last one went away under the focus: the bubble
+            }
             if (zone == Z_STATUS) retarget(false);
         }
-        if (tvPill != null) layoutPill();
+        aimIsland(false);
+        if (tvPill != null) {
+            if (changed) layoutPill(); else layoutIsland();
+        }
+        if (tabBar != null) tabBar.invalidate();
         wake();
     }
 
-    private boolean islandLive() {
-        return islandShown.target > 0.5f;
+    private boolean turn(int i, boolean on) {
+        Live l = lives[i];
+        if (l.on() == on) return false;
+        l.shown.target = on ? 1 : 0;
+        if (Spring.instant) l.shown.snap(l.shown.target);
+        return true;
     }
 
-    /** The room the dot takes beside the bar now (px): its circle while it comes or goes, its capsule while open. */
+    private boolean focusedLive(int i) {
+        return zone == Z_STATUS && onIsland && islandAt == i;
+    }
+
+    /** Each one opens while focused, and AirPods' while its alert lasts; closing is brisker than opening. */
+    private void aimIsland(boolean snap) {
+        long now = SystemClock.uptimeMillis();
+        boolean onStatus = !sheetOpen && zone == Z_STATUS;
+        for (int i = 0; i < lives.length; i++) {
+            Live l = lives[i];
+            float to = l.on() && (onStatus && onIsland && islandAt == i || now < l.alertUntil) ? 1 : 0;
+            if (to != l.open.target) {
+                l.open.tune(to > 0 ? ISLAND_OPEN : ISLAND_CLOSE);
+                l.open.target = to;
+            }
+            if (snap) l.open.snap(to);
+        }
+    }
+
+    private boolean anyLive() {
+        return nextLive(-1, 1) >= 0;
+    }
+
+    /** The next live activity from `from` going `dir` (±1), or −1. */
+    private int nextLive(int from, int dir) {
+        for (int i = from + dir; i >= 0 && i < lives.length; i += dir) if (lives[i].on()) return i;
+        return -1;
+    }
+
+    /** The room the dots take beside the bar now (px): circles while they come or go, a capsule while open. */
     private float islandRoomNow() {
-        float shown = Ui.clamp(islandShown.value);
-        return shown * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, islandOpen.value) * (islandW - ISLAND_D * k));
+        float room = 0, d = ISLAND_D * k;
+        for (Live l : lives) room += Ui.clamp(l.shown.value) * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, l.open.value) * (l.w - d));
+        return room;
     }
 
     /**
-     * How far the tab bar (and the dot beside it) is drawn from its centred place (px): the pair stays centred as the
-     * dot comes, goes, opens and closes, but never comes nearer than ISLAND_GAP to the buttons at the right, nor past
+     * How far the tab bar (and the dots beside it) is drawn from its centred place (px): the group stays centred as the
+     * dots come, go, open and close, but never comes nearer than ISLAND_GAP to the buttons at the right, nor past
      * ISLAND_LEFT (the Top Shelf's logo) at the left.
      */
     private float tabShift() {
@@ -2480,6 +2539,38 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float room = islandRoomNow();
         float shift = Math.min(-room / 2, islandClusterLeft - ISLAND_GAP * k - tabBarRect.right - room);
         return Math.max(shift, Math.min(0, ISLAND_LEFT * k - tabBarRect.left));
+    }
+
+    /** OK on a live activity: its one control. */
+    private void islandOk() {
+        if (islandAt == LIVE_MUSIC) {
+            click.toggle(!playing.mediaPlaying);
+            playing.playPause();
+        } else if (islandAt == LIVE_SLEEP) {
+            int next = nextSleep();   // tvOS's presets, as Control Center's tile: 15 min, 30 min, 1 h, 2 h, off
+            click.toggle(next > 0);
+            setSleep(next);
+        } else {
+            click.open();   // AirPods: Control Center, with Listen Alone and the volume
+            openDrawer(false);
+            retarget(false);
+        }
+    }
+
+    private int nextSleep() {
+        int left = SleepTimer.minutesLeft(getContext()), next = 0;
+        for (int m : SLEEP_PRESETS) if (m > left + 1) { next = m; break; }
+        return next;
+    }
+
+    private void setSleep(int minutes) {
+        SleepTimer.set(getContext(), minutes);
+        sleepOn = minutes > 0;
+        showAppearance();
+        layoutDetails();
+        updateSleep();
+        drawerDirty = true;
+        wake();
     }
 
     /** Control Center open: its playback card comes or goes, or its text changes, with the focus staying on the same card. */
@@ -4165,17 +4256,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 || bubbleFocus.target != (onStatus && onBubble ? 1 : 0);
         pillFocus.target = onStatus && !onBubble && !onIsland ? 1 : 0;
         bubbleFocus.target = onStatus && onBubble ? 1 : 0;
-        float islandWas = islandOpen.target;
-        islandOpen.target = onStatus && onIsland && islandLive() ? 1 : 0;
-        if (islandOpen.target != islandWas) {
-            islandOpen.tune(islandOpen.target > 0 ? ISLAND_OPEN : ISLAND_CLOSE);   // closing is brisker than opening
-            pillChanged = true;
-            if (islandOpen.target == 0 && islandLive() && !playing.mediaPlaying) handler.post(islandCheck);   // left it paused
-        }
+        aimIsland(snap);
+        boolean onLive = onStatus && onIsland;
+        if (islandFocused && !onLive) handler.post(islandCheck);   // left one paused or after its alert: it may go now
+        islandFocused = onLive;
         if (snap) {
             pillFocus.snap(pillFocus.target);
             bubbleFocus.snap(bubbleFocus.target);
-            islandOpen.snap(islandOpen.target);
         }
         boolean statusChanged = pillChanged;
         boolean onCards = !sheetOpen && zone == Z_DRAWER && !ccOnProfiles && !ccOnVolume && !ccInputs;
@@ -4316,7 +4403,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_HERO) {
             r = heroButton;
         } else if (zone == Z_STATUS) {
-            r = onIsland ? islandDot : onBubble ? bubbleRect : pillRect;
+            r = onIsland ? lives[islandAt].now : onBubble ? bubbleRect : pillRect;
         } else if (zone == Z_DRAWER) {
             r = ccInputs ? (inputIndex < inputRects.length ? inputRects[inputIndex] : null)
                     : drawerIndex < drawerRects.length ? drawerRects[drawerIndex] : null;
@@ -5330,9 +5417,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = HomeApps.app(p);
             r = heroButton;
         } else if (zone == Z_STATUS && onIsland) {
-            // The dynamic dot: play or pause, its one control.
-            click.toggle(!playing.mediaPlaying);
-            playing.playPause();
+            islandOk();   // a live activity: its one control
             return;
         } else if (zone == Z_STATUS) {
             // The bubble: Control Center. The pill: "Who's Watching?" (Back keeps this profile).
@@ -5413,15 +5498,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (it.kind == HomeApps.SLEEP && zone == Z_DRAWER) {
             // tvOS 17's presets in place: Off → 15 min → 30 min → 1 h → 2 h → Off (Settings keeps the long list).
-            int left = SleepTimer.minutesLeft(getContext()), next = 0;
-            for (int m : SLEEP_PRESETS) if (m > left + 1) { next = m; break; }
-            SleepTimer.set(getContext(), next);
-            sleepOn = next > 0;
-            showAppearance();
-            layoutDetails();
-            updateSleep();
-            drawerDirty = true;
-            wake();
+            setSleep(nextSleep());
             return;
         }
         if (it.kind == HomeApps.VOLUME) return;   // ← → change it
@@ -7070,9 +7147,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             case Z_STATUS:
                 if (onIsland) {
-                    String what = playing.mediaTitle == null ? "" : playing.mediaTitle;
-                    if (playing.mediaDetail != null && !playing.mediaDetail.isEmpty()) what += ", " + playing.mediaDetail;
-                    return Ui.trf("Now playing: {what}", "what", what);
+                    Live l = lives[islandAt];
+                    String what = l.sub.isEmpty() ? l.title : l.title + ", " + l.sub;
+                    return islandAt == LIVE_MUSIC ? Ui.trf("Now playing: {what}", "what", what) : what;
                 }
                 return onBubble ? Ui.tr("Control Center") : clockText + ". " + Ui.tr("Profile");
             case WIDGETS:
@@ -7362,29 +7439,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /**
-     * The dot beside the tab bar (at rest, where the bar is centred), the right cluster's left end, and the dot's open
-     * width: what the title needs (at most ISLAND_TEXT), but never more than the room between the logo and the
-     * cluster leaves beside the bar; the title and line are cut to what's left.
+     * The right cluster's left end, and each live activity's open width: what its words need (at most ISLAND_TEXT), but
+     * never more than the logo and the cluster leave beside the bar and the other dots; its words are cut to fit.
      */
     private void layoutIsland() {
         float left = !lightButtons.isEmpty() ? topRects[3].left : !airRect.isEmpty() ? airRect.left : bubbleRect.left;
-        if (!sleepText.isEmpty() && lQuote != null) left -= 24 * k + sleepTextW + lQuote.getTextSize() * 1.4f;
         islandClusterLeft = left;
-        float d = ISLAND_D * k, dl = tabBarRect.right + ISLAND_SPACE * k;
-        islandDot.set(dl, tabBarRect.centerY() - d / 2, dl + d, tabBarRect.centerY() + d / 2);
         if (islandTitlePaint == null) return;
-        String title = playing.mediaTitle, sub = playing.mediaDetail;
-        float frame = 160 * k;
-        float want = Math.min(ISLAND_TEXT * k, Math.max(title == null ? 0 : islandTitlePaint.measureText(title),
-                sub == null ? 0 : islandSubPaint.measureText(sub)));
-        float room = tabBarRect.isEmpty() ? want + frame
-                : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width() - ISLAND_SPACE * k;
-        islandW = Math.max(d, Math.min(want + frame, room));
-        float text = Math.max(0, islandW - frame);
-        fitPaint.set(islandTitlePaint);
-        islandTitle = title == null ? "" : TextUtils.ellipsize(title, fitPaint, text, TextUtils.TruncateAt.END).toString();
-        fitPaint.set(islandSubPaint);
-        islandSub = sub == null ? "" : TextUtils.ellipsize(sub, fitPaint, text, TextUtils.TruncateAt.END).toString();
+        float d = ISLAND_D * k;
+        for (Live l : lives) Symbols.warm(getContext(), l.icon, ISLAND_ICON * k);
+        int count = 0;
+        for (Live l : lives) if (l.on()) count++;
+        // The others stay dots while one opens: its capsule gets the rest.
+        float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width()
+                - ISLAND_SPACE * k - Math.max(0, count - 1) * (d + ISLAND_SPACE * k);
+        for (int i = 0; i < lives.length; i++) {
+            Live l = lives[i];
+            float frame = (80 + (i == LIVE_AIR ? 24 : 80)) * k;   // AirPods has no control at its right end
+            float want = Math.min(ISLAND_TEXT * k, Math.max(islandTitlePaint.measureText(l.title), islandSubPaint.measureText(l.sub)));
+            l.w = Math.max(d, Math.min(want + frame, room));
+            float text = Math.max(0, l.w - frame);
+            fitPaint.set(islandTitlePaint);
+            l.titleFit = TextUtils.ellipsize(l.title, fitPaint, text, TextUtils.TruncateAt.END).toString();
+            fitPaint.set(islandSubPaint);
+            l.subFit = TextUtils.ellipsize(l.sub, fitPaint, text, TextUtils.TruncateAt.END).toString();
+        }
     }
 
     /** The tab bar's capsule and its three segments (topRects 0 to 2), centred at the top: measured here, not drawing. */
@@ -7832,18 +7911,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawText(label, x, r.bottom + (40 + 4 * f) * k, lTip);
             }
         }
-        if (!sleepText.isEmpty()) {
-            float right = (!lightButtons.isEmpty() ? topRects[3].left : bubbleRect.left) - 24 * k;
-            float cy = pillRect.centerY();
-            lQuote.setColor(0xE6FFFFFF);
-            float tw = sleepTextW, size = lQuote.getTextSize();
-            c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
-            Symbols.draw(getContext(), c, "bedtime", right - tw - size * 0.9f, cy, size, lQuote.getColor());
-        }
         c.restore();
     }
-
-    private float sleepTextW;
 
     /** How far one of full screen's details has come in, `delay` ms after the others started (eased, 200 ms). */
     private static float stage(long since, long delay) {
@@ -7953,66 +8022,86 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.restore();
     }
 
-    /**
-     * The dynamic dot, in the tab bar's Liquid Glass. Coming, it slides out from under the bar's right end, growing
-     * 0.35× → 1 on a liquid spring that carries it a little past; focused, it opens rightward into a 72 px capsule with
-     * a brighter rim and a deeper shadow, the art staying at its left end (45 → 56 px, on a concentric margin) as the
-     * title, the line and play/pause fade in on its arrival.
-     */
+    /** The live activities beside the bar: placed left to right as they are now, drawn right to left (each under the last). */
     private void drawIsland(Canvas c) {
-        float sv = islandShown.value;
-        if (sv < 0.01f || islandDot.isEmpty()) return;
-        float e = Math.max(0, islandOpen.value), ec = Ui.clamp(e), d = ISLAND_D * k;
-        float wNow = d + (islandW - d) * e, hNow = Math.max(d * 0.9f, d + (ISLAND_H * k - d) * e), cy = islandDot.centerY();
-        islandNow.set(islandDot.left, cy - hNow / 2, islandDot.left + wNow, cy + hNow / 2);
+        float x = tabBarRect.right + ISLAND_SPACE * k, d = ISLAND_D * k;
+        for (Live l : lives) {
+            l.x = x;
+            x += Ui.clamp(l.shown.value) * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, l.open.value) * (l.w - d));
+        }
+        for (int i = lives.length - 1; i >= 0; i--) drawLive(c, i, tabBarRect.centerY());
+    }
+
+    /**
+     * One live activity, in the tab bar's Liquid Glass with a white symbol, as the round buttons. Coming, it slides out
+     * from under what's left of it, growing 0.35× → 1 on a liquid spring that carries it a little past; open, it's a
+     * 72 px capsule with a brighter rim and a deeper shadow, its symbol at the left end (the song's art fading in over
+     * it, on a concentric margin), its words and its control fading in as it arrives.
+     */
+    private void drawLive(Canvas c, int i, float cy) {
+        Live l = lives[i];
+        float sv = l.shown.value;
+        if (sv < 0.01f) return;
+        float e = Math.max(0, l.open.value), ec = Ui.clamp(e), d = ISLAND_D * k;
+        float wNow = d + (l.w - d) * e, hNow = Math.max(d * 0.9f, d + (ISLAND_H * k - d) * e);
+        l.now.set(l.x, cy - hNow / 2, l.x + wNow, cy + hNow / 2);
         float grow = Math.max(0, 0.35f + 0.65f * sv), slide = -(ISLAND_SPACE * k + d * 0.7f) * (1 - Ui.clamp(sv));
         float r = hNow / 2;
         c.save();
         c.translate(slide, 0);
-        c.scale(grow, grow, islandDot.centerX(), cy);
-        tmp.set(islandNow);
+        c.scale(grow, grow, l.x + d / 2, cy);
+        tmp.set(l.now);
         tmp.offset(0, (6 + 10 * ec) * k);
         shadow.setColor(Ui.alpha(0xFF000000, 0.16f + 0.2f * ec));
         shadows.draw(c, tmp, r, SHADOW_BLUR * k, shadow);
-        scene.liquid(c, islandNow, r, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * ec, 1);
-        // The art: a circle on an even margin (6 px small, 8 px open), so it stays concentric with the shape.
-        float pad = (6 + 2 * ec) * k, ad = Math.max(0, hNow - 2 * pad), ax = islandNow.left + pad + ad / 2;
-        if (islandArtShader != null) {
+        scene.liquid(c, l.now, r, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * ec, 1);
+        // The left end: the symbol, where the dot's centre is at rest; the song's art comes in over it as it opens.
+        float pad = (6 + 2 * ec) * k, ad = Math.max(0, hNow - 2 * pad), ax = l.now.left + pad + ad / 2;
+        float art = i == LIVE_MUSIC && islandArtShader != null ? ec : 0;
+        if (art < 0.99f) Symbols.draw(getContext(), c, l.icon, ax, cy, ISLAND_ICON * k, Ui.alpha(0xFFFFFFFF, 1 - art));
+        if (art > 0.01f) {
             float sc = ad / Math.max(1, islandArt.getWidth());
             islandMatrix.setScale(sc, sc);
             islandMatrix.postTranslate(ax - ad / 2, cy - ad / 2);
             islandArtShader.setLocalMatrix(islandMatrix);
             islandArtPaint.setShader(islandArtShader);
+            islandArtPaint.setAlpha(Math.round(255 * art));
             c.drawCircle(ax, cy, ad / 2, islandArtPaint);
             islandArtPaint.setShader(null);
-        } else {
-            Symbols.draw(getContext(), c, "music", ax, cy, ad * 0.55f, 0xFFFFFFFF);
         }
         float ta = Ui.clamp((e - 0.55f) / 0.4f);
-        if (ta > 0.01f && islandTitle != null) {
+        if (ta > 0.01f) {
             c.save();
-            c.clipRect(islandNow);
-            float tx = islandNow.left + pad + ad + 16 * k;
+            c.clipRect(l.now);
+            float tx = l.now.left + pad + ad + 16 * k;
             islandTitlePaint.setAlpha(Math.round(255 * ta));
-            boolean two = !islandSub.isEmpty();
-            c.drawText(islandTitle, tx, two ? cy - 3 * k : cy + Ui.halfCap(islandTitlePaint), islandTitlePaint);
+            boolean two = !l.subFit.isEmpty();
+            c.drawText(l.titleFit, tx, two ? cy - 3 * k : cy + Ui.halfCap(islandTitlePaint), islandTitlePaint);
             if (two) {
-                islandSubPaint.setAlpha(Math.round(0xA6 * ta));
-                c.drawText(islandSub, tx, cy + 23 * k, islandSubPaint);
+                islandSubPaint.setAlpha(Math.round(0xB3 * ta));
+                c.drawText(l.subFit, tx, cy + 23 * k, islandSubPaint);
             }
-            // Play/pause, the one control (OK), in a slot as big as the art at the right end.
-            float gx = islandNow.right - pad - ad / 2, g = k;
+            // Its one control (OK), in a slot as big as the left end's at the right end.
+            float gx = l.now.right - pad - ad / 2, g = k;
+            fill.setShader(null);
             fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
-            if (playing.mediaPlaying) {
+            if (i == LIVE_MUSIC && playing.mediaPlaying) {
                 c.drawRoundRect(gx - 9 * g, cy - 12 * g, gx - 3 * g, cy + 12 * g, 2 * g, 2 * g, fill);
                 c.drawRoundRect(gx + 3 * g, cy - 12 * g, gx + 9 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-            } else {
+            } else if (i == LIVE_MUSIC) {
                 mediaGlyph.reset();
                 mediaGlyph.moveTo(gx - 8 * g, cy - 13 * g);
                 mediaGlyph.lineTo(gx - 8 * g, cy + 13 * g);
                 mediaGlyph.lineTo(gx + 12 * g, cy);
                 mediaGlyph.close();
                 c.drawPath(mediaGlyph, fill);
+            } else if (i == LIVE_SLEEP) {
+                // + for the next preset; × when OK would turn it off.
+                c.save();
+                if (sleepEnds) c.rotate(45, gx, cy);
+                c.drawRoundRect(gx - 12 * g, cy - 2 * g, gx + 12 * g, cy + 2 * g, 2 * g, 2 * g, fill);
+                c.drawRoundRect(gx - 2 * g, cy - 12 * g, gx + 2 * g, cy + 12 * g, 2 * g, 2 * g, fill);
+                c.restore();
             }
             c.restore();
         }
@@ -8033,37 +8122,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             layoutPill();
             status.invalidate();
         }
+        Live air = lives[LIVE_AIR];
         if (name == null) {
-            handler.removeCallbacks(airHide);
-            airToast.target = 0;
+            air.alertUntil = 0;
         } else if (greet && changed) {
-            airShown = name;
+            // Joined: its live activity opens by itself for AIR_MS (the Dynamic Island's alert), then closes to a dot
+            // and goes.
             airSpatial = AirPods.spatial(audio);
-            airToast.target = 1;
-            handler.removeCallbacks(airHide);
-            handler.postDelayed(airHide, AIR_MS);
+            air.alertUntil = SystemClock.uptimeMillis() + AIR_MS;
+            handler.postDelayed(islandCheck, AIR_MS);
+            handler.postDelayed(islandCheck, AIR_MS + ISLAND_LINGER_MS + 50);
         }
+        updateIsland();
         if (drawerOpen) readDrawerState(false);
         wake();
-    }
-
-    /** The AirPods card: smoke glass at the top right, under the status cluster (36 → 108 px as it slides in). */
-    private void drawAirToast(Canvas c) {
-        float v = airToast.value;
-        if (v <= 0.01f || airShown == null || airTitle == null) return;
-        String sub = airSpatial ? Ui.tr("Connected · Spatial Audio") : Ui.tr("Connected");
-        float icon = 40 * k, pad = 24 * k, gap = 18 * k, iconW = Symbols.width(getContext(), "airpods", icon);
-        float tw = Math.max(airTitle.measureText(airShown), airSub.measureText(sub));
-        float cw = Math.min(pad + iconW + gap + tw + pad + 6 * k, 640 * k), ch = 84 * k;
-        float right = PILL_RIGHT * k, top = (36 + 72 * v) * k;
-        tmp.set(right - cw, top, right, top + ch);
-        int save = c.saveLayerAlpha(tmp.left - 4, tmp.top - 4, tmp.right + 4, tmp.bottom + 4, Math.round(255 * Ui.clamp(v)));
-        scene.glass(c, tmp, ch / 2, SMOKE, 0.55f, 0, 0, 0.02f, 1);
-        Symbols.draw(getContext(), c, "airpods", tmp.left + pad + iconW / 2, tmp.centerY(), icon, 0xFFFFFFFF);
-        float tx = tmp.left + pad + iconW + gap;
-        c.drawText(airShown, tx, tmp.centerY() - 4 * k, airTitle);
-        c.drawText(sub, tx, tmp.centerY() + 24 * k, airSub);
-        c.restoreToCount(save);
     }
 
     private boolean moveLight(int dx, int dy) {
@@ -8116,6 +8188,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         deadEnd(dx, dy);
                         return true;
                     }
+                    int n = dx == 0 ? -1 : nextLive(islandAt, dx);
+                    if (n >= 0) {
+                        islandAt = n;   // ← → between the live activities
+                        break;
+                    }
                     onIsland = false;
                     if (dx < 0) {
                         zone = Z_TOP;   // ← Welly
@@ -8137,9 +8214,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     onBubble = false;   // → from the bubble: the pill
                 } else if (dx < 0 && !onBubble) {
                     onBubble = true;    // ← from the pill: the bubble
-                } else if (dx < 0 && onBubble && lightButtons.isEmpty() && islandLive()) {
-                    onBubble = false;   // ← from the bubble, no round buttons: the dot
+                } else if (dx < 0 && onBubble && lightButtons.isEmpty() && anyLive()) {
+                    onBubble = false;   // ← from the bubble, no round buttons: the last live activity
                     onIsland = true;
+                    islandAt = nextLive(lives.length, -1);
                 } else if (dx < 0 && topFromTab >= 0) {
                     zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
                     topIndex = topFromTab;
@@ -8159,11 +8237,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             case Z_TOP:
                 if (dx != 0) {
                     int next = topIndex + dx;
-                    if (islandLive() && (topIndex == 2 && dx > 0 || topIndex == 3 && dx < 0)) {
-                        zone = Z_STATUS;   // between Welly and the round buttons: the dynamic dot
+                    if (anyLive() && (topIndex == 2 && dx > 0 || topIndex == 3 && dx < 0)) {
+                        zone = Z_STATUS;   // between Welly and the round buttons: the live activities
                         topFromTab = -1;
                         onIsland = true;
                         onBubble = false;
+                        islandAt = dx > 0 ? nextLive(-1, 1) : nextLive(lives.length, -1);
                     } else if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                         topFromTab = -1;
