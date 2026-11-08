@@ -1,19 +1,23 @@
 # The dynamic dot
 
-mahitTV's take on Apple's Dynamic Island. Each live activity is a Liquid Glass dot beside the tab bar at the top centre,
-the way the Dynamic Island's detached circles sit beside the island. Today there are three activities:
-- a song playing;
-- the sleep timer;
-- AirPods joining.
+mahitTV's take on Apple's Dynamic Island. While any live activity runs, one Liquid Glass dot sits beside the tab bar at
+the top centre, the way the Dynamic Island's circle sits beside the island. In order of importance, the activities are:
+1. what's playing;
+2. Focus (Do Not Disturb);
+3. AirPods connected;
+4. the sleep timer.
+
+The dot shows the first one that runs. Selecting it opens it, and ↓ ↑ step through the others.
 
 ```
-     ( TV · Home · Welly ) (♪) (☾)                    (⚙)  ( 9:41 (avatar) )
-      the tab bar          live activities            Control Center   the time and the profile
+     ( TV · Home · Welly ) (♪)                        (⚙)  ( 9:41 (avatar) )
+      the tab bar          the dot (most important)   Control Center   the time and the profile
 ```
 
 **Why there.**
 - **The island analogy.** The tab bar is the screen's centred capsule, the island, and the dot is its detached circle. Apple's minimal presentation is exactly that pair.
 - **Reachable.** It's one press → from Welly, and ← from it goes back to Welly. ↑ from the tabs still lands on Control Center.
+- **One dot, not one per activity.** On iPhone you swipe the island to change which activity it shows; here ↓ ↑ do that. That keeps the top row to one extra circle however much is going on.
 - **Balanced.** The bar and the dot are centred as one group, so the dot's arrival doesn't tip the top row to one side.
 - **Uncrowded.** The right corner keeps only Control Center and the profile pill.
 
@@ -52,32 +56,38 @@ The first version (left of Control Center, black) was harder to reach, and it re
 
 ## The behaviour
 
-**Every dot**
-- **Look:** the bar's own Liquid Glass, as tall as the bar (57 px), with a white symbol like the round buttons have: ♪ (`music`), ☾ (`bedtime`), AirPods (`airpods`). There's no colour of its own and no picture at rest.
-- **Coming:** it slides out from under whatever is left of it (the bar, or the dot before), growing from 0.35× on a liquid spring that carries it a little past its place. The bar and the dots stay centred as one group.
-- **Focused:** → from Welly, then ← → between the dots.
-  - It opens rightward into a 72 px capsule on a bouncy spring. The rim brightens and the shadow deepens.
-  - The symbol stays at the left end, on a concentric margin. For a song with album art, the art fades in over it.
-  - The words fade in as the shape arrives, and its one control sits at the right end.
-  - The other dots move along to make room.
-- **Going:** it slides back under its neighbour, and the group centres again. If it had the focus, the focus moves to its neighbour, else to the bubble.
+**The dot**
+- **Look:** the bar's own Liquid Glass, as tall as the bar (57 px), with the activity's white symbol like the round buttons have: ♪ `music`, Focus `moon`, `airpods`, ☾ `bedtime`. There's no colour of its own and no picture at rest.
+- **Coming and going:**
+  - It comes when the first activity starts. It slides out from under the bar's right end, growing from 0.35× on a liquid spring that carries it a little past its place.
+  - It goes with the last one, sliding back under. The bar and the dot stay centred together.
+- **Focused (→ from Welly):**
+  - It opens on the most important activity, rightward into a 72 px capsule on a bouncy spring. The rim brightens and the shadow deepens.
+  - The symbol stays at the left end, on a concentric margin. For a song with album art, the art fades in over it. The words fade in as the shape arrives, and the activity's one control sits at the right end.
+- **↓ ↑ step through the activities in order.**
+  - The old one slides out the way you pressed as the next slides in from the other side, inside the shape. The capsule springs to the new width.
+  - Past the last (↓) or the first (↑), nothing changes. The dot gets the nudge and the knock every other dead end gives.
+- **← and →:** ← goes back to Welly, and → goes on to the round buttons or the bubble.
+- **When the focus leaves,** it closes, back to showing the most important activity.
+- **When an activity stops under the focus,** the focus moves to the next one. If none is left, it moves to the bubble.
 
 **The activities**
 
-| | There while | Open words | OK |
+| | Runs while | Open words | OK |
 |---|---|---|---|
-| ♪ The song | it plays; 30 s after a pause; while focused | the title; the artist · the app | play or pause (‖ / ▶) |
+| ♪ What's playing | it plays; 30 s after a pause; while focused | the title; the artist · the app | play or pause (‖ / ▶) |
+| Focus | Do Not Disturb is on (`ACTION_INTERRUPTION_FILTER_CHANGED`) | Do Not Disturb; On | turn it off (×). Control Center turns it on |
+| AirPods | they're connected. Joining opens the dot on them by itself for 3.5 s (the Dynamic Island's alert) | the name; Connected (· Spatial Audio) | Control Center |
 | ☾ The sleep timer | it runs (when its overlay doesn't show it) | Sleep Timer; Off in 25 min | the next preset (15 min, 30 min, 1 h, 2 h, off; + or ×), as Control Center's tile |
-| AirPods | 3.5 s after they join, open by itself (the alert), then 0.9 s as a dot; while focused | the name; Connected (· Spatial Audio) | Control Center |
 
-- **AirPods** replace the card that used to slide in at the top right. The glyph by the bubble stays while they're connected.
+- **AirPods** replace the card that used to slide in at the top right. The glyph by the bubble stays.
 - **The sleep timer** replaces the "Off in…" text that sat left of the round buttons.
 - **The song's title** no longer shows in the tab row's right end. The clock screen keeps its line under the clock.
 
 ## Nothing overlaps
 
-- The group (the bar and its dots) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
-- An open capsule's width is what its words need (up to 380 px of text), but never more than that space allows once the other dots have their room. The words are cut with "…" to what's left.
+- The pair (the bar and the dot) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
+- An open capsule's width is what its words need (up to 380 px of text), but never more than that space allows. The words are cut with "…" to what's left.
 - All of this is measured when something changes (a song, the focus, the layout), never while drawing.
 
 ## Later candidates
@@ -88,5 +98,7 @@ The first version (left of Control Center, black) was harder to reach, and it re
 
 ## Where it lives
 
-- **Android:** `HomeView`: `Live` and `lives`, `updateIsland`, `layoutIsland`, `drawIsland`/`drawLive` (in the tab bar's layer, under the bar), `tabShift` and `islandOk`. Also `NowPlaying.Watch.mediaArt`.
-- **Web app:** `web/home.js` (`.live`, one per activity, just before `#tabs`) and `home.css`. The glass is opaque pieces in one translucent layer, so the joins don't show. The preview's sample song and sleep timer make those show there. LG and Samsung can't tell what's playing, so on those TVs only AirPods can appear.
+- **Android:** `HomeView`: `Live` and `lives` (in order of importance), `updateIsland`, `aimIsland` (what it shows, open, width, the step), `layoutIsland`, `drawIsland`/`drawLive` (in the tab bar's layer, under the bar, clipped to the shape while stepping), `tabShift`, `islandOk`, `readDnd` and `toggleDnd`. Also `NowPlaying.Watch.mediaArt`.
+- **Web app:** `web/home.js` (`#island`, one face per activity, just before `#tabs`) and `home.css`.
+  - The glass is opaque pieces in one translucent layer, so the joins don't show.
+  - The web can't clip to the capsule, so a step travels only 12 px: the old face is gone by 40 %, and the new one comes in from 25 %. The preview's sample song, Do Not Disturb and sleep timer make those show there. LG and Samsung can't tell what's playing, so on those TVs only AirPods can appear.

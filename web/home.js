@@ -498,19 +498,16 @@
   }
 
   /**
-   * Joined (a name) or gone (null): its live activity opens by itself in the dynamic dot for AIR_MS (the Dynamic
-   * Island's alert), then closes to a dot and goes; the glyph by the bubble, the HUD's buds.
+   * Joined (a name) or gone (null): the dynamic dot shows them while they're connected, and opens on them by itself
+   * for AIR_MS as they join (the Dynamic Island's alert); the glyph by the bubble, the HUD's buds.
    */
   function setAirPods(name) {
     airpods = name;
     if (hud) setClass(hud.node, 'air', !!name);
     renderPill();
     ccRefresh();
-    lives[LIVE_AIR].alertUntil = name ? Date.now() + AIR_MS : 0;
-    if (name) {
-      setTimeout(islandUpdate, AIR_MS);
-      setTimeout(islandUpdate, AIR_MS + ISLAND_LINGER + 50);
-    }
+    airAlertUntil = name ? Date.now() + AIR_MS : 0;
+    if (name) setTimeout(islandUpdate, AIR_MS);
     islandUpdate();
   }
 
@@ -724,7 +721,7 @@
   // The page's springs. lift: how far the page has risen for the grid (px); tab: TV 0, Home 1, Welly 2 (between them
   // mid-swap); drawer: Control Center 0..1; full: the Top Shelf's full screen 0..1; dock: the Dock's scroll (px);
   // par: the art's counter-parallax (px); launch/wake: the page receding for an app, and back from the screensaver.
-  var ISLAND_OPEN = [0.40, 0.76], ISLAND_CLOSE = [0.30, 0.92];
+  var ISLAND_OPEN = [0.40, 0.76], ISLAND_CLOSE = [0.30, 0.92], ISLAND_SWAP = [0.34, 0.88];
   var mv = {
     lift: spring(P.SPATIAL_SCROLL).px(), tab: spring(P.TAB_SWAP), drawer: spring(P.SHEET_OPEN), full: spring(P.SPATIAL_SCROLL),
     dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
@@ -734,6 +731,9 @@
     ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP),
     // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
     brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px(),
+    // The dynamic dot: there, open, its open width, the step from one activity to the next, and its knock at the ends.
+    islandShown: spring(P.LIQUID_PILL), islandOpen: spring(ISLAND_OPEN), islandWidth: spring(P.LIQUID_PILL, 57).px(),
+    islandSwap: spring(ISLAND_SWAP, 1), islandNudge: spring(P.BOUNDARY_BUMP).px()
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
@@ -769,7 +769,6 @@
     }
     if (pending.length) moving = true;
     for (k in mv) if (mv.hasOwnProperty(k) && mv[k].step(dt)) moving = true;
-    for (i = 0; lives && i < lives.length; i++) if (lives[i].shown.step(dt) | lives[i].open.step(dt)) moving = true;
     if (moveTick(dt)) moving = true;
     if (stepAll(detail, dt)) moving = true;
     if (stepAll(rowLag, dt)) moving = true;
@@ -905,7 +904,7 @@
   var Z = {TOP: 'top', HERO: 'hero', SHELF: 'shelf', DRAWER: 'drawer', APPS: 'apps', SETTINGS: 'settings', EDIT: 'edit', LANG: 'lang', CITY: 'city', KEY: 'key', WALLPAPER: 'wallpaper', ABOUT: 'about',
     TABS: 'tabs', HOUSE: 'house', WELLY: 'welly', RECENTS: 'recents', FOLDER: 'folder'};
   var TAB = {TV: 0, HOME: 1, WELLY: 2};
-  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
+  var st = {zone: Z.SHELF, tab: TAB.TV, top: 3, live: 0, page: 0, shelf: 0, drawer: 0, grid: 0, row: 0, edit: 0, lang: 0, city: 0, key: 0, wallpaperCategory: 0, wallpaperOption: 0, wallpaperPane: 0,
     recent: 0, ccInput: 0, folder: 0};
   var cards = [];
   var topFromTab = null;   // the tab ↑ left for the bubble (← goes back to it)
@@ -1030,7 +1029,7 @@
       case Z.SHELF: return fxTiles[st.shelf] || null;
       case Z.APPS: return fxCells[st.grid] || null;
       case Z.TABS: return fxTabs[st.tab] || null;
-      case Z.TOP: return st.top === 3 ? fxBubble : fxPill;
+      case Z.TOP: return st.top === 3 ? fxBubble : st.top === 2 ? null : fxPill;
       case Z.FOLDER: return fxFolder[st.folder] || null;
       case Z.HERO: return fxWatch;
       case Z.DRAWER: return ccFocusedFx();
@@ -1049,6 +1048,7 @@
   function bump(dx, dy) {
     var fx = focusedFx();
     if (fx) fx.bump(dx, dy);
+    else if (st.zone === Z.TOP && st.top === 2) mv.islandNudge.impulse((dy || dx) * BUMP);   // the dot's ends
     else if (st.zone === Z.SETTINGS || st.zone === Z.EDIT || st.zone === Z.LANG) mv.rowNudge.impulse(dy * BUMP);
   }
 
@@ -1203,35 +1203,31 @@
   }
 
   // MARK: - The dynamic dot: live activities (DESIGN-DYNAMIC-DOT.md)
-  // Beside the tab bar, one Liquid Glass dot per live activity (a song playing, the sleep timer, AirPods joining), as
-  // the Dynamic Island's detached circles beside the island: as tall as the bar, a white symbol in it like the other
-  // round buttons. The bar and the dots centre together; focused (→ from Welly), one opens rightward into a capsule
-  // with its words and its one control; AirPods joining opens by itself for a moment, as an alert does. Only the preview
-  // knows what's playing and the sleep timer (its samples): no LG or Samsung TV tells a web app, so there only AirPods
-  // can show.
+  // One Liquid Glass dot beside the tab bar, as tall as the bar, while any live activity runs: what plays, Focus (Do Not
+  // Disturb), AirPods connected, the sleep timer, in that order of importance. It shows the first one's white symbol, as
+  // the round buttons do; focused (→ from Welly), it opens into a capsule with that one's words and its one control,
+  // and ↓ ↑ step through the others, knocking past either end. AirPods joining opens it by itself for a moment, as an
+  // alert. Only the preview knows what plays, Focus and the sleep timer (its samples): no LG or Samsung TV tells a web
+  // app, so there only AirPods can show.
 
   var ISLAND_D = 57, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_PAUSE = 30000, ISLAND_GAP = 32, ISLAND_SPACE = 14;
   var ISLAND_LEFT = 64 + 380 + 32;   // never over the pick's logo, 380 px wide at the top left
-  var ISLAND_LINGER = 900, AIR_MS = 3500, LIVE_MUSIC = 0, LIVE_SLEEP = 1, LIVE_AIR = 2;
+  var AIR_MS = 3500, LIVE_MUSIC = 0, LIVE_FOCUS = 1, LIVE_AIR = 2, LIVE_SLEEP = 3;
 
   function Live(icon, control) {
     this.icon = icon;
-    this.control = control;   // a control at the right end (play/pause, +): AirPods has none
-    this.shown = spring(P.LIQUID_PILL);
-    this.open = spring(ISLAND_OPEN);
+    this.control = control;   // a control at the right end (play/pause, +, ×): AirPods has none
     this.on = false;
     this.w = ISLAND_D;
-    this.x = 0;
-    this.alertUntil = 0;
-    this.node = null;
   }
-  var lives = [new Live('music', true), new Live('bedtime', true), new Live('airpods', false)];
-  var liveAt = 0, islandLeft = 0, islandPausedUntil = 0, islandWasPlaying = false, islandFocused = false, islandBuilt = false;
+  var lives = [new Live('music', true), new Live('moon', true), new Live('airpods', false), new Live('bedtime', true)];
+  var island = null, islandShows = -1, islandFrom = -1, islandDir = 1, islandLeft = 0, islandPausedUntil = 0;
+  var islandWasPlaying = false, islandFocused = false, airAlertUntil = 0;
 
   function islandMedia() { return PREVIEW ? previewMedia : null; }
   function onIsland() { return st.zone === Z.TOP && st.top === 2; }
   function anyLive() { return nextLive(-1, 1) >= 0; }
-  /** The next live activity from `from` going `dir` (±1), or −1. */
+  /** The next running activity from `from` going `dir` (±1), or −1. */
   function nextLive(from, dir) {
     for (var i = from + dir; i >= 0 && i < lives.length; i += dir) if (lives[i].on) return i;
     return -1;
@@ -1241,135 +1237,136 @@
     return SLEEP_PRESETS[(i + 1) % SLEEP_PRESETS.length];
   }
 
-  /** One glass dot per live activity, just before the tab bar in the page (under it), each under the one before. */
+  /** The dot, just before the tab bar in the page (under it): its glass, and one face per activity. */
   function buildIsland() {
-    if (islandBuilt) return;
-    islandBuilt = true;
-    var under = $('tabs');
+    if (island) return;
+    var n = el('div', 'live');
+    n.id = 'island';
+    $('stage').insertBefore(n, $('tabs'));
+    // The glass: opaque pieces in one translucent layer, so where they overlap is no lighter (no seams).
+    var shape = el('span', 'shape', n);
+    island = {node: n, l: el('span', 'cap l', shape), m: el('span', 'mid', shape), r: el('span', 'cap r', shape), faces: []};
     for (var i = 0; i < lives.length; i++) {
-      var l = lives[i], n = el('div', 'live');
-      n.id = 'live-' + l.icon;
-      $('stage').insertBefore(n, under);
-      under = n;
-      l.node = n;
-      // The glass: opaque pieces in one translucent layer, so where they overlap is no lighter (no seams).
-      var shape = el('span', 'shape', n);
-      l.l = el('span', 'cap l', shape);
-      l.m = el('span', 'mid', shape);
-      l.r = el('span', 'cap r', shape);
-      l.sym = sym(l.icon, n);
-      l.txt = el('span', 'txt', n);
-      l.t = el('span', 't', l.txt);
-      l.s = el('span', 's', l.txt);
-      if (l.control) {
-        l.ctrl = el('span', i === LIVE_MUSIC ? 'ctrl pp' : 'ctrl plus', n);
-        el('i', '', l.ctrl);
-        el('i', '', l.ctrl);
+      var f = el('span', 'face', n), face = {node: f, sym: sym(lives[i].icon, f), txt: el('span', 'txt', f)};
+      f.id = 'live-' + lives[i].icon;
+      face.t = el('span', 't', face.txt);
+      face.s = el('span', 's', face.txt);
+      if (lives[i].control) {
+        face.ctrl = el('span', i === LIVE_MUSIC ? 'ctrl pp' : i === LIVE_FOCUS ? 'ctrl plus ends' : 'ctrl plus', f);
+        el('i', '', face.ctrl);
+        el('i', '', face.ctrl);
       }
-      (function (index) {
-        n.onmouseover = function () { if (st.zone !== Z.TOP || st.top !== 2 || liveAt !== index) { st.zone = Z.TOP; st.top = 2; liveAt = index; updateFocus(); } };
-        n.onclick = function () { liveAt = index; st.zone = Z.TOP; st.top = 2; liveOk(); };
-      })(i);
+      island.faces.push(face);
     }
+    n.onmouseover = function () { if (!onIsland()) { st.zone = Z.TOP; st.top = 2; st.live = nextLive(-1, 1); updateFocus(); } };
+    n.onclick = function () { if (onIsland()) liveOk(); };
     islandUpdate();
   }
 
   /**
-   * Which live activities are there, and their words: the song while it plays (ISLAND_PAUSE after it pauses, and while
-   * focused); the sleep timer while it's set; AirPods for AIR_MS after joining (open), then ISLAND_LINGER as a dot.
-   * One that goes takes the focus on it to its neighbour, else to the bubble.
+   * Which activities run, and their words: what plays (ISLAND_PAUSE after a pause, and while focused); Focus while Do
+   * Not Disturb is on; AirPods while connected; the sleep timer while it's set. One that stops under the focus hands it
+   * to the next, else to the bubble.
    */
   function islandUpdate() {
-    if (!islandBuilt) return;
-    var m = islandMedia(), now = Date.now(), playingNow = !!(m && m.playing);
+    if (!island) return;
+    var m = islandMedia(), now = Date.now(), playingNow = !!(m && m.playing), f = island.faces;
     if (islandWasPlaying && !playingNow && m) {
       islandPausedUntil = now + ISLAND_PAUSE;
       setTimeout(islandUpdate, ISLAND_PAUSE + 50);
     }
     islandWasPlaying = playingNow;
-    var music = lives[LIVE_MUSIC], sleep = lives[LIVE_SLEEP], air = lives[LIVE_AIR], minutes = PREVIEW ? previewCC.sleep : 0;
-    if (m) { music.t.textContent = m.songs[m.at][0]; music.s.textContent = m.songs[m.at][1]; }
-    setClass(music.ctrl, 'paused', !playingNow);
-    sleep.t.textContent = tr('Sleep Timer');
-    sleep.s.textContent = minutes ? trf('Off in {time}', {time: sleepName(minutes)}) : '';
-    setClass(sleep.ctrl, 'ends', nextSleep() === 0);
-    air.t.textContent = airpods || '';
-    air.s.textContent = tr('Connected · Spatial Audio');
-    var changed = turn(LIVE_MUSIC, !!m && (playingNow || now < islandPausedUntil || focusedLive(LIVE_MUSIC)));
-    changed = turn(LIVE_SLEEP, !!minutes) || changed;
-    changed = turn(LIVE_AIR, !!airpods && (now < air.alertUntil + ISLAND_LINGER || focusedLive(LIVE_AIR))) || changed;
-    if (onIsland() && !lives[liveAt].on) {
-      var n = nextLive(liveAt, 1);
-      if (n < 0) n = nextLive(liveAt, -1);
-      if (n >= 0) liveAt = n; else st.top = 3;   // the last one went away under the focus: the bubble
+    var minutes = PREVIEW ? previewCC.sleep : 0, dnd = PREVIEW && !!previewCC.dnd, any = anyLive();
+    if (m) { f[LIVE_MUSIC].t.textContent = m.songs[m.at][0]; f[LIVE_MUSIC].s.textContent = m.songs[m.at][1]; }
+    setClass(f[LIVE_MUSIC].ctrl, 'paused', !playingNow);
+    f[LIVE_FOCUS].t.textContent = tr('Do Not Disturb');
+    f[LIVE_FOCUS].s.textContent = tr('state|On');
+    f[LIVE_AIR].t.textContent = airpods || '';
+    f[LIVE_AIR].s.textContent = tr('Connected · Spatial Audio');
+    f[LIVE_SLEEP].t.textContent = tr('Sleep Timer');
+    f[LIVE_SLEEP].s.textContent = minutes ? trf('Off in {time}', {time: sleepName(minutes)}) : '';
+    setClass(f[LIVE_SLEEP].ctrl, 'ends', nextSleep() === 0);
+    lives[LIVE_MUSIC].on = !!m && (playingNow || now < islandPausedUntil || (onIsland() && st.live === LIVE_MUSIC));
+    lives[LIVE_FOCUS].on = dnd;
+    lives[LIVE_AIR].on = !!airpods;
+    lives[LIVE_SLEEP].on = !!minutes;
+    mv.islandShown.set(anyLive() ? 1 : 0);
+    if (Motion.instant) mv.islandShown.snap(anyLive() ? 1 : 0);
+    if (onIsland() && !lives[st.live].on) {
+      var n = nextLive(st.live, 1);
+      if (n < 0) n = nextLive(st.live, -1);
+      if (n >= 0) st.live = n; else st.top = 3;   // the last one stopped under the focus: the bubble
       updateFocus();
     }
+    if (any !== anyLive()) renderPill(); else layoutIsland();
     aimIsland();
-    renderPill();
     Motion.kick();
-    return changed;
-  }
-
-  function turn(i, on) {
-    var l = lives[i];
-    if (l.on === on) return false;
-    l.on = on;
-    l.shown.set(on ? 1 : 0);
-    if (Motion.instant) l.shown.snap(on ? 1 : 0);
-    return true;
-  }
-
-  function focusedLive(i) { return onIsland() && liveAt === i; }
-
-  /** Each one opens while focused, and AirPods' while its alert lasts; closing is brisker than opening. */
-  function aimIsland() {
-    var now = Date.now();
-    for (var i = 0; i < lives.length; i++) {
-      var l = lives[i], open = l.on && (focusedLive(i) || now < l.alertUntil) ? 1 : 0;
-      if (open !== l.open.to) l.open.tune(open ? ISLAND_OPEN : ISLAND_CLOSE).set(open);
-    }
   }
 
   /**
-   * The right cluster's left end, and each live activity's open width: what its words need (at most ISLAND_TEXT) but
-   * never more than the logo and the cluster leave beside the bar and the other dots; its words are cut to fit.
+   * What the dot shows (the focused activity, else AirPods' alert, else the first that runs), whether it's open, and
+   * how wide; a new one steps in from below when it's further down the list, from above when it's further up.
    */
-  function layoutIsland() {
-    if (!islandBuilt) return;
-    var quotes = $('quotes'), tw = $('tabs').offsetWidth, count = 0, i;
-    islandLeft = $('ccbtn').offsetLeft;   // where it rests (offsetLeft: without the slide drawIsland gives it)
-    if (airpods) islandLeft = Math.min(islandLeft, $('airglyph').offsetLeft);
-    if (quotes.textContent) islandLeft = Math.min(islandLeft, quotes.offsetLeft);
-    for (i = 0; i < lives.length; i++) if (lives[i].on) count++;
-    var room = islandLeft - ISLAND_GAP - ISLAND_LEFT - tw - ISLAND_SPACE - Math.max(0, count - 1) * (ISLAND_D + ISLAND_SPACE);
-    for (i = 0; i < lives.length; i++) {
-      var l = lives[i], frame = 80 + (l.control ? 80 : 24);
-      l.node.style.left = (960 + tw / 2 + ISLAND_SPACE) + 'px';
-      // + 2: scrollWidth is rounded, and a width a fraction short of the text cuts its last letters with "…".
-      var want = Math.min(ISLAND_TEXT, Math.max(l.t.scrollWidth, l.s.scrollWidth) + 2);
-      l.w = Math.max(ISLAND_D, Math.min(want + frame, room));
-      l.t.style.width = l.s.style.width = Math.max(0, l.w - frame) + 'px';
-      if (l.ctrl) l.ctrl.style.left = (l.w - 52) + 'px';
+  function aimIsland() {
+    var focused = onIsland(), alert = lives[LIVE_AIR].on && Date.now() < airAlertUntil;
+    var shows = focused ? st.live : alert ? LIVE_AIR : nextLive(-1, 1);
+    if (shows >= 0 && shows !== islandShows) {
+      if (islandShows >= 0 && mv.islandShown.x > 0.5 && !Motion.instant) {
+        islandFrom = islandShows;
+        islandDir = shows > islandShows ? 1 : -1;
+        mv.islandSwap.snap(0).set(1);
+      }
+      islandShows = shows;
     }
-  }
-
-  function focusIsland() {
-    if (!islandBuilt) return;
-    var f = onIsland();
-    if (f && (!islandFocused || lives[liveAt].open.to === 0)) renderPill();   // measured again as it opens
-    aimIsland();
-    if (islandFocused && !f) islandUpdate();   // left one paused or after its alert: it may go now
-    islandFocused = f;
+    var open = shows >= 0 && (focused || alert) ? 1 : 0;
+    if (open !== mv.islandOpen.to) mv.islandOpen.tune(open ? ISLAND_OPEN : ISLAND_CLOSE).set(open);
+    if (islandShows >= 0) mv.islandWidth.set(lives[islandShows].w);
+    for (var i = 0; i < lives.length; i++) setClass(island.faces[i].node, 'on', i === islandShows || i === islandFrom);
     Motion.kick();
   }
 
-  /** OK on a live activity: its one control. */
+  /**
+   * The right cluster's left end, and each activity's open width: what its words need (at most ISLAND_TEXT) but never
+   * more than the logo and the cluster leave beside the bar; its words are cut to fit.
+   */
+  function layoutIsland() {
+    if (!island) return;
+    var quotes = $('quotes'), tw = $('tabs').offsetWidth;
+    islandLeft = $('ccbtn').offsetLeft;   // where it rests (offsetLeft: without the slide drawIsland gives it)
+    if (airpods) islandLeft = Math.min(islandLeft, $('airglyph').offsetLeft);
+    if (quotes.textContent) islandLeft = Math.min(islandLeft, quotes.offsetLeft);
+    island.node.style.left = (960 + tw / 2 + ISLAND_SPACE) + 'px';
+    var room = islandLeft - ISLAND_GAP - ISLAND_LEFT - tw - ISLAND_SPACE;
+    for (var i = 0; i < lives.length; i++) {
+      var l = lives[i], f = island.faces[i], frame = 80 + (l.control ? 80 : 24);
+      // + 2: scrollWidth is rounded, and a width a fraction short of the text cuts its last letters with "…".
+      var want = Math.min(ISLAND_TEXT, Math.max(f.t.scrollWidth, f.s.scrollWidth) + 2);
+      l.w = Math.max(ISLAND_D, Math.min(want + frame, room));
+      f.t.style.width = f.s.style.width = Math.max(0, l.w - frame) + 'px';
+      if (f.ctrl) f.ctrl.style.left = (l.w - 52) + 'px';
+    }
+    if (islandShows >= 0) mv.islandWidth.set(lives[islandShows].w);
+  }
+
+  function focusIsland() {
+    if (!island) return;
+    var f = onIsland();
+    if (f && !islandFocused) renderPill();   // measured again as it opens: the font may have come in since
+    aimIsland();
+    if (islandFocused && !f) islandUpdate();   // left the song paused: it may go now
+    islandFocused = f;
+  }
+
+  /** OK on the open dot: the activity's one control. */
   function liveOk() {
     var m = islandMedia();
-    if (liveAt === LIVE_MUSIC && m) {
+    if (st.live === LIVE_MUSIC && m) {
       m.playing = !m.playing;
       Sound.toggle(m.playing);
-    } else if (liveAt === LIVE_SLEEP) {
+    } else if (st.live === LIVE_FOCUS) {
+      previewCC.dnd = false;   // Do Not Disturb off (Control Center turns it back on)
+      Sound.toggle(false);
+    } else if (st.live === LIVE_SLEEP) {
       previewCC.sleep = nextSleep();   // the presets, as Control Center's tile: 15 min, 30 min, 1 h, 2 h, off
       Sound.toggle(!!previewCC.sleep);
     } else {
@@ -1377,45 +1374,44 @@
       return;
     }
     islandUpdate();
-    if (ccMode === 'controls' && st.zone === Z.DRAWER) renderDrawer();
+    if (st.zone === Z.DRAWER) renderDrawer();
   }
 
   /**
-   * One frame: the live activities placed left to right as they are now, each a glass shape from its caps and middle
-   * with its symbol on a concentric margin; the bar and the dots centred together, never nearer than ISLAND_GAP to the
-   * cluster at the right nor past the pick's logo at the left.
+   * One frame: the glass shape from its caps and middle (whole pixels), the faces (the leaving one slides out the way
+   * the step goes as the new one slides in), the knock at the ends, and the bar and the dot centred together, never
+   * nearer than ISLAND_GAP to the cluster at the right nor past the pick's logo at the left.
    */
   function drawIsland() {
-    if (!islandBuilt) return;
-    var d = ISLAND_D, x = 0, i, l;
-    for (i = 0; i < lives.length; i++) {
-      l = lives[i];
-      l.x = x;
-      x += Motion.clamp(l.shown.x, 0, 1) * (d + ISLAND_SPACE + Math.max(0, l.open.x) * (l.w - d));
-    }
-    var tw = $('tabs').offsetWidth, shift = Math.min(-x / 2, islandLeft - ISLAND_GAP - (960 + tw / 2) - x);
+    if (!island) return;
+    var d = ISLAND_D, sv = mv.islandShown.x, e = Math.max(0, mv.islandOpen.x), ec = Motion.clamp(e, 0, 1);
+    var shown = Motion.clamp(sv, 0, 1), W = Math.max(d, mv.islandWidth.x), room = shown * (d + ISLAND_SPACE + e * (W - d));
+    var tw = $('tabs').offsetWidth, shift = Math.min(-room / 2, islandLeft - ISLAND_GAP - (960 + tw / 2) - room);
     shift = Math.max(shift, Math.min(0, ISLAND_LEFT - (960 - tw / 2)));
     T($('tabs'), 'translateX(-50%) translateX(' + r2(shift) + 'px)');
-    for (i = 0; i < lives.length; i++) {
-      l = lives[i];
-      var sv = l.shown.x, e = Math.max(0, l.open.x), ec = Motion.clamp(e, 0, 1);
-      // Whole pixels for the shape; its middle overlaps each cap by a pixel (one layer: no seam where they meet).
-      var w = Math.round(d + (l.w - d) * e), h = Math.max(d * 0.9, d + (ISLAND_H - d) * e), cap = Math.round(h / 2), s = cap / (d / 2);
-      var shown = Motion.clamp(sv, 0, 1), grow = Math.max(0, 0.35 + 0.65 * sv), slide = -(ISLAND_SPACE + d * 0.7) * (1 - shown);
-      T(l.node, 'translateX(' + Math.round(shift + l.x + slide) + 'px) scale(' + r4(grow) + ')');
-      A(l.node, Motion.clamp(sv * 3, 0, 1));
-      V(l.node, shown);
-      setClass(l.node, 'open', ec > 0.5);
-      T(l.l, 'scale(' + r4(s) + ')');
-      T(l.m, 'translateX(' + (cap - 1) + 'px) scale(' + (Math.max(0, w - 2 * cap) + 2) + ',' + r4(s) + ')');
-      T(l.r, 'translateX(' + (w - cap) + 'px) scale(' + r4(s) + ')');
-      // The symbol stays where the dot's centre was, at the capsule's left end, on a concentric margin.
-      var pad = 6 + 2 * ec, ad = Math.max(0, h - 2 * pad);
-      T(l.sym, 'translate(' + r2(pad + ad / 2 - 14) + 'px,0)');
-      var ta = Motion.clamp((e - 0.55) / 0.4, 0, 1);
-      A(l.txt, ta);
-      if (l.ctrl) A(l.ctrl, ta);
+    var w = Math.round(d + (W - d) * e), h = Math.max(d * 0.9, d + (ISLAND_H - d) * e), cap = Math.round(h / 2), s = cap / (d / 2);
+    var grow = Math.max(0, 0.35 + 0.65 * sv), slide = -(ISLAND_SPACE + d * 0.7) * (1 - shown), nudge = Motion.rubber(mv.islandNudge.x);
+    T(island.node, 'translate(' + Math.round(shift + slide) + 'px,' + r2(onIsland() ? nudge : 0) + 'px) scale(' + r4(grow) + ')');
+    A(island.node, Motion.clamp(sv * 3, 0, 1));
+    V(island.node, shown);
+    setClass(island.node, 'open', ec > 0.5);
+    T(island.l, 'scale(' + r4(s) + ')');
+    T(island.m, 'translateX(' + (cap - 1) + 'px) scale(' + (Math.max(0, w - 2 * cap) + 2) + ',' + r4(s) + ')');
+    T(island.r, 'translateX(' + (w - cap) + 'px) scale(' + r4(s) + ')');
+    var p = Motion.clamp(mv.islandSwap.x, 0, 1), pad = 6 + 2 * ec, ad = Math.max(0, h - 2 * pad), ta = Motion.clamp((e - 0.55) / 0.4, 0, 1);
+    for (var i = 0; i < lives.length; i++) {
+      // The web can't clip to the capsule: a short travel, the old face gone by 40 % and the new one in from 25 %, so
+      // neither shows outside the glass.
+      var f = island.faces[i], come = Motion.clamp((p - 0.25) / 0.75, 0, 1), go = Motion.clamp(1 - p / 0.4, 0, 1);
+      var a = i === islandShows ? (islandFrom >= 0 ? come : 1) : i === islandFrom ? go : 0;
+      var y = i === islandShows ? islandDir * 12 * (1 - p) : i === islandFrom ? -islandDir * 12 * p : 0;
+      A(f.node, a);
+      T(f.node, 'translateY(' + r2(y) + 'px)');
+      T(f.sym, 'translate(' + r2(pad + ad / 2 - 14) + 'px,0)');
+      A(f.txt, ta);
+      if (f.ctrl) A(f.ctrl, ta);
     }
+    if (p >= 0.999 && islandFrom >= 0) { islandFrom = -1; aimIsland(); }
   }
 
   function renderQuotes() {
@@ -4642,7 +4638,7 @@
   }
 
   function snapshot() {
-    return [st.zone, st.tab, st.top, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang, st.recent].join(',');
+    return [st.zone, st.tab, st.top, st.live, st.page, st.shelf, st.drawer, st.grid, st.row, st.edit, st.lang, st.recent].join(',');
   }
 
   function move(dx, dy) {
@@ -4681,7 +4677,7 @@
         break;
       case Z.TABS:
         // ← → walk TV · Home · Welly · the pill; focusing a tab selects it, as on tvOS.
-        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = anyLive() ? 2 : 3; liveAt = nextLive(-1, 1); topFromTab = null; }
+        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = anyLive() ? 2 : 3; st.live = nextLive(-1, 1); topFromTab = null; }
         else if (dx) st.tab = Math.max(0, Math.min(TAB.WELLY, st.tab + dx));
         else if (dy > 0) enterTab();
         // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the other tabs.
@@ -4694,15 +4690,15 @@
         if (!Welly.move(dx, dy)) st.zone = Z.TABS;
         break;
       case Z.TOP:
-        // The live activities beside the tab bar: ← → between them, then Welly or the bubble.
-        if (dx && st.top === 2 && nextLive(liveAt, dx) >= 0) liveAt = nextLive(liveAt, dx);
+        // The dynamic dot: ↓ ↑ through its activities (nothing past either end: the knock), ← Welly, → the bubble.
+        if (st.top === 2 && dy) { if (nextLive(st.live, dy > 0 ? 1 : -1) >= 0) st.live = nextLive(st.live, dy > 0 ? 1 : -1); }
         else if (dx > 0 && st.top === 2) st.top = 3;
         else if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;
-        else if (dx < 0 && st.top === 3 && anyLive()) { st.top = 2; liveAt = nextLive(lives.length, -1); }   // ← the last one
+        else if (dx < 0 && st.top === 3 && anyLive()) { st.top = 2; st.live = nextLive(-1, 1); }   // ← the dot
         // ← from the dot: Welly, beside it. From the bubble: the tab it was reached from with ↑, else Welly.
         else if (dx < 0) { st.zone = Z.TABS; st.tab = st.top !== 2 && topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
-        else if (dy > 0) { topFromTab = null; enterTab(); }
+        else if (dy > 0 && st.top !== 2) { topFromTab = null; enterTab(); }
         break;
       case Z.DRAWER:
         // Inputs: ↑ ↓ through the inputs, ← back to the tiles.
@@ -5306,10 +5302,10 @@
       if (o.grace !== undefined) ISLAND_PAUSE = o.grace;
       if (o.playing !== undefined) previewMedia.playing = o.playing;
       if (o.sleep !== undefined) previewCC.sleep = o.sleep;
+      if (o.dnd !== undefined) previewCC.dnd = o.dnd;
       islandUpdate();
-      var music = lives[LIVE_MUSIC];
-      return {live: music.on, open: music.open.to, width: music.w, playing: previewMedia.playing, at: liveAt,
-        lives: lives.map(function (l) { return {icon: l.icon, on: l.on, open: l.open.to}; })};
+      return {live: lives[LIVE_MUSIC].on, open: mv.islandOpen.to, shows: islandShows >= 0 ? lives[islandShows].icon : null,
+        at: st.live, playing: previewMedia.playing, lives: lives.map(function (l) { return {icon: l.icon, on: l.on}; })};
     };
     window.Home.testBackground = function (o) {
       o = o || {};

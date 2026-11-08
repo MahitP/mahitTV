@@ -713,6 +713,8 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 .live.open .cap.l { box-shadow: inset 1.5px 1.5px 0 rgb(206, 209, 213); }
 .live.open .cap.r { box-shadow: inset 0 1.5px 0 rgb(206, 209, 213), inset -1px -1px 0 rgb(84, 92, 104); }
 .live.open .mid { box-shadow: inset 0 1.5px 0 rgb(206, 209, 213), inset 0 -1px 0 rgb(84, 92, 104); }
+.live .face { position: absolute; left: 0; top: 0; width: 57px; height: 57px; opacity: 0; visibility: hidden; }
+.live .face.on { visibility: visible; }
 .live .sym { position: absolute; left: 0; top: 14.5px; width: 28px; height: 28px; }
 .live .txt { position: absolute; left: 80px; top: 0; opacity: 0; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25); }
 .live .txt .t, .live .txt .s { position: absolute; left: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
