@@ -10,6 +10,11 @@ This product includes work from these projects, under their own licences:
   Its own credits: Hume Launcher (https://github.com/petrobot-admin/hume-launcher), Couch TV
   (https://github.com/Seagey/couch-tv), CleanYourTV (https://github.com/Gathin23/cleanyourtv).
 
+- Couch TV (https://github.com/Seagey/couch-tv), Copyright 2026 Seagey, MIT License (couch-tv-MIT.txt): the
+  screensaver's Landscapes (app/assets/landscapes: Wikimedia Commons photos under Creative Commons, each credited in
+  Landscapes-CREDITS.txt and on screen), and the Twitch and Paramount+ logos in app/assets/logos (they belong to their
+  owners). It is also where the scene images above first came from.
+
 - CleanYourTV (https://github.com/Gathin23/cleanyourtv), by Gathin23, MIT License: the debloat profiles in
   app/assets/cleanyourtv. mahitTV turns those apps off only through its own safety rules (HomeMode), and the
   Original mode turns them back on.

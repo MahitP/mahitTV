@@ -72,11 +72,11 @@ public final class AppLayoutTest {
         check(new AppLayout().isEmpty() && !l.isEmpty(), "empty until something is saved");
     }
 
-    /** The saved order wins; an app it doesn't know (just installed) follows the app before it in the TV's own order. */
+    /** The saved order wins; an app it doesn't know (just installed) goes at the end, as on Apple TV. */
     private static void order() {
         same(AppLayout.order(list("a", "b", "c", "d"), list("d", "c", "b", "a")), list("d", "c", "b", "a"), "the saved order");
-        same(AppLayout.order(list("a", "b", "n", "c"), list("c", "a", "b")), list("c", "a", "b", "n"), "new: after its natural neighbour");
-        same(AppLayout.order(list("n", "a", "b"), list("b", "a")), list("n", "b", "a"), "new and first: first");
+        same(AppLayout.order(list("a", "n", "b", "c"), list("c", "a", "b")), list("c", "a", "b", "n"), "new: at the end, not by its name");
+        same(AppLayout.order(list("n", "a", "b"), list("b", "a")), list("b", "a", "n"), "new and first by name: still last");
         same(AppLayout.order(list("a", "b"), list("gone", "b", "a")), list("b", "a"), "an uninstalled app's place is forgotten");
         same(AppLayout.order(list("a", "n1", "n2", "b"), list("b", "a")), list("b", "a", "n1", "n2"), "two new ones keep theirs");
         same(AppLayout.order(list("a", "b"), Collections.<String>emptyList()), list("a", "b"), "nothing saved: as the TV has it");

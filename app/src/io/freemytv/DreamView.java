@@ -51,6 +51,9 @@ import java.util.concurrent.Executors;
  *  - "aurora": the Aurora sky (Android 13+; a still gradient before) with the centered clock, in Liquid Glass on 13+;
  *  - "aerials": the four stills in assets/aerials through the photos' own pipeline (30 s each, Ken Burns, 3 s
  *    crossfade, the glass clock in the corner), without a caption;
+ *  - "landscapes": five real places (assets/landscapes, from couch-tv: Wikimedia Commons photos under Creative
+ *    Commons, CREDITS in assets/licenses) the same way as the Aerials; each place and its photographer show at the
+ *    bottom left as it comes in (the licences ask for the credit), and again on ↓, ← or →;
  *  - "black": only a dim clock and the date (white at 55%) drifting slowly across a black screen, against burn-in.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
@@ -65,12 +68,20 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
     private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
     private static final double DRIFT_PERIOD_S = 600, BLACK_DRIFT_S = 900;
-    private static final int PHOTOS = 0, NATURE = 1, AURORA = 2, AERIALS = 3, BLACK = 4;
+    private static final int PHOTOS = 0, NATURE = 1, AURORA = 2, AERIALS = 3, BLACK = 4, LANDSCAPES = 5;
     /** The Aurora's pace and shade on the screensaver (slower and a little darker than the home screen's). */
     private static final float AURORA_SPEED = 0.45f, AURORA_DIM = 0.08f;
     private static final String[] AERIALS_FILES = {"coast", "valley", "earth", "aurora"};
     /** Where each still was filmed (Wallpaper's titles), for the caption: place names, as Apple shows them. */
     private static final String[] AERIAL_PLACES = {"Iceland Coast", "Yosemite Valley", "New York from Above", "North America Aurora"};
+    /** The Landscapes: file, place, photographer and licence (Wikimedia Commons, via couch-tv). */
+    private static final String[][] LANDSCAPES_INFO = {
+        {"vang-vieng-sunset", "Vang Vieng, Laos", "Basile Morin", "CC BY-SA 4.0"},
+        {"grose-valley", "Grose Valley, Blue Mountains, Australia", "Diliff", "CC BY-SA 3.0"},
+        {"aresquiers-beach", "Aresquiers Beach, France", "Christian Ferrer", "CC BY 4.0"},
+        {"tessellated-pavement", "Tessellated Pavement, Tasmania", "JJ Harrison", "CC BY-SA 2.5"},
+        {"albury-storm", "Albury, Australia", "Thennicke", "CC BY-SA 4.0"},
+    };
     /** Shuffle (tvOS 27.2): Aerials, Portraits (our Nature Clock), Memories (the photos) and the Aurora, 20 minutes each. */
     private static final long SHUFFLE_MS = 20 * 60_000L;
     private long shuffleSlot = -1;
@@ -259,7 +270,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         glassFor = "";
         if (mode == AURORA) startAurora();
         aerialsReady = false;
-        if (mode == AERIALS) loadAerials();
+        if (stills()) loadAerials();
         fallback = mode == PHOTOS && photos().isEmpty();
         data.addListener(this);
         recs.addListener(this);
@@ -375,7 +386,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** Shuffle's look for this part of the day. */
     private static int shuffleMode(long slot) {
-        int[] looks = {AERIALS, NATURE, PHOTOS, AURORA};
+        int[] looks = {AERIALS, NATURE, PHOTOS, LANDSCAPES, AURORA};
         return looks[(int) (slot % looks.length)];
     }
 
@@ -384,6 +395,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             case "nature": return NATURE;
             case "aurora": return AURORA;
             case "aerials": return AERIALS;
+            case "landscapes": return LANDSCAPES;
             case "black": return BLACK;
             default: return PHOTOS;
         }
@@ -391,28 +403,37 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** The Aerials' stills when they're the look; else your photos when they are on, otherwise the picks'. */
     private List<Recs.Pick> photos() {
-        if (mode == AERIALS) return aerials;
+        if (stills()) return aerials;
         return Photos.on(getContext()) ? Photos.picks(getContext()) : recs.showcase();
     }
 
-    /** Copies the Aerials' stills to the cache once (a file, as your photos), then the first one comes in. */
+    /** A look of bundled stills (Aerials, Landscapes): through the photos' own pipeline, with no caption of their own. */
+    private boolean stills() {
+        return mode == AERIALS || mode == LANDSCAPES;
+    }
+
+    /** Copies the look's stills to the cache once (a file, as your photos), then the first one comes in. */
     private void loadAerials() {
+        final boolean land = mode == LANDSCAPES;
+        final String folder = land ? "landscapes" : "aerials";
+        final String[] files = new String[land ? LANDSCAPES_INFO.length : AERIALS_FILES.length];
+        for (int i = 0; i < files.length; i++) files[i] = land ? LANDSCAPES_INFO[i][0] : AERIALS_FILES[i];
         final Context c = getContext().getApplicationContext();
         final int gen = generation;
         worker.execute(() -> {
             final java.util.ArrayList<Recs.Pick> list = new java.util.ArrayList<>();
-            File dir = new File(c.getCacheDir(), "aerials");
-            for (int i = 0; i < AERIALS_FILES.length; i++) {
-                File f = new File(dir, AERIALS_FILES[i] + ".jpg");
+            File dir = new File(c.getCacheDir(), folder);
+            for (int i = 0; i < files.length; i++) {
+                File f = new File(dir, files[i] + ".jpg");
                 try {
-                    if (f.length() == 0) copyAsset(c, "aerials/" + AERIALS_FILES[i] + ".jpg", f);
+                    if (f.length() == 0) copyAsset(c, folder + "/" + files[i] + ".jpg", f);
                     Recs.Pick p = new Recs.Pick();
                     p.kind = "aerial";
                     p.id = i;
                     p.photo = f;
                     list.add(p);
                 } catch (java.io.IOException e) {
-                    AppLog.w("screensaver: aerial " + AERIALS_FILES[i] + ": " + e.getMessage());
+                    AppLog.w("screensaver: " + folder + " " + files[i] + ": " + e.getMessage());
                 }
             }
             handler.post(() -> {
@@ -439,8 +460,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
     private void prepareNext() {
-        if (!running || (mode != PHOTOS && mode != AERIALS) || decoding || prepared != null) return;
-        if (mode == AERIALS && !aerialsReady) return;
+        if (!running || (mode != PHOTOS && !stills()) || decoding || prepared != null) return;
+        if (stills() && !aerialsReady) return;
         List<Recs.Pick> list = photos();
         if (list.isEmpty()) return;
         Slide last = incoming != null ? incoming : current;
@@ -519,6 +540,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             current.startedAt = up;
             firstAt = up;
             bindPhotos();
+            if (mode == LANDSCAPES) placeAt = clock();   // the first one's place and photographer too
             prepareNext();
             return;
         }
@@ -534,6 +556,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             current = incoming;
             incoming = null;
             bindPhotos();
+            if (mode == LANDSCAPES) placeAt = clock();   // the place and its photographer, as each one comes in
             if (old.image != current.image) {
                 // Once the last frame that uses them has been drawn.
                 Bitmap gone = old.image, goneFrost = old.frost;
@@ -590,7 +613,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** A key from the screensaver: true when this look used it (Aerials and Nature Clock); else it wakes the TV. */
     boolean key(int code) {
-        if (!running || (mode != NATURE && mode != AERIALS)) return false;
+        if (!running || (mode != NATURE && !stills())) return false;
         boolean left = code == android.view.KeyEvent.KEYCODE_DPAD_LEFT, right = code == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
         if (!left && !right && code != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return false;
         if (left || right) skip(left ? -1 : 1);
@@ -624,6 +647,10 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (mode == NATURE && natureScene >= 0) return sceneName(Nature.SCENES[natureScene].id);
         if (mode == AERIALS && current != null && current.pick != null && current.pick.id >= 0 && current.pick.id < AERIAL_PLACES.length) {
             return AERIAL_PLACES[(int) current.pick.id];
+        }
+        if (mode == LANDSCAPES && current != null && current.pick != null && current.pick.id >= 0 && current.pick.id < LANDSCAPES_INFO.length) {
+            String[] l = LANDSCAPES_INFO[(int) current.pick.id];
+            return Ui.trf("{place} · Photo: {name}, {licence}", "place", l[1], "name", l[2], "licence", l[3]);
         }
         return null;
     }
