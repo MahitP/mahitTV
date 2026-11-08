@@ -447,6 +447,7 @@ public class SettingsActivity extends Activity {
                 }
                 case PIN_PAD: {
                     String status = pinMessage.isEmpty() ? pinTitle() : pinMessage;
+                    if (pinRemote) return status + ". " + Ui.tr("Use ↑ ↓ ← → on your remote");
                     return Ui.trf("Digit {n}", "n", row) + ", " + Ui.trf("{i} of 4 entered", "i", pinDigits.length())
                             + ". " + status;
                 }
@@ -463,7 +464,7 @@ public class SettingsActivity extends Activity {
                 case PICK_FROM: {
                     int at = pickScroll + row;
                     if (at >= services.size()) return "";
-                    return services.get(at)[1] + ", " + onOff(!Prefs.serviceOff(services.get(at)[0])) + ", "
+                    return services.get(at)[1] + ", " + onOff(serviceOn(services.get(at)[0])) + ", "
                             + Ui.trf("{i} of {n}", "i", at + 1, "n", services.size());
                 }
                 case CLEAN: {
@@ -499,6 +500,9 @@ public class SettingsActivity extends Activity {
             if (screen == MAIN) {
                 float top = PILL_TOP + row * PILL_PITCH;
                 focusBox.set(LEFT_X * k, top * k, LEFT_R * k, (top + PILL_H) * k);
+            } else if (screen == PIN_PAD && pinRemote) {
+                float mid = (LIST_X + LIST_R) / 2f;
+                focusBox.set((mid - 160) * k, (PAD_DOTS_Y - 30) * k, (mid + 160) * k, (PAD_DOTS_Y + 30) * k);
             } else if (screen == PIN_PAD) {
                 float x = PAD_X + row * (PAD_KEY + PAD_GAP);
                 focusBox.set(x * k, PAD_KEYS_TOP * k, (x + PAD_KEY) * k, (PAD_KEYS_TOP + PAD_KEY) * k);
@@ -668,7 +672,7 @@ public class SettingsActivity extends Activity {
                 case MAIN: return SECTIONS;
                 case HOME_CHOICE: return 2;
                 case SECTION: return rows.length;   // all of them: the section scrolls by pixels, not rows
-                case PIN_PAD: return 10;
+                case PIN_PAD: return pinRemote ? 1 : 10;
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case WALLPAPER_PICKER: return wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().options.length : wallpaperPicker.draw().categories.length;
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
@@ -1398,7 +1402,12 @@ public class SettingsActivity extends Activity {
                         String[] service = services.get(pickScroll + i);
                         cellText[i] = service[1];
                         cellKind[i] = KIND_SWITCH;
-                        cellOn[i] = !Prefs.serviceOff(service[0]);
+                        cellOn[i] = serviceOn(service[0]);
+                    }
+                    if (lockList) {   // the same switches list, for App Lock's apps
+                        pushedTitle = Ui.tr("Locked Apps");
+                        footerA = Ui.tr("Choose apps that ask for a passcode.");
+                        break;
                     }
                     pushedTitle = Ui.tr("Picks from");
                     footerA = services.isEmpty() ? Ui.tr("No streaming apps on this TV.")
@@ -1643,6 +1652,9 @@ public class SettingsActivity extends Activity {
                             } else if (screen == TMDB_KEY) {
                                 stopKeyPage();
                                 openSection(S_LOCATION, keyWatchmode ? R_WATCHMODE : R_TMDB);
+                            } else if (screen == PICK_FROM && lockList) {
+                                lockList = false;
+                                openSection(S_PROFILES, R_LOCKED_APPS);
                             } else if (screen == PICK_FROM) {
                                 openSection(S_LOCATION, R_PICKS_FROM);
                             } else if (screen == POWER) {
@@ -1699,6 +1711,8 @@ public class SettingsActivity extends Activity {
                 // The TV's own Settings, as its menu lists them (TCL Google TV): each opens that page there.
                 R_TV_CHANNELS = 80, R_TV_DISPLAY = 81, R_TV_NETWORK = 82, R_TV_ACCOUNTS = 83, R_TV_PRIVACY = 84, R_TV_APPS = 85,
                 R_TV_SYSTEM = 86, R_TV_ACCESSIBILITY = 87, R_TV_REMOTES = 88, R_DATE_TIME = 89,
+                // App Lock (AppLock): the locked apps, what unlocks them, and the App Passcode.
+                R_LOCKED_APPS = 90, R_LOCK_WITH = 91, R_APP_CODE = 92,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
         private static final String[] LIGHTS = {"parents.bulb", "mine.lamp", "mine.bulb", "living.bulb"};
@@ -1757,7 +1771,7 @@ public class SettingsActivity extends Activity {
         // A section's groups (tvOS: grouped inset containers): each one's header above and footer under it.
         private static final int G_YOU = 0, G_PINS = 1, G_LOOK = 2, G_SAVER = 3, G_STARTUP = 4, G_WEATHER = 5, G_WIDGETS = 6,
                 G_MEDIA = 7, G_LIGHTS = 8, G_BRAIN = 9, G_MEMORY = 10, G_HOME = 11, G_REMOTE = 12, G_TV = 13, G_RESET = 14,
-                G_RESTORE = 15, G_TV_MENU = 16;
+                G_RESTORE = 15, G_TV_MENU = 16, G_APP_LOCK = 17;
         private final List<Integer> buildRows = new ArrayList<>(), buildGroups = new ArrayList<>();
 
         private void group(int kind) {
@@ -1786,6 +1800,11 @@ public class SettingsActivity extends Activity {
                     add(R_SWITCH);
                     if (!me.guest()) add(R_CHANGE_PIN);
                     add(R_DOCK);
+                    if (!me.guest()) {
+                        group(G_APP_LOCK);
+                        add(R_LOCKED_APPS, R_LOCK_WITH);
+                        if (!AppLock.usesProfile(c)) add(R_APP_CODE);
+                    }
                     if (me.manager()) {
                         List<ProfileManager.Profile> all = ProfileManager.all(c);
                         boolean grouped = false;
@@ -1881,6 +1900,7 @@ public class SettingsActivity extends Activity {
                 case G_REMOTE: return Ui.tr("Remote & Power");
                 case G_TV: return Ui.tr("TV");
                 case G_TV_MENU: return Ui.tr("Google TV Settings");
+                case G_APP_LOCK: return Ui.tr("App Lock");
                 default: return null;
             }
         }
@@ -1892,6 +1912,7 @@ public class SettingsActivity extends Activity {
                 case G_YOU: return ProfileManager.current(c).guest()
                         ? Ui.tr("Guest's Dock, theme and Welly chats are forgotten when the TV locks.") : null;
                 case G_PINS: return Ui.tr("Changing a PIN asks for the manager's PIN.");
+                case G_APP_LOCK: return Ui.tr("Locked apps ask for a passcode when opened from mahitTV. Forgot the App Passcode? Your profile's passcode resets it.");
                 case G_LOOK: return Photos.files(c).isEmpty() ? Ui.tr("Send them from a computer: see “Your own photos” in the README.") : null;
                 case G_SAVER: return Ui.tr("Photos, a depth-layered Nature Clock, Aurora, Apple Aerials or a dim clock on black.");
                 case G_STARTUP: return Ui.tr("The Liquid Glass mahitTV startup when the TV turns on.");
@@ -2062,6 +2083,9 @@ public class SettingsActivity extends Activity {
                 case R_SWITCH: return Ui.tr("Switch Profile");
                 case R_CHANGE_PIN: return Ui.tr("Change PIN");
                 case R_DOCK: return Ui.tr("Dock");
+                case R_LOCKED_APPS: return Ui.tr("Locked Apps");
+                case R_LOCK_WITH: return Ui.tr("Unlock With");
+                case R_APP_CODE: return AppLock.hasAppCode(c) ? Ui.tr("Change App Passcode") : Ui.tr("Set App Passcode");
                 case R_THEME: return Ui.tr("Theme");
                 case R_TEXT_SIZE: return Ui.tr("Text Size");
                 case R_WALLPAPER: return Ui.tr("Wallpaper");
@@ -2145,6 +2169,10 @@ public class SettingsActivity extends Activity {
                     return me.manager() ? Ui.tr("Manager") : me.guest() ? Ui.tr("Guest") : Ui.tr("Family");
                 }
                 case R_CHANGE_PIN: return ProfileManager.needsPin(c, ProfileManager.current(c)) ? "" : Ui.tr("No PIN");
+                case R_LOCKED_APPS: {
+                    int n = AppLock.lockedApps(c).size();
+                    return n == 0 ? Ui.tr("Off") : Ui.plural("plural|one:{n} app|other:{n} apps", n);
+                }
                 case R_THEME: {
                     String theme = Prefs.theme();
                     return theme.equals("light") ? Ui.tr("Light") : theme.equals("dark") ? Ui.tr("Dark") : Ui.tr("Automatic");
@@ -2232,6 +2260,7 @@ public class SettingsActivity extends Activity {
             if (isEnum(id)) return true;
             switch (id) {
                 case R_CHANGE_PIN: case R_DOCK: case R_HOME: case R_TOP_BUTTONS: case R_REMOTE: case R_SLEEP: case R_WALLPAPER:
+                case R_LOCKED_APPS: case R_APP_CODE:
                 case R_TV_SETTINGS: case R_LANGUAGE: case R_MOTION: case R_TRANSPARENCY: case R_RESET: case R_RESTORE:
                 case R_CLEAN: case R_CITY: case R_DATE_TIME: case R_SCREENSAVER: case R_SETUP: case R_PICKS_FROM: case R_TRAKT: case R_INTRO_PREVIEW:
                 case R_TV_CHANNELS: case R_TV_DISPLAY: case R_TV_NETWORK: case R_TV_ACCOUNTS: case R_TV_PRIVACY: case R_TV_APPS:
@@ -2276,6 +2305,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_THEME: case R_TEMPERATURE: case R_FORECAST: case R_SAVER_STYLE: case R_SAVER_SCENE: case R_SAVER_CLOCK:
                 case R_GLASS: case R_SETTINGS_STYLE: case R_SHELF_MODE: case R_TEXT_SIZE: case R_CLOCK: case R_POWER_ON: case R_PHOTO_SOURCE:
+                case R_LOCK_WITH:
                     return true;
                 default:
                     return false;
@@ -2395,6 +2425,10 @@ public class SettingsActivity extends Activity {
                 case R_SHELF_MODE:
                     for (String v : SHELF_MODES) l.add(new String[] {v, shelfModeName(v)});
                     break;
+                case R_LOCK_WITH:
+                    l.add(new String[] {AppLock.WITH_PROFILE, Ui.tr("Profile Passcode")});
+                    l.add(new String[] {AppLock.WITH_APP, Ui.tr("App Passcode")});
+                    break;
                 default:   // another profile's PIN
                     l.add(new String[] {"set", Ui.tr("Set PIN")});
                     l.add(new String[] {"remove", Ui.tr("Remove PIN")});
@@ -2402,8 +2436,9 @@ public class SettingsActivity extends Activity {
             return l;
         }
 
-        private static String enumNow(int id) {
+        private String enumNow(int id) {
             switch (id) {
+                case R_LOCK_WITH: return AppLock.with(getContext());
                 case R_CLOCK: return Prefs.clockFormat();
                 case R_POWER_ON: return Prefs.powerOn();
                 case R_PHOTO_SOURCE: return "album".equals(Prefs.photoSource()) ? "album:" + Prefs.photoAlbum() : Prefs.photoSource();
@@ -2434,6 +2469,17 @@ public class SettingsActivity extends Activity {
             int id = enumRow;
             if (id >= R_OTHER && id < R_COIN) {
                 askPin(PIN_MANAGER, v.equals("remove") ? THEN_REMOVE : THEN_SET, other(id), id);
+                return;
+            }
+            if (id == R_LOCK_WITH) {
+                pendingWith = v;
+                if (v.equals(AppLock.with(c))) {
+                    openSection(section, id);
+                } else if (lockNeedsCode()) {
+                    askPin(PIN_LOCK, THEN_LOCK_WITH, ProfileManager.current(c), id);
+                } else {
+                    applyWith();
+                }
                 return;
             }
             switch (id) {
@@ -2513,6 +2559,7 @@ public class SettingsActivity extends Activity {
                     openKeyScreen(id == R_WATCHMODE);
                     return true;
                 case R_PICKS_FROM:
+                    lockList = false;
                     services.clear();
                     services.addAll(Recs.installedServices(c));
                     screen = PICK_FROM;
@@ -2528,6 +2575,14 @@ public class SettingsActivity extends Activity {
                     return false;
                 case R_CHANGE_PIN:
                     askPin(PIN_OLD, 0, ProfileManager.current(c), id);
+                    return true;
+                case R_LOCKED_APPS:
+                    if (lockNeedsCode()) askPin(PIN_LOCK, THEN_LOCKED_APPS, ProfileManager.current(c), id);
+                    else openLockedApps();
+                    return true;
+                case R_APP_CODE:
+                    if (lockNeedsCode()) askPin(PIN_LOCK, THEN_APP_CODE, ProfileManager.current(c), id);
+                    else askPin(PIN_APP_NEW, 0, ProfileManager.current(c), id);
                     return true;
                 case R_DOCK:
                     shelfSection = section;
@@ -2868,9 +2923,11 @@ public class SettingsActivity extends Activity {
 
         // MARK: - PIN pad (MAHITTV-PROFILES-SPEC.md §1.4, §3)
 
-        private static final int PIN_OLD = 0, PIN_NEW = 1, PIN_CONFIRM = 2, PIN_MANAGER = 3;
+        private static final int PIN_OLD = 0, PIN_NEW = 1, PIN_CONFIRM = 2, PIN_MANAGER = 3,
+                PIN_LOCK = 4, PIN_APP_NEW = 5, PIN_APP_CONFIRM = 6;   // App Lock's code, and a new App Passcode
         /** What the manager's PIN was asked for. */
-        private static final int THEN_SET = 1, THEN_REMOVE = 2, THEN_RESET = 3, THEN_ORIGINAL = 4, THEN_RESTORE = 5, THEN_CLEAN = 6;
+        private static final int THEN_SET = 1, THEN_REMOVE = 2, THEN_RESET = 3, THEN_ORIGINAL = 4, THEN_RESTORE = 5, THEN_CLEAN = 6,
+                THEN_LOCKED_APPS = 7, THEN_LOCK_WITH = 8, THEN_APP_CODE = 9;
         // The pad's keys: 72 apart on the full screen, smaller in the sidebar so the ten fit its column (constructor).
         private float PAD_KEY = 72, PAD_GAP = 11, PAD_X;
         private static final float PAD_KEYS_TOP = 560, PAD_DOTS_Y = 420, PAD_DOT_R = 13, PAD_DOT_GAP = 58;
@@ -2881,6 +2938,10 @@ public class SettingsActivity extends Activity {
         private ProfileManager.Profile pinFor;
         private String pinFirst = "", pinMessage = "";
         private final StringBuilder pinDigits = new StringBuilder();
+        /** A remote passcode's entry (six arrows: PasscodePad); an older four-digit PIN keeps the digits row below. */
+        private final PasscodePad pinPad = new PasscodePad();
+        private boolean pinRemote;
+        private int pinLen = 4;
         /** The pad's head-shake on a wrong PIN, and its nudge at a dead end (px at 1080p). */
         private final Spring shake = new Spring(Spring.BOUNDARY_BUMP, 0).px();
         /** Each dot pops as its digit lands. */
@@ -2902,12 +2963,32 @@ public class SettingsActivity extends Activity {
                 return;
             }
             if (step == PIN_OLD && !ProfileManager.needsPin(c, who)) step = PIN_NEW;
+            if (step == PIN_LOCK && !AppLock.hasCode(c)) {
+                lockOk();
+                return;
+            }
             startPinStep(step);
         }
 
         private void startPinStep(int step) {
             if (screen != PIN_PAD) focus = 1;
             pinStep = step;
+            Context c = getContext();
+            // New passcodes are remote ones; one being checked is typed the way it was made.
+            switch (step) {
+                case PIN_OLD: pinRemote = ProfileManager.remotePin(c, pinFor); pinLen = ProfileManager.pinLength(c, pinFor); break;
+                case PIN_MANAGER: {
+                    ProfileManager.Profile m = ProfileManager.manager(c);
+                    pinRemote = ProfileManager.remotePin(c, m);
+                    pinLen = ProfileManager.pinLength(c, m);
+                    break;
+                }
+                case PIN_LOCK: pinRemote = AppLock.remoteCode(c); pinLen = AppLock.codeLength(c); break;
+                default: pinRemote = true; pinLen = PasscodePad.REMOTE_LENGTH;
+            }
+            if (!pinRemote) pinLen = 4;
+            pinPad.start(pinRemote, pinLen);
+            if (pinRemote) focus = 0;   // one place: the pad (its arrows type)
             pinDigits.setLength(0);
             pinMessage = "";
             for (Spring s : dots) s.snap(1);
@@ -2934,11 +3015,15 @@ public class SettingsActivity extends Activity {
                 case PIN_NEW: return pinFor.id.equals(ProfileManager.current(c).id) ? Ui.tr("Enter a new PIN")
                         : Ui.trf("Enter a new PIN for {name}", "name", pinFor.name);
                 case PIN_CONFIRM: return Ui.tr("Enter the new PIN again");
+                case PIN_LOCK: return Ui.tr("Enter Passcode");
+                case PIN_APP_NEW: return Ui.tr("Enter a New App Passcode");
+                case PIN_APP_CONFIRM: return Ui.tr("Enter the New Passcode Again");
                 default: return Ui.trf("Enter {name}'s PIN", "name", ProfileManager.manager(c).name);
             }
         }
 
         private String pinReason() {
+            if (pinStep == PIN_LOCK || pinStep == PIN_APP_NEW || pinStep == PIN_APP_CONFIRM) return Ui.tr("App Lock");
             if (pinStep != PIN_MANAGER) return pinFor.name;
             switch (pinThen) {
                 case THEN_SET: return Ui.trf("To set {name}'s PIN", "name", pinFor.name);
@@ -2952,6 +3037,29 @@ public class SettingsActivity extends Activity {
         /** The pad's own keys: digits (the remote's number keys too), ← →, Back (deletes, then leaves). OK goes on to activate. */
         private boolean pinKey(KeyEvent e, boolean down) {
             int code = e.getKeyCode();
+            if (pinRemote) {   // six arrows: nothing on screen shows which (PasscodePad); Back erases, then leaves
+                switch (pinPad.key(e)) {
+                    case PasscodePad.COMPLETE:
+                        pinMessage = "";
+                        handler.postDelayed(this::submitPin, 160);   // the last dot shows first
+                        break;
+                    case PasscodePad.BACK:
+                        leavePin();
+                        spoken.focusMoved();
+                        break;
+                    case PasscodePad.TYPED:
+                        pinMessage = "";
+                        break;
+                    default:
+                        break;
+                }
+                invalidate();
+                return code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_DEL || code == KeyEvent.KEYCODE_DPAD_UP
+                        || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT
+                        || code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_CENTER
+                        || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                        || code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9;
+            }
             int n = code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9 ? code - KeyEvent.KEYCODE_0
                     : code >= KeyEvent.KEYCODE_NUMPAD_0 && code <= KeyEvent.KEYCODE_NUMPAD_9 ? code - KeyEvent.KEYCODE_NUMPAD_0 : -1;
             if (n >= 0) {
@@ -3007,9 +3115,10 @@ public class SettingsActivity extends Activity {
         }
 
         private void typeDigit(int n) {
-            boolean checks = pinStep == PIN_OLD || pinStep == PIN_MANAGER;
-            if (checks && ProfileManager.waitLeft(pinChecked()) > 0) {
-                wrongPin(pinChecked());
+            if (pinRemote) return;
+            boolean checks = pinStep == PIN_OLD || pinStep == PIN_MANAGER || pinStep == PIN_LOCK;
+            if (checks && (pinStep == PIN_LOCK ? AppLock.waitLeft(getContext()) : ProfileManager.waitLeft(pinChecked())) > 0) {
+                if (pinStep == PIN_LOCK) wrongLock(); else wrongPin(pinChecked());
                 return;
             }
             if (pinDigits.length() >= 4) return;
@@ -3022,10 +3131,31 @@ public class SettingsActivity extends Activity {
         }
 
         private void submitPin() {
-            if (screen != PIN_PAD || pinDigits.length() != 4) return;
+            String d = pinRemote ? pinPad.code() : pinDigits.toString();
+            if (screen != PIN_PAD || d.length() != pinLen) return;
             Context c = getContext();
-            String d = pinDigits.toString();
             switch (pinStep) {
+                case PIN_LOCK:
+                    if (AppLock.check(c, d)) lockOk(); else wrongLock();
+                    break;
+                case PIN_APP_NEW:
+                    pinFirst = d;
+                    startPinStep(PIN_APP_CONFIRM);
+                    break;
+                case PIN_APP_CONFIRM:
+                    if (d.equals(pinFirst)) {
+                        AppLock.setAppCode(c, d);
+                        if (AppLock.WITH_APP.equals(pendingWith)) AppLock.setWith(c, AppLock.WITH_APP);
+                        pendingWith = "";
+                        AppLock.profileChanged(c);
+                        lockVerified = true;
+                        say(Ui.tr("App Passcode changed."));
+                        leavePin();
+                    } else {
+                        startPinStep(PIN_APP_NEW);
+                        fail(Ui.tr("The passcodes didn't match. Try again."));
+                    }
+                    break;
                 case PIN_OLD:
                     if (ProfileManager.checkPin(c, pinFor, d)) startPinStep(PIN_NEW); else wrongPin(pinFor);
                     break;
@@ -3038,9 +3168,10 @@ public class SettingsActivity extends Activity {
                     pinFirst = d;
                     startPinStep(PIN_CONFIRM);
                     break;
-                default:
+                default:   // PIN_CONFIRM
                     if (d.equals(pinFirst)) {
                         ProfileManager.setPin(c, pinFor, d);
+                        AppLock.profileChanged(c);   // the remote's buttons know whether there's a code to ask
                         say(pinFor.id.equals(ProfileManager.current(c).id) ? Ui.tr("Your PIN is changed.")
                                 : Ui.trf("{name}'s PIN is set.", "name", pinFor.name));
                         leavePin();
@@ -3081,6 +3212,11 @@ public class SettingsActivity extends Activity {
             }
         }
 
+        private void wrongLock() {
+            long wait = AppLock.waitLeft(getContext());
+            fail(wait > 0 ? Ui.trf("Too many tries. Wait {n} s.", "n", (wait + 999) / 1000) : Ui.tr("Wrong passcode. Try again."));
+        }
+
         private void wrongPin(ProfileManager.Profile p) {
             long wait = ProfileManager.waitLeft(p);
             fail(wait > 0 ? Ui.trf("Too many tries. Wait {n} s.", "n", (wait + 999) / 1000) : Ui.tr("Wrong PIN. Try again."));
@@ -3090,6 +3226,7 @@ public class SettingsActivity extends Activity {
         private void fail(String message) {
             pinMessage = message;
             pinDigits.setLength(0);
+            if (pinRemote) pinPad.fail();
             for (Spring s : dots) s.snap(1);
             shake.impulse(Spring.BUMP_VELOCITY);
             Click.boundary();
@@ -3099,6 +3236,10 @@ public class SettingsActivity extends Activity {
         private void drawPinPad(Canvas c, float dt) {
             shake.step(dt);
             for (Spring s : dots) s.step(dt);
+            if (pinRemote) {
+                drawRemotePad(c, dt);
+                return;
+            }
             float dx = shake.value * k, x0 = LIST_X * k, mid = (LIST_X + LIST_R) / 2f * k;
             c.drawText(pinTitleText, x0 + dx, TITLE_BASE * k, paneTitle);
             rowLabel.setColor(secondary);
@@ -3130,6 +3271,23 @@ public class SettingsActivity extends Activity {
                 }
                 digit.setColor(blend(primary, INK, f));
                 c.drawText(DIGITS[i], cx, cy + Ui.halfCap(digit), digit);
+            }
+        }
+
+        /** A remote passcode: the six lines that become dots, how to type it, or what went wrong. */
+        private void drawRemotePad(Canvas c, float dt) {
+            if (pinPad.step(dt, true)) invalidate();
+            float dx = pinPad.shakeX(k), x0 = LIST_X * k, mid = (LIST_X + LIST_R) / 2f * k;
+            c.drawText(pinTitleText, x0 + dx, TITLE_BASE * k, paneTitle);
+            rowLabel.setColor(secondary);
+            c.drawText(pinReasonText, x0 + dx, (TITLE_BASE + 54) * k, rowLabel);
+            pinPad.draw(c, mid, PAD_DOTS_Y * k, k, primary, GREEN, dark, 1);
+            if (!pinMessage.isEmpty()) {
+                c.drawText(pinMessage, mid - warn.measureText(pinMessage) / 2 + dx, (PAD_DOTS_Y + 84) * k, warn);
+            } else {
+                String hint = Ui.tr("Use ↑ ↓ ← → on your remote");
+                rowLabel.setColor(tertiary);
+                c.drawText(hint, mid - rowLabel.measureText(hint) / 2, (PAD_DOTS_Y + 84) * k, rowLabel);
             }
         }
 
@@ -3801,8 +3959,78 @@ public class SettingsActivity extends Activity {
             int at = pickScroll + focus;
             if (at >= services.size()) return;
             String key = services.get(at)[0];
-            Prefs.setServiceOff(key, !Prefs.serviceOff(key));
+            Click k = Click.current();
+            if (k != null) k.toggle(!serviceOn(key));
+            if (lockList) AppLock.setLocked(getContext(), key, !AppLock.locked(getContext(), key));
+            else Prefs.setServiceOff(key, !Prefs.serviceOff(key));
             cellsDirty = true;
+        }
+
+        /** The switch of `key` in the PICK_FROM list: a service in the picks, or (App Lock's list) an app locked. */
+        private boolean serviceOn(String key) {
+            return lockList ? AppLock.locked(getContext(), key) : !Prefs.serviceOff(key);
+        }
+
+        // MARK: - App Lock (AppLock, DESIGN-PASSCODE.md)
+
+        /** PICK_FROM shows App Lock's apps (else the picks' services). */
+        private boolean lockList;
+        /** The lock's code was given in this visit to Settings: its rows open without it again. */
+        private boolean lockVerified;
+        private String pendingWith = "";
+
+        /** Changing App Lock asks for its code first, once, while apps are locked with one. */
+        private boolean lockNeedsCode() {
+            Context c = getContext();
+            return !lockVerified && !AppLock.lockedApps(c).isEmpty() && AppLock.hasCode(c);
+        }
+
+        /** Every app on the TV (but mahitTV), A to Z, each with its lock switch. */
+        private void openLockedApps() {
+            Context c = getContext();
+            services.clear();
+            for (String[] app : HomeApps.launchable(c)) {
+                if (!app[0].equals(HomeMode.PKG)) services.add(new String[] {app[0], app[1]});
+            }
+            java.util.Collections.sort(services, (a, b) -> a[1].compareToIgnoreCase(b[1]));
+            lockList = true;
+            screen = PICK_FROM;
+            pickScroll = 0;
+            focus = 0;
+            cellsDirty = true;
+        }
+
+        /** Unlock With is now `pendingWith`: a profile without a passcode makes one first, an App Passcode is set first. */
+        private void applyWith() {
+            Context c = getContext();
+            ProfileManager.Profile me = ProfileManager.current(c);
+            if (AppLock.WITH_APP.equals(pendingWith) && !AppLock.hasAppCode(c)) {
+                askPin(PIN_APP_NEW, 0, me, R_LOCK_WITH);   // set with it once it's made
+                return;
+            }
+            AppLock.setWith(c, pendingWith);
+            AppLock.profileChanged(c);
+            if (AppLock.WITH_PROFILE.equals(pendingWith) && !ProfileManager.needsPin(c, me)) {
+                askPin(PIN_OLD, 0, me, R_LOCK_WITH);   // no passcode yet: make one (PIN_OLD is skipped)
+                return;
+            }
+            openSection(section, R_LOCK_WITH);
+        }
+
+        /** The lock's code was right: what it was asked for. */
+        private void lockOk() {
+            lockVerified = true;
+            switch (pinThen) {
+                case THEN_LOCKED_APPS:
+                    openLockedApps();
+                    for (Spring s : pop) s.snap(0);
+                    return;
+                case THEN_LOCK_WITH:
+                    applyWith();
+                    return;
+                default:   // THEN_APP_CODE
+                    startPinStep(PIN_APP_NEW);
+            }
         }
 
         private String traktValue() {

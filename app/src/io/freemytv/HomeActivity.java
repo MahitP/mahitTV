@@ -24,6 +24,8 @@ public class HomeActivity extends Activity {
     static final String EXTRA_ALL_APPS = "io.freemytv.ALL_APPS";
     /** The remote's microphone button (RemoteKeys.onMic): Welly's tab, listening, instead of Google's assistant. */
     static final String EXTRA_WELLY = "io.freemytv.WELLY";
+    /** A locked app opened from outside the home screen (the remote's button, the screensaver): its passcode here. */
+    static final String EXTRA_UNLOCK = "io.freemytv.UNLOCK", EXTRA_UNLOCK_URI = "io.freemytv.UNLOCK_URI";
     /** Opens Recent Apps (Home held, RemoteKeys). */
     static final String EXTRA_RECENTS = "io.freemytv.RECENTS";
     /** Two Home presses this close together open Recent Apps (tvOS's double press of the TV button). */
@@ -82,6 +84,7 @@ public class HomeActivity extends Activity {
         getWindow().setBackgroundDrawable(null);
         if (getIntent().getBooleanExtra(EXTRA_ALL_APPS, false)) home.showAllApps();
         if (getIntent().getBooleanExtra(EXTRA_WELLY, false)) home.listenWelly();
+        if (getIntent().hasExtra(EXTRA_UNLOCK)) home.askUnlock(getIntent().getStringExtra(EXTRA_UNLOCK), getIntent().getStringExtra(EXTRA_UNLOCK_URI));
         if (getIntent().getBooleanExtra(EXTRA_RECENTS, false)) home.showRecents();
         // At power-on "Live TV" (#346): the first time the home screen comes up after a full start, in mahitTV mode.
         if (HomeMode.noteHomeShown(this) && SystemClock.elapsedRealtime() < 240_000 && "live".equals(Prefs.powerOn())) {
@@ -141,6 +144,10 @@ public class HomeActivity extends Activity {
         }
         if (intent.getBooleanExtra(EXTRA_WELLY, false)) {
             home.listenWelly();
+            return;
+        }
+        if (intent.hasExtra(EXTRA_UNLOCK)) {
+            home.askUnlock(intent.getStringExtra(EXTRA_UNLOCK), intent.getStringExtra(EXTRA_UNLOCK_URI));
             return;
         }
         if (intent.getBooleanExtra(EXTRA_RECENTS, false)) {
