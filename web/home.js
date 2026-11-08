@@ -1202,7 +1202,9 @@
     avatar.setAttribute('data-url', url);
     avatar.style.backgroundImage = url;
     Profiles.fitAvatar(person(), avatar);
-    // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes.
+    // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes. On Google TV the bubble shows only
+    // while something plays (HomeView.showBubble); LG and Samsung can't tell what's playing, so here it always shows: it
+    // is the one way into Control Center once All Apps takes ↓ from the Dock.
     $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
     var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24;
     if (air) {
