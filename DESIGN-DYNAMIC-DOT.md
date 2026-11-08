@@ -1,11 +1,14 @@
 # The dynamic dot
 
-mahitTV's take on Apple's Dynamic Island. While a song plays, a Liquid Glass dot sits beside the tab bar at the top
-centre, the way the Dynamic Island's detached circle sits beside the island:
+mahitTV's take on Apple's Dynamic Island. Each live activity is a Liquid Glass dot beside the tab bar at the top centre,
+the way the Dynamic Island's detached circles sit beside the island. Today there are three activities:
+- a song playing;
+- the sleep timer;
+- AirPods joining.
 
 ```
-                 ( TV · Home · Welly ) (♪)              (⚙)  ( 9:41 (avatar) )
-                  the tab bar          the dynamic dot   Control Center   the time and the profile
+     ( TV · Home · Welly ) (♪) (☾)                    (⚙)  ( 9:41 (avatar) )
+      the tab bar          live activities            Control Center   the time and the profile
 ```
 
 **Why there.**
@@ -49,38 +52,41 @@ The first version (left of Control Center, black) was harder to reach, and it re
 
 ## The behaviour
 
-- **Nothing playing:** there is no dot, and the tab bar is centred alone.
-- **A song starts:** this means a media session is playing and the *Now Playing widget* is on.
-  - The dot slides out from under the bar's right end. It grows from 0.35× on a liquid spring that carries it a little past its place.
-  - The bar slides left by half the dot's width, so the pair stays centred.
-- **The dot at rest:**
-  - It's the bar's own Liquid Glass (smoke glass, its rim and its light), as tall as the bar: 57 px.
-  - The album art sits inside it as a circle on an even 6 px margin. Without art, the app's icon is used.
-- **Focused (→ from Welly):**
+**Every dot**
+- **Look:** the bar's own Liquid Glass, as tall as the bar (57 px), with a white symbol like the round buttons have: ♪ (`music`), ☾ (`bedtime`), AirPods (`airpods`). There's no colour of its own and no picture at rest.
+- **Coming:** it slides out from under whatever is left of it (the bar, or the dot before), growing from 0.35× on a liquid spring that carries it a little past its place. The bar and the dots stay centred as one group.
+- **Focused:** → from Welly, then ← → between the dots.
   - It opens rightward into a 72 px capsule on a bouncy spring. The rim brightens and the shadow deepens.
-  - The art stays at the left end and grows to 56 px on a concentric 8 px margin. The title and artist fade in as the shape arrives, and play or pause sits at the right end.
-  - The pair re-centres as it grows.
-- **OK:** play or pause.
-- **Paused:** it stays 30 s, and while it has the focus. Then it slides back under the bar, and the bar centres again.
-- **Stopped:** the session ends or Now Playing is off. The dot leaves at once, and a focus on it moves to the bubble.
-- **The title row:** the song's title no longer shows in the tab row's right end, since the dot shows it now. The clock screen keeps its line under the clock.
+  - The symbol stays at the left end, on a concentric margin. For a song with album art, the art fades in over it.
+  - The words fade in as the shape arrives, and its one control sits at the right end.
+  - The other dots move along to make room.
+- **Going:** it slides back under its neighbour, and the group centres again. If it had the focus, the focus moves to its neighbour, else to the bubble.
+
+**The activities**
+
+| | There while | Open words | OK |
+|---|---|---|---|
+| ♪ The song | it plays; 30 s after a pause; while focused | the title; the artist · the app | play or pause (‖ / ▶) |
+| ☾ The sleep timer | it runs (when its overlay doesn't show it) | Sleep Timer; Off in 25 min | the next preset (15 min, 30 min, 1 h, 2 h, off; + or ×), as Control Center's tile |
+| AirPods | 3.5 s after they join, open by itself (the alert), then 0.9 s as a dot; while focused | the name; Connected (· Spatial Audio) | Control Center |
+
+- **AirPods** replace the card that used to slide in at the top right. The glyph by the bubble stays while they're connected.
+- **The sleep timer** replaces the "Off in…" text that sat left of the round buttons.
+- **The song's title** no longer shows in the tab row's right end. The clock screen keeps its line under the clock.
 
 ## Nothing overlaps
 
-- The pair (the bar and the dot or capsule) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
-- The capsule's width is what the title needs (up to 380 px of text), but never more than that space allows. The title and line are cut with "…" to what's left.
+- The group (the bar and its dots) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
+- An open capsule's width is what its words need (up to 380 px of text), but never more than that space allows once the other dots have their room. The words are cut with "…" to what's left.
 - All of this is measured when something changes (a song, the focus, the layout), never while drawing.
 
 ## Later candidates
 
-Each would be a second activity in the same dot. When two are live, two dots sit side by side, as in Apple's minimal presentation.
-
-- **The sleep timer's countdown:** the dot shows the minutes left, and OK adds 15.
-- **AirPods or Beats connecting:** today that's a toast and a glyph.
-- **An app update downloading:** a ring of progress.
+- **An app update downloading:** a ring of progress. Its job runs in the main process, so the home screen would need to be told.
 - **A timer**, once mahitTV has one.
+- **Live TV recording**, where the TV can say so.
 
 ## Where it lives
 
-- **Android:** `HomeView` (`island*` fields, `layoutIsland`, `drawIsland` drawn in the tab bar's layer under the bar, and `tabShift`) and `NowPlaying.Watch` (`mediaArt`).
-- **Web app:** `web/home.js` (`#island`, just before `#tabs`) and `home.css`. The preview's sample song makes it show there. LG and Samsung can't tell what's playing, so on those TVs it never appears.
+- **Android:** `HomeView`: `Live` and `lives`, `updateIsland`, `layoutIsland`, `drawIsland`/`drawLive` (in the tab bar's layer, under the bar), `tabShift` and `islandOk`. Also `NowPlaying.Watch.mediaArt`.
+- **Web app:** `web/home.js` (`.live`, one per activity, just before `#tabs`) and `home.css`. The glass is opaque pieces in one translucent layer, so the joins don't show. The preview's sample song and sleep timer make those show there. LG and Samsung can't tell what's playing, so on those TVs only AirPods can appear.

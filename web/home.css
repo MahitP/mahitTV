@@ -698,31 +698,37 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   transition: background-color 0.17s cubic-bezier(0.22, 1, 0.36, 1), color 0.17s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.17s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #ccbtn .sym { position: absolute; left: 11px; top: 11px; width: 26px; height: 26px; }
-/* The dynamic dot (DESIGN-DYNAMIC-DOT.md), beside the tab bar while something plays: the bar's smoke glass and rim, as
-   tall as the bar. home.js draws its shape from two round caps and a stretched middle (only transforms move), so it can
-   open into a capsule without its round ends going oval; open, its rim brightens. */
-#island { position: absolute; left: 1200px; top: 48px; width: 57px; height: 57px; z-index: 1; opacity: 0; visibility: hidden; -webkit-transform-origin: 28.5px 28.5px; transform-origin: 28.5px 28.5px; pointer-events: auto; }
-#island .cap, #island .mid { position: absolute; left: 0; top: 0; height: 57px; background: rgba(52, 62, 76, 0.52); -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
-#island .cap { width: 28.5px; }
-#island .cap.l { border-radius: 28.5px 0 0 28.5px; box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.34); }
-#island .cap.r { border-radius: 0 28.5px 28.5px 0; box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.34), inset -1px -1px 0 rgba(255, 255, 255, 0.08); }
-#island .mid { width: 1px; box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.34), inset 0 -1px 0 rgba(255, 255, 255, 0.08); }
-#island.open .cap.l { box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.6); }
-#island.open .cap.r { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.6), inset -1px -1px 0 rgba(255, 255, 255, 0.16); }
-#island.open .mid { box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.6), inset 0 -1px 0 rgba(255, 255, 255, 0.16); }
-#island .art { position: absolute; left: 0; top: 0; width: 56px; height: 56px; border-radius: 28px; color: #FFF; background: #FA2D48; background: -webkit-linear-gradient(315deg, #FF6A88, #A238FF); background: linear-gradient(135deg, #FF6A88, #A238FF); -webkit-transform-origin: 0 0; transform-origin: 0 0; }
-#island .art .sym { position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; }
-#island .txt { position: absolute; left: 80px; top: 0; opacity: 0; color: #FFF; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25); }
-#island .txt .t, #island .txt .s { position: absolute; left: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#island .txt .t { top: 0; font-size: 24px; font-weight: 600; line-height: 30px; }
-#island .txt .s { top: 30px; font-size: 19px; font-weight: 500; line-height: 24px; color: rgba(255, 255, 255, 0.7); }
-#island .pp { position: absolute; left: 0; top: 12.5px; width: 32px; height: 32px; opacity: 0; }
-#island .pp i { position: absolute; top: 4px; width: 6px; height: 24px; border-radius: 2px; background: #FFF; }
-#island .pp i:first-child { left: 7px; }
-#island .pp i + i { left: 19px; }
-#island .pp.paused i:first-child { left: 8px; top: 3px; width: 0; height: 0; border-radius: 0; background: none; border-style: solid; border-width: 13px 0 13px 21px; border-color: transparent transparent transparent #FFF; }
-#island .pp.paused i + i { display: none; }
-.grid-open #island { visibility: hidden !important; }
+/* The dynamic dot's live activities (DESIGN-DYNAMIC-DOT.md), beside the tab bar: the bar's smoke glass and rim, as
+   tall as the bar, with a white symbol as the round buttons have. home.js draws each shape from two round caps and a
+   stretched middle (only transforms move), so it can open into a capsule without its round ends going oval; open,
+   its rim brightens. */
+.live { position: absolute; left: 1200px; top: 48px; width: 57px; height: 57px; z-index: 1; opacity: 0; visibility: hidden; color: #FFF; -webkit-transform-origin: 28.5px 28.5px; transform-origin: 28.5px 28.5px; pointer-events: auto; }
+.live .shape { position: absolute; left: 0; top: 0; opacity: 0.52; }
+.live .cap, .live .mid { position: absolute; left: 0; top: 0; height: 57px; background: rgb(52, 62, 76); -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
+.live .cap { width: 28.5px; }
+/* The bar's rim (white 0.34 over its 0.52 glass), lifted to match inside the one 0.52 layer. */
+.live .cap.l { border-radius: 28.5px 0 0 28.5px; box-shadow: inset 1.5px 1.5px 0 rgb(152, 158, 166); }
+.live .cap.r { border-radius: 0 28.5px 28.5px 0; box-shadow: inset 0 1.5px 0 rgb(152, 158, 166), inset -1px -1px 0 rgb(68, 77, 90); }
+.live .mid { width: 1px; box-shadow: inset 0 1.5px 0 rgb(152, 158, 166), inset 0 -1px 0 rgb(68, 77, 90); }
+.live.open .cap.l { box-shadow: inset 1.5px 1.5px 0 rgb(206, 209, 213); }
+.live.open .cap.r { box-shadow: inset 0 1.5px 0 rgb(206, 209, 213), inset -1px -1px 0 rgb(84, 92, 104); }
+.live.open .mid { box-shadow: inset 0 1.5px 0 rgb(206, 209, 213), inset 0 -1px 0 rgb(84, 92, 104); }
+.live .sym { position: absolute; left: 0; top: 14.5px; width: 28px; height: 28px; }
+.live .txt { position: absolute; left: 80px; top: 0; opacity: 0; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25); }
+.live .txt .t, .live .txt .s { position: absolute; left: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.live .txt .t { top: 0; font-size: 24px; font-weight: 600; line-height: 30px; }
+.live .txt .s { top: 30px; font-size: 19px; font-weight: 500; line-height: 24px; color: rgba(255, 255, 255, 0.7); }
+.live .ctrl { position: absolute; left: 0; top: 12.5px; width: 32px; height: 32px; opacity: 0; }
+.live .ctrl i { position: absolute; border-radius: 2px; background: #FFF; }
+.live .pp i { top: 4px; width: 6px; height: 24px; }
+.live .pp i:first-child { left: 7px; }
+.live .pp i + i { left: 19px; }
+.live .pp.paused i:first-child { left: 8px; top: 3px; width: 0; height: 0; border-radius: 0; background: none; border-style: solid; border-width: 13px 0 13px 21px; border-color: transparent transparent transparent #FFF; }
+.live .pp.paused i + i { display: none; }
+.live .plus i:first-child { left: 4px; top: 14px; width: 24px; height: 4px; }
+.live .plus i + i { left: 14px; top: 4px; width: 4px; height: 24px; }
+.live .plus.ends { -webkit-transform: rotate(45deg); transform: rotate(45deg); }
+.grid-open .live { visibility: hidden !important; }
 .drawer-open:not(.drawer-profile) #ccbtn, .drawer-open.drawer-profile #pill { background: rgba(255, 255, 255, 0.86); color: #1C1C1E; }
 #ccbtn.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
 
@@ -968,7 +974,9 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 
 /* Reduce Transparency: the glass becomes near-opaque, whatever the time of day or the picks. */
 @media (prefers-reduced-transparency: reduce) {
-  #pill, #tabs, .round, .no-picks #pill, .night.no-picks #pill, #island .cap, #island .mid { background: rgba(44, 48, 56, 0.96) !important; }
+  #pill, #tabs, .round, .no-picks #pill, .night.no-picks #pill { background: rgba(44, 48, 56, 0.96) !important; }
+  .live .cap, .live .mid { background: rgb(44, 48, 56) !important; }
+  .live .shape { opacity: 0.96 !important; }
   #pill.focus { background: #FFF !important; }
   #platter .tint, #drawer .tint { background: rgba(36, 36, 40, 0.96) !important; }
   #platter .bleed, #drawer .bleed { opacity: 0 !important; }
@@ -1045,11 +1053,6 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 /* AirPods (an AirPods or Beats output joined): the glyph left of Control Center's bubble, the card at the top right. */
 #airglyph { position: absolute; right: 360px; top: 59px; width: 40px; height: 34px; background-color: #FFF; opacity: 0; -webkit-mask-image: url(symbols/airpods.png); -webkit-mask-size: 36px 23px; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; -webkit-transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.25s cubic-bezier(0.22, 1, 0.36, 1); }
 #airglyph.on { opacity: 0.92; }
-#airtoast { position: absolute; right: 45px; top: 0; height: 84px; min-width: 300px; max-width: 640px; border-radius: 42px; z-index: 48; opacity: 0; visibility: hidden; color: #FFF; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28); white-space: nowrap; }
-#airtoast .glass { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: inherit; background: rgba(40, 40, 46, 0.78); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.34); }
-#airtoast .icon { position: absolute; left: 22px; top: 21px; width: 50px; height: 42px; }
-#airtoast .title { position: relative; margin: 14px 34px 0 88px; font-size: 25px; font-weight: 600; line-height: 30px; }
-#airtoast .sub { position: relative; margin: 2px 34px 0 88px; font-size: 20px; font-weight: 500; line-height: 24px; opacity: 0.7; }
 #volhud .airglyph { position: absolute; left: 21px; bottom: 21px; width: 30px; height: 30px; display: none; }
 #volhud.lit .airglyph, #volhud.lit .sunglyph { color: #1D1D1F; }
 #volhud.air .spk { display: none; }
