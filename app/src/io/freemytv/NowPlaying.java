@@ -104,6 +104,8 @@ public class NowPlaying extends NotificationListenerService {
         /** Control Center's playback card: the session it follows (Transport.pick), and what it says. */
         private MediaController media;
         volatile String mediaTitle, mediaDetail;
+        /** The playing app's package and name (the dynamic dot opens it on a long press). */
+        volatile String mediaPkg, mediaApp;
         volatile boolean mediaPlaying;
         /** The dynamic dot's picture: the album art (a square of at most ART px), else the app's icon. Main thread. */
         Bitmap mediaArt;
@@ -206,6 +208,8 @@ public class NowPlaying extends NotificationListenerService {
                     && nowPlaying == mediaPlaying && actions == mediaActions && art == mediaArt;
             mediaArt = art;
             media = mc;
+            mediaPkg = mc == null ? null : mc.getPackageName();
+            mediaApp = mediaPkg == null ? null : labels.get(mediaPkg);
             mediaTitle = newTitle;
             mediaDetail = newDetail;
             mediaPlaying = nowPlaying;

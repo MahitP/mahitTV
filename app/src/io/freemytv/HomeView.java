@@ -537,7 +537,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** One live activity: its symbol and its words (cut when they change), and whether it runs. */
     private static final class Live {
-        final String icon;
+        String icon;   // the song's: music, or tv for a video app that keeps playing
         String title = "", sub = "", titleFit = "", subFit = "";
         float w;
         boolean on;
@@ -553,6 +553,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring islandWidth = new Spring(Spring.LIQUID_PILL, 0), islandSwap = new Spring(ISLAND_SWAP, 1);
     private boolean onIsland, islandFocused, islandWasPlaying, sleepEnds, dndOn;
     private int islandAt;          // the activity the focus is on, while onIsland
+    private int islandCtrl = 1;    // what's playing, focused: ⏮ (0), ⏯ (1) or ⏭ (2)
     private int islandShows = -1;  // the activity the dot shows
     private int islandFrom = -1, islandDir = 1;   // while it steps: the one leaving, and which way (1: ↓)
     private long islandPausedUntil, airAlertUntil;
@@ -2474,6 +2475,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         islandWasPlaying = playingNow;
         Live music = lives[LIVE_MUSIC], focus = lives[LIVE_FOCUS], air = lives[LIVE_AIR], sleep = lives[LIVE_SLEEP];
+        music.icon = videoApp(playing.mediaPkg) ? "tv" : "music";
         music.title = playing.mediaTitle == null ? "" : playing.mediaTitle;
         music.sub = playing.mediaDetail == null ? "" : playing.mediaDetail;
         focus.title = Ui.tr("Do Not Disturb");
@@ -2495,6 +2497,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (n < 0) n = nextLive(islandAt, -1);
             if (n >= 0) {
                 islandAt = n;
+                islandCtrl = 1;
             } else {
                 onIsland = false;
                 onBubble = true;   // the last one stopped under the focus: the bubble
@@ -2507,6 +2510,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         aimIsland(false);
         if (tabBar != null) tabBar.invalidate();
         wake();
+    }
+
+    /**
+     * A video app that keeps playing behind the home screen (picture in picture, a live channel): the TV for its symbol.
+     * Video apps usually pause when they're left (Android TV pauses them), so they rarely show; music apps do.
+     */
+    private static boolean videoApp(String pkg) {
+        if (pkg == null) return false;
+        if (pkg.startsWith("com.apple.atve")) return true;
+        switch (pkg) {
+            case "com.netflix.ninja": case "com.google.android.youtube.tv": case "com.google.android.youtube.tvunplugged":
+            case "com.disney.disneyplus": case "com.amazon.amazonvideo.livingroom": case "com.hulu.livingroomplus":
+            case "com.wbd.stream": case "tv.twitch.android.app": case "com.cbs.ott": case "com.peacocktv.peacockandroid":
+            case "com.tubitv": case "com.crunchyroll.crunchyroid": case "com.google.android.tv":
+                return true;
+            default:
+                return false;
+        }
     }
 
     private boolean focusedLive(int i) {
@@ -2570,7 +2591,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** OK on the open dot: the activity's one control. */
     private void islandOk() {
-        if (islandAt == LIVE_MUSIC) {
+        if (islandAt == LIVE_MUSIC && islandCtrl != 1) {
+            int dx = islandCtrl == 0 ? -1 : 1;
+            if (playing.skip(dx)) click.open(); else deadEnd(dx, 0);   // a player that can't: the knock
+        } else if (islandAt == LIVE_MUSIC) {
             click.toggle(!playing.mediaPlaying);
             playing.playPause();
         } else if (islandAt == LIVE_FOCUS) {
@@ -5199,7 +5223,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         okDown = true;
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
-                        holdArmed = canMove();
+                        holdArmed = canMove() || canOpenFromIsland();
                         if (holdArmed) {
                             handler.postDelayed(holdStart, HOLD_MS);
                             click.holdStart();   // the tension builds toward the hold, from the frame OK goes down
@@ -5891,7 +5915,26 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(holdStart);
         click.holdCommit();
         press.target = 0;
+        if (canOpenFromIsland()) {
+            okHeld = true;   // its release opens nothing
+            openFromIsland();
+            return;
+        }
         startMove();
+    }
+
+    /** OK held on what's playing in the dynamic dot: its app opens (as a tap on the Dynamic Island does). */
+    private boolean canOpenFromIsland() {
+        return zone == Z_STATUS && onIsland && islandAt == LIVE_MUSIC && playing.mediaPkg != null && !sheetOpen && !drawerOpen;
+    }
+
+    private void openFromIsland() {
+        String pkg = playing.mediaPkg;
+        if (pkg == null) return;
+        HomeApps.Item it = HomeApps.app(pkg, playing.mediaApp != null ? playing.mediaApp : pkg);
+        float shift = tabShift();
+        HomeApps.open(activity, it, this, Math.round(islandNow.left + shift), Math.round(islandNow.top),
+                Math.round(islandNow.width()), Math.round(islandNow.height()));
     }
 
     /** TalkBack's long click: the focused item lifts (once per press, if the remote's hold also arrives). */
@@ -7524,10 +7567,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (islandTitlePaint == null) return;
         float d = ISLAND_D * k;
         for (Live l : lives) Symbols.warm(getContext(), l.icon, ISLAND_ICON * k);
+        Symbols.warm(getContext(), "tv", ISLAND_ICON * k);
+        Symbols.warm(getContext(), "chevron_right", 22 * k);
         float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width() - ISLAND_SPACE * k;
         for (int i = 0; i < lives.length; i++) {
             Live l = lives[i];
-            float frame = (80 + (i == LIVE_AIR ? 24 : 80)) * k;   // AirPods has no control at its right end
+            float frame = (80 + (i == LIVE_MUSIC ? 164 : 80)) * k;   // what's playing: ⏮ ⏯ ⏭; the rest: one control
             float want = Math.min(ISLAND_TEXT * k, Math.max(islandTitlePaint.measureText(l.title), islandSubPaint.measureText(l.sub)));
             l.w = Math.max(d, Math.min(want + frame, room));
             float text = Math.max(0, l.w - frame);
@@ -7601,7 +7646,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lcx = lensX.value, lw = lensW.value * sx, lh = topRects[0].height() * sy, lcy = topRects[0].centerY();
         cell.set(lcx - lw / 2, lcy - lh / 2, lcx + lw / 2, lcy + lh / 2);
         fill.setShader(null);
-        fill.setColor(0x2EFFFFFF);
+        // While the focus is in the dynamic dot, the selected tab's lens and name step back: the focus isn't on Welly.
+        float away = zone == Z_STATUS && onIsland ? Ui.clamp(islandOpen.value) : 0;
+        fill.setColor(Ui.alpha(0xFFFFFFFF, 0.18f * (1 - 0.75f * away)));
         c.drawRoundRect(cell, cell.height() / 2, cell.height() / 2, fill);
         String[] names = tabs();
         for (int i = 0; i < 3; i++) {
@@ -7620,7 +7667,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 fill.setColor(Ui.alpha(0xFFFFFFFF, f));
                 c.drawRoundRect(r, pr, pr, fill);
             }
-            tabText.setColor(blend(blend(0xB3FFFFFF, 0xFFFFFFFF, selected), INK, f));
+            tabText.setColor(blend(blend(0xB3FFFFFF, 0xFFFFFFFF, selected * (1 - away)), INK, f));
             float textX = r.centerX() + (i == TAB_WELLY ? 12 * k : 0);
             if (i == TAB_WELLY) drawWellyIcon(c, textX - tabText.measureText(names[i]) / 2 - 18 * k, r.centerY(), 10 * k);
             c.drawText(names[i], textX, r.centerY() + Ui.halfCap(tabText), tabText);
@@ -8169,29 +8216,61 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             islandSubPaint.setAlpha(Math.round(0xB3 * ta));
             c.drawText(l.subFit, tx, cy + 23 * k, islandSubPaint);
         }
-        // Its one control (OK), in a slot as big as the left end's at the right end.
-        float gx = islandNow.right - pad - ad / 2, g = k;
+        // Its controls at the right end: what's playing has ⏮ ⏯ ⏭, the rest one each. The one the focus is on is a white
+        // circle with an ink glyph (the tvOS focus), so it's clear the focus is in the dot.
+        boolean focused = zone == Z_STATUS && onIsland && islandAt == i && !sheetOpen;
         fill.setShader(null);
-        fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
-        if (i == LIVE_MUSIC && playing.mediaPlaying) {
-            c.drawRoundRect(gx - 9 * g, cy - 12 * g, gx - 3 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-            c.drawRoundRect(gx + 3 * g, cy - 12 * g, gx + 9 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-        } else if (i == LIVE_MUSIC) {
-            mediaGlyph.reset();
-            mediaGlyph.moveTo(gx - 8 * g, cy - 13 * g);
-            mediaGlyph.lineTo(gx - 8 * g, cy + 13 * g);
-            mediaGlyph.lineTo(gx + 12 * g, cy);
-            mediaGlyph.close();
-            c.drawPath(mediaGlyph, fill);
-        } else if (i == LIVE_FOCUS || i == LIVE_SLEEP) {
-            // + for the sleep timer's next preset; × to turn it (or Do Not Disturb) off.
-            c.save();
-            if (i == LIVE_FOCUS || sleepEnds) c.rotate(45, gx, cy);
-            c.drawRoundRect(gx - 12 * g, cy - 2 * g, gx + 12 * g, cy + 2 * g, 2 * g, 2 * g, fill);
-            c.drawRoundRect(gx - 2 * g, cy - 12 * g, gx + 2 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-            c.restore();
+        if (i == LIVE_MUSIC) {
+            float slot = 48 * k, g2 = islandNow.right - 12 * k - slot / 2, g1 = g2 - slot, g0 = g1 - slot;
+            for (int b = 0; b < 3; b++) {
+                float gx = b == 0 ? g0 : b == 1 ? g1 : g2;
+                boolean on = focused && islandCtrl == b, can = b == 1 || playing.canSkip(b == 0 ? -1 : 1);
+                int ink = on ? INK : 0xFFFFFFFF;
+                if (on) {
+                    fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
+                    c.drawCircle(gx, cy, 22 * k, fill);
+                }
+                int color = Ui.alpha(ink, ta * (can ? 1 : 0.35f));
+                if (b == 1) drawPlayPause(c, gx, cy, color);
+                else mediaSkip(c, gx, cy, b == 0 ? -1 : 1, color);
+            }
+        } else {
+            float gx = islandNow.right - pad - ad / 2, g = k;
+            if (focused) {
+                fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
+                c.drawCircle(gx, cy, 22 * k, fill);
+            }
+            int color = Ui.alpha(focused ? INK : 0xFFFFFFFF, ta);
+            if (i == LIVE_AIR) {
+                Symbols.draw(getContext(), c, "chevron_right", gx, cy, 22 * k, color);   // Control Center
+            } else {
+                // + for the sleep timer's next preset; × to turn it (or Do Not Disturb) off.
+                fill.setColor(color);
+                c.save();
+                if (i == LIVE_FOCUS || sleepEnds) c.rotate(45, gx, cy);
+                c.drawRoundRect(gx - 11 * g, cy - 2 * g, gx + 11 * g, cy + 2 * g, 2 * g, 2 * g, fill);
+                c.drawRoundRect(gx - 2 * g, cy - 11 * g, gx + 2 * g, cy + 11 * g, 2 * g, 2 * g, fill);
+                c.restore();
+            }
         }
         c.restore();
+    }
+
+    /** ‖ while it plays, ▶ while it doesn't, centred on (gx, cy). */
+    private void drawPlayPause(Canvas c, float gx, float cy, int color) {
+        float g = k;
+        fill.setColor(color);
+        if (playing.mediaPlaying) {
+            c.drawRoundRect(gx - 8 * g, cy - 11 * g, gx - 2.5f * g, cy + 11 * g, 2 * g, 2 * g, fill);
+            c.drawRoundRect(gx + 2.5f * g, cy - 11 * g, gx + 8 * g, cy + 11 * g, 2 * g, 2 * g, fill);
+        } else {
+            mediaGlyph.reset();
+            mediaGlyph.moveTo(gx - 7 * g, cy - 12 * g);
+            mediaGlyph.lineTo(gx - 7 * g, cy + 12 * g);
+            mediaGlyph.lineTo(gx + 11 * g, cy);
+            mediaGlyph.close();
+            c.drawPath(mediaGlyph, fill);
+        }
     }
 
     /** AirPods or Beats joined (greet: a new connection, so the card too) or left (name null). */
@@ -8275,6 +8354,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                             return true;
                         }
                         islandAt = n;
+                        islandCtrl = 1;   // on ⏯
+                        break;
+                    }
+                    if (islandAt == LIVE_MUSIC && islandCtrl + dx >= 0 && islandCtrl + dx <= 2) {
+                        islandCtrl += dx;   // ← → between ⏮ ⏯ ⏭; past them, out of the dot
+                        tabBar.invalidate();
                         break;
                     }
                     onIsland = false;
@@ -8299,6 +8384,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     onBubble = false;   // ← from the bubble, no round buttons: the dot, on its first activity
                     onIsland = true;
                     islandAt = nextLive(-1, 1);
+                    islandCtrl = 1;
                 } else if (dx < 0 && topFromTab >= 0) {
                     zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
                     topIndex = topFromTab;
@@ -8324,6 +8410,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         onIsland = true;
                         onBubble = false;
                         islandAt = nextLive(-1, 1);
+                        islandCtrl = 1;
                     } else if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                         topFromTab = -1;
