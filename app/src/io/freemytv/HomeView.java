@@ -177,6 +177,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final WellyView welly;
     /** "Who's Watching?" over everything, and the golden intro over that (MAHITTV-PROFILES-SPEC.md §2–3). */
     private final LockView lock;
+    /** App Lock's passcode sheet over the home screen (AppLock, DESIGN-PASSCODE.md). */
+    private final AppLockView appLock;
     private final Intro intro;
     /** The intro has played in this process (first creation); the screen came on while we weren't showing. */
     private static boolean booted, introPending;
@@ -781,6 +783,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         house = new HouseView(a);
         welly = new WellyView(a, scene);
         lock = new LockView(a, scene, lockListener);
+        appLock = new AppLockView(a, new AppLockView.Listener() {
+            @Override public void onUnlocked(HomeApps.Item it) {
+                // The app grows out of the sheet's card as the sheet swells and fades into it.
+                int cw = Math.round(352 * k), ch = Math.round(198 * k);
+                if (!HomeApps.open(activity, it, HomeView.this, getWidth() / 2 - cw / 2, getHeight() / 2 - ch / 2, cw, ch)) {
+                    showToast(Ui.trf("Couldn't open {app}.", "app", it.label));
+                }
+            }
+
+            @Override public void onGone() {
+                wake();
+            }
+        });
         welcome = new WelcomeView(a, scene, welcomeListener);
         intro = new Intro(a, introListener);
         weatherOverlay = new WeatherOverlay(a, scene);
@@ -818,6 +833,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         addView(weatherOverlay);
         addView(recentsOverlay);
         addView(volumeHud);
+        addView(appLock);
         addView(lock);
         addView(welcome);
         addView(intro);
@@ -828,6 +844,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         volumeHud.setTranslationZ(1);
         lock.setTranslationZ(2);
         welcome.setTranslationZ(2);
+        appLock.setTranslationZ(1.5f);   // over the volume and Recent Apps, under "Who's Watching?"
         intro.setTranslationZ(2);
         intro.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         house.setAlpha(0);
@@ -866,6 +883,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        AppLock.gate = this::askUnlock;
         // Text Size changed in Settings (another process): every text again at the new size, as after a resize.
         float scale = Prefs.textScale();
         if (scale != Ui.textScale) {
@@ -972,6 +990,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     void pause() {
+        AppLock.gate = null;
         if (!running) return;
         aerialPlayback.hide(++aerialGeneration);
         liveUrl = null;
@@ -1135,6 +1154,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recentsOverlay.layout(0, 0, width, height);
         place(volumeHud, 0, Math.round(VolumeHud.CENTER_Y * kk) - volumeHud.getMeasuredHeight() / 2);   // the middle of the left edge
         lock.layout(0, 0, width, height);
+        appLock.layout(0, 0, width, height);
         welcome.layout(0, 0, width, height);
         intro.layout(0, 0, width, height);
         dimmer.layout(0, 0, width, height);
@@ -5190,6 +5210,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (intro.showing()) return intro.onKey(e);
         if (welcome.showing()) return welcome.onKey(e);
         if (lock.showing()) return lock.onKey(e);
+        if (appLock.showing()) return appLock.onKey(e);
         touch();
         if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
         if (recentsOverlay.showing()) return recentsOverlay.onKey(e);
@@ -5681,6 +5702,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             // HDMI Inputs: Control Center opens on its Inputs list; Control Center: on its first card.
             if (HomeApps.TOP_INPUTS.equals(it.key)) openInputs();
             retarget(false);
+            return;
+        }
+        // A locked app (App Lock): its passcode first, over the home screen; right, it opens from the sheet.
+        if (AppLock.needs(getContext(), it)) {
+            askUnlock(it);
             return;
         }
         // An app: its tile becomes its launch screen at once, and the app's window fades in over it.
@@ -7733,6 +7759,35 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The remote's voice button: the Welly tab, listening. */
     /** The remote's microphone button from any app (HomeActivity.EXTRA_WELLY): Welly listens, once the screen is up. */
+    /** App Lock's sheet for `it` (AppLock.Gate): over whatever is open here, which closes first. */
+    boolean askUnlock(HomeApps.Item it) {
+        if (it == null || it.pkg == null) return false;
+        if (it.tile == null) {   // the Dock's own card for it, when it's there: the sheet shows it
+            for (HomeApps.Item s : shelf) {
+                if (it.pkg.equals(s.pkg) && s.tile != null) {
+                    it.setTile(s.tile);
+                    break;
+                }
+            }
+        }
+        wake();
+        appLock.show(it);
+        return true;
+    }
+
+    /** A locked app opened from outside the home screen (HomeActivity.EXTRA_UNLOCK): its passcode here. */
+    void askUnlock(String pkg, String uri) {
+        if (pkg == null) return;
+        String label = pkg;
+        try {
+            android.content.pm.PackageManager pm = getContext().getPackageManager();
+            label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString();
+        } catch (Exception ignored) {
+        }
+        final HomeApps.Item it = uri != null ? HomeApps.app(pkg, label, uri) : HomeApps.app(pkg, label);
+        post(() -> askUnlock(it));
+    }
+
     void listenWelly() {
         post(this::voice);
     }

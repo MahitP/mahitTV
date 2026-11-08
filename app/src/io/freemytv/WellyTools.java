@@ -110,7 +110,7 @@ final class WellyTools {
                     "!query:string:What to search for"));
             tools.put(tool("settings", "Open the TV's own settings, at a page if they name one.",
                     "page:string:wifi, network, bluetooth, picture, sound, apps, date, accessibility, about, or leave out"));
-            tools.put(tool("tv_status", "The TV's state now: volume, brightness, the sleep timer, Do Not Disturb, the network and what's playing."));
+            tools.put(tool("tv_status", "The TV's state now: volume, brightness, the sleep timer, Do Not Disturb, the network and what's playing, and the TV itself (its model, Android version, local IP address, free storage and memory)."));
             tools.put(tool("remember", "Remember a lasting fact about this person (a taste, a show they're on). Only when they tell you something worth keeping.",
                     "!fact:string:One short sentence"));
         } catch (JSONException ignored) {
@@ -943,6 +943,25 @@ final class WellyTools {
             MediaController mc = session();
             if (mc != null) o.put("playing_app", mc.getPackageName());
         } catch (SecurityException ignored) {
+        }
+        // The TV itself (Glassio's "TV info"): what it is, where it is on the home network, and room left.
+        o.put("model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).put("android", android.os.Build.VERSION.RELEASE);
+        android.net.LinkProperties lp = cm == null ? null : cm.getLinkProperties(cm.getActiveNetwork());
+        if (lp != null) {
+            for (android.net.LinkAddress la : lp.getLinkAddresses()) {
+                if (la.getAddress() instanceof java.net.Inet4Address) {
+                    o.put("ip_address", la.getAddress().getHostAddress());
+                    break;
+                }
+            }
+        }
+        android.os.StatFs fs = new android.os.StatFs(android.os.Environment.getDataDirectory().getPath());
+        o.put("storage_free_gb", Math.round(fs.getAvailableBytes() / 1e8) / 10.0).put("storage_total_gb", Math.round(fs.getTotalBytes() / 1e8) / 10.0);
+        android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+        android.app.ActivityManager am2 = context.getSystemService(android.app.ActivityManager.class);
+        if (am2 != null) {
+            am2.getMemoryInfo(mi);
+            o.put("memory_free_gb", Math.round(mi.availMem / 1e8) / 10.0).put("memory_total_gb", Math.round(mi.totalMem / 1e8) / 10.0);
         }
         return new Result(o.toString());
     }

@@ -453,6 +453,10 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   14 tested).
   Welly's tools (`WellyTools`) run the TV: apps (open, close), playback (incl. stop and skipping seconds), volume,
   brightness, Do Not Disturb, the sleep timer, YouTube search, the TV's settings pages, its status and standby.
+- Passcodes are typed with the arrows (`PasscodePad`, DESIGN-PASSCODE.md): six presses of ↑ ↓ ← →, shown only as dots, as
+  Fire TV and Xbox do; older four-digit PINs keep the 0–9 row until changed (`ProfileManager.remotePin`). App Lock
+  (`AppLock`, `AppLockView`) asks for one before a profile's locked apps open from mahitTV (`HomeApps.open` checks), with
+  the profile's passcode or one App Passcode that the profile's resets; the remote's buttons read `locked-apps.txt`.
 - Recent Apps (`RecentApps`, over a 96×54 `ScreenBlur` copy of the window) is off by default: *Home Settings* →
   *Recent Apps* (`Prefs.recents()`: `off`, `drawer`, `home`) adds the drawer shortcut and the app-switch key, and `home`
   also two Home presses within 700 ms (`HomeActivity.onNewIntent`; not offered on Xiaomi TVs, whose remote sends one

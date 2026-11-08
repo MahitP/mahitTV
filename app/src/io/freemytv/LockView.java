@@ -22,7 +22,7 @@ import java.util.List;
  * "Who's Watching?" (MAHITTV-PROFILES-SPEC.md §3): the gate over the home screen. The Frosted Horizon, a card per
  * profile (a squircle with the avatar), the focused one grown 1.18× with a specular ring (gold for the manager) and its
  * name and lock glyph lit. Guest goes straight in; a profile with a PIN glides to the centre over a Liquid Glass PIN
- * pad (four dots, a 0–9 row, the remote's number keys). Wrong: the dots shake and clear; right: they pulse gold and the
+ * pad (PasscodePad: six presses of the arrows, or an older PIN's 0–9 row). Wrong: the pad shakes and clears; right: it pulses gold and the
  * avatar flies into the status pill. Back does nothing on the cards (it's the gate); on the PIN pad it goes back to them.
  * By day its text is dark over the bright Horizon, at night white over its twilight (as web/lock.css).
  * Everything is measured in show()/onSizeChanged; frames only move springs (no allocation in doFrame or onDraw).
@@ -43,7 +43,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
     }
 
     private static final int CARDS = 0, PIN = 1, LEAVING = 2;
-    private static final int KEYS = 11, DELETE = 10;
     private static final float CARD = 240, CARD_GAP = 96, CARD_Y = 560, FOCUS_GROW = 0.18f;
     /**
      * The entrance (TVOS-LAUNCHER-MERGE-SPEC.md §1.5): the header rises 24 px (TITLE_SETTLE); card i starts 30 ms after
@@ -51,7 +50,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
      */
     private static final float HEADER_RISE = 24, CARD_RISE = 48, CARD_FROM = 0.92f, CARD_STAGGER = 0.032f, FOCUS_AT = 0.20f;
     private static final float PIN_AVATAR_Y = 300, PIN_AVATAR_SCALE = 0.72f;
-    private static final float HUD_W = 1060, HUD_TOP = 520, HUD_H = 300, KEY = 72, KEY_GAP = 14;
+    private static final float HUD_W = 1060, HUD_TOP = 520, HUD_H = 300;
     private static final int GOLD = 0xFFF5D061, INK = 0xFF1C1C1E, WHITE = 0xFFFFFFFF;
     /** A faint frost over the Horizon: lighter by day, a little deeper at night. */
     private static final int VEIL_DAY = 0x1AFFFFFF, VEIL_NIGHT = 0x24000000;
@@ -67,9 +66,10 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private float[] nameW = new float[0], cardX = new float[0];
     private boolean[] pins = new boolean[0];
     private Spring[] focus = new Spring[0];
-    private final Spring[] keyFocus = new Spring[KEYS], dotPop = new Spring[4];
+    /** The passcode: six arrows, or an older PIN's 0–9 row (PasscodePad). */
+    private final PasscodePad pad = new PasscodePad();
+    private String padHint = "";
     private final Spring nudgeX = new Spring(Spring.BOUNDARY_BUMP, 0).px(), nudgeY = new Spring(Spring.BOUNDARY_BUMP, 0).px();
-    private final Spring shake = new Spring(Spring.BOUNDARY_BUMP, 0).px();
     private final Spring enter = new Spring(Spring.SPATIAL_SCROLL, 1), pin = new Spring(Spring.SPATIAL_SCROLL, 0);
     private final Spring leave = new Spring(Spring.SPATIAL_SCROLL, 0), gold = new Spring(Spring.ROOM_FADE, 0);
     private final Spring keyPress = new Spring(Spring.MICRO_PRESS, 0);
@@ -78,21 +78,19 @@ final class LockView extends View implements Choreographer.FrameCallback {
     private float[] cardAt = new float[0];
     private float clock, focusAt = -1;
 
-    private int mode = CARDS, index, keyIndex, selected = -1, entered, shakeStep;
-    private final char[] digits = new char[4];
+    private int mode = CARDS, index, selected = -1;
     private boolean busy, posted, switching, zoomOut, night = true;
     private Bitmap horizon;
     private long lastNanos;
     private String header = "", pinHeader = "", waitText;
-    private final String[] keyLabels = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ""};
 
     private float w, h, k = 1, size, avatarSize;
-    private final Path squircle = new Path(), deleteGlyph = new Path();
+    private final Path squircle = new Path();
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), ring = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint goldRing = new Paint(Paint.ANTI_ALIAS_FLAG), image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint scrim = new Paint(), dot = new Paint(Paint.ANTI_ALIAS_FLAG), keyFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint scrim = new Paint();
     private final Paint frostPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
-    private Paint headerPaint, namePaint, keyText, waitPaint;
+    private Paint headerPaint, namePaint, waitPaint;
     private Bitmap shadow;
     private final RectF screen = new RectF(), hud = new RectF(), tmp = new RectF(), pillAt = new RectF();
 
@@ -101,8 +99,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         activity = a;
         this.scene = scene;
         this.listener = listener;
-        for (int i = 0; i < KEYS; i++) keyFocus[i] = new Spring(Spring.SNAPPY_FOCUS, 0);
-        for (int i = 0; i < 4; i++) dotPop[i] = new Spring(Spring.MICRO_PRESS, 1);
         ring.setStyle(Paint.Style.STROKE);
         goldRing.setStyle(Paint.Style.STROKE);
         setFocusable(false);
@@ -133,7 +129,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         removeCallbacks(nextShake);
         removeCallbacks(flyIn);
         busy = zoomOut = false;
-        entered = 0;
         mode = CARDS;
         selected = -1;
         waitText = null;
@@ -152,7 +147,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         pin.snap(0);
         leave.snap(0);
         gold.snap(0);
-        shake.snap(0);
         nudgeX.snap(0);
         nudgeY.snap(0);
         enter.snap(fromIntro ? 1 : 0.6f);   // from the intro: already in place; after a while away: a quick arrival
@@ -180,6 +174,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
         int code = e.getKeyCode();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN, first = down && e.getRepeatCount() == 0;
         if (mode == LEAVING) return true;
+        if (mode == PIN) return padKey(e);
         int digit = digit(code);
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -195,33 +190,53 @@ final class LockView extends View implements Choreographer.FrameCallback {
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
                 if (first) {
                     keyPress.target = 1;
-                    if (mode == CARDS) choose();
-                    else if (keyIndex == DELETE) erase();
-                    else type((char) ('0' + keyIndex));
+                    choose();
                 } else if (!down) {
                     keyPress.target = 0;
                 }
                 wake();
                 return true;
             case KeyEvent.KEYCODE_DEL:
-                if (first && mode == PIN) erase();
-                return true;
             case KeyEvent.KEYCODE_BACK:
-                if (!down && !e.isCanceled() && mode == PIN && !busy) {
-                    if (switching) cancel(); else backToCards();
-                }
-                return true;
+                return true;   // the gate: Back does nothing on the cards
             default:
-                if (digit >= 0) {
-                    if (first && mode == PIN) {
-                        keyIndex = digit;
-                        type((char) ('0' + digit));
-                    }
-                    return true;
-                }
+                if (digit >= 0) return true;
                 return !e.isSystem();   // the gate: only the system's own keys (volume, power, media) pass
         }
     }
+
+    /** The passcode pad's keys (PasscodePad): six arrows, or a PIN's row; Back erases, then goes back to the cards. */
+    private boolean padKey(KeyEvent e) {
+        switch (pad.key(e)) {
+            case PasscodePad.COMPLETE:
+                postDelayed(checkSoon, Spring.instant ? 0 : 140);   // the last dot lands first
+                break;
+            case PasscodePad.BACK:
+                if (!busy) {
+                    if (switching) cancel(); else backToCards();
+                }
+                break;
+            case PasscodePad.UP:
+            case PasscodePad.DOWN:
+                bump(nudgeY, e.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP ? -1 : 1);
+                break;
+            case PasscodePad.IGNORED:
+                if (e.getKeyCode() == KeyEvent.KEYCODE_BACK || e.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER
+                        || e.getKeyCode() == KeyEvent.KEYCODE_ENTER || isArrow(e.getKeyCode()) || digit(e.getKeyCode()) >= 0) break;
+                return !e.isSystem();   // the gate: only the system's own keys (volume, power, media) pass
+            default:
+                break;
+        }
+        wake();
+        return true;
+    }
+
+    private static boolean isArrow(int code) {
+        return code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_LEFT
+                || code == KeyEvent.KEYCODE_DPAD_RIGHT;
+    }
+
+    private final Runnable checkSoon = this::check;
 
     private static int digit(int code) {
         if (code >= KeyEvent.KEYCODE_0 && code <= KeyEvent.KEYCODE_9) return code - KeyEvent.KEYCODE_0;
@@ -240,13 +255,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
             focusAt = -1;
             for (int i = 0; i < focus.length; i++) focus[i].target = i == index ? 1 : 0;
             announceForAccessibility(names[index]);
-        } else {
-            int next = keyIndex + dx;
-            if (next < 0 || next >= KEYS) {
-                bump(nudgeX, dx);
-                return;
-            }
-            keyIndex = next;
         }
         Click c = Click.current();
         if (c != null) c.move();
@@ -273,10 +281,8 @@ final class LockView extends View implements Choreographer.FrameCallback {
             return;
         }
         mode = PIN;
-        entered = 0;
-        keyIndex = 1;
-        for (int i = 0; i < KEYS; i++) keyFocus[i].snap(0);
-        for (Spring s : dotPop) s.snap(1);
+        pad.start(ProfileManager.remotePin(getContext(), p), ProfileManager.pinLength(getContext(), p));
+        padHint = pad.remote() ? Ui.tr("Use ↑ ↓ ← → on your remote") : "";
         gold.snap(0);
         pin.target = 1;
         if (switching) pin.snap(1);   // from Control Center: straight onto the pad
@@ -287,7 +293,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
 
     private void backToCards() {
         mode = CARDS;
-        entered = 0;
+        removeCallbacks(checkSoon);
         index = selected;   // the card glides back to its place, still focused
         waitText = null;
         removeCallbacks(waitTick);
@@ -295,62 +301,24 @@ final class LockView extends View implements Choreographer.FrameCallback {
         wake();
     }
 
-    private void type(char d) {
-        if (busy || entered >= 4 || selected < 0) return;
-        if (ProfileManager.waitLeft(profiles.get(selected)) > 0) {
-            bump(shake, 1);
-            return;
-        }
-        digits[entered] = d;
-        dotPop[entered].snap(1.45f);
-        dotPop[entered].target = 1;
-        entered++;
-        Click c = Click.current();
-        if (c != null) c.move();
-        if (entered == 4) check();
-        wake();
-    }
-
-    private void erase() {
-        if (busy || entered == 0) return;
-        entered--;
-        dotPop[entered].snap(0.7f);
-        dotPop[entered].target = 1;
-        wake();
-    }
-
     private void check() {
+        if (mode != PIN || selected < 0) return;
         ProfileManager.Profile p = profiles.get(selected);
         busy = true;
-        if (ProfileManager.checkPin(getContext(), p, new String(digits))) {
+        if (ProfileManager.checkPin(getContext(), p, pad.code())) {
             gold.target = 1;
-            for (Spring s : dotPop) {
-                s.snap(1.35f);
-                s.target = 1;
-            }
+            pad.success();
             postDelayed(flyIn, Spring.instant ? 0 : 280);
         } else {
-            Click c = Click.current();
-            if (c != null) c.error();
-            shakeStep = 0;
-            nextShake.run();
+            pad.fail();
             postDelayed(clearDigits, Spring.instant ? 0 : 420);
         }
+        wake();
     }
 
-    /** The head-shake: right, left, right, each an impulse on the BOUNDARY_BUMP spring (about ±18 px). */
-    private static final float[] SHAKE = {1f, -1.7f, 1.1f};
-    private final Runnable nextShake = new Runnable() {
-        @Override public void run() {
-            if (shakeStep >= SHAKE.length) return;
-            shake.impulse(SHAKE[shakeStep++] * Spring.BUMP_VELOCITY);
-            wake();
-            postDelayed(this, 95);
-        }
-    };
+    private final Runnable nextShake = () -> { };   // the pad shakes itself now (PasscodePad.fail)
 
     private final Runnable clearDigits = () -> {
-        entered = 0;
         busy = false;
         this.waitTick.run();
         wake();
@@ -398,7 +366,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
         float dt = lastNanos == 0 ? 1 / 60f : Math.min(1 / 30f, (frameTimeNanos - lastNanos) / 1e9f);
         lastNanos = frameTimeNanos;
         clock += dt;
-        boolean moving = enter.step(dt) | pin.step(dt) | leave.step(dt) | gold.step(dt) | shake.step(dt)
+        boolean moving = enter.step(dt) | pin.step(dt) | leave.step(dt) | gold.step(dt)
                 | nudgeX.step(dt) | nudgeY.step(dt) | keyPress.step(dt) | headerIn.step(dt);
         for (int i = 0; i < cardIn.length; i++) {
             if (cardIn[i].target == 0 && clock >= cardAt[i]) cardIn[i].target = 1;
@@ -413,11 +381,7 @@ final class LockView extends View implements Choreographer.FrameCallback {
             moving = true;
         }
         for (Spring s : focus) moving |= s.step(dt);
-        for (int i = 0; i < KEYS; i++) {
-            keyFocus[i].target = mode == PIN && i == keyIndex ? 1 : 0;
-            moving |= keyFocus[i].step(dt);
-        }
-        for (Spring s : dotPop) moving |= s.step(dt);
+        moving |= pad.step(dt, mode == PIN);
         applyEnter();
         updateCover();
         invalidate();
@@ -465,8 +429,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         namePaint = Ui.text(Ui.semibold, 30 * k, 0xFFFFFFFF);
         namePaint.setTextAlign(Paint.Align.CENTER);
         namePaint.setShadowLayer(16 * k, 0, 1 * k, 0x80000000);
-        keyText = Ui.numbers(Ui.semibold, 32 * k, 0xFFFFFFFF);
-        keyText.setTextAlign(Paint.Align.CENTER);
         waitPaint = Ui.text(Ui.medium, 26 * k, 0xD9FFFFFF);
         waitPaint.setTextAlign(Paint.Align.CENTER);
         theme();
@@ -475,14 +437,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         p.setShader(new RadialGradient(s / 2f, s / 2f, s / 2f, 0x99000000, 0x00000000, Shader.TileMode.CLAMP));
         new Canvas(shadow).drawCircle(s / 2f, s / 2f, s / 2f, p);
-        float g = 15 * k;   // the delete key's glyph: a tag pointing left with an ×
-        deleteGlyph.rewind();
-        deleteGlyph.moveTo(-g * 1.3f, 0);
-        deleteGlyph.lineTo(-g * 0.55f, -g * 0.8f);
-        deleteGlyph.lineTo(g * 1.2f, -g * 0.8f);
-        deleteGlyph.lineTo(g * 1.2f, g * 0.8f);
-        deleteGlyph.lineTo(-g * 0.55f, g * 0.8f);
-        deleteGlyph.close();
         Symbols.warm(getContext(), "lock", 22 * k);
         measureProfiles();
     }
@@ -496,7 +450,6 @@ final class LockView extends View implements Choreographer.FrameCallback {
         headerPaint.setShadowLayer(24 * k, 0, 2 * k, night ? 0x66000000 : 0x40FFFFFF);
         namePaint.setColor(text);
         namePaint.setShadowLayer(16 * k, 0, 1 * k, night ? 0x80000000 : 0x4DFFFFFF);
-        keyText.setColor(text);
         waitPaint.setColor(Ui.alpha(text, 0.85f));
         scrim.setColor(night ? VEIL_NIGHT : VEIL_DAY);
     }
@@ -677,53 +630,23 @@ final class LockView extends View implements Choreographer.FrameCallback {
         }
     }
 
-    /** The Liquid Glass PIN pad: four dots and the 0–9 row with delete; "Try again in…" under it while it waits. */
+    /**
+     * The Liquid Glass passcode pad: the six lines that become dots (or an older PIN's four, over its 0–9 row), how to
+     * type it, and "Try again in…" under it while it waits. Gold when right.
+     */
     private void drawPad(Canvas c, float alpha) {
+        boolean remote = pad.remote();
+        float padH = remote ? 210 : HUD_H, padW = remote ? 720 : HUD_W;
         float top = HUD_TOP * k + 40 * k * (1 - Ui.clamp(pin.value));
-        hud.set(w / 2 - HUD_W * k / 2, top, w / 2 + HUD_W * k / 2, top + HUD_H * k);
+        float swell = 1 + 0.004f * pad.breath.value;
+        hud.set(w / 2 - padW * k / 2 * swell, top, w / 2 + padW * k / 2 * swell, top + padH * k * swell);
         Ui.plate(c, hud, 56 * k, night, alpha, fill, ring, k);
-
-        // Dots (they shake together on a wrong PIN; each pops as its digit comes; gold when right).
-        float dy = hud.top + 88 * k, gap = 64 * k, x0 = w / 2 - gap * 1.5f + shake.value * k;
-        int text = night ? WHITE : INK, ink = blend(text, GOLD, Ui.clamp(gold.value));
-        for (int i = 0; i < 4; i++) {
-            float r = 13 * k * dotPop[i].value, x = x0 + i * gap;
-            if (i < entered || busy && gold.target == 1) {
-                dot.setStyle(Paint.Style.FILL);
-                dot.setColor(ink);
-            } else {
-                dot.setStyle(Paint.Style.STROKE);
-                dot.setStrokeWidth(3 * k);
-                dot.setColor(night ? 0xB3FFFFFF : 0x991C1C1E);
-            }
-            dot.setAlpha(Math.round((dot.getColor() >>> 24) * alpha));
-            c.drawCircle(x, dy, r, dot);
-        }
-
-        // The row: 0–9 and delete; the focused key grows (SNAPPY_FOCUS) and turns white with dark ink, as tvOS's.
-        float key = KEY * k, step = key + KEY_GAP * k, kx0 = w / 2 - step * (KEYS - 1) / 2, ky = hud.top + 206 * k;
-        float half = Ui.cap(keyText) / 2;
-        float bump = Spring.rubber(nudgeX.value) * k;
-        for (int i = 0; i < KEYS; i++) {
-            float f = Ui.clamp(keyFocus[i].value), x = kx0 + i * step + (i == keyIndex ? bump : 0);
-            float r = key / 2 * (1 + FOCUS_GROW * keyFocus[i].value - 0.06f * keyPress.value * f);
-            // tvOS's focused key: white with dark ink at night, dark with white ink over the day Horizon.
-            keyFill.setColor(blend(night ? 0x26FFFFFF : 0x73FFFFFF, night ? WHITE : INK, f));
-            keyFill.setAlpha(Math.round((keyFill.getColor() >>> 24) * alpha));
-            c.drawCircle(x, ky, r, keyFill);
-            int keyInk = blend(text, night ? INK : WHITE, f);
-            if (i == DELETE) {
-                keyFill.setColor(keyInk);
-                keyFill.setAlpha(Math.round(255 * alpha));
-                c.save();
-                c.translate(x, ky);
-                c.drawPath(deleteGlyph, keyFill);
-                c.restore();
-            } else {
-                keyText.setColor(keyInk);
-                keyText.setAlpha(Math.round(255 * alpha));
-                c.drawText(keyLabels[i], x, ky + half, keyText);
-            }
+        int text = night ? WHITE : INK;
+        float dy = hud.top + (remote ? 86 : 88) * k;
+        pad.draw(c, w / 2, dy, k, text, GOLD, night, alpha);
+        if (remote && !padHint.isEmpty()) {
+            waitPaint.setAlpha(Math.round(255 * alpha * 0.7f));
+            c.drawText(padHint, w / 2, hud.bottom - 54 * k, waitPaint);
         }
         if (waitText != null) {
             waitPaint.setAlpha(Math.round(255 * alpha));

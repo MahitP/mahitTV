@@ -1025,6 +1025,7 @@ final class HomeApps {
 
     /** Opens the item; `options` for the transition, or null (the screensaver has no card to grow out of). */
     static boolean open(Context a, Item it, android.os.Bundle options) {
+        if (AppLock.needs(a, it)) return AppLock.ask(a, it);   // its passcode first (AppLockView), then it opens
         // plain: tried when `intent` finds nothing (the app's own home, when it won't take the title's address)
         Intent intent, plain = null;
         switch (it.kind) {

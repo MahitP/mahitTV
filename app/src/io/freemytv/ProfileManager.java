@@ -149,6 +149,7 @@ final class ProfileManager {
                 .putBoolean("signedIn", true).putInt("signedBoot", bootCount(c)).putLong("signedSlept", sleptMs()).apply();
         unlocked = true;
         Prefs.profileChanged();
+        AppLock.profileChanged(c);   // the remote's buttons lock this profile's apps now
     }
 
     /** Back to "Who's Watching?". Guest's session is forgotten. */
@@ -166,39 +167,67 @@ final class ProfileManager {
 
     /** Milliseconds left before `p` may try again after too many wrong PINs (0: now). */
     static long waitLeft(Profile p) {
-        Long until = waitUntil.get(p.id);
+        return waitLeft(p.id);
+    }
+
+    static long waitLeft(String key) {
+        Long until = waitUntil.get(key);
         return until == null ? 0 : Math.max(0, until - SystemClock.elapsedRealtime());
     }
 
-    /** Checks four digits; too many wrong ones in a row and the profile waits WAIT_MS. */
-    static synchronized boolean checkPin(Context c, Profile p, String digits) {
+    /** Checks a passcode (or a PIN); too many wrong ones in a row and the profile waits WAIT_MS. */
+    static synchronized boolean checkPin(Context c, Profile p, String code) {
         if (!needsPin(c, p)) return true;
-        if (waitLeft(p) > 0) return false;
-        boolean ok = sha256(pinSalt(c, p) + digits).equals(pinHash(c, p));
-        if (ok) {
-            wrong.remove(p.id);
-        } else {
-            int n = (wrong.containsKey(p.id) ? wrong.get(p.id) : 0) + 1;
-            wrong.put(p.id, n);
-            if (n >= TRIES) {
-                wrong.remove(p.id);
-                waitUntil.put(p.id, SystemClock.elapsedRealtime() + WAIT_MS);
-            }
-        }
-        return ok;
+        return checkHash(p.id, sha256(pinSalt(c, p) + code).equals(pinHash(c, p)));
     }
 
-    /** A new PIN for `p` (four digits), stored as a hash with a salt of its own. Empty: no PIN. */
-    static void setPin(Context c, Profile p, String digits) {
+    /** Counts a try at the code kept under `key` (a profile's id, or AppLock's): a wait after TRIES wrong ones. */
+    static synchronized boolean checkHash(String key, boolean right) {
+        if (waitLeft(key) > 0) return false;
+        if (right) {
+            wrong.remove(key);
+        } else {
+            int n = (wrong.containsKey(key) ? wrong.get(key) : 0) + 1;
+            wrong.put(key, n);
+            if (n >= TRIES) {
+                wrong.remove(key);
+                waitUntil.put(key, SystemClock.elapsedRealtime() + WAIT_MS);
+            }
+        }
+        return right;
+    }
+
+    /**
+     * A new passcode for `p`, stored as a hash with a salt of its own. Empty: none. A remote passcode (PasscodePad: the
+     * arrows, UDLR) or, from before them, four digits; which one it is is kept beside it (pinKind).
+     */
+    static void setPin(Context c, Profile p, String code) {
         if (p.guest()) return;
-        if (digits == null || digits.isEmpty()) {
-            prefs(c, p).edit().putString("pinSalt", "").putString("pinHash", "").putBoolean("pinSet", true).apply();
+        if (code == null || code.isEmpty()) {
+            prefs(c, p).edit().putString("pinSalt", "").putString("pinHash", "").putBoolean("pinSet", true)
+                    .remove("pinKind").remove("pinLength").apply();
             return;
         }
         byte[] salt = new byte[16];
         new SecureRandom().nextBytes(salt);
         String s = hex(salt);
-        prefs(c, p).edit().putString("pinSalt", s).putString("pinHash", sha256(s + digits)).putBoolean("pinSet", true).apply();
+        prefs(c, p).edit().putString("pinSalt", s).putString("pinHash", sha256(s + code)).putBoolean("pinSet", true)
+                .putString("pinKind", isRemote(code) ? "remote" : "digits").putInt("pinLength", code.length()).apply();
+    }
+
+    /** `p`'s passcode is typed with the arrows (a remote passcode), not the digits of an older PIN. */
+    static boolean remotePin(Context c, Profile p) {
+        return !p.guest() && "remote".equals(prefs(c, p).getString("pinKind", ""));
+    }
+
+    /** How many presses `p`'s passcode has: six for a remote one, four for a PIN. */
+    static int pinLength(Context c, Profile p) {
+        return prefs(c, p).getInt("pinLength", remotePin(c, p) ? PasscodePad.REMOTE_LENGTH : PasscodePad.DIGIT_LENGTH);
+    }
+
+    /** A code made of the arrows' symbols (PasscodePad.symbol). */
+    static boolean isRemote(String code) {
+        return code != null && !code.isEmpty() && code.matches("[UDLR]+");
     }
 
     private static String pinSalt(Context c, Profile p) {
@@ -209,6 +238,13 @@ final class ProfileManager {
     private static String pinHash(Context c, Profile p) {
         SharedPreferences sp = prefs(c, p);
         return sp.getBoolean("pinSet", false) ? sp.getString("pinHash", "") : p.pinHash;
+    }
+
+    /** A random salt for a hash kept in the preferences. */
+    static String newSalt() {
+        byte[] salt = new byte[16];
+        new SecureRandom().nextBytes(salt);
+        return hex(salt);
     }
 
     static String sha256(String text) {

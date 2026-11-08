@@ -519,6 +519,10 @@ final class RemoteKeys {
                 ? new Intent(android.provider.Settings.ACTION_SETTINGS).setPackage(pkg)
                 : launchIntent(c.getPackageManager(), pkg);
         if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
+        // A locked app (App Lock): the home screen asks for its passcode first, then opens it.
+        if (intent != null && AppLock.lockedOnFile(c, pkg)) {
+            intent = new Intent(c, HomeActivity.class).putExtra(HomeActivity.EXTRA_UNLOCK, pkg);
+        }
         AppLog.w("remote key " + keyCode + " -> " + pkg + (intent == null ? " (not installed)" : ""));
         // Consumed even when it doesn't open: its key-up is ours too, and a key-down alone would reach the TV.
         if (intent != null) {
