@@ -643,6 +643,54 @@ final class HomeMode {
         AppLog.w("remote buttons service " + (on ? "on" : "off"));
     }
 
+    private static final String ROLE_ASSISTANT = "android.app.role.ASSISTANT";
+    private static final String GOOGLE_ASSISTANT = "com.google.android.katniss";
+    private static final Pattern PACKAGE = Pattern.compile("[A-Za-z][\\w.]*");
+
+    /**
+     * Welly as the TV's assistant (WellyAssist), in place of Google's (Gemini): on Google TV the voice remote hands its
+     * mic button to the assistant, never as a key, so this is what makes the button Welly's. The assistant before, and the
+     * speech recognizer (Welly listens through it; Android may move it along with the assistant), are kept in the state and
+     * put back by Original and the watchdog's revert.
+     */
+    private static void assistant(Context c, Adb adb, boolean on) throws IOException {
+        if (Build.VERSION.SDK_INT < 29) return;   // no assistant role to hold
+        String holder = adb.shell("cmd role get-role-holders --user 0 " + ROLE_ASSISTANT).trim();
+        if (!holder.isEmpty() && !PACKAGE.matcher(holder).matches()) {
+            AppLog.w("assistant left as it is: " + holder);
+            return;
+        }
+        JSONObject s = state(c);
+        String recognizer = adb.shell("settings get secure voice_recognition_service").trim();
+        if (on) {
+            if (holder.equals(PKG)) return;
+            try {
+                s.put("assistantWas", holder);
+                if (!recognizer.isEmpty() && !recognizer.equals("null")) s.put("recognizerWas", recognizer);
+            } catch (JSONException ignored) {
+            }
+            save(c, s);
+            adb.shell("cmd role add-role-holder --user 0 " + ROLE_ASSISTANT + " " + PKG + " 0");
+            AppLog.w("assistant: Welly (was " + (holder.isEmpty() ? "none" : holder) + ")");
+        } else {
+            if (!holder.equals(PKG)) return;
+            String was = s.optString("assistantWas", "");
+            // Not recorded (made the assistant by hand, or before this version): Google's, where it's on the TV.
+            if (!s.has("assistantWas") && adb.shell("pm path " + GOOGLE_ASSISTANT).contains("package:")) was = GOOGLE_ASSISTANT;
+            if (!was.isEmpty() && PACKAGE.matcher(was).matches()) {
+                adb.shell("cmd role add-role-holder --user 0 " + ROLE_ASSISTANT + " " + was + " 0");
+            } else {
+                adb.shell("cmd role remove-role-holder --user 0 " + ROLE_ASSISTANT + " " + PKG + " 0");
+            }
+            AppLog.w("assistant: back to " + (was.isEmpty() ? "none" : was));
+        }
+        // Welly's speech recognizer stays where it was, whoever holds the role.
+        String wanted = s.optString("recognizerWas", "");
+        if (SERVICE.matcher(wanted).matches() && !wanted.equals(adb.shell("settings get secure voice_recognition_service").trim())) {
+            adb.shell("settings put secure voice_recognition_service '" + wanted + "'");
+        }
+    }
+
     private static final String NOW_PLAYING = PKG + "/" + PKG + ".NowPlaying";
 
     /**
@@ -841,6 +889,11 @@ final class HomeMode {
                     AppLog.w("remote buttons service: " + e.getMessage());
                 }
             }
+            try {
+                assistant(c, adb, true);
+            } catch (IOException e) {
+                AppLog.w("assistant: " + e.getMessage());
+            }
             wakeWatch(adb, true);
             notice(c, Ui.trf("mahitTV is on: new home screen and screensaver, {n} apps turned off.", "n", disabled.size()));
             busy(c, Ui.tr("Measuring mahitTV…"));
@@ -901,6 +954,11 @@ final class HomeMode {
                 remoteService(c, adb, false);
             } catch (IOException e) {
                 AppLog.w("remote buttons service: " + e.getMessage());
+            }
+            try {
+                assistant(c, adb, false);
+            } catch (IOException e) {
+                AppLog.w("assistant: " + e.getMessage());
             }
             wakeWatch(adb, false);
             SleepTimer.stop(c);
@@ -1214,6 +1272,11 @@ final class HomeMode {
                 } catch (IOException e) {
                     AppLog.w("now playing: " + e.getMessage());
                 }
+                try {
+                    assistant(app, adb, false);    // Google's assistant again
+                } catch (IOException e) {
+                    AppLog.w("assistant: " + e.getMessage());
+                }
                 s.put("homeReverted", true).put("disabled", kept);
                 save(app, s);
                 notice(app, Ui.tr("mahitTV's home screen crashed 3 times in a row; I switched back to the original one."));
@@ -1253,6 +1316,11 @@ final class HomeMode {
                     nowPlaying(app, adb, !s.optBoolean("homeReverted") && nowPlayingOn());
                 } catch (IOException e) {
                     AppLog.w("now playing: " + e.getMessage());
+                }
+                try {   // a Google update can take the assistant back
+                    assistant(app, adb, !s.optBoolean("homeReverted"));
+                } catch (IOException e) {
+                    AppLog.w("assistant: " + e.getMessage());
                 }
                 Set<String> present = packages(adb, "");
                 Set<String> disabledNow = packages(adb, "-d");
