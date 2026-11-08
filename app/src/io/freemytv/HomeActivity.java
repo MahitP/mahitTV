@@ -22,6 +22,8 @@ import java.io.File;
 public class HomeActivity extends Activity {
     /** Opens All Apps (a remote's All Apps button, RemoteKeys). */
     static final String EXTRA_ALL_APPS = "io.freemytv.ALL_APPS";
+    /** The remote's microphone button (RemoteKeys.onMic): Welly's tab, listening, instead of Google's assistant. */
+    static final String EXTRA_WELLY = "io.freemytv.WELLY";
     /** Opens Recent Apps (Home held, RemoteKeys). */
     static final String EXTRA_RECENTS = "io.freemytv.RECENTS";
     /** Two Home presses this close together open Recent Apps (tvOS's double press of the TV button). */
@@ -79,6 +81,7 @@ public class HomeActivity extends Activity {
         setContentView(root);
         getWindow().setBackgroundDrawable(null);
         if (getIntent().getBooleanExtra(EXTRA_ALL_APPS, false)) home.showAllApps();
+        if (getIntent().getBooleanExtra(EXTRA_WELLY, false)) home.listenWelly();
         if (getIntent().getBooleanExtra(EXTRA_RECENTS, false)) home.showRecents();
         // At power-on "Live TV" (#346): the first time the home screen comes up after a full start, in mahitTV mode.
         if (HomeMode.noteHomeShown(this) && SystemClock.elapsedRealtime() < 240_000 && "live".equals(Prefs.powerOn())) {
@@ -134,6 +137,10 @@ public class HomeActivity extends Activity {
         if (home == null) return;
         if (intent.getBooleanExtra(EXTRA_ALL_APPS, false)) {
             home.showAllApps();
+            return;
+        }
+        if (intent.getBooleanExtra(EXTRA_WELLY, false)) {
+            home.listenWelly();
             return;
         }
         if (intent.getBooleanExtra(EXTRA_RECENTS, false)) {

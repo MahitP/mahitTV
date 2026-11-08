@@ -97,8 +97,20 @@ final class WellyTools {
             tools.put(tool("launch_app", "Open an app on the TV.", "!name:string:The app's name"));
             tools.put(tool("input", "Switch to an input.", "!name:string:HDMI 1, HDMI 2…, or Live TV"));
             tools.put(tool("sleep_timer", "Turn the TV off after some minutes; 0 cancels.", "!minutes:integer:Minutes"));
-            tools.put(tool("music", "Control what's playing.", "!action:string:play, pause, next or previous"));
-            tools.put(tool("settings", "Open the TV's own settings."));
+            tools.put(tool("music", "Control what's playing in any app: play, pause, stop, next, previous, or skip forward or back some seconds.",
+                    "!action:string:play, pause, stop, next, previous, forward or back", "seconds:integer:For forward or back; default 10"));
+            tools.put(tool("volume", "Set or change the TV's volume, or mute it.", "!action:string:set, up, down, mute or unmute",
+                    "level:integer:For set, 0 to 100; for up or down, how much (default 10)"));
+            tools.put(tool("brightness", "Set or change the screen's brightness (\"it's too dark\", \"dim it\").", "!action:string:set, up or down",
+                    "level:integer:For set, 0 to 100; for up or down, how much (default 20)"));
+            tools.put(tool("screen_off", "Turn the TV off (standby). Only when they ask to turn it off."));
+            tools.put(tool("do_not_disturb", "Turn Do Not Disturb (Focus) on or off.", "!on:boolean:true to turn it on"));
+            tools.put(tool("close_app", "Close an app that's running (stops it).", "!name:string:The app's name"));
+            tools.put(tool("youtube", "Search YouTube on the TV and show the results there (videos, channels, music videos, how-tos).",
+                    "!query:string:What to search for"));
+            tools.put(tool("settings", "Open the TV's own settings, at a page if they name one.",
+                    "page:string:wifi, network, bluetooth, picture, sound, apps, date, accessibility, about, or leave out"));
+            tools.put(tool("tv_status", "The TV's state now: volume, brightness, the sleep timer, Do Not Disturb, the network and what's playing."));
             tools.put(tool("remember", "Remember a lasting fact about this person (a taste, a show they're on). Only when they tell you something worth keeping.",
                     "!fact:string:One short sentence"));
         } catch (JSONException ignored) {
@@ -143,8 +155,15 @@ final class WellyTools {
                 case "launch_app": return launchApp(a.optString("name"));
                 case "input": return input(a.optString("name"));
                 case "sleep_timer": return sleepTimer(a.optInt("minutes"));
-                case "music": return music(a.optString("action", "pause"));
-                case "settings": return settings();
+                case "music": return music(a.optString("action", "pause"), a.optInt("seconds", 10));
+                case "volume": return volume(a.optString("action", "up"), a.has("level") ? a.optInt("level") : -1);
+                case "brightness": return brightness(a.optString("action", "up"), a.has("level") ? a.optInt("level") : -1);
+                case "screen_off": return screenOff();
+                case "do_not_disturb": return doNotDisturb(a.optBoolean("on", true));
+                case "close_app": return closeApp(a.optString("name"));
+                case "youtube": return youtube(a.optString("query"));
+                case "settings": return settings(a.optString("page"));
+                case "tv_status": return tvStatus();
                 case "remember": return remember(a.optString("fact"));
                 default: return error("no tool called " + name);
             }
@@ -778,11 +797,154 @@ final class WellyTools {
         return r;
     }
 
-    private Result settings() throws Exception {
+    /** The TV's settings, at the page named (Android's own settings screens), else the main page. */
+    private Result settings(String page) throws Exception {
+        String p = page == null ? "" : page.trim().toLowerCase(Locale.ROOT), action = null;
+        if (p.contains("wi")) action = android.provider.Settings.ACTION_WIFI_SETTINGS;
+        else if (p.contains("network") || p.contains("internet")) action = android.provider.Settings.ACTION_WIRELESS_SETTINGS;
+        else if (p.contains("blue")) action = android.provider.Settings.ACTION_BLUETOOTH_SETTINGS;
+        else if (p.contains("pic") || p.contains("display") || p.contains("screen")) action = android.provider.Settings.ACTION_DISPLAY_SETTINGS;
+        else if (p.contains("sound") || p.contains("audio")) action = android.provider.Settings.ACTION_SOUND_SETTINGS;
+        else if (p.contains("app")) action = android.provider.Settings.ACTION_APPLICATION_SETTINGS;
+        else if (p.contains("date") || p.contains("time")) action = android.provider.Settings.ACTION_DATE_SETTINGS;
+        else if (p.contains("access")) action = android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS;
+        else if (p.contains("about") || p.contains("info")) action = android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS;
+        if (action != null) {
+            final android.content.Intent i = new android.content.Intent(action).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (i.resolveActivity(context.getPackageManager()) != null && onMain(() -> {
+                activity.startActivity(i);
+                return true;
+            })) {
+                Result r = new Result(new JSONObject().put("opened", p + " settings").toString());
+                r.acted = true;
+                return r;
+            }
+        }
         if (!open(HomeApps.tvSettings())) return error("the TV's settings didn't open");
-        Result r = new Result("{\"opened\":\"TV Settings\"}");
+        Result r = new Result(new JSONObject().put("opened", "TV Settings").put("page_not_found", action == null && !p.isEmpty()).toString());
         r.acted = true;
         return r;
+    }
+
+    /** The volume: set (0–100), up or down by `level` (default 10), or mute. The TV's own bar shows the change. */
+    private Result volume(String action, int level) throws Exception {
+        android.media.AudioManager am = context.getSystemService(android.media.AudioManager.class);
+        int s = android.media.AudioManager.STREAM_MUSIC, max = Math.max(1, am.getStreamMaxVolume(s));
+        int flags = android.media.AudioManager.FLAG_SHOW_UI;
+        if (am.isVolumeFixed()) return error("this TV's volume is fixed (a soundbar or receiver controls it)");
+        switch (action) {
+            case "mute": am.adjustStreamVolume(s, android.media.AudioManager.ADJUST_MUTE, flags); break;
+            case "unmute": am.adjustStreamVolume(s, android.media.AudioManager.ADJUST_UNMUTE, flags); break;
+            default: {
+                int now = Math.round(100f * am.getStreamVolume(s) / max), by = level < 0 ? 10 : level;
+                int to = "set".equals(action) ? level : "down".equals(action) ? now - by : now + by;
+                to = Math.max(0, Math.min(100, to));
+                if (am.isStreamMute(s) && to > 0) am.adjustStreamVolume(s, android.media.AudioManager.ADJUST_UNMUTE, 0);
+                am.setStreamVolume(s, Math.round(to * max / 100f), flags);
+            }
+        }
+        Result r = new Result(new JSONObject().put("volume", Math.round(100f * am.getStreamVolume(s) / max))
+                .put("muted", am.isStreamMute(s)).toString());
+        r.acted = true;
+        return r;
+    }
+
+    /** The brightness: set (0–100) or up and down by `level` (default 20), through the home screen (its HUD shows it). */
+    private Result brightness(String action, int level) throws Exception {
+        int now = Prefs.brightness(), by = level < 0 ? 20 : level;
+        int to = Math.max(0, Math.min(100, "set".equals(action) ? level : "down".equals(action) ? now - by : now + by));
+        context.sendBroadcast(new android.content.Intent(RemoteKeys.ACTION_BRIGHTNESS).setPackage(HomeMode.PKG).putExtra("delta", to - now));
+        Result r = new Result(new JSONObject().put("brightness", to).toString());
+        r.acted = true;
+        return r;
+    }
+
+    private Result screenOff() throws Exception {
+        if (!HomeMode.screenOff(context)) return error("turning the TV off needs mahitTV mode");
+        Result r = new Result("{\"done\":\"the TV is going to standby\"}");
+        r.acted = true;
+        return r;
+    }
+
+    /** Do Not Disturb on (priority only) or off; its access is allowed once through mahitTV's ADB. */
+    private Result doNotDisturb(boolean on) throws Exception {
+        android.app.NotificationManager nm = context.getSystemService(android.app.NotificationManager.class);
+        if (nm == null || !(nm.isNotificationPolicyAccessGranted() || HomeMode.allowDnd(context))) {
+            return error("Do Not Disturb needs mahitTV mode");
+        }
+        nm.setInterruptionFilter(on ? android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                : android.app.NotificationManager.INTERRUPTION_FILTER_ALL);
+        Result r = new Result(new JSONObject().put("do_not_disturb", on).toString());
+        r.acted = true;
+        return r;
+    }
+
+    /** Stops an app (Recent Apps' close), never one the TV needs (HomeMode.mayForceStop). */
+    private Result closeApp(String name) throws Exception {
+        String want = name.trim().toLowerCase(Locale.ROOT);
+        String[] best = null;
+        int bestScore = 0;
+        for (String[] app : HomeApps.launchable(context)) {
+            String label = app[1].toLowerCase(Locale.ROOT);
+            int score = label.equals(want) ? 3 : label.startsWith(want) ? 2 : label.contains(want) || want.contains(label) ? 1 : 0;
+            if (score > bestScore) {
+                best = app;
+                bestScore = score;
+            }
+        }
+        if (best == null) return error("no app called " + name + " on this TV");
+        if (!HomeMode.mayForceStop(context, best[0])) return error(best[1] + " is part of the TV and can't be closed");
+        if (!HomeMode.forceStop(context, best[0])) return error("couldn't close " + best[1] + " (it needs mahitTV mode)");
+        Result r = new Result(new JSONObject().put("closed", best[1]).toString());
+        r.acted = true;
+        return r;
+    }
+
+    /** YouTube's search for `query`, in the YouTube app (its search, else its results page). */
+    private Result youtube(String query) throws Exception {
+        String q = query == null ? "" : query.trim();
+        if (q.isEmpty()) return error("nothing to search for");
+        String pkg = "com.google.android.youtube.tv";
+        android.content.pm.PackageManager pm = context.getPackageManager();
+        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_SEARCH).setPackage(pkg)
+                .putExtra(android.app.SearchManager.QUERY, q).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (i.resolveActivity(pm) == null) {
+            i = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://www.youtube.com/results?search_query=" + URLEncoder.encode(q, "UTF-8")))
+                    .setPackage(pkg).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (i.resolveActivity(pm) == null) return error("YouTube isn't on this TV");
+        }
+        final android.content.Intent go = i;
+        if (!onMain(() -> {
+            activity.startActivity(go);
+            return true;
+        })) return error("YouTube didn't open");
+        Result r = new Result(new JSONObject().put("searched_youtube_for", q).toString());
+        r.acted = true;
+        return r;
+    }
+
+    /** The TV's state now, for "what's my volume", "is the sleep timer on", "am I online". */
+    private Result tvStatus() throws Exception {
+        JSONObject o = new JSONObject();
+        android.media.AudioManager am = context.getSystemService(android.media.AudioManager.class);
+        int s = android.media.AudioManager.STREAM_MUSIC, max = Math.max(1, am.getStreamMaxVolume(s));
+        o.put("volume", Math.round(100f * am.getStreamVolume(s) / max)).put("muted", am.isStreamMute(s));
+        o.put("brightness", Prefs.brightness());
+        int left = SleepTimer.minutesLeft(context);
+        o.put("sleep_timer_minutes_left", left);
+        android.app.NotificationManager nm = context.getSystemService(android.app.NotificationManager.class);
+        o.put("do_not_disturb", nm != null && nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL);
+        android.net.ConnectivityManager cm = context.getSystemService(android.net.ConnectivityManager.class);
+        android.net.NetworkCapabilities nc = cm == null ? null : cm.getNetworkCapabilities(cm.getActiveNetwork());
+        o.put("network", nc == null ? "offline" : nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) ? "Ethernet"
+                : nc.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ? "Wi-Fi" : "online");
+        try {
+            MediaController mc = session();
+            if (mc != null) o.put("playing_app", mc.getPackageName());
+        } catch (SecurityException ignored) {
+        }
+        return new Result(o.toString());
     }
 
     private Result remember(String fact) throws Exception {
@@ -817,7 +979,7 @@ final class WellyTools {
         return r;
     }
 
-    private Result music(String action) throws Exception {
+    private Result music(String action, int seconds) throws Exception {
         MediaController mc;
         try {
             mc = session();
@@ -830,6 +992,20 @@ final class WellyTools {
             case "play": t.play(); break;
             case "next": t.skipToNext(); break;
             case "previous": t.skipToPrevious(); break;
+            case "stop": t.stop(); break;
+            case "forward":
+            case "back": {
+                // From where it is now (the last position moved on by the time since, at its speed).
+                PlaybackState st = mc.getPlaybackState();
+                if (st == null || st.getPosition() < 0) return error("this player doesn't say where it is, so I can't skip");
+                long at = st.getPosition();
+                if (st.getState() == PlaybackState.STATE_PLAYING && st.getLastPositionUpdateTime() > 0) {
+                    at += (long) ((android.os.SystemClock.elapsedRealtime() - st.getLastPositionUpdateTime()) * st.getPlaybackSpeed());
+                }
+                long by = Math.max(1, seconds) * 1000L;
+                t.seekTo(Math.max(0, "back".equals(action) ? at - by : at + by));
+                break;
+            }
             default: t.pause(); break;
         }
         WellyCards.Card c = musicCard(mc);

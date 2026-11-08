@@ -270,7 +270,10 @@ final class WellyBrain {
                 .append("- No spoilers unless asked. Never comment on other people in the house, and never mention what anyone else on this TV ")
                 .append("watched, said or likes: you only know this profile.\n")
                 .append("- For what they were watching, Continue Watching or picking up where they left off, call continue_watching.\n")
-                .append("- Use the tools for anything about titles, what's on, scores, weather, lights, apps, inputs, the sleep timer and music. ")
+                .append("- You run this TV: the remote's microphone button calls you, from any app. Use the tools for anything about titles, ")
+                .append("what's on, scores, weather, lights, apps (open or close), inputs, the sleep timer, playback (pause, skip, rewind), ")
+                .append("volume, brightness, Do Not Disturb, YouTube, the TV's settings pages, its status, and turning it off. ")
+                .append("Several at once when they ask for several (\"dim it and pause\"). ")
                 .append("When they share a lasting taste or fact about themselves, call remember.\n")
                 .append("- Plain text only: no markdown, no lists, no emoji.\n");
         String lang = Locale.forLanguageTag(Ui.language).getDisplayLanguage(Locale.ENGLISH);
