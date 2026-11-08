@@ -3,7 +3,9 @@ package io.freemytv;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.media.MediaDescription;
@@ -103,6 +105,10 @@ public class NowPlaying extends NotificationListenerService {
         private MediaController media;
         volatile String mediaTitle, mediaDetail;
         volatile boolean mediaPlaying;
+        /** The dynamic dot's picture: the album art (a square of at most ART px), else the app's icon. Main thread. */
+        Bitmap mediaArt;
+        private Bitmap artFrom;
+        private final Map<String, Bitmap> icons = new HashMap<>();
         private long mediaActions;
 
         Watch(Context c, Runnable changed) {
@@ -195,14 +201,62 @@ public class NowPlaying extends NotificationListenerService {
                 newTitle = !TextUtils.isEmpty(t) ? t.toString().trim() : line == null ? mc.getPackageName() : line;
                 newDetail = line == null || line.equals(newTitle) ? "" : line.startsWith(newTitle + " · ") ? line.substring(newTitle.length() + 3) : line;
             }
+            Bitmap art = art(mc);
             boolean same = mc == media && Objects.equals(newTitle, mediaTitle) && Objects.equals(newDetail, mediaDetail)
-                    && nowPlaying == mediaPlaying && actions == mediaActions;
+                    && nowPlaying == mediaPlaying && actions == mediaActions && art == mediaArt;
+            mediaArt = art;
             media = mc;
             mediaTitle = newTitle;
             mediaDetail = newDetail;
             mediaPlaying = nowPlaying;
             mediaActions = actions;
             return !same;
+        }
+
+        static final int ART = 128;
+
+        /**
+         * The player's art for this song, cut to a square once per new picture (players report every second; the same
+         * picture comes back as the same object), else the app's icon, kept per app.
+         */
+        private Bitmap art(MediaController mc) {
+            if (mc == null) return null;
+            MediaMetadata m = mc.getMetadata();
+            Bitmap src = null;
+            if (m != null) {
+                src = m.getBitmap(MediaMetadata.METADATA_KEY_ART);
+                if (src == null) src = m.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+                if (src == null) src = m.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+                if (src == null && m.getDescription() != null) src = m.getDescription().getIconBitmap();
+            }
+            if (src != null && src.getWidth() > 0 && src.getHeight() > 0) {
+                if (src == artFrom && mediaArt != null) return mediaArt;
+                artFrom = src;
+                try {
+                    int side = Math.min(src.getWidth(), src.getHeight());
+                    Bitmap square = Bitmap.createBitmap(src, (src.getWidth() - side) / 2, (src.getHeight() - side) / 2, side, side);
+                    Bitmap out = Bitmap.createScaledBitmap(square, Math.min(ART, side), Math.min(ART, side), true);
+                    if (square != src && square != out) square.recycle();
+                    return out;
+                } catch (RuntimeException e) {   // a recycled or odd bitmap from the player: the icon instead
+                    artFrom = null;
+                }
+            }
+            String pkg = mc.getPackageName();
+            if (icons.containsKey(pkg)) return icons.get(pkg);
+            Bitmap icon = null;
+            try {
+                Drawable d = context.getPackageManager().getApplicationIcon(pkg);
+                icon = Bitmap.createBitmap(ART, ART, Bitmap.Config.ARGB_8888);
+                Canvas c = new Canvas(icon);
+                c.drawColor(0xFF1C1C1E);
+                d.setBounds(ART / 8, ART / 8, ART * 7 / 8, ART * 7 / 8);
+                d.draw(c);
+            } catch (PackageManager.NameNotFoundException e) {
+                icon = null;
+            }
+            icons.put(pkg, icon);
+            return icon;
         }
 
         boolean hasMedia() {

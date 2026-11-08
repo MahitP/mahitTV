@@ -292,20 +292,26 @@ var browser = null;
     s.zone = 'tabs'; s.tab = 0;
     FreeMyTV.move(0, -1);
     out.up = s.zone + ' ' + s.top + ' ' + s.tab;
+    FreeMyTV.move(-1, 0);   // the preview's sample song plays: the dynamic dot left of the bubble first
+    out.dot = s.zone + ' ' + s.top;
     FreeMyTV.move(-1, 0);
     out.left = s.zone + ' ' + s.tab;
     FreeMyTV.home();
     return out;
   });
   assert.ok(nav.down === nav.last || nav.last < 12, '↓ onto a shorter row: its last app: ' + JSON.stringify(nav));
-  assert.ok(nav.up === 'top 3 0' && nav.left === 'tabs 0', '↑ from the TV tab: the bubble, tab kept; ← back: ' + JSON.stringify(nav));
+  assert.ok(nav.up === 'top 3 0' && nav.dot === 'top 2' && nav.left === 'tabs 0',
+    '↑ from the TV tab: the bubble, tab kept; ← the dynamic dot, ← back: ' + JSON.stringify(nav));
   assert.deepStrictEqual(lists.apple, ['Apple Music', 'FaceTime (guide)', 'Fitness+ (guide)', 'Podcasts (guide)'],
     'the Apple folder, where Apple Music was: Apple Music, then the FaceTime, Fitness+ and Podcasts guides: ' + JSON.stringify(lists.apple));
   assert.deepStrictEqual(lists.dock, ['Netflix', 'Prime Video', 'YouTube', 'Apple TV', 'Crunchyroll', 'StbEmu'],
     'the Dock: Netflix, Prime Video, YouTube, Apple TV, Crunchyroll, StbEmu: ' + JSON.stringify(lists.dock));
-  // The top right: Control Center's bubble, then the pill. The bubble opens Control Center (its pills in a fixed order,
-  // the volume under them); the pill opens the profile panel.
+  // The top right: the dynamic dot (the sample song plays), Control Center's bubble, then the pill. The bubble opens
+  // Control Center (its pills in a fixed order, the volume under them); the pill opens the profile panel.
   await page.evaluate(function () { FreeMyTV.home(); FreeMyTV.tab(2); });
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(function () { return FreeMyTV.state.top; }), 2, '→ from Welly reaches the dynamic dot first');
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(300);
   var top = await page.evaluate(function () {
