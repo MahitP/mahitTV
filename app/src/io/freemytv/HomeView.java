@@ -521,6 +521,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float chevronAlpha, chevronY;
     /** The status pill's avatar, cross-dissolving on a profile switch. The pill keeps its size while something plays. */
     private final Spring avatarFade = new Spring(Spring.ROOM_FADE, 1);
+    /**
+     * Control Center's bubble, as the Dynamic Island's detached circle: there only while something plays. It slides out
+     * from under the pill on a liquid spring and back under it when the playing stops; the buttons left of it make room.
+     */
+    private final Spring bubbleShown = new Spring(Spring.LIQUID_PILL, 0);
     private Bitmap pillAvatarFrom;
     private int pillAvatarProfile = -1;
     private final android.graphics.Path pillClip = new android.graphics.Path();
@@ -1265,7 +1270,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean kenMoving = kenBurns(up);
         if (titleMoving) heroLayer.invalidate();
         if (kenMoving || parallaxMoving) sky.invalidate();
-        boolean pillMoving = avatarFade.step(dt);
+        boolean pillMoving = avatarFade.step(dt) | bubbleShown.step(dt);
         if (pillMoving) {
             status.invalidate();
             tabBar.invalidate();
@@ -2381,6 +2386,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void onPlaying() {
         fitPlaying();
         heroDirty = statusDirty = true;
+        showBubble(playing.text != null);
         refreshMedia();
         wake();
         String title = playing.title, now = playing.text;
@@ -2388,6 +2394,28 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             shownTitle = title;
             if (readerOn()) announceForAccessibility(Ui.trf("Now playing: {what}", "what", now.replace(" · ", ", ")));
         }
+    }
+
+    /** Something started or stopped playing: the bubble comes out of the pill or goes back under it. */
+    private void showBubble(boolean live) {
+        if (live == bubbleLive()) return;
+        bubbleShown.target = live ? 1 : 0;
+        if (Spring.instant) bubbleShown.snap(bubbleShown.target);
+        if (!live && zone == Z_STATUS && onBubble) {
+            onBubble = false;   // it went away under the focus: the pill
+            retarget(false);
+        }
+        if (tvPill != null) layoutPill();
+        wake();
+    }
+
+    private boolean bubbleLive() {
+        return bubbleShown.target > 0.5f;
+    }
+
+    /** How far the buttons left of the bubble are drawn from where they're laid out, while it comes or goes (px). */
+    private float bubbleShift() {
+        return (BUBBLE_D + BUBBLE_GAP) * k * (bubbleShown.target - Ui.clamp(bubbleShown.value));
     }
 
     /** Control Center open: its playback card comes or goes, or its text changes, with the focus staying on the same card. */
@@ -7232,7 +7260,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float bx = pillRect.left - BUBBLE_GAP * k;
         bubbleRect.set(bx - BUBBLE_D * k, (PILL_TOP + (PILL_H - BUBBLE_D) / 2) * k, bx, (PILL_TOP + (PILL_H + BUBBLE_D) / 2) * k);
         Symbols.warm(getContext(), "controls", 26 * k);
-        float b = PILL_H * k, x = bubbleRect.left - 16 * k, cy = pillRect.centerY();
+        float b = PILL_H * k, x = (bubbleLive() ? bubbleRect.left : pillRect.left) - 16 * k, cy = pillRect.centerY();
         if (airName != null) {
             float aw = 40 * k;
             airRect.set(x - aw, cy - aw / 2, x, cy + aw / 2);
@@ -7651,8 +7679,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawLightButtons(Canvas c) {
         applyTone();
+        drawBubble(c);   // first: it comes out from under the pill
         drawPill(c);
         c.save();
+        c.translate(bubbleShift(), 0);   // the buttons make room for the bubble as it comes, and close up as it goes
+        if (!airRect.isEmpty()) {
+            Symbols.draw(getContext(), c, "airpods", airRect.centerX(), airRect.centerY(), 24 * k, 0xEBFFFFFF);
+        }
         for (int i = 0; i < lightButtons.size(); i++) {
             HomeApps.Item it = lightButtons.get(i);
             RectF r = topRects[3 + i];
@@ -7681,7 +7714,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (!sleepText.isEmpty()) {
-            float right = (lightButtons.isEmpty() ? bubbleRect.left : topRects[3].left) - 24 * k, cy = pillRect.centerY();
+            float right = (!lightButtons.isEmpty() ? topRects[3].left : bubbleLive() ? bubbleRect.left : pillRect.left) - 24 * k;
+            float cy = pillRect.centerY();
             lQuote.setColor(0xE6FFFFFF);
             float tw = sleepTextW, size = lQuote.getTextSize();
             c.drawText(sleepText, right - tw, cy + Ui.halfCap(lQuote), lQuote);
@@ -7775,16 +7809,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (pop) c.restore();
         }
         c.restore();
-        drawBubble(c);
     }
 
-    /** Control Center's bubble: the pill's smoke glass in a 48 px circle; white with ink focused, light while it's open. */
+    /**
+     * Control Center's bubble: the pill's smoke glass in a 48 px circle; white with ink focused, light while it's open.
+     * Only while something plays: it grows out from under the pill's left end (and shrinks back under it), springing a
+     * little past its size as the Dynamic Island's circle does.
+     */
     private void drawBubble(Canvas c) {
-        if (bubbleRect.isEmpty()) return;
+        float v = bubbleShown.value;
+        if (bubbleRect.isEmpty() || v < 0.01f) return;
         float f = Ui.clamp(bubbleFocus.value), open = drawerOpen && !ccProfile ? 1 : 0;
-        float s = 1 + 0.12f * bubbleFocus.value - PRESS * press.value * f, r = bubbleRect.height() / 2;
+        float grow = Math.max(0, 0.35f + 0.65f * v), slide = (BUBBLE_GAP + BUBBLE_D * 0.7f) * k * (1 - Ui.clamp(v));
+        float s = (1 + 0.12f * bubbleFocus.value - PRESS * press.value * f) * grow, r = bubbleRect.height() / 2;
         c.save();
-        c.translate(bumpX * f, bumpY * f);
+        c.translate(bumpX * f + slide, bumpY * f);
         c.scale(s, s, bubbleRect.centerX(), bubbleRect.centerY());
         tmp.set(bubbleRect);
         tmp.offset(0, (6 + 8 * f) * k);
@@ -7799,9 +7838,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         Symbols.draw(getContext(), c, "controls", bubbleRect.centerX(), bubbleRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, white));
         c.restore();
-        if (!airRect.isEmpty()) {
-            Symbols.draw(getContext(), c, "airpods", airRect.centerX(), airRect.centerY(), 24 * k, 0xEBFFFFFF);
-        }
     }
 
     /** AirPods or Beats joined (greet: a new connection, so the card too) or left (name null). */
@@ -7894,11 +7930,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 break;
             case Z_STATUS:
-                // The pill, then Control Center's bubble, end the bar's row: ← to the round buttons, then the tabs.
+                // The pill, then Control Center's bubble (only while something plays), end the bar's row: ← to the round buttons, then the tabs.
                 if (dx > 0 && onBubble) {
                     onBubble = false;   // → from the bubble: the pill
-                } else if (dx < 0 && !onBubble) {
-                    onBubble = true;    // ← from the pill: the bubble
+                } else if (dx < 0 && !onBubble && bubbleLive()) {
+                    onBubble = true;    // ← from the pill: the bubble, while something plays
                 } else if (dx < 0 && topFromTab >= 0) {
                     zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
                     topIndex = topFromTab;
@@ -7921,7 +7957,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                         topFromTab = -1;
-                        onBubble = true;   // the bubble comes first, then the pill
+                        onBubble = bubbleLive();   // the bubble (while something plays) comes first, then the pill
                     } else if (next < 0) {
                         deadEnd(dx, 0);
                         return true;
@@ -7935,7 +7971,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the tabs.
                     topFromTab = topIndex < 3 ? topIndex : -1;
                     zone = Z_STATUS;
-                    onBubble = true;
+                    onBubble = bubbleLive();
                 }
                 break;
             case Z_HOUSE:
