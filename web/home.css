@@ -698,6 +698,27 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
   transition: background-color 0.17s cubic-bezier(0.22, 1, 0.36, 1), color 0.17s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.17s cubic-bezier(0.22, 1, 0.36, 1);
 }
 #ccbtn .sym { position: absolute; left: 11px; top: 11px; width: 26px; height: 26px; }
+/* The dynamic dot (DESIGN-DYNAMIC-DOT.md), left of the bubble while something plays: black, as the Dynamic Island,
+   with a thin key line. home.js draws its shape from two round caps and a stretched middle (only transforms move), so
+   it can open into a capsule without its round ends going oval. */
+#island { position: absolute; right: 362px; top: 52px; width: 48px; height: 48px; opacity: 0; visibility: hidden; -webkit-transform-origin: 24px 24px; transform-origin: 24px 24px; pointer-events: auto; }
+#island .cap, #island .mid { position: absolute; left: 0; top: 0; height: 48px; background: #000; -webkit-transform-origin: 0 50%; transform-origin: 0 50%; }
+#island .cap { width: 24px; }
+#island .cap.l { border-radius: 24px 0 0 24px; box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(255, 255, 255, 0.2); }
+#island .cap.r { border-radius: 0 24px 24px 0; box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(255, 255, 255, 0.2); }
+#island .mid { width: 1px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(255, 255, 255, 0.2); }
+#island .art { position: absolute; left: 0; top: 0; width: 56px; height: 56px; border-radius: 28px; color: #FFF; background: #FA2D48; background: -webkit-linear-gradient(315deg, #FF6A88, #A238FF); background: linear-gradient(135deg, #FF6A88, #A238FF); -webkit-transform-origin: 0 0; transform-origin: 0 0; }
+#island .art .sym { position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; }
+#island .txt { position: absolute; top: 0; opacity: 0; color: #FFF; }
+#island .txt .t, #island .txt .s { position: absolute; left: 0; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#island .txt .t { top: -5px; font-size: 24px; font-weight: 600; line-height: 30px; }
+#island .txt .s { top: 26px; font-size: 19px; font-weight: 500; line-height: 24px; color: rgba(255, 255, 255, 0.65); }
+#island .pp { position: absolute; left: -4px; top: 8px; width: 32px; height: 32px; opacity: 0; }
+#island .pp i { position: absolute; top: 4px; width: 6px; height: 24px; border-radius: 2px; background: #FFF; }
+#island .pp i:first-child { left: 7px; }
+#island .pp i + i { left: 19px; }
+#island .pp.paused i:first-child { left: 8px; top: 3px; width: 0; height: 0; border-radius: 0; background: none; border-style: solid; border-width: 13px 0 13px 21px; border-color: transparent transparent transparent #FFF; }
+#island .pp.paused i + i { display: none; }
 .drawer-open:not(.drawer-profile) #ccbtn, .drawer-open.drawer-profile #pill { background: rgba(255, 255, 255, 0.86); color: #1C1C1E; }
 #ccbtn.focus { background: #FFF; color: #1C1C1E; box-shadow: inset 1.5px 1.5px 0 #FFF, 0 10px 26px rgba(0, 0, 0, 0.28); }
 

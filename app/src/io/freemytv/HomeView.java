@@ -521,11 +521,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float chevronAlpha, chevronY;
     /** The status pill's avatar, cross-dissolving on a profile switch. The pill keeps its size while something plays. */
     private final Spring avatarFade = new Spring(Spring.ROOM_FADE, 1);
+    // MARK: The dynamic dot (DESIGN-DYNAMIC-DOT.md)
     /**
-     * Control Center's bubble, as the Dynamic Island's detached circle: there only while something plays. It slides out
-     * from under the pill on a liquid spring and back under it when the playing stops; the buttons left of it make room.
+     * Left of Control Center's bubble while something plays: a black dot with the album art, as the Dynamic Island's
+     * detached circle. Focused, it opens leftward into a capsule with the art, the title and play/pause. It grows out
+     * from under the bubble and goes back under it; everything left of it (and the tab bar, when it must) makes room.
      */
-    private final Spring bubbleShown = new Spring(Spring.LIQUID_PILL, 0);
+    private static final float ISLAND_D = 48, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_TAB_GAP = 32;
+    private static final float[] ISLAND_OPEN = {0.40f, 0.76f}, ISLAND_CLOSE = {0.30f, 0.92f};
+    private static final long ISLAND_PAUSE_MS = 30000;   // paused: it stays this long, so OK can play it again
+    private final Spring islandShown = new Spring(Spring.LIQUID_PILL, 0), islandOpen = new Spring(ISLAND_OPEN, 0);
+    private boolean onIsland, islandWasPlaying;
+    private long islandPausedUntil;
+    private final RectF islandDot = new RectF(), islandNow = new RectF();
+    /** Measured when the song or the layout changes: the open width, the cut title and line, the row's free edge. */
+    private float islandW, islandClusterLeft;
+    private String islandTitle, islandSub;
+    private Paint islandTitlePaint, islandSubPaint;
+    private final Paint islandArtPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint islandLine = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.Matrix islandMatrix = new android.graphics.Matrix();
+    private Bitmap islandArt;
+    private BitmapShader islandArtShader;
+    private int islandKey = 0x59FFFFFF;
+    private final Runnable islandCheck = this::updateIsland;
     private Bitmap pillAvatarFrom;
     private int pillAvatarProfile = -1;
     private final android.graphics.Path pillClip = new android.graphics.Path();
@@ -1200,6 +1219,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tvButton = Ui.text(Ui.semibold, 28 * k, INK);
         for (Paint p : new Paint[] {tvLabel, tvTitle, tvMeta, tvOverview}) p.setShadowLayer(22 * k, 0, 2 * k, 0x59000000);
         tvPill = Ui.numbers(Ui.semibold, 28 * k, 0xFFFFFFFF);
+        islandTitlePaint = Ui.text(Ui.semibold, 24 * k, 0xFFFFFFFF);   // Apple: medium weight or heavier, large
+        islandSubPaint = Ui.text(Ui.medium, 19 * k, 0xA6FFFFFF);
+        islandLine.setStyle(Paint.Style.STROKE);
+        islandLine.setStrokeWidth(1.5f * k);
         tabText = Ui.text(Ui.semibold, 28 * k, 0xFFFFFFFF);
         tabText.setTextAlign(Paint.Align.CENTER);
         tabLayoutGeneration = -1;
@@ -1270,7 +1293,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean kenMoving = kenBurns(up);
         if (titleMoving) heroLayer.invalidate();
         if (kenMoving || parallaxMoving) sky.invalidate();
-        boolean pillMoving = avatarFade.step(dt) | bubbleShown.step(dt);
+        boolean pillMoving = avatarFade.step(dt) | islandShown.step(dt) | islandOpen.step(dt);
         if (pillMoving) {
             status.invalidate();
             tabBar.invalidate();
@@ -2386,7 +2409,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void onPlaying() {
         fitPlaying();
         heroDirty = statusDirty = true;
-        showBubble(playing.text != null);
+        fitIsland();
+        updateIsland();
         refreshMedia();
         wake();
         String title = playing.title, now = playing.text;
@@ -2396,26 +2420,78 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** Something started or stopped playing: the bubble comes out of the pill or goes back under it. */
-    private void showBubble(boolean live) {
-        if (live == bubbleLive()) return;
-        bubbleShown.target = live ? 1 : 0;
-        if (Spring.instant) bubbleShown.snap(bubbleShown.target);
-        if (!live && zone == Z_STATUS && onBubble) {
-            onBubble = false;   // it went away under the focus: the pill
-            retarget(false);
+    /** The song changed: its art for the dot (a shader made here, never while drawing), then the layout. */
+    private void fitIsland() {
+        Bitmap art = playing.mediaArt;
+        if (art != islandArt) {
+            islandArt = art;
+            islandArtShader = art == null ? null : new BitmapShader(art, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            islandKey = art == null ? 0x59FFFFFF : keyLine(art);
+        }
+        if (tvPill != null && islandLive()) layoutPill();
+    }
+
+    /** The key line round the dot, as Apple tints it to the content: the art's colour, lifted, at 60 %. */
+    private static int keyLine(Bitmap art) {
+        Bitmap one = Bitmap.createScaledBitmap(art, 1, 1, true);
+        int c = one.getPixel(0, 0);
+        if (one != art) one.recycle();
+        return Ui.alpha(blend(c | 0xFF000000, 0xFFFFFFFF, 0.35f), 0.6f);
+    }
+
+    /**
+     * Whether the dot is there: while a song plays, for ISLAND_PAUSE_MS after it pauses, and while it has the focus
+     * (so OK can play it again). Gone at once when the player goes. It goes back under the bubble when it leaves, and
+     * the focus on it moves to the bubble.
+     */
+    private void updateIsland() {
+        long now = SystemClock.uptimeMillis();
+        boolean has = playing.hasMedia(), playingNow = has && playing.mediaPlaying;
+        if (islandWasPlaying && !playingNow && has) {
+            islandPausedUntil = now + ISLAND_PAUSE_MS;
+            handler.removeCallbacks(islandCheck);
+            handler.postDelayed(islandCheck, ISLAND_PAUSE_MS + 50);
+        }
+        islandWasPlaying = playingNow;
+        boolean live = has && (playingNow || now < islandPausedUntil || zone == Z_STATUS && onIsland);
+        if (live == islandLive()) {
+            if (live && status != null) status.invalidate();   // a new title or play/pause state
+            return;
+        }
+        islandShown.target = live ? 1 : 0;
+        if (Spring.instant) islandShown.snap(islandShown.target);
+        if (!live && onIsland) {
+            onIsland = false;
+            onBubble = true;   // it went away under the focus: the bubble beside it
+            if (zone == Z_STATUS) retarget(false);
         }
         if (tvPill != null) layoutPill();
         wake();
     }
 
-    private boolean bubbleLive() {
-        return bubbleShown.target > 0.5f;
+    private boolean islandLive() {
+        return islandShown.target > 0.5f;
     }
 
-    /** How far the buttons left of the bubble are drawn from where they're laid out, while it comes or goes (px). */
-    private float bubbleShift() {
-        return (BUBBLE_D + BUBBLE_GAP) * k * (bubbleShown.target - Ui.clamp(bubbleShown.value));
+    /** The room the dot takes in the row now (px): its circle while it comes or goes, its capsule while open. */
+    private float islandRoomNow() {
+        float shown = Ui.clamp(islandShown.value);
+        return shown * ((ISLAND_D + BUBBLE_GAP) * k + Math.max(0, islandOpen.value) * (islandW - ISLAND_D * k));
+    }
+
+    /**
+     * How far everything left of the dot is drawn from where it's laid out (px): laid out for the dot at rest, it slides
+     * as the dot comes, goes, opens and closes, so nothing ever sits under it.
+     */
+    private float clusterShift() {
+        return (islandLive() ? (ISLAND_D + BUBBLE_GAP) * k : 0) - islandRoomNow();
+    }
+
+    /** How far the tab bar slides left so the row's left end keeps ISLAND_TAB_GAP from it (px), down to the margin. */
+    private float tabShift() {
+        if (tabBarRect.isEmpty()) return 0;
+        float over = tabBarRect.right + ISLAND_TAB_GAP * k - (islandClusterLeft + clusterShift());
+        return over <= 0 ? 0 : Math.min(over, Math.max(0, tabBarRect.left - MARGIN * k));
     }
 
     /** Control Center open: its playback card comes or goes, or its text changes, with the focus staying on the same card. */
@@ -4096,13 +4172,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (full.target != fullWas) motionDirty = true;
         if (full.target > fullWas) fullAt = SystemClock.uptimeMillis();   // the details' stagger starts now
         if (snap) full.snap(full.target);
-        boolean pillChanged = pillFocus.target != (!sheetOpen && zone == Z_STATUS && !onBubble ? 1 : 0)
-                || bubbleFocus.target != (!sheetOpen && zone == Z_STATUS && onBubble ? 1 : 0);
-        pillFocus.target = !sheetOpen && zone == Z_STATUS && !onBubble ? 1 : 0;
-        bubbleFocus.target = !sheetOpen && zone == Z_STATUS && onBubble ? 1 : 0;
+        boolean onStatus = !sheetOpen && zone == Z_STATUS;
+        boolean pillChanged = pillFocus.target != (onStatus && !onBubble && !onIsland ? 1 : 0)
+                || bubbleFocus.target != (onStatus && onBubble ? 1 : 0);
+        pillFocus.target = onStatus && !onBubble && !onIsland ? 1 : 0;
+        bubbleFocus.target = onStatus && onBubble ? 1 : 0;
+        float islandWas = islandOpen.target;
+        islandOpen.target = onStatus && onIsland && islandLive() ? 1 : 0;
+        if (islandOpen.target != islandWas) {
+            islandOpen.tune(islandOpen.target > 0 ? ISLAND_OPEN : ISLAND_CLOSE);   // closing is brisker than opening
+            pillChanged = true;
+            if (islandOpen.target == 0 && islandLive() && !playing.mediaPlaying) handler.post(islandCheck);   // left it paused
+        }
         if (snap) {
             pillFocus.snap(pillFocus.target);
             bubbleFocus.snap(bubbleFocus.target);
+            islandOpen.snap(islandOpen.target);
         }
         boolean statusChanged = pillChanged;
         boolean onCards = !sheetOpen && zone == Z_DRAWER && !ccOnProfiles && !ccOnVolume && !ccInputs;
@@ -4243,7 +4328,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_HERO) {
             r = heroButton;
         } else if (zone == Z_STATUS) {
-            r = onBubble ? bubbleRect : pillRect;
+            r = onIsland ? islandDot : onBubble ? bubbleRect : pillRect;
         } else if (zone == Z_DRAWER) {
             r = ccInputs ? (inputIndex < inputRects.length ? inputRects[inputIndex] : null)
                     : drawerIndex < drawerRects.length ? drawerRects[drawerIndex] : null;
@@ -5256,6 +5341,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (p == null || p.pkg == null || !playNow(p)) return;
             it = HomeApps.app(p);
             r = heroButton;
+        } else if (zone == Z_STATUS && onIsland) {
+            // The dynamic dot: play or pause, its one control.
+            click.toggle(!playing.mediaPlaying);
+            playing.playPause();
+            return;
         } else if (zone == Z_STATUS) {
             // The bubble: Control Center. The pill: "Who's Watching?" (Back keeps this profile).
             click.open();
@@ -6990,7 +7080,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 String state = i < inputStates.length ? inputStates[i] : null;
                 return state == null ? label(inputItems, i) : label(inputItems, i) + ", " + state;
             }
-            case Z_STATUS: return onBubble ? Ui.tr("Control Center") : clockText + ". " + Ui.tr("Profile");
+            case Z_STATUS:
+                if (onIsland) {
+                    String what = playing.mediaTitle == null ? "" : playing.mediaTitle;
+                    if (playing.mediaDetail != null && !playing.mediaDetail.isEmpty()) what += ", " + playing.mediaDetail;
+                    return Ui.trf("Now playing: {what}", "what", what);
+                }
+                return onBubble ? Ui.tr("Control Center") : clockText + ". " + Ui.tr("Profile");
             case WIDGETS:
                 if (i == VOLUME_ITEM) return Ui.trf("Volume, {n}%", "n", Math.round(100f * volumeIndex / Math.max(1, volumeMax)));
                 return i == 0 ? weatherText() : quotesText();
@@ -7260,7 +7356,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float bx = pillRect.left - BUBBLE_GAP * k;
         bubbleRect.set(bx - BUBBLE_D * k, (PILL_TOP + (PILL_H - BUBBLE_D) / 2) * k, bx, (PILL_TOP + (PILL_H + BUBBLE_D) / 2) * k);
         Symbols.warm(getContext(), "controls", 26 * k);
-        float b = PILL_H * k, x = (bubbleLive() ? bubbleRect.left : pillRect.left) - 16 * k, cy = pillRect.centerY();
+        float id = ISLAND_D * k, ir = bubbleRect.left - BUBBLE_GAP * k;
+        islandDot.set(ir - id, bubbleRect.centerY() - id / 2, ir, bubbleRect.centerY() + id / 2);
+        float b = PILL_H * k, x = (islandLive() ? islandDot.left : bubbleRect.left) - 16 * k, cy = pillRect.centerY();
         if (airName != null) {
             float aw = 40 * k;
             airRect.set(x - aw, cy - aw / 2, x, cy + aw / 2);
@@ -7273,7 +7371,32 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             x -= b + L_BUTTON_GAP * k;
         }
         layoutTabs();
+        layoutIsland();
         statusDirty = true;
+    }
+
+    /**
+     * The row's left end, and the dot's open width: what the title needs (at most ISLAND_TEXT), but never more than the
+     * room up to the tab bar plus how far the tab bar can slide; the title and line are cut to what's left.
+     */
+    private void layoutIsland() {
+        float left = !lightButtons.isEmpty() ? topRects[3].left : !airRect.isEmpty() ? airRect.left
+                : islandLive() ? islandDot.left : bubbleRect.left;
+        if (!sleepText.isEmpty() && lQuote != null) left -= 24 * k + sleepTextW + lQuote.getTextSize() * 1.4f;
+        islandClusterLeft = left;
+        if (islandTitlePaint == null) return;
+        String title = playing.mediaTitle, sub = playing.mediaDetail;
+        float frame = 160 * k, d = ISLAND_D * k;
+        float want = Math.min(ISLAND_TEXT * k, Math.max(title == null ? 0 : islandTitlePaint.measureText(title),
+                sub == null ? 0 : islandSubPaint.measureText(sub)));
+        float room = tabBarRect.isEmpty() ? want + frame
+                : d + Math.max(0, left - ISLAND_TAB_GAP * k - tabBarRect.right) + Math.max(0, tabBarRect.left - MARGIN * k);
+        islandW = Math.max(d, Math.min(want + frame, room));
+        float text = Math.max(0, islandW - frame);
+        fitPaint.set(islandTitlePaint);
+        islandTitle = title == null ? "" : TextUtils.ellipsize(title, fitPaint, text, TextUtils.TruncateAt.END).toString();
+        fitPaint.set(islandSubPaint);
+        islandSub = sub == null ? "" : TextUtils.ellipsize(sub, fitPaint, text, TextUtils.TruncateAt.END).toString();
     }
 
     /** The tab bar's capsule and its three segments (topRects 0 to 2), centred at the top: measured here, not drawing. */
@@ -7309,6 +7432,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * segments; the focused one is a white pill with ink, 1.06×.
      */
     private void drawTabBar(Canvas c) {
+        float shift = tabShift();   // the dynamic dot's capsule needs the room: the bar slides left, never under it
+        if (shift <= 0.5f) {
+            drawTabBarAt(c);
+            return;
+        }
+        c.save();
+        c.translate(-shift, 0);
+        drawTabBarAt(c);
+        c.restore();
+    }
+
+    private void drawTabBarAt(Canvas c) {
         if (tabLayoutGeneration != Ui.generation) layoutTabs();   // the language changed
         if (tabBarRect.isEmpty()) return;
         float rr = tabBarRect.height() / 2;
@@ -7554,7 +7689,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             fill.setColor(Ui.alpha(0xFFFFFFFF, fs));
             c.drawCircle(x0 + dotAt.value * (dot + gap), y, dot / 2, fill);
         }
-        if (playingTab != null) drawQuotes(c);
+        if (playingTab != null && !picksOn()) drawQuotes(c);   // with the picks, the dynamic dot shows it
     }
 
     /**
@@ -7679,10 +7814,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawLightButtons(Canvas c) {
         applyTone();
-        drawBubble(c);   // first: it comes out from under the pill
+        drawIsland(c);   // first: it comes out from under the bubble
+        drawBubble(c);
         drawPill(c);
         c.save();
-        c.translate(bubbleShift(), 0);   // the buttons make room for the bubble as it comes, and close up as it goes
+        c.translate(clusterShift(), 0);   // everything left of the dot makes room for it, and closes up as it goes
         if (!airRect.isEmpty()) {
             Symbols.draw(getContext(), c, "airpods", airRect.centerX(), airRect.centerY(), 24 * k, 0xEBFFFFFF);
         }
@@ -7714,7 +7850,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         if (!sleepText.isEmpty()) {
-            float right = (!lightButtons.isEmpty() ? topRects[3].left : bubbleLive() ? bubbleRect.left : pillRect.left) - 24 * k;
+            float right = (!lightButtons.isEmpty() ? topRects[3].left : islandLive() ? islandDot.left : bubbleRect.left) - 24 * k;
             float cy = pillRect.centerY();
             lQuote.setColor(0xE6FFFFFF);
             float tw = sleepTextW, size = lQuote.getTextSize();
@@ -7811,19 +7947,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.restore();
     }
 
-    /**
-     * Control Center's bubble: the pill's smoke glass in a 48 px circle; white with ink focused, light while it's open.
-     * Only while something plays: it grows out from under the pill's left end (and shrinks back under it), springing a
-     * little past its size as the Dynamic Island's circle does.
-     */
+    /** Control Center's bubble: the pill's smoke glass in a 48 px circle; white with ink focused, light while it's open. */
     private void drawBubble(Canvas c) {
-        float v = bubbleShown.value;
-        if (bubbleRect.isEmpty() || v < 0.01f) return;
+        if (bubbleRect.isEmpty()) return;
         float f = Ui.clamp(bubbleFocus.value), open = drawerOpen && !ccProfile ? 1 : 0;
-        float grow = Math.max(0, 0.35f + 0.65f * v), slide = (BUBBLE_GAP + BUBBLE_D * 0.7f) * k * (1 - Ui.clamp(v));
-        float s = (1 + 0.12f * bubbleFocus.value - PRESS * press.value * f) * grow, r = bubbleRect.height() / 2;
+        float s = 1 + 0.12f * bubbleFocus.value - PRESS * press.value * f, r = bubbleRect.height() / 2;
         c.save();
-        c.translate(bumpX * f + slide, bumpY * f);
+        c.translate(bumpX * f, bumpY * f);
         c.scale(s, s, bubbleRect.centerX(), bubbleRect.centerY());
         tmp.set(bubbleRect);
         tmp.offset(0, (6 + 8 * f) * k);
@@ -7837,6 +7967,77 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawCircle(bubbleRect.centerX(), bubbleRect.centerY(), r, fill);
         }
         Symbols.draw(getContext(), c, "controls", bubbleRect.centerX(), bubbleRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, white));
+        c.restore();
+    }
+
+    /**
+     * The dynamic dot: black, as the Dynamic Island, with a key line tinted by the art. Coming, it grows out from under
+     * the bubble (0.35× → 1, springing a little past); focused, it opens leftward to a 72 px capsule, the art moving to
+     * its left end (36 → 56 px, on a concentric margin), the title, the line and play/pause fading in as it arrives.
+     */
+    private void drawIsland(Canvas c) {
+        float sv = islandShown.value;
+        if (sv < 0.01f || islandDot.isEmpty()) return;
+        float e = Math.max(0, islandOpen.value), ec = Ui.clamp(e), d = ISLAND_D * k;
+        float wNow = d + (islandW - d) * e, hNow = Math.max(d * 0.9f, d + (ISLAND_H * k - d) * e), cy = islandDot.centerY();
+        islandNow.set(islandDot.right - wNow, cy - hNow / 2, islandDot.right, cy + hNow / 2);
+        float grow = Math.max(0, 0.35f + 0.65f * sv), slide = (BUBBLE_GAP * k + d * 0.7f) * (1 - Ui.clamp(sv));
+        float r = hNow / 2;
+        c.save();
+        c.translate(slide, 0);
+        c.scale(grow, grow, islandDot.centerX(), cy);
+        tmp.set(islandNow);
+        tmp.offset(0, (6 + 8 * ec) * k);
+        shadow.setColor(Ui.alpha(0xFF000000, 0.22f + 0.18f * ec));
+        shadows.draw(c, tmp, r, SHADOW_BLUR * k, shadow);
+        fill.setShader(null);
+        fill.setColor(0xFF000000);
+        c.drawRoundRect(islandNow, r, r, fill);
+        islandLine.setColor(Ui.alpha(islandKey, 0.7f + 0.3f * ec));
+        float in = islandLine.getStrokeWidth() / 2;
+        tmp.set(islandNow.left + in, islandNow.top + in, islandNow.right - in, islandNow.bottom - in);
+        c.drawRoundRect(tmp, r - in, r - in, islandLine);
+        // The art: a circle on an even margin (6 px small, 8 px open), so it stays concentric with the shape.
+        float pad = (6 + 2 * ec) * k, ad = Math.max(0, hNow - 2 * pad), ax = islandNow.left + pad + ad / 2;
+        if (islandArtShader != null) {
+            float sc = ad / Math.max(1, islandArt.getWidth());
+            islandMatrix.setScale(sc, sc);
+            islandMatrix.postTranslate(ax - ad / 2, cy - ad / 2);
+            islandArtShader.setLocalMatrix(islandMatrix);
+            islandArtPaint.setShader(islandArtShader);
+            c.drawCircle(ax, cy, ad / 2, islandArtPaint);
+            islandArtPaint.setShader(null);
+        } else {
+            Symbols.draw(getContext(), c, "music", ax, cy, ad * 0.55f, 0xFFFFFFFF);
+        }
+        float ta = Ui.clamp((e - 0.55f) / 0.4f);
+        if (ta > 0.01f && islandTitle != null) {
+            c.save();
+            c.clipRect(islandNow);
+            float tx = islandNow.left + pad + ad + 16 * k;
+            islandTitlePaint.setAlpha(Math.round(255 * ta));
+            boolean two = !islandSub.isEmpty();
+            c.drawText(islandTitle, tx, two ? cy - 3 * k : cy + Ui.halfCap(islandTitlePaint), islandTitlePaint);
+            if (two) {
+                islandSubPaint.setAlpha(Math.round(0xA6 * ta));
+                c.drawText(islandSub, tx, cy + 23 * k, islandSubPaint);
+            }
+            // Play/pause, the one control (OK), in a slot as big as the art at the right end.
+            float gx = islandNow.right - pad - ad / 2, g = k;
+            fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
+            if (playing.mediaPlaying) {
+                c.drawRoundRect(gx - 9 * g, cy - 12 * g, gx - 3 * g, cy + 12 * g, 2 * g, 2 * g, fill);
+                c.drawRoundRect(gx + 3 * g, cy - 12 * g, gx + 9 * g, cy + 12 * g, 2 * g, 2 * g, fill);
+            } else {
+                mediaGlyph.reset();
+                mediaGlyph.moveTo(gx - 8 * g, cy - 13 * g);
+                mediaGlyph.lineTo(gx - 8 * g, cy + 13 * g);
+                mediaGlyph.lineTo(gx + 12 * g, cy);
+                mediaGlyph.close();
+                c.drawPath(mediaGlyph, fill);
+            }
+            c.restore();
+        }
         c.restore();
     }
 
@@ -7930,11 +8131,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 break;
             case Z_STATUS:
-                // The pill, then Control Center's bubble (only while something plays), end the bar's row: ← to the round buttons, then the tabs.
-                if (dx > 0 && onBubble) {
+                // The pill, Control Center's bubble, then the dynamic dot (while something plays) end the bar's row:
+                // ← to the round buttons, then the tabs.
+                if (dx > 0 && onIsland) {
+                    onIsland = false;   // → from the dot: the bubble
+                    onBubble = true;
+                } else if (dx > 0 && onBubble) {
                     onBubble = false;   // → from the bubble: the pill
-                } else if (dx < 0 && !onBubble && bubbleLive()) {
-                    onBubble = true;    // ← from the pill: the bubble, while something plays
+                } else if (dx < 0 && !onBubble && !onIsland) {
+                    onBubble = true;    // ← from the pill: the bubble
+                } else if (dx < 0 && onBubble && islandLive()) {
+                    onBubble = false;   // ← from the bubble: the dot
+                    onIsland = true;
                 } else if (dx < 0 && topFromTab >= 0) {
                     zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
                     topIndex = topFromTab;
@@ -7957,7 +8165,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                         topFromTab = -1;
-                        onBubble = bubbleLive();   // the bubble (while something plays) comes first, then the pill
+                        onIsland = islandLive();   // the dot (while something plays) comes first, then the bubble
+                        onBubble = !onIsland;
                     } else if (next < 0) {
                         deadEnd(dx, 0);
                         return true;
@@ -7971,7 +8180,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the tabs.
                     topFromTab = topIndex < 3 ? topIndex : -1;
                     zone = Z_STATUS;
-                    onBubble = bubbleLive();
+                    onBubble = true;
+                    onIsland = false;
                 }
                 break;
             case Z_HOUSE:

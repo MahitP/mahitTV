@@ -118,6 +118,7 @@ if [ "$what" = all ] || [ "$what" = web ]; then
   node tools/web-sound-test.js  # the interface sounds: tick, knock, select, sheets, the hold's tension, the setting
   node tools/web-layout-test.js   # moving apps: the board and folder names, as AppLayoutTest
   node tools/web-move-test.js     # moving apps in the browser: hold, Back, a new folder, kept after a reload
+  node tools/web-island-test.js   # the dynamic dot: dot, bubble, pill; opens without overlapping; goes when paused
 
   python3 webos/build.py --generic
   python3 tizen/build.py --generic

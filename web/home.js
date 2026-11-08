@@ -738,6 +738,7 @@
   // mid-swap); drawer: Control Center 0..1; full: the Top Shelf's full screen 0..1; dock: the Dock's scroll (px);
   // par: the art's counter-parallax (px); launch/wake: the page receding for an app, and back from the screensaver.
   var AIRPODS_TOAST = [0.38, 0.82];
+  var ISLAND_OPEN = [0.40, 0.76], ISLAND_CLOSE = [0.30, 0.92];
   var mv = {
     lift: spring(P.SPATIAL_SCROLL).px(), tab: spring(P.TAB_SWAP), drawer: spring(P.SHEET_OPEN), full: spring(P.SPATIAL_SCROLL),
     dock: spring(P.SPATIAL_SCROLL).px(), par: spring(P.SPATIAL_SCROLL).px(), launch: spring(P.SHEET_OPEN), wake: spring(P.TAB_SWAP),
@@ -748,7 +749,9 @@
     // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
     brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px(),
     // air: the AirPods card at the top right (0 hidden, 1 in place).
-    air: spring(AIRPODS_TOAST)
+    air: spring(AIRPODS_TOAST),
+    // The dynamic dot: there (0..1) and open (0..1, a little past on the way: it springs like the Dynamic Island).
+    islandShown: spring(P.LIQUID_PILL), islandOpen: spring(ISLAND_OPEN)
   };
   var detail = [spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE), spring(P.TITLE_SETTLE)];
   var rowLag = [], gridRows = [], drawerRows = [], sheetSprings = {}, holders = {};
@@ -899,6 +902,7 @@
     drawMove();
     drawCard();
     drawAir();
+    drawIsland();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
     for (var id in sheetSprings) {
@@ -949,6 +953,7 @@
     if (fxPill) fxPill.focus(onPill);
     setClass($('ccbtn'), 'focus', onBubble);
     if (fxBubble) fxBubble.focus(onBubble);
+    focusIsland();
     focusList(fxFolder, st.zone === Z.FOLDER, st.folder);
     setClass($('watch'), 'focus', st.zone === Z.HERO);
     if (fxWatch) fxWatch.focus(st.zone === Z.HERO);
@@ -1177,6 +1182,7 @@
     hover($('watch'), Z.HERO, 0);
     if (!fxPill) fxPill = new Fx($('pill'), {grow: 0.08, avatar: $('pill').querySelector('.avatar')});
     if (!fxBubble) { sym('controls', $('ccbtn')); fxBubble = new Fx($('ccbtn'), {grow: 0.12}); }
+    buildIsland();
     if (!fxWatch) fxWatch = new Fx($('watch'), {grow: 0.08});
     renderPill();
   }
@@ -1202,17 +1208,141 @@
     avatar.setAttribute('data-url', url);
     avatar.style.backgroundImage = url;
     Profiles.fitAvatar(person(), avatar);
-    // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes. On Google TV the bubble shows only
-    // while something plays (HomeView.showBubble); LG and Samsung can't tell what's playing, so here it always shows: it
-    // is the one way into Control Center once All Apps takes ↓ from the Dock.
+    // Right to left: the pill, Control Center's bubble 14 px from it, the dynamic dot 14 px from that (while something
+    // plays), then the quotes.
     $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
-    var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24;
+    var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24 + (islandLive ? ISLAND_D + 14 : 0);
+    if (island) island.node.style.right = (45 + pill.offsetWidth + 14 + 48 + 14) + 'px';
     if (air) {
       air.style.right = (right - 8) + 'px';
       setClass(air, 'on', !!airpods);
       if (airpods) right += 40 + 14;
     }
     $('quotes').style.right = right + 'px';
+    layoutIsland();
+  }
+
+  // MARK: - The dynamic dot (DESIGN-DYNAMIC-DOT.md)
+  // Left of Control Center's bubble while something plays: a black dot with the art, as the Dynamic Island's detached
+  // circle; focused, it opens leftward into a capsule with the title and play/pause. Only the preview knows what's
+  // playing (its sample song): no LG or Samsung TV tells a web app, so there it never shows.
+
+  var ISLAND_D = 48, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_PAUSE = 30000, ISLAND_TAB_GAP = 32;
+  var island = null, islandLive = false, islandW = ISLAND_D, islandLeft = 0, islandPausedUntil = 0, islandWasPlaying = false;
+  var islandTimer = null;
+
+  function islandMedia() { return PREVIEW ? previewMedia : null; }
+  function onIsland() { return st.zone === Z.TOP && st.top === 2; }
+
+  function buildIsland() {
+    if (island) return;
+    var n = el('div', '', $('top'));
+    n.id = 'island';
+    island = {node: n, l: el('span', 'cap l', n), m: el('span', 'mid', n), r: el('span', 'cap r', n), art: el('span', 'art', n)};
+    sym('music', island.art);
+    island.txt = el('span', 'txt', n);
+    island.t = el('span', 't', island.txt);
+    island.s = el('span', 's', island.txt);
+    island.pp = el('span', 'pp', n);
+    el('i', '', island.pp);
+    el('i', '', island.pp);
+    hover(n, Z.TOP, 2);
+    islandUpdate();
+  }
+
+  /**
+   * Whether the dot is there: while the song plays, for ISLAND_PAUSE after it pauses, and while it has the focus (so
+   * OK can play it again). It goes back under the bubble when it leaves, and the focus on it moves to the bubble.
+   */
+  function islandUpdate() {
+    var m = islandMedia(), now = Date.now(), playingNow = !!(m && m.playing);
+    if (islandWasPlaying && !playingNow && m) {
+      islandPausedUntil = now + ISLAND_PAUSE;
+      clearTimeout(islandTimer);
+      islandTimer = setTimeout(islandUpdate, ISLAND_PAUSE + 50);
+    }
+    islandWasPlaying = playingNow;
+    if (island && m) {
+      var song = m.songs[m.at];
+      island.t.textContent = song[0];
+      island.s.textContent = song[1];
+      setClass(island.pp, 'paused', !m.playing);
+    }
+    var live = !!m && (playingNow || now < islandPausedUntil || onIsland());
+    if (live === islandLive) return;
+    islandLive = live;
+    mv.islandShown.set(live ? 1 : 0);
+    if (Motion.instant) mv.islandShown.snap(live ? 1 : 0);
+    if (!live && onIsland()) { st.top = 3; updateFocus(); }   // it went away under the focus: the bubble beside it
+    renderPill();
+    Motion.kick();
+  }
+
+  /**
+   * The row's left end, and the dot's open width: what the title needs
+   * (at most ISLAND_TEXT) but never more than the room up to the tab bar plus how far the bar can slide; the title is
+   * cut to what's left.
+   */
+  function layoutIsland() {
+    if (!island) return;
+    // The leftmost thing laid out in the row (offsetLeft: where it rests, without the slide drawIsland gives it).
+    var quotes = $('quotes'), tabs = $('tabs');
+    islandLeft = islandLive ? island.node.offsetLeft : $('ccbtn').offsetLeft;
+    if (airpods) islandLeft = Math.min(islandLeft, $('airglyph').offsetLeft);
+    if (quotes.textContent) islandLeft = Math.min(islandLeft, quotes.offsetLeft);
+    // + 2: scrollWidth is rounded, and a width a fraction short of the text cuts its last letters with "…".
+    var want = Math.min(ISLAND_TEXT, Math.max(island.t.scrollWidth, island.s.scrollWidth) + 2), frame = 160;
+    var tw = tabs.offsetWidth, tabsRight = 960 + tw / 2, tabsLeft = 960 - tw / 2;
+    var room = ISLAND_D + Math.max(0, islandLeft - ISLAND_TAB_GAP - tabsRight) + Math.max(0, tabsLeft - 80);
+    islandW = Math.max(ISLAND_D, Math.min(want + frame, room));
+    island.txt.style.left = (ISLAND_D - islandW + 80) + 'px';
+    island.t.style.width = island.s.style.width = Math.max(0, islandW - frame) + 'px';
+  }
+
+  function focusIsland() {
+    if (!island) return;
+    var open = onIsland() && islandLive ? 1 : 0;
+    if (mv.islandOpen.target === open) return;
+    if (open) renderPill();   // measured again as it opens: the title's font may have come in since
+    mv.islandOpen.tune(open ? ISLAND_OPEN : ISLAND_CLOSE).set(open);   // closing is brisker than opening
+    Motion.kick();
+    if (!open && islandLive) islandUpdate();   // left it paused: it may go now
+  }
+
+  /** OK on the dot: play or pause, its one control. */
+  function islandToggle() {
+    var m = islandMedia();
+    if (!m) return;
+    m.playing = !m.playing;
+    Sound.toggle(m.playing);
+    islandUpdate();
+    if (ccMode === 'controls' && st.zone === Z.DRAWER) renderDrawer();
+  }
+
+  /** One frame: the shape from its caps and middle, the art on a concentric margin, the row and the tab bar making room. */
+  function drawIsland() {
+    if (!island) return;
+    var sv = mv.islandShown.x, e = Math.max(0, mv.islandOpen.x), ec = Motion.clamp(e, 0, 1), d = ISLAND_D;
+    var w = d + (islandW - d) * e, h = Math.max(d * 0.9, d + (ISLAND_H - d) * e), s = h / d, left = d - w, cap = 24 * s;
+    var shown = Motion.clamp(sv, 0, 1), grow = Math.max(0, 0.35 + 0.65 * sv), slide = (14 + d * 0.7) * (1 - shown);
+    T(island.node, 'translateX(' + r2(slide) + 'px) scale(' + r4(grow) + ')');
+    A(island.node, Motion.clamp(sv * 3, 0, 1));
+    V(island.node, shown);
+    T(island.l, 'translateX(' + r2(left) + 'px) scale(' + r4(s) + ')');
+    T(island.m, 'translateX(' + r2(left + cap - 0.5) + 'px) scale(' + r2(Math.max(0, w - 2 * cap) + 1) + ',' + r4(s) + ')');
+    T(island.r, 'translateX(' + r2(d - cap) + 'px) scale(' + r4(s) + ')');
+    var pad = 6 + 2 * ec, ad = Math.max(0, h - 2 * pad);
+    T(island.art, 'translate(' + r2(left + pad) + 'px,' + r2(24 - ad / 2) + 'px) scale(' + r4(ad / 56) + ')');
+    var ta = Motion.clamp((e - 0.55) / 0.4, 0, 1);
+    A(island.txt, ta);
+    A(island.pp, ta);
+    // Everything left of it is laid out for the dot at rest: it slides as the dot comes, goes, opens and closes.
+    var room = shown * (d + 14 + e * (islandW - d)), shift = (islandLive ? d + 14 : 0) - room;
+    T($('airglyph'), 'translateX(' + r2(shift) + 'px)');
+    T($('quotes'), 'translateX(' + r2(shift) + 'px)');
+    var tw = $('tabs').offsetWidth, over = 960 + tw / 2 + ISLAND_TAB_GAP - (islandLeft + shift);
+    var tabShift = over <= 0 ? 0 : Math.min(over, Math.max(0, 960 - tw / 2 - 80));
+    T($('tabs'), 'translateX(-50%) translateX(' + r2(-tabShift) + 'px)');
   }
 
   function renderQuotes() {
@@ -1915,11 +2045,13 @@
       sub.textContent = s[1];
       setClass(play, 'paused', !previewMedia.playing);
     }
-    var item = ccAdd(v, new Fx(v, {grow: 0.02}), function () { previewMedia.playing = !previewMedia.playing; show(); }, 'hslider', CC.body / 2);
+    var item = ccAdd(v, new Fx(v, {grow: 0.02}), function () { previewMedia.playing = !previewMedia.playing; show(); islandUpdate(); }, 'hslider', CC.body / 2);
     item.step = function (dx) {
       var n = previewMedia.songs.length;
       previewMedia.at = (previewMedia.at + (dx > 0 ? 1 : n - 1)) % n;
       show();
+      islandUpdate();
+      renderPill();
     };
     show();
   }
@@ -4373,6 +4505,7 @@
         Welly.ok();
         return;
       case Z.TOP:
+        if (st.top === 2) { islandToggle(); return; }   // the dynamic dot: play or pause
         openDrawer(st.top === 3 ? 'controls' : 'profile');   // the bubble: Control Center; the pill: the profile panel
         return;
       case Z.HERO:
@@ -4475,7 +4608,7 @@
         break;
       case Z.TABS:
         // ← → walk TV · Home · Welly · the pill; focusing a tab selects it, as on tvOS.
-        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = 3; topFromTab = null; }
+        if (dx > 0 && st.tab === TAB.WELLY) { st.zone = Z.TOP; st.top = islandLive ? 2 : 3; topFromTab = null; }
         else if (dx) st.tab = Math.max(0, Math.min(TAB.WELLY, st.tab + dx));
         else if (dy > 0) enterTab();
         // ↑ from the tabs: Control Center's bubble, without walking across (and switching) the other tabs.
@@ -4488,8 +4621,10 @@
         if (!Welly.move(dx, dy)) st.zone = Z.TABS;
         break;
       case Z.TOP:
-        if (dx > 0 && st.top === 3) st.top = 4;
+        if (dx > 0 && st.top === 2) st.top = 3;
+        else if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;
+        else if (dx < 0 && st.top === 3 && islandLive) st.top = 2;   // ← from the bubble: the dynamic dot
         // ← from the bubble: the tab it was reached from with ↑, else the nearest one (Welly).
         else if (dx < 0) { st.zone = Z.TABS; st.tab = topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
         else if (dy > 0) { topFromTab = null; enterTab(); }
@@ -5089,6 +5224,13 @@
       st.wallpaperPane = 1;
       renderWallpaperPicker(); updateFocus();
       return {category: categories[st.wallpaperCategory], option: options[st.wallpaperOption]};
+    };
+    // The dynamic dot's tests: the sample song played or paused, and the pause's grace shortened.
+    window.Home.testIsland = function (o) {
+      o = o || {};
+      if (o.grace !== undefined) ISLAND_PAUSE = o.grace;
+      if (o.playing !== undefined) { previewMedia.playing = o.playing; islandUpdate(); }
+      return {live: islandLive, open: mv.islandOpen.target, width: islandW, playing: previewMedia.playing};
     };
     window.Home.testBackground = function (o) {
       o = o || {};

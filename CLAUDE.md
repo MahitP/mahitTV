@@ -472,9 +472,10 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   It unbinds itself as soon as it connects (the permission is all it's for), and the home screen and the screensaver
   watch the sessions only while they show. The line is cut to fit when the title changes, never while drawing; the
   status pill shows nothing for it (no bars, no wider pill), and TalkBack announces a new title (`Watch.title`).
-  Control Center's round bubble left of the pill shows only while something plays (`HomeView.showBubble`, as the
-  Dynamic Island's circle); otherwise ↓ from the Dock opens Control Center. The web app keeps its bubble: no LG or
-  Samsung TV can tell what's playing.
+  The dynamic dot (`DESIGN-DYNAMIC-DOT.md`): left of Control Center's bubble, only while a song plays (30 s after a
+  pause, and while focused), a black dot with the art (`Watch.mediaArt`); focused, it opens into a capsule with the
+  title and play/pause (OK). Everything left of it slides to make room, the tab bar too when it must, never under it.
+  The web app has it too (`#island`), shown only in the preview: LG and Samsung can't tell what's playing.
 - *At power-on* (Home Settings, `Prefs.powerOn()`: `tv`, the default, `home` or `live`; #396, #346) acts only after a
   full start, never on a wake from standby. `HomeActivity` keeps the uptime of the first time the home screen came up
   in this start (`HomeMode.noteHomeShown`, the file `home-shown` with `Settings.Global.BOOT_COUNT`). `live`: 10 s later,
