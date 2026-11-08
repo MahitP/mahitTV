@@ -1213,24 +1213,6 @@
     $('quotes').style.right = right + 'px';
   }
 
-  /** What's playing (or a timer), when the TV tells us: the pill widens to show it with three moving bars. */
-  function nowPlaying(text) {
-    var pill = $('pill'), np = pill.querySelector('.np');
-    if (!text) {
-      if (np) { setClass(pill, 'playing', false); setTimeout(function () { if (np.parentNode && !hasClass(pill, 'playing')) pill.removeChild(np); renderPill(); }, 260); }
-      return;
-    }
-    if (!np) {
-      np = el('span', 'np');
-      pill.insertBefore(np, pill.firstChild);
-      for (var i = 0; i < 3; i++) el('span', 'bar', np);
-      el('span', 'what', np);
-    }
-    np.lastChild.textContent = text;
-    setClass(pill, 'playing', true);
-    renderPill();
-  }
-
   function renderQuotes() {
     var q = $('quotes'), coins = Data.activeCoins();
     q.innerHTML = '';
@@ -5090,9 +5072,7 @@
     setup: function (n) { runSetup(); if (n) Setup.go(n); },
     cc: function () { return ccItems.map(function (it) { return {kind: it.kind, label: it.spec ? it.spec.label : it.node.textContent, row: it.row}; }); },
     saverOn: function () { return saverOn; },
-    volume: function () { return {level: volumeLevel, muted: volumeMuted, shown: !!hud && mv.hud.to === 1}; },
-    // What's playing or a timer, when a TV can tell (none can yet on webOS/Tizen): the pill widens to show it.
-    nowPlaying: nowPlaying};
+    volume: function () { return {level: volumeLevel, muted: volumeMuted, shown: !!hud && mv.hud.to === 1}; }};
   // Preview-only controller seam for deterministic browser tests.  It calls the
   // same focus/background path as a remote key; production packages have no
   // PREVIEW_BUILD and never expose it.

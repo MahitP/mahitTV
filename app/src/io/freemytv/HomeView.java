@@ -519,8 +519,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Layer chevronLayer;
     private final Spring chevronShown = new Spring(Spring.SNAPPY_FOCUS, 0);
     private float chevronAlpha, chevronY;
-    /** The status pill: wider while something plays (its equalizer); its avatar cross-dissolving on a profile switch. */
-    private final Spring pillWide = new Spring(Spring.LIQUID_PILL, 0), avatarFade = new Spring(Spring.ROOM_FADE, 1);
+    /** The status pill's avatar, cross-dissolving on a profile switch. The pill keeps its size while something plays. */
+    private final Spring avatarFade = new Spring(Spring.ROOM_FADE, 1);
     private Bitmap pillAvatarFrom;
     private int pillAvatarProfile = -1;
     private final android.graphics.Path pillClip = new android.graphics.Path();
@@ -1265,11 +1265,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean kenMoving = kenBurns(up);
         if (titleMoving) heroLayer.invalidate();
         if (kenMoving || parallaxMoving) sky.invalidate();
-        boolean pillMoving = pillWide.step(dt) | avatarFade.step(dt);
-        boolean barsMoving = playingTab != null && up < barsUntil;
-        if (pillMoving || barsMoving) {
+        boolean pillMoving = avatarFade.step(dt);
+        if (pillMoving) {
             status.invalidate();
-            if (pillMoving) tabBar.invalidate();
+            tabBar.invalidate();
         }
         boolean chevronMoving = chevronShown.step(dt) | breathe(up);
         // Control Center's rows come in one after another while it opens.
@@ -1336,7 +1335,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Busy: something is moving. At rest, one frame a second (the clock), or when the toast on screen ends.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving || scrollMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tabMoving || lensMoving
-                || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving || barsMoving
+                || nudging || homeMoving || titleMoving || parallaxMoving || kenMoving || pillMoving
                 || chevronMoving || ccStagger || airMoving || moveMoving || launching || !toasts.isEmpty();
         idle = !busy;
         if (busy) {
@@ -2375,17 +2374,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // What's playing, cut to fit the tab row and the clock's row: once per title, never while drawing.
     private String playingTab, playingClock;
     private float playingTabWidth, playingTabCap, playingClockCap;
-    private final RectF barRect = new RectF();
-    // The bars bounce for a few seconds when the screen shows or the title changes, then stand still: bouncing all
-    // along redrew the top layer 10 times a second (~8% of a core on a Skyworth's Cortex-A55), the still screen nothing.
-    private static final long BARS_BOUNCE_MS = 3000;
-    private long barsUntil;
-    /** The equalizer in the status pill bounces for a few seconds (driven by the frame loop), then stands still. */
-    private void bounceBars() {
-        if (playingTab == null) return;
-        barsUntil = SystemClock.uptimeMillis() + BARS_BOUNCE_MS;
-        wake();
-    }
 
     private String shownTitle;   // kept while the screen is hidden: showing it again with the same title is no change
 
@@ -2393,13 +2381,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void onPlaying() {
         fitPlaying();
         heroDirty = statusDirty = true;
-        pillWide.target = playing.text != null ? 1 : 0;   // the pill widens for its equalizer
         refreshMedia();
         wake();
         String title = playing.title, now = playing.text;
         if (NowPlaying.newTitle(title, now, running, shownTitle)) {
             shownTitle = title;
-            bounceBars();
             if (readerOn()) announceForAccessibility(Ui.trf("Now playing: {what}", "what", now.replace(" · ", ", ")));
         }
     }
@@ -2471,9 +2457,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // What an app is playing takes the quotes' place while it plays.
         String line = clock ? playingClock : playingTab;
         if (line != null) {
-            float cap = clock ? playingClockCap : playingTabCap, gap = cap * 0.6f;
+            float cap = clock ? playingClockCap : playingTabCap;
             float base = clock ? L_QUOTES_BASE * k : (L_TABBAR_TOP + L_TABBAR_H / 2) * k + cap / 2;
-            // The equalizer is in the status pill now; here only the title.
+            // Only the title: no equalizer anywhere on the home screen.
             float x = clock ? MARGIN * k : right - playingTabWidth;
             c.drawText(line, x, base, text);
             text.setColor(textColor);
@@ -7667,7 +7653,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         applyTone();
         drawPill(c);
         c.save();
-        c.translate(-pillExtra(), 0);   // the buttons make room while the pill is wide
         for (int i = 0; i < lightButtons.size(); i++) {
             HomeApps.Item it = lightButtons.get(i);
             RectF r = topRects[3 + i];
@@ -7744,11 +7729,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawPill(Canvas c) {
         if (pillRect.isEmpty()) return;
         // Focused: 1.08× with a brighter rim, then white with ink; the Memoji pops 1.12× inside its circle. Something
-        // playing: the pill widens (LIQUID_PILL) to show a three-bar equalizer before the time.
+        // playing changes nothing here: no equalizer, no wider pill (it pushed into Control Center's button).
         float f = Ui.clamp(pillFocus.value), s = 1 + 0.08f * pillFocus.value - PRESS * press.value * f;
-        float rr = pillRect.height() / 2, cap = Ui.cap(tvPill), wide = Ui.clamp(pillWide.value);
-        float extra = pillExtra();
-        pillNow.set(pillRect.left - extra, pillRect.top, pillRect.right, pillRect.bottom);
+        float rr = pillRect.height() / 2;
+        pillNow.set(pillRect);
         c.save();
         c.translate(bumpX * f, bumpY * f);
         c.scale(s, s, pillNow.centerX(), pillNow.centerY());
@@ -7766,11 +7750,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int ink = blend(0xFFFFFFFF, INK, white);
         tvPill.setColor(ink);
         float base = pillNow.centerY() + Ui.halfCap(tvPill);
-        if (wide > 0.01f) {
-            fill.setShader(null);
-            fill.setColor(Ui.alpha(ink, wide));
-            NowPlaying.drawBars(c, pillNow.left + 24 * k, base, cap, fill, SystemClock.uptimeMillis() < barsUntil && !Spring.instant, barRect);
-        }
         c.drawText(clockText, pillRect.left + 24 * k, base, tvPill);
         if (pillAvatar != null) {
             float d = PILL_AVATAR * k, ax = pillNow.right - 4 * k - d, ay = pillNow.centerY() - d / 2;
@@ -7870,12 +7849,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.drawText(airShown, tx, tmp.centerY() - 4 * k, airTitle);
         c.drawText(sub, tx, tmp.centerY() + 24 * k, airSub);
         c.restoreToCount(save);
-    }
-
-    /** How much wider the pill is now (its equalizer), px. */
-    private float pillExtra() {
-        float cap = tvPill == null ? 0 : Ui.cap(tvPill);
-        return (NowPlaying.barsWidth(cap) + 14 * k) * Ui.clamp(pillWide.value);
     }
 
     private boolean moveLight(int dx, int dy) {
