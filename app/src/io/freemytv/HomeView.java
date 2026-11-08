@@ -407,7 +407,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private RecentsOverlay recentsOverlay;
     private VolumeHud volumeHud;
     private boolean volumeKeyDown;   // the volume key whose press we took (its release is ours too)
-    private final long[] volumeHeld = new long[1];   // when the held volume key last stepped
+    private final long[] volumeHeld = new long[2];   // the held volume key's last step and press (RemoteKeys.heldSteps)
     private int profileIndex;
     private int pickIndex, heroSlide = 1;
     private Hero hero, heroFrom;
@@ -551,9 +551,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** There (0..1), open (0..1), its open width (px), and the step from one activity to the next (0..1). */
     private final Spring islandShown = new Spring(Spring.LIQUID_PILL, 0), islandOpen = new Spring(ISLAND_OPEN, 0);
     private final Spring islandWidth = new Spring(Spring.LIQUID_PILL, 0), islandSwap = new Spring(ISLAND_SWAP, 1);
-    private boolean onIsland, islandFocused, islandWasPlaying, sleepEnds, dndOn;
+    private boolean onIsland, islandFocused, islandWasPlaying, sleepDown, sleepUp, dndOn;
     private int islandAt;          // the activity the focus is on, while onIsland
-    private int islandCtrl = 1;    // what's playing, focused: ⏮ (0), ⏯ (1) or ⏭ (2)
+    private int islandCtrl = 1;    // focused, what's playing: ⏮ (0) ⏯ (1) ⏭ (2); the sleep timer: − (0) + (1) × (2)
     private int islandShows = -1;  // the activity the dot shows
     private int islandFrom = -1, islandDir = 1;   // while it steps: the one leaving, and which way (1: ↓)
     private long islandPausedUntil, airAlertUntil;
@@ -1133,7 +1133,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         welly.layout(0, 0, width, height);
         weatherOverlay.layout(0, 0, width, height);
         recentsOverlay.layout(0, 0, width, height);
-        place(volumeHud, 0, Math.round(VolumeHud.CENTER_Y * kk) - volumeHud.getMeasuredHeight() / 2);   // where an iPhone's buttons are
+        place(volumeHud, 0, Math.round(VolumeHud.CENTER_Y * kk) - volumeHud.getMeasuredHeight() / 2);   // the middle of the left edge
         lock.layout(0, 0, width, height);
         welcome.layout(0, 0, width, height);
         intro.layout(0, 0, width, height);
@@ -1561,10 +1561,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void updateSleep() {
-        boolean here = Prefs.sleepShown() && !android.provider.Settings.canDrawOverlays(getContext());   // else SleepOverlay
-        int left = here ? SleepTimer.minutesLeft(getContext()) : 0;
+        int left = SleepTimer.minutesLeft(getContext());   // only the dynamic dot shows it now (no banner over the apps)
         String text = left == 0 ? "" : Ui.trf("Off in {time}", "time", SleepTimer.duration(left));
-        sleepEnds = here && nextSleep() == 0;
+        sleepDown = left > 0 && sleepStep(left, -1) > 0;
+        sleepUp = left > 0 && sleepStep(left, 1) > 0;
         if (text.equals(sleepText)) return;
         sleepText = text;   // the sleep timer's live activity (the dynamic dot) shows it
         updateIsland();
@@ -2600,10 +2600,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (islandAt == LIVE_FOCUS) {
             click.toggle(false);
             toggleDnd();   // Do Not Disturb off (Control Center turns it back on)
+        } else if (islandAt == LIVE_SLEEP && islandCtrl == 2) {
+            click.toggle(false);
+            setSleep(0);   // ×: the timer off, and with it this activity
         } else if (islandAt == LIVE_SLEEP) {
-            int next = nextSleep();   // tvOS's presets, as Control Center's tile: 15 min, 30 min, 1 h, 2 h, off
-            click.toggle(next > 0);
-            setSleep(next);
+            // − and +: the presets only (15 min, 30 min, 1 h, 2 h), the one below or above the time left; none: the knock.
+            int dir = islandCtrl == 0 ? -1 : 1, to = sleepStep(SleepTimer.minutesLeft(getContext()), dir);
+            if (to > 0) {
+                click.open();
+                setSleep(to);
+            } else {
+                deadEnd(dir, 0);
+            }
         } else {
             click.open();   // AirPods: Control Center, with Listen Alone and the volume
             openDrawer(false);
@@ -2634,6 +2642,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 readDnd();
             });
         });
+    }
+
+    /** The preset below (dir −1) or above (+1) `left` minutes, or 0 where there's none. */
+    private static int sleepStep(int left, int dir) {
+        if (dir > 0) {
+            for (int m : SLEEP_PRESETS) if (m > left + 1) return m;
+            return 0;
+        }
+        int to = 0;
+        for (int m : SLEEP_PRESETS) if (m < left - 1) to = m;
+        return to;
     }
 
     private int nextSleep() {
@@ -5076,7 +5095,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         volumeKeyDown = true;
         if (e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_MUTE && e.getRepeatCount() > 0) return true;
-        final int steps = RemoteKeys.heldSteps(e, volumeHeld);   // 1 a press, 5 a step while held
+        final int steps = RemoteKeys.heldSteps(e, volumeHeld);   // 1 a press, faster and faster while held
         if (steps == 0) return true;
         final int dir = RemoteKeys.volumeDirection(e.getKeyCode());
         final Context c = getContext().getApplicationContext();
@@ -5115,7 +5134,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     };
 
-    private final long[] brightHeld = new long[1];   // when the held channel key last stepped
+    private final long[] brightHeld = new long[2];   // the held channel key's last step and press (RemoteKeys.heldSteps)
 
     /** Power: off locks at once (nothing of the home shows when it comes back on), on plays the intro and the lock. */
     private final BroadcastReceiver screenPower = new BroadcastReceiver() {
@@ -7572,7 +7591,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width() - ISLAND_SPACE * k;
         for (int i = 0; i < lives.length; i++) {
             Live l = lives[i];
-            float frame = (80 + (i == LIVE_MUSIC ? 164 : 80)) * k;   // what's playing: ⏮ ⏯ ⏭; the rest: one control
+            float frame = (80 + (i == LIVE_MUSIC || i == LIVE_SLEEP ? 164 : 80)) * k;   // ⏮ ⏯ ⏭ or − + ×; else one control
             float want = Math.min(ISLAND_TEXT * k, Math.max(islandTitlePaint.measureText(l.title), islandSubPaint.measureText(l.sub)));
             l.w = Math.max(d, Math.min(want + frame, room));
             float text = Math.max(0, l.w - frame);
@@ -8220,19 +8239,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // circle with an ink glyph (the tvOS focus), so it's clear the focus is in the dot.
         boolean focused = zone == Z_STATUS && onIsland && islandAt == i && !sheetOpen;
         fill.setShader(null);
-        if (i == LIVE_MUSIC) {
-            float slot = 48 * k, g2 = islandNow.right - 12 * k - slot / 2, g1 = g2 - slot, g0 = g1 - slot;
+        if (i == LIVE_MUSIC || i == LIVE_SLEEP) {
+            // Three controls: ⏮ ⏯ ⏭, or − + × for the sleep timer (a preset down or up, or off); one that can't is dim.
+            float slot = 48 * k, g2 = islandNow.right - 12 * k - slot / 2, g1 = g2 - slot, g0 = g1 - slot, g = k;
             for (int b = 0; b < 3; b++) {
                 float gx = b == 0 ? g0 : b == 1 ? g1 : g2;
-                boolean on = focused && islandCtrl == b, can = b == 1 || playing.canSkip(b == 0 ? -1 : 1);
+                boolean on = focused && islandCtrl == b;
+                boolean can = i == LIVE_MUSIC ? b == 1 || playing.canSkip(b == 0 ? -1 : 1) : b == 2 || (b == 0 ? sleepDown : sleepUp);
                 int ink = on ? INK : 0xFFFFFFFF;
                 if (on) {
                     fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
                     c.drawCircle(gx, cy, 22 * k, fill);
                 }
                 int color = Ui.alpha(ink, ta * (can ? 1 : 0.35f));
-                if (b == 1) drawPlayPause(c, gx, cy, color);
-                else mediaSkip(c, gx, cy, b == 0 ? -1 : 1, color);
+                if (i == LIVE_MUSIC) {
+                    if (b == 1) drawPlayPause(c, gx, cy, color);
+                    else mediaSkip(c, gx, cy, b == 0 ? -1 : 1, color);
+                } else {
+                    fill.setColor(color);
+                    c.save();
+                    if (b == 2) c.rotate(45, gx, cy);
+                    c.drawRoundRect(gx - 10 * g, cy - 2 * g, gx + 10 * g, cy + 2 * g, 2 * g, 2 * g, fill);
+                    if (b > 0) c.drawRoundRect(gx - 2 * g, cy - 10 * g, gx + 2 * g, cy + 10 * g, 2 * g, 2 * g, fill);
+                    c.restore();
+                }
             }
         } else {
             float gx = islandNow.right - pad - ad / 2, g = k;
@@ -8244,10 +8274,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (i == LIVE_AIR) {
                 Symbols.draw(getContext(), c, "chevron_right", gx, cy, 22 * k, color);   // Control Center
             } else {
-                // + for the sleep timer's next preset; × to turn it (or Do Not Disturb) off.
+                // × to turn Do Not Disturb off.
                 fill.setColor(color);
                 c.save();
-                if (i == LIVE_FOCUS || sleepEnds) c.rotate(45, gx, cy);
+                c.rotate(45, gx, cy);
                 c.drawRoundRect(gx - 11 * g, cy - 2 * g, gx + 11 * g, cy + 2 * g, 2 * g, 2 * g, fill);
                 c.drawRoundRect(gx - 2 * g, cy - 11 * g, gx + 2 * g, cy + 11 * g, 2 * g, 2 * g, fill);
                 c.restore();
@@ -8357,8 +8387,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         islandCtrl = 1;   // on ⏯
                         break;
                     }
-                    if (islandAt == LIVE_MUSIC && islandCtrl + dx >= 0 && islandCtrl + dx <= 2) {
-                        islandCtrl += dx;   // ← → between ⏮ ⏯ ⏭; past them, out of the dot
+                    if ((islandAt == LIVE_MUSIC || islandAt == LIVE_SLEEP) && islandCtrl + dx >= 0 && islandCtrl + dx <= 2) {
+                        islandCtrl += dx;   // ← → between ⏮ ⏯ ⏭ (or − + ×); past them, out of the dot
                         tabBar.invalidate();
                         break;
                     }

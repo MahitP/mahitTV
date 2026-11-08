@@ -285,7 +285,7 @@ final class RemoteKeys {
     }
 
     private static boolean channelDown;
-    private static final long[] channelHeld = new long[1];
+    private static final long[] channelHeld = new long[2];
 
     /**
      * A channel key, anywhere while mahitTV is the home screen: the brightness instead of the channel (the owner never
@@ -317,23 +317,30 @@ final class RemoteKeys {
         return true;
     }
 
-    /** How often a held volume or channel key steps (its repeats come faster: the others are skipped). */
-    static final long HELD_STEP_MS = 140;
-    private static final long[] volumeHeld = new long[1];
+    /** The fastest a held volume or channel key steps (repeats that come sooner wait for the next). */
+    static final long HELD_STEP_MS = 60;
+    /** Held: percent a second, from HELD_SLOW, speeding up to HELD_FAST over HELD_RAMP_MS (after HELD_RAMP_AT). */
+    static final float HELD_SLOW = 30, HELD_FAST = 140;
+    static final long HELD_RAMP_AT = 300, HELD_RAMP_MS = 700;
+    private static final long[] volumeHeld = new long[2];
 
     /**
-     * As an iPhone's volume buttons: a press is one step, and held, each HELD_STEP_MS is five (0 for a repeat that comes
-     * sooner). `last` keeps when the key last stepped.
+     * A press is one step (1 %). Held, it speeds up as a TV's own volume does: each repeat steps by the time since the
+     * last at a rate that ramps from HELD_SLOW to HELD_FAST % a second, so 0 to 100 takes about a second and a half held,
+     * whatever pace the remote repeats at (0 for a repeat sooner than HELD_STEP_MS). `held` keeps [last step, press].
      */
-    static int heldSteps(KeyEvent e, long[] last) {
+    static int heldSteps(KeyEvent e, long[] held) {
         long now = e.getEventTime();
         if (e.getRepeatCount() == 0) {
-            last[0] = now;
+            held[0] = held[1] = now;
             return 1;
         }
-        if (now - last[0] < HELD_STEP_MS) return 0;
-        last[0] = now;
-        return 5;
+        long dt = now - held[0];
+        if (dt < HELD_STEP_MS) return 0;
+        held[0] = now;
+        float ramp = Math.max(0, Math.min(1, (now - held[1] - HELD_RAMP_AT) / (float) HELD_RAMP_MS));
+        float rate = HELD_SLOW + (HELD_FAST - HELD_SLOW) * ramp * ramp;
+        return Math.max(1, Math.round(dt * rate / 1000f));
     }
 
     /** The AudioManager step a volume key makes. */
@@ -352,7 +359,13 @@ final class RemoteKeys {
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
         if (e.getRepeatCount() > 0 && !volumeDown) return false;   // held since before: still the system's
-        if (!homeIsOurs(c) || volumeFixed(c) || !homeInFront && overlay == null) {
+        boolean ours = homeIsOurs(c), fixed = volumeFixed(c);
+        if (e.getRepeatCount() == 0) {
+            // One line a press, to tell why a TV still shows its own volume bar (adb's keys never reach this filter).
+            AppLog.w("volume key " + e.getKeyCode() + ": home in front " + homeInFront + ", ours " + ours + ", fixed " + fixed
+                    + ", overlay " + (overlay != null));
+        }
+        if (!ours || fixed || !homeInFront && overlay == null) {
             volumeDown = false;
             return false;
         }

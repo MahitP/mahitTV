@@ -106,6 +106,35 @@ function mid(x) { return (x.l + x.r) / 2; }
   await wait(page, 400);
   var end = await page.evaluate(function () { return {live: FreeMyTV.state.live, moved: window.__nudges.some(function (t) { return /,\s*-?[1-9]/.test(t); })}; });
   assert.ok(bumps && end.live === 3 && end.moved, '↓ past the last: it stays, and knocks: ' + JSON.stringify(end));
+
+  // The sleep timer's − + ×: + is focused first; + and − step the presets only; × turns it off.
+  function sleepCtl() {
+    return page.evaluate(function () {
+      var f = document.querySelector('#live-bedtime .c.focus');
+      return {focus: f ? f.className.replace(/\b(c|focus|off)\b/g, '').trim() : null, sub: document.querySelector('#live-bedtime .s').textContent,
+        on: Home.testIsland().lives[3].on, live: FreeMyTV.state.live};
+    });
+  }
+  var sc = await sleepCtl();
+  assert.ok(sc.focus === 'plus' && /15/.test(sc.sub), 'on the sleep timer: + has the focus: ' + JSON.stringify(sc));
+  await tap(page, 'Enter');
+  await wait(page, 300);
+  assert.ok(/30/.test((await sleepCtl()).sub), '+: the next preset, 30 min');
+  await tap(page, 'ArrowLeft');
+  await tap(page, 'Enter');
+  await wait(page, 300);
+  sc = await sleepCtl();
+  assert.ok(sc.focus === 'minus' && /15/.test(sc.sub), '−: back to 15 min: ' + JSON.stringify(sc));
+  await tap(page, 'ArrowRight', 2);
+  assert.strictEqual((await sleepCtl()).focus, 'plus ends', '→ →: ×');
+  await tap(page, 'Enter');
+  await wait(page, 600);
+  sc = await sleepCtl();
+  assert.ok(!sc.on && sc.live === 2, '×: the timer off, the focus on AirPods: ' + JSON.stringify(sc));
+  await page.evaluate(function () { Home.testIsland({sleep: 15}); });
+  await tap(page, 'ArrowDown');
+  await wait(page, 500);
+  assert.strictEqual((await sleepCtl()).live, 3, 'the timer again: ↓ to it');
   await tap(page, 'ArrowUp', 3);
   await wait(page, 700);
   assert.strictEqual((await look(page)).state.shows, 'music', '↑ back to the song');

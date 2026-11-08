@@ -9,9 +9,9 @@ import android.view.Choreographer;
 import android.view.View;
 
 /**
- * The volume and the brightness, as an iPhone shows its volume: a Liquid Glass pill against the left edge, where an
- * iPhone's volume buttons are (centred at y CENTER_Y), filled white from the bottom to the level (SNAPPY_FOCUS), the
- * speaker (muted, or 1 to 3 arcs for 1–33, 34–66, 67–100), the sun or AirPods at its foot. It comes out of the edge as
+ * The volume and the brightness, as an iPhone shows its volume: a Liquid Glass pill against the middle of the left
+ * edge (centred at y CENTER_Y), filled white from the bottom to the level (SNAPPY_FOCUS), the level's number at its head
+ * and the speaker (muted, or 1 to 3 arcs for 1–33, 34–66, 67–100), the sun or AirPods at its foot. It comes out of the edge as
  * a 52 × 250 (1080p px) pill, narrows to a 12 px line IDLE_MS after the last change (the glyph fading), and leaves
  * HIDE_MS after it; each change widens it again (LIQUID_PILL). A press past 0 or 100 stretches it 3% that way
  * (BOUNDARY_BUMP). HomeView shows it for the volume keys and the channel keys (the brightness) while the home screen
@@ -22,7 +22,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
     /** The pill and its fill, in 1080p px: wide while it changes, a line once it rests. */
     private static final float X = 22, W = 52, THIN = 12, H = 250, SLIDE = 40, STRETCH = 0.03f;
     /** The view around it, and where its centre is (HomeView places it with these). */
-    static final float VIEW_W = 120, VIEW_H = 330, CENTER_Y = 340;
+    static final float VIEW_W = 120, VIEW_H = 330, CENTER_Y = 540;   // the middle of the left edge
     private static final long IDLE_MS = 1100, HIDE_MS = 2400;
     /** The push a press past an end gives the stretch (BOUNDARY_BUMP peaks near 1 with it). */
     private static final float PUSH = 60;
@@ -42,6 +42,8 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         invalidate();
     }
     private boolean posted, leaving;
+    private String number = "0";   // the level, at the pill's head
+    private Paint numberP;
     private long lastNanos;
     private float k = 1;
     private final RectF capsule = new RectF(), fill = new RectF();
@@ -99,6 +101,7 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
 
     private void present(int percent, int push) {
         int p = Math.max(0, Math.min(100, percent));
+        number = Integer.toString(p);
         level.target = p / 100f;
         arcs.target = p == 0 ? 0 : p <= 33 ? 1 : p <= 66 ? 2 : 3;
         if (push != 0) {
@@ -176,6 +179,8 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
 
     @Override protected void onSizeChanged(int width, int height, int ow, int oh) {
         k = width / VIEW_W;
+        numberP = Ui.numbers(Ui.semibold, 19 * k, WHITE);
+        numberP.setTextAlign(Paint.Align.CENTER);
     }
 
     @Override protected void onDraw(Canvas c) {
@@ -211,21 +216,27 @@ final class VolumeHud extends View implements Choreographer.FrameCallback {
         // The glyph at its foot: white on the glass, ink where the fill has reached it; gone as it narrows.
         float ga = v * Ui.clamp((wv - 0.4f) / 0.6f);
         if (ga < 0.01f) return;
-        float gx = capsule.centerX(), gy = capsule.bottom - 28 * k;
+        float gx = capsule.centerX(), gy = capsule.bottom - 28 * k, ny = capsule.top + 32 * k;
         c.save();
         c.clipRect(capsule.left, capsule.top, capsule.right, fillTop);
-        drawMarks(c, gx, gy, WHITE, ga);
+        drawMarks(c, gx, gy, ny, WHITE, ga);
         c.restore();
         if (lv > 0.002f) {
             c.save();
             c.clipRect(capsule.left, fillTop, capsule.right, capsule.bottom);
-            drawMarks(c, gx, gy, INK, ga);
+            drawMarks(c, gx, gy, ny, INK, ga);
             c.restore();
         }
     }
 
-    private void drawMarks(Canvas c, float gx, float gy, int color, float v) {
+    /** The level at the pill's head (baseline ny) and the glyph at its foot (centred on gx, gy). */
+    private void drawMarks(Canvas c, float gx, float gy, float ny, int color, float v) {
         int a = Math.round(255 * v);
+        if (numberP != null) {
+            numberP.setColor(color);
+            numberP.setAlpha(a);
+            c.drawText(number, gx, ny, numberP);
+        }
         if (bright || airpods) {
             Symbols.draw(getContext(), c, bright ? "sunny" : "airpods", gx, gy, 26 * k, Ui.alpha(color, v));
             return;

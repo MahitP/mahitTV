@@ -1229,7 +1229,7 @@
     this.on = false;
     this.w = ISLAND_D;
   }
-  var lives = [new Live('music', 164), new Live('moon', 80), new Live('airpods', 80), new Live('bedtime', 80)];
+  var lives = [new Live('music', 164), new Live('moon', 80), new Live('airpods', 80), new Live('bedtime', 164)];
   var island = null, islandShows = -1, islandFrom = -1, islandDir = 1, islandLeft = 0, islandPausedUntil = 0;
   var islandWasPlaying = false, islandFocused = false, airAlertUntil = 0;
 
@@ -1241,6 +1241,19 @@
     for (var i = from + dir; i >= 0 && i < lives.length; i += dir) if (lives[i].on) return i;
     return -1;
   }
+  /** The preset below (dir −1) or above (+1) `left` minutes, or 0 where there's none. */
+  function sleepStep(left, dir) {
+    var to = 0, i;
+    if (!left) return 0;
+    for (i = 0; i < SLEEP_PRESETS.length; i++) {
+      var m = SLEEP_PRESETS[i];
+      if (!m) continue;
+      if (dir > 0 && m > left + 1) return m;
+      if (dir < 0 && m < left - 1) to = m;
+    }
+    return dir > 0 ? 0 : to;
+  }
+
   function nextSleep() {
     var i = SLEEP_PRESETS.indexOf(previewCC.sleep);
     return SLEEP_PRESETS[(i + 1) % SLEEP_PRESETS.length];
@@ -1265,12 +1278,17 @@
         face.ctrl = el('span', 'ctrls', f);
         face.btns = [el('span', 'c prev', face.ctrl), el('span', 'c pp', face.ctrl), el('span', 'c next', face.ctrl)];
         for (var b = 0; b < 3; b++) { el('i', '', face.btns[b]); el('i', '', face.btns[b]); }
+      } else if (i === LIVE_SLEEP) {
+        // The sleep timer: − and + (the preset below or above), × (off).
+        face.ctrl = el('span', 'ctrls', f);
+        face.btns = [el('span', 'c minus', face.ctrl), el('span', 'c plus', face.ctrl), el('span', 'c plus ends', face.ctrl)];
+        for (var sb = 0; sb < 3; sb++) { el('i', '', face.btns[sb]); el('i', '', face.btns[sb]); }
       } else if (i === LIVE_AIR) {
         face.ctrl = el('span', 'ctrl c', f);
         sym('chevron_right', face.ctrl);   // Control Center
         face.btns = [face.ctrl];
       } else {
-        face.ctrl = el('span', i === LIVE_FOCUS ? 'ctrl c plus ends' : 'ctrl c plus', f);
+        face.ctrl = el('span', 'ctrl c plus ends', f);   // ×: Do Not Disturb off
         el('i', '', face.ctrl);
         el('i', '', face.ctrl);
         face.btns = [face.ctrl];
@@ -1304,7 +1322,8 @@
     f[LIVE_AIR].s.textContent = tr('Connected · Spatial Audio');
     f[LIVE_SLEEP].t.textContent = tr('Sleep Timer');
     f[LIVE_SLEEP].s.textContent = minutes ? trf('Off in {time}', {time: sleepName(minutes)}) : '';
-    setClass(f[LIVE_SLEEP].ctrl, 'ends', nextSleep() === 0);
+    setClass(f[LIVE_SLEEP].btns[0], 'off', !sleepStep(minutes, -1));
+    setClass(f[LIVE_SLEEP].btns[1], 'off', !sleepStep(minutes, 1));
     lives[LIVE_MUSIC].on = !!m && (playingNow || now < islandPausedUntil || (onIsland() && st.live === LIVE_MUSIC));
     lives[LIVE_FOCUS].on = dnd;
     lives[LIVE_AIR].on = !!airpods;
@@ -1343,7 +1362,7 @@
     for (var i = 0; i < lives.length; i++) {
       var face = island.faces[i];
       setClass(face.node, 'on', i === islandShows || i === islandFrom);
-      for (var b = 0; b < face.btns.length; b++) setClass(face.btns[b], 'focus', focused && st.live === i && (i !== LIVE_MUSIC || st.ctrl === b));
+      for (var b = 0; b < face.btns.length; b++) setClass(face.btns[b], 'focus', focused && st.live === i && (face.btns.length === 1 || st.ctrl === b));
     }
     // The selected tab's lens and name step back while the focus is in the dot: it's not on Welly.
     setClass($('tabs'), 'away', focused);
@@ -1368,7 +1387,7 @@
       var want = Math.min(ISLAND_TEXT, Math.max(f.t.scrollWidth, f.s.scrollWidth) + 2);
       l.w = Math.max(ISLAND_D, Math.min(want + frame, room));
       f.t.style.width = f.s.style.width = Math.max(0, l.w - frame) + 'px';
-      f.ctrl.style.left = (i === LIVE_MUSIC ? l.w - 12 - 144 : l.w - 52) + 'px';
+      f.ctrl.style.left = (l.control > 80 ? l.w - 12 - 144 : l.w - 52) + 'px';
     }
     if (islandShows >= 0) mv.islandWidth.set(lives[islandShows].w);
   }
@@ -1395,9 +1414,15 @@
     } else if (st.live === LIVE_FOCUS) {
       previewCC.dnd = false;   // Do Not Disturb off (Control Center turns it back on)
       Sound.toggle(false);
+    } else if (st.live === LIVE_SLEEP && st.ctrl === 2) {
+      previewCC.sleep = 0;   // ×: the timer off, and with it this activity
+      Sound.toggle(false);
     } else if (st.live === LIVE_SLEEP) {
-      previewCC.sleep = nextSleep();   // the presets, as Control Center's tile: 15 min, 30 min, 1 h, 2 h, off
-      Sound.toggle(!!previewCC.sleep);
+      // − and +: the presets only, the one below or above; none: the knock.
+      var to = sleepStep(previewCC.sleep, st.ctrl === 0 ? -1 : 1);
+      if (!to) { Sound.bump(0.5); bump(st.ctrl === 0 ? -1 : 1, 0); return; }
+      previewCC.sleep = to;
+      Sound.select();
     } else {
       openDrawer('controls');   // AirPods: Control Center
       return;
@@ -2517,7 +2542,7 @@
     if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
-        (level >= 17 ? ' lit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
+        (level >= 17 ? ' lit' : '') + (level >= 86 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
     }
     if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
   }
@@ -2537,7 +2562,7 @@
     sliderLevel(ccBright, b);
     if (hud && hudMode === 'brightness') {
       hud.num.textContent = String(b);
-      hud.node.className = 'bright' + (b >= 17 ? ' lit' : '') + (hudPinned ? ' pinned' : '');
+      hud.node.className = 'bright' + (b >= 17 ? ' lit' : '') + (b >= 86 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
     }
   }
 
@@ -2614,20 +2639,26 @@
     else if (!typing && (k === 187 || k === 107 || key === '+' || key === '=')) dir = 1;
     else if (!typing && (k === 189 || k === 109 || key === '-' || key === '_')) dir = -1;
     if (!dir) return false;
-    var steps = dir === 'mute' ? (e.repeat ? 0 : 1) : heldSteps(e, volumeHeld);   // 1 a press, 5 a step while held
+    var steps = dir === 'mute' ? (e.repeat ? 0 : 1) : heldSteps(e, volumeHeld);   // 1 a press, faster and faster held
     if (steps) stepVolume(dir, steps);
     return true;
   }
 
-  var volumeHeld = [0], brightHeld = [0], HELD_STEP_MS = 140;
+  var volumeHeld = [0, 0], brightHeld = [0, 0], HELD_STEP_MS = 60, HELD_SLOW = 30, HELD_FAST = 140, HELD_RAMP_AT = 300, HELD_RAMP_MS = 700;
 
-  /** As an iPhone's volume buttons: a press is one step; held, each HELD_STEP_MS is five (0 for a repeat that comes sooner). */
-  function heldSteps(e, last) {
+  /**
+   * A press is one step (1 %). Held, it speeds up as a TV's own volume does (RemoteKeys.heldSteps): each repeat steps by
+   * the time since the last, at a rate ramping from HELD_SLOW to HELD_FAST % a second (0 for a repeat sooner than
+   * HELD_STEP_MS). `held` keeps [last step, press].
+   */
+  function heldSteps(e, held) {
     var now = Date.now();
-    if (!e.repeat) { last[0] = now; return 1; }
-    if (now - last[0] < HELD_STEP_MS) return 0;
-    last[0] = now;
-    return 5;
+    if (!e.repeat) { held[0] = held[1] = now; return 1; }
+    var dt = now - held[0];
+    if (dt < HELD_STEP_MS) return 0;
+    held[0] = now;
+    var ramp = Math.max(0, Math.min(1, (now - held[1] - HELD_RAMP_AT) / HELD_RAMP_MS));
+    return Math.max(1, Math.round(dt * (HELD_SLOW + (HELD_FAST - HELD_SLOW) * ramp * ramp) / 1000));
   }
 
   // MARK: - The Home button (H in a browser): a press goes to the Dock, a hold (450 ms) shows Recent Apps
@@ -4755,7 +4786,7 @@
       case Z.TOP:
         // The dynamic dot: ↓ ↑ through its activities (nothing past either end: the knock), ← Welly, → the bubble.
         if (st.top === 2 && dy) { if (nextLive(st.live, dy > 0 ? 1 : -1) >= 0) { st.live = nextLive(st.live, dy > 0 ? 1 : -1); st.ctrl = 1; } }
-        else if (st.top === 2 && st.live === LIVE_MUSIC && dx && st.ctrl + dx >= 0 && st.ctrl + dx <= 2) st.ctrl += dx;   // ⏮ ⏯ ⏭
+        else if (st.top === 2 && (st.live === LIVE_MUSIC || st.live === LIVE_SLEEP) && dx && st.ctrl + dx >= 0 && st.ctrl + dx <= 2) st.ctrl += dx;   // ⏮ ⏯ ⏭, − + ×
         else if (dx > 0 && st.top === 2) st.top = 3;
         else if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;

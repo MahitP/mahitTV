@@ -61,7 +61,8 @@ public class SleepOverlay extends Service {
         Intent i = new Intent(c, SleepOverlay.class).putExtra("endsAt", Prefs.sleepAt()).putExtra("place", Prefs.sleepPlace())
                 .putExtra("theme", Prefs.theme()).putExtra("sunrise", w.sunrise).putExtra("sunset", w.sunset)
                 .putExtra("language", Prefs.language());
-        boolean wanted = Prefs.sleepShown() && SleepTimer.minutesLeft(c) > 0;
+        // The time left shows only in the home screen's dynamic dot now: no banner over the apps (the owner's choice).
+        boolean wanted = false;
         if (wanted && Settings.canDrawOverlays(c)) {
             c.startForegroundService(i);
         } else {

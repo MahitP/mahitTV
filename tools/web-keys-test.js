@@ -224,8 +224,8 @@ var browser = null;
   assert.ok(Math.abs(sizes.small - sizes['default'] * 0.9) < 1.1 && Math.abs(sizes.large - sizes['default'] * 1.15) < 1.1,
     'Text Size scales Settings\' text: ' + JSON.stringify(sizes));
 
-  // + and −: the volume (the preview starts at 30), 1 a press and 5 a step while held, on the iPhone-style HUD: a
-  // 52 × 250 pill against the left edge, which rests as a thin line, then hides itself.
+  // + and −: the volume (the preview starts at 30), 1 a press and faster and faster while held, on the iPhone-style HUD:
+  // a 52 × 250 pill against the middle of the left edge, with the level, which rests as a thin line, then hides itself.
   function held(key, n) {
     return page.evaluate(function (o) {
       return new Promise(function (done) {
@@ -250,7 +250,7 @@ var browser = null;
   });
   assert.ok(s.volume.level === 31 && s.volume.shown, '+ raises the volume by 1 and shows the HUD: ' + JSON.stringify(s.volume));
   assert.ok(hud.shown > 0.8 && hud.opacity > 0.8 && Math.abs(hud.width - 52) < 2 && Math.abs(hud.height - 250) < 2 && hud.left > 10 && hud.left < 30
-    && hud.top + hud.height / 2 < 400, 'the HUD is a 52 × 250 pill at the left edge, in the upper half: ' + JSON.stringify(hud));
+    && Math.abs(hud.top + hud.height / 2 - 540) < 2, 'the HUD is a 52 × 250 pill at the middle of the left edge: ' + JSON.stringify(hud));
   await page.keyboard.press('-');
   await page.keyboard.press('-');
   await page.waitForTimeout(100);
@@ -265,7 +265,7 @@ var browser = null;
   assert.ok(!s.volume.shown, 'then it hides itself');
   await held('=', 5);
   s = await state(page);
-  assert.strictEqual(s.volume.level, 29 + 1 + 4 * 5, 'held: 1, then 5 a step: ' + s.volume.level);
+  assert.ok(s.volume.level >= 29 + 1 + 4 * 4 && s.volume.level <= 29 + 1 + 4 * 12, 'held: 1, then several a step, faster and faster: ' + s.volume.level);
   await held('=', 16);
   s = await state(page);
   assert.strictEqual(s.volume.level, 100, 'the volume stops at 100');
@@ -285,7 +285,7 @@ var browser = null;
     'channel down and [ dim the screen by 1 each, with the brightness HUD: ' + JSON.stringify(bright));
   await held('PageDown', 4);
   bright = await page.evaluate(function () { return {level: FreeMyTV.brightness()}; });
-  assert.strictEqual(bright.level, 98 - 1 - 3 * 5, 'held channel down: 1, then 5 a step');
+  assert.ok(bright.level <= 98 - 1 - 3 * 4 && bright.level >= 98 - 1 - 3 * 12, 'held channel down: 1, then several a step: ' + bright.level);
   await held('PageUp', 8);
   await page.waitForTimeout(300);
   bright = await page.evaluate(function () { return {level: FreeMyTV.brightness(), dim: parseFloat(getComputedStyle(document.querySelector('#bright')).opacity)}; });

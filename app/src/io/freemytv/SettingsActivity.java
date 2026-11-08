@@ -672,7 +672,7 @@ public class SettingsActivity extends Activity {
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case WALLPAPER_PICKER: return wallpaperPicker.draw().optionsPane ? wallpaperPicker.draw().options.length : wallpaperPicker.draw().categories.length;
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
-                case POWER: return Prefs.sleepShown() ? 3 : 2;   // powerRows()' length, without making it
+                case POWER: return 1;   // powerRows()' length, without making it
                 case CLEAN: return Math.min(SETTINGS_VISIBLE, cleanRowIds.length);
                 case TMDB_KEY: return keyRowIds.length;
                 case PICK_FROM: return Math.min(PICK_VISIBLE, services.size());
@@ -3203,7 +3203,7 @@ public class SettingsActivity extends Activity {
         private static final int P_SLEEP = 0, P_SHOW = 1, P_WHERE = 2;
 
         private int[] powerRows() {
-            return Prefs.sleepShown() ? new int[] {P_SLEEP, P_SHOW, P_WHERE} : new int[] {P_SLEEP, P_SHOW};
+            return new int[] {P_SLEEP};   // the time left shows in the dynamic dot only, so no Show or Position rows
         }
 
         private int powerRow() {

@@ -50,7 +50,7 @@ final class KeysOverlay {
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, flags, PixelFormat.TRANSLUCENT);
             hp.gravity = Gravity.TOP | Gravity.LEFT;
             hp.x = 0;
-            hp.y = Math.round(VolumeHud.CENTER_Y * k) - hh / 2;   // where an iPhone's buttons are, as on the home screen
+            hp.y = Math.round(VolumeHud.CENTER_Y * k) - hh / 2;   // the middle of the left edge, as on the home screen
             wm.addView(h, hp);
             dimmer = d;
             hud = h;
