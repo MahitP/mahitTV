@@ -110,6 +110,8 @@ final class RemoteKeys {
 
     /** The level after a volume key (adjustVolume), for the home screen's HUD: extras index, max, muted, push. */
     static final String ACTION_VOLUME = "io.freemytv.VOLUME";
+    /** The channel keys while the home screen is in front: the brightness, by the extra "delta" percent. */
+    static final String ACTION_BRIGHTNESS = "io.freemytv.BRIGHTNESS";
     private static final String HOME_CLASS = HomeActivity.class.getName();
     // The window in front is the home screen's (RemoteKeyService), the volume key whose press we took, the TV's volume
     // is fixed (0: not read yet, 1: fixed, -1: not), and the thread that changes it (system calls, off the filter).
@@ -175,6 +177,7 @@ final class RemoteKeys {
                     && onHome((android.accessibilityservice.AccessibilityService) c, e);
         }
         if (isVolume(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onVolume(c, e);
+        if (isChannel(e.getKeyCode())) return c instanceof android.accessibilityservice.AccessibilityService && onChannel(c, e);
         int keyCode = TCL && e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
         if (JVC_SKYWORTH) {
             if (SkyworthRemote.settings(keyCode)) keyCode = Prefs.KEY_JVC_SETTINGS;
@@ -261,6 +264,58 @@ final class RemoteKeys {
         return code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE;
     }
 
+    static boolean isChannel(int code) {
+        return code == KeyEvent.KEYCODE_CHANNEL_UP || code == KeyEvent.KEYCODE_CHANNEL_DOWN;
+    }
+
+    private static boolean channelDown;
+    private static final long[] channelHeld = new long[1];
+
+    /**
+     * A channel key while the home screen is in front: the brightness instead (the home screen has no channels), as the
+     * volume keys are taken (onVolume) since a TV may route them past the app in front. Anywhere else they stay the
+     * TV's. 1 % a press, 5 % a step while held; the home screen changes it and shows the HUD (ACTION_BRIGHTNESS).
+     */
+    private static boolean onChannel(Context c, KeyEvent e) {
+        if (e.getAction() == KeyEvent.ACTION_UP) {
+            boolean ours = channelDown;
+            channelDown = false;
+            return ours;
+        }
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
+        if (e.getRepeatCount() > 0 && !channelDown) return false;   // held since before: still the TV's
+        if (!homeInFront || !homeIsOurs(c)) {
+            channelDown = false;
+            return false;
+        }
+        channelDown = true;
+        int steps = heldSteps(e, channelHeld);
+        if (steps == 0) return true;
+        int delta = (e.getKeyCode() == KeyEvent.KEYCODE_CHANNEL_UP ? 1 : -1) * steps;
+        c.sendBroadcast(new Intent(ACTION_BRIGHTNESS).setPackage(HomeMode.PKG).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                .putExtra("delta", delta));
+        return true;
+    }
+
+    /** How often a held volume or channel key steps (its repeats come faster: the others are skipped). */
+    static final long HELD_STEP_MS = 140;
+    private static final long[] volumeHeld = new long[1];
+
+    /**
+     * As an iPhone's volume buttons: a press is one step, and held, each HELD_STEP_MS is five (0 for a repeat that comes
+     * sooner). `last` keeps when the key last stepped.
+     */
+    static int heldSteps(KeyEvent e, long[] last) {
+        long now = e.getEventTime();
+        if (e.getRepeatCount() == 0) {
+            last[0] = now;
+            return 1;
+        }
+        if (now - last[0] < HELD_STEP_MS) return 0;
+        last[0] = now;
+        return 5;
+    }
+
     /** The AudioManager step a volume key makes. */
     static int volumeDirection(int code) {
         return code == KeyEvent.KEYCODE_VOLUME_UP ? android.media.AudioManager.ADJUST_RAISE
@@ -283,10 +338,12 @@ final class RemoteKeys {
         }
         volumeDown = true;
         if (e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_MUTE && e.getRepeatCount() > 0) return true;   // one toggle a press
+        final int steps = heldSteps(e, volumeHeld);   // 1 a press, 5 a step while held
+        if (steps == 0) return true;
         final int dir = volumeDirection(e.getKeyCode());
         final Context app = c.getApplicationContext();
         if (volumeWorker == null) volumeWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
-        volumeWorker.execute(() -> adjustVolume(app, dir));
+        volumeWorker.execute(() -> adjustVolume(app, dir, steps));
         return true;
     }
 
@@ -303,16 +360,23 @@ final class RemoteKeys {
     }
 
     /**
-     * One volume step (or mute) without the system's panel (flag 0), then the level to the home screen (ACTION_VOLUME,
-     * only to this app). Off the UI and filter threads: these are calls to the system. push is 1 or −1 for a press past
-     * the top or the bottom.
+     * One volume step, or `steps` percent while held (or mute), without the system's panel (flag 0), then the level to the
+     * home screen (ACTION_VOLUME, only to this app). Off the UI and filter threads: these are calls to the system. push
+     * is 1 or −1 for a press past the top or the bottom.
      */
-    static void adjustVolume(Context c, int dir) {
+    static void adjustVolume(Context c, int dir, int steps) {
         try {
             android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
             int s = android.media.AudioManager.STREAM_MUSIC, max = Math.max(1, am.getStreamMaxVolume(s));
             int before = am.getStreamVolume(s);
-            am.adjustStreamVolume(s, dir, 0);
+            if (steps <= 1 || dir == android.media.AudioManager.ADJUST_TOGGLE_MUTE) {
+                am.adjustStreamVolume(s, dir, 0);
+            } else {
+                // Held: `steps` percent at once (at least one of the TV's own steps), unmuting as a raise does.
+                int by = Math.max(1, Math.round(steps * max / 100f)), up = dir == android.media.AudioManager.ADJUST_RAISE ? 1 : -1;
+                if (up > 0 && am.isStreamMute(s)) am.adjustStreamVolume(s, android.media.AudioManager.ADJUST_UNMUTE, 0);
+                am.setStreamVolume(s, Math.max(0, Math.min(max, before + up * by)), 0);
+            }
             int now = am.getStreamVolume(s);
             int push = dir == android.media.AudioManager.ADJUST_RAISE && before >= max && now >= max ? 1
                     : dir == android.media.AudioManager.ADJUST_LOWER && before <= 0 && now <= 0 ? -1 : 0;

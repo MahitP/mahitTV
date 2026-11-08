@@ -729,6 +729,7 @@
     lensX: spring(P.LIQUID_PILL).px(), lensW: spring(P.LIQUID_PILL, 100).px(), dot: spring(P.SNAPPY_FOCUS).px(),
     rowNudge: spring(P.BOUNDARY_BUMP).px(), recents: spring(P.SPATIAL_SCROLL),
     ccSub: spring(P.SHEET_OPEN), hud: spring(P.SHEET_OPEN), hudFill: spring(P.SNAPPY_FOCUS), hudBump: spring(P.BOUNDARY_BUMP),
+    hudWide: spring(P.LIQUID_PILL, 1),
     // brightFill: the brightness (Control Center's slider, the HUD in brightness mode); folder: an open folder 0..1.
     brightFill: spring(P.SNAPPY_FOCUS, Prefs.brightness() / 100), folder: spring(P.SHEET_OPEN), folderScroll: spring(P.SPATIAL_SCROLL).px(),
     // The dynamic dot: there, open, its open width, the step from one activity to the next, and its knock at the ends.
@@ -874,10 +875,18 @@
     var level = Motion.clamp(mv.hudFill.x, 0, 1);
     if (hud) {
       var hs = Motion.clamp(mv.hud.x, 0, 1);
-      T(hud.node, 'translateX(' + r2(-40 * (1 - hs)) + 'px) scale(1,' + r4(1 + 0.03 * Motion.clamp(mv.hudBump.x, -1, 1)) + ')');
+      // Stretched away from the end that was pushed (past 100 upwards, past 0 downwards); the pill and its resting line
+      // cross-fade.
+      var bmp = Motion.clamp(mv.hudBump.x, -1, 1), wide = Motion.clamp(mv.hudWide.x, 0, 1);
+      var hf = hudMode === 'brightness' ? Motion.clamp(mv.brightFill.x, 0, 1) : level;
+      hud.node.style.webkitTransformOrigin = hud.node.style.transformOrigin = bmp < 0 ? '50% 0' : '50% 100%';
+      T(hud.node, 'translateX(' + r2(-40 * (1 - hs)) + 'px) scale(1,' + r4(1 + 0.03 * Math.abs(bmp)) + ')');
       A(hud.node, hs);
       V(hud.node, hs);
-      T(hud.fill, 'scale(1,' + r4(hudMode === 'brightness' ? Motion.clamp(mv.brightFill.x, 0, 1) : level) + ')');
+      A(hud.pill, wide);
+      A(hud.line, 1 - wide);
+      T(hud.fill, 'scale(1,' + r4(hf) + ')');
+      T(hud.lineFill, 'scale(1,' + r4(hf) + ')');
     }
     if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
     drawFolder();
@@ -2436,7 +2445,7 @@
 
   // MARK: - The volume: the TV's own level, and a Liquid Glass HUD on the left (tvOS's volume, on the leading edge)
 
-  var volumeLevel = null, volumeMuted = false, hud = null, hudTimer = 0, hudPinned = false, HUD_HOLD = 2200;
+  var volumeLevel = null, volumeMuted = false, hud = null, hudTimer = 0, hudIdle = 0, hudPinned = false, HUD_HOLD = 2400, HUD_IDLE = 1100;
 
   /** Reads the TV's volume once at start: where it can't be read (most TVs keep it to themselves), no volume row or HUD. */
   function readVolume() {
@@ -2449,8 +2458,12 @@
     });
   }
 
-  /** + / − (or the TV's volume keys): a step, as the remote's keys; 'mute' toggles mute. The HUD shows the result. */
-  function stepVolume(dir) {
+  /**
+   * + / − (or the TV's volume keys): a step, as the remote's keys, or `steps` of them while held; 'mute' toggles mute.
+   * The HUD shows the result.
+   */
+  function stepVolume(dir, steps) {
+    for (var i = 1; i < (steps || 1) && dir !== 'mute'; i++) TV.volume(dir, function () {});
     var was = volumeLevel;
     TV.volume(dir, function (level, muted) {
       if (level === null) return;   // this TV keeps its volume to itself: its own volume bar shows instead
@@ -2458,7 +2471,7 @@
       setVolume(level, muted);
       if (!had) renderDrawer();
       // Past either end: a rubber stretch, and it springs back (BOUNDARY_BUMP).
-      if (dir !== 'mute' && level === was && (level === 0 || level === 100)) mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04);
+      if (dir !== 'mute' && level === was && (level === 0 || level === 100)) mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04 * (level ? 1 : -1));
       showHud();
     });
   }
@@ -2477,7 +2490,7 @@
     if (hud && hudMode === 'volume') {
       hud.num.textContent = volumeMuted ? '' : String(level);
       hud.node.className = 'arcs' + arcs + (volumeMuted || level === 0 ? ' muted' : '') +
-        (level >= 19 ? ' lit' : '') + (level >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
+        (level >= 17 ? ' lit' : '') + (hudPinned ? ' pinned' : '') + (airpods ? ' air' : '');
     }
     if (ccVolume) { sliderLevel(ccVolume, level); if (volumeMuted) ccVolume.num.textContent = tr('Muted'); }
   }
@@ -2497,15 +2510,18 @@
     sliderLevel(ccBright, b);
     if (hud && hudMode === 'brightness') {
       hud.num.textContent = String(b);
-      hud.node.className = 'bright' + (b >= 19 ? ' lit' : '') + (b >= 31 ? ' numlit' : '') + (hudPinned ? ' pinned' : '');
+      hud.node.className = 'bright' + (b >= 17 ? ' lit' : '') + (hudPinned ? ' pinned' : '');
     }
   }
 
-  /** [ and ] (and Control Center's slider): a step of 5; past either end the HUD stretches and springs back. */
-  function stepBrightness(dir) {
-    var was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + 5 * dir));
+  /**
+   * The channel keys (and [ and ] in a browser): `delta` percent, 1 a press and 5 a step while held, as the volume;
+   * past either end the HUD stretches and springs back.
+   */
+  function stepBrightness(delta) {
+    var was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + delta));
     if (b !== was) Prefs.set('brightness', b);
-    else mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04);
+    else mv.hudBump.impulse(Motion.BUMP_VELOCITY * 0.04 * (delta > 0 ? 1 : -1));
     mv.brightFill.set(b / 100);
     applyBrightness();
     showHud('brightness');
@@ -2513,18 +2529,21 @@
 
   function buildHud() {
     if (hud) return;
+    // As an iPhone's: a pill out of the left edge, which rests as a thin line (its own glass and fill) before it goes.
     var node = el('div', '', $('stage'));
     node.id = 'volhud';
-    el('div', 'glass', node);
-    var fill = el('div', 'fill', node), num = el('div', 'num', node), spk = el('div', 'spk', node);
-    sym('sunny', node).className += ' sunglyph';
-    sym('airpods', node).className += ' airglyph';
+    var pill = el('div', 'pill', node), line = el('div', 'line', node);
+    el('div', 'glass', pill);
+    el('div', 'glass', line);
+    var fill = el('div', 'fill', pill), lineFill = el('div', 'fill', line), num = el('div', 'num', pill), spk = el('div', 'spk', pill);
+    sym('sunny', pill).className += ' sunglyph';
+    sym('airpods', pill).className += ' airglyph';
     el('span', 'cone', spk);
     el('span', 'arc a1', spk);
     el('span', 'arc a2', spk);
     el('span', 'arc a3', spk);
     el('span', 'slash', spk);
-    hud = {node: node, fill: fill, num: num};
+    hud = {node: node, fill: fill, num: num, pill: pill, line: line, lineFill: lineFill};
     setClass(node, 'air', !!airpods);
     showVolumeLevel();
   }
@@ -2536,8 +2555,13 @@
     if (hudMode === 'brightness') showBrightLevel();
     else showVolumeLevel();
     mv.hud.tune(P.SHEET_OPEN).set(1);
+    mv.hudWide.tune(P.LIQUID_PILL).set(1);   // each change: the pill again
     clearTimeout(hudTimer);
-    if (!hudPinned) hudTimer = setTimeout(hideHud, HUD_HOLD);
+    clearTimeout(hudIdle);
+    if (!hudPinned) {
+      hudIdle = setTimeout(function () { mv.hudWide.tune(P.SHEET_CLOSE).set(0); Motion.kick(); }, HUD_IDLE);
+      hudTimer = setTimeout(hideHud, HUD_HOLD);
+    }
     Motion.kick();
   }
 
@@ -2563,8 +2587,20 @@
     else if (!typing && (k === 187 || k === 107 || key === '+' || key === '=')) dir = 1;
     else if (!typing && (k === 189 || k === 109 || key === '-' || key === '_')) dir = -1;
     if (!dir) return false;
-    stepVolume(dir);
+    var steps = dir === 'mute' ? (e.repeat ? 0 : 1) : heldSteps(e, volumeHeld);   // 1 a press, 5 a step while held
+    if (steps) stepVolume(dir, steps);
     return true;
+  }
+
+  var volumeHeld = [0], brightHeld = [0], HELD_STEP_MS = 140;
+
+  /** As an iPhone's volume buttons: a press is one step; held, each HELD_STEP_MS is five (0 for a repeat that comes sooner). */
+  function heldSteps(e, last) {
+    var now = Date.now();
+    if (!e.repeat) { last[0] = now; return 1; }
+    if (now - last[0] < HELD_STEP_MS) return 0;
+    last[0] = now;
+    return 5;
   }
 
   // MARK: - The Home button (H in a browser): a press goes to the Dock, a hold (450 ms) shows Recent Apps
@@ -5017,8 +5053,14 @@
     var typing = st.zone === Z.WELLY && window.Welly && Welly.typing();
     // The volume works over everything (the intro, the lock, the screensaver): the TV's keys, + and − on a keyboard.
     if (volumeKey(e, typing)) { e.preventDefault(); return; }
-    // [ and ] in a browser: the brightness down and up (as − and + step the volume), over everything too.
-    if (!typing && (k === 219 || k === 221)) { e.preventDefault(); stepBrightness(k === 221 ? 1 : -1); return; }
+    // The channel keys (the home screen has no channels), and [ and ] in a browser: the brightness down and up, as the
+    // volume keys step the volume, over everything too.
+    if (!typing && (k === 219 || k === 221 || k === TV.keys.channelUp || k === TV.keys.channelDown)) {
+      e.preventDefault();
+      var bs = heldSteps(e, brightHeld);
+      if (bs) stepBrightness((k === 221 || k === TV.keys.channelUp ? 1 : -1) * bs);
+      return;
+    }
     // I: the startup again, with its sound. Not while typing in a field.
     if (k === 73 && !typing && !e.repeat && !inField(e.target) && !Setup.showing()) { e.preventDefault(); replayIntro(); return; }
     // The intro and the lock take every other key while they show.

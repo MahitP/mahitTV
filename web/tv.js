@@ -10,6 +10,10 @@ var TV = (function () {
 
   var webos = typeof window.PalmServiceBridge !== 'undefined';
   var samsung = !webos && typeof window.tizen !== 'undefined' && !!window.tizen.application;
+  // Samsung sends an app the channel keys only once it asks for them (the home screen's brightness).
+  if (samsung) {
+    try { window.tizen.tvinputdevice.registerKey('ChannelUp'); window.tizen.tvinputdevice.registerKey('ChannelDown'); } catch (e) {}
+  }
   var calls = [];   // a bridge is collected if nothing holds it before its reply arrives
   var previewVolume = 30, volumeMuted = false;   // TV.volume's stand-in in a desktop browser; the last mute state read
   var tizen2 = samsung && /Tizen 2\./.test(navigator.userAgent);
@@ -649,7 +653,7 @@ var TV = (function () {
       }
       // The browser preview: a volume of its own, so the HUD can be tried with + and −.
       if (dir === 'mute') volumeMuted = !volumeMuted;
-      else if (dir) { previewVolume = Math.max(0, Math.min(100, previewVolume + 5 * dir)); volumeMuted = false; }
+      else if (dir) { previewVolume = Math.max(0, Math.min(100, previewVolume + dir)); volumeMuted = false; }
       done(previewVolume, volumeMuted);
     },
 
@@ -676,7 +680,11 @@ var TV = (function () {
       try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; }
     },
 
-    /** Key codes: the arrows, OK and the TV's Back (LG 461, Samsung 10009), and the volume keys when the TV sends them. */
-    keys: {left: 37, up: 38, right: 39, down: 40, ok: 13, back: samsung ? 10009 : 461, volumeUp: 447, volumeDown: 448, mute: 449}
+    /**
+     * Key codes: the arrows, OK and the TV's Back (LG 461, Samsung 10009), the volume keys when the TV sends them, and
+     * the channel keys (LG 33 / 34, Samsung 427 / 428 once registered), which the home screen uses for the brightness.
+     */
+    keys: {left: 37, up: 38, right: 39, down: 40, ok: 13, back: samsung ? 10009 : 461, volumeUp: 447, volumeDown: 448, mute: 449,
+      channelUp: samsung ? 427 : 33, channelDown: samsung ? 428 : 34}
   };
 })();
