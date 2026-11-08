@@ -27,14 +27,15 @@ import java.util.Set;
  * The people who use the TV (MAHITTV-PROFILES-SPEC.md §1): their accounts, PINs, who is in, and each one's own
  * settings. `profiles=id:Name:role:PIN,…` in config.properties; build.sh only ever puts sha256(salt + PIN) in the app.
  * Each profile keeps its Dock, theme, wallpaper, top buttons, Welly memory and watch log in its own preferences file
- * (`profile_<id>`); Guest keeps them in memory only, wiped when it locks. The lock comes back after 10 minutes away.
+ * (`profile_<id>`); Guest keeps them in memory only, wiped when it locks. "Who's Watching?" comes back only when the TV
+ * was off (screen off and on, or a restart) or someone chose Lock; Home and coming back from an app keep whoever is in.
  */
 final class ProfileManager {
     private ProfileManager() {}
 
     static final String MANAGER = "manager", STANDARD = "standard", GUEST = "guest";
-    /** Away longer than this (screensaver, an app, the TV off), and the lock asks again. */
-    static final long GRACE_MS = 10 * 60 * 1000L;
+    /** Deep sleep since the last use longer than this: the TV was off (in standby) while the home screen wasn't running. */
+    static final long SLEPT_MS = 60_000L;
     /** Wrong PINs in a row before a wait, and the wait. */
     static final int TRIES = 5;
     static final long WAIT_MS = 30_000L;
@@ -108,23 +109,44 @@ final class ProfileManager {
 
     // MARK: - Locked or not
 
-    /** Whether the lock must show now: nobody unlocked in this process, or away longer than GRACE_MS. */
+    /** Whether "Who's Watching?" must show now: nobody is signed in. */
     static boolean needsLock(Context c) {
-        if (!unlocked) return true;
-        long last = settings(c).getLong("lastActive", 0);
-        return last == 0 || System.currentTimeMillis() - last > GRACE_MS;
+        return !unlocked;
     }
 
-    /** Someone used the TV (a key, a launch): the grace period starts again from now. */
+    /**
+     * A new home screen process (Android may close it while an app plays): whoever was signed in still is, unless the
+     * TV was off since (another boot, or deep sleep: standby) or someone locked it. True if they're back in.
+     */
+    static boolean resumeSignedIn(Context c) {
+        SharedPreferences s = settings(c);
+        boolean in = s.getBoolean("signedIn", false) && s.getInt("signedBoot", -1) == bootCount(c)
+                && sleptMs() - s.getLong("signedSlept", Long.MAX_VALUE) < SLEPT_MS;
+        if (in) unlocked = true;
+        return in;
+    }
+
+    /** Someone used the TV (a key, a launch): what resumeSignedIn compares against starts from now. */
     static void touch(Context c) {
-        settings(c).edit().putLong("lastActive", System.currentTimeMillis()).apply();
+        settings(c).edit().putLong("lastActive", System.currentTimeMillis()).putLong("signedSlept", sleptMs()).apply();
+    }
+
+    /** Android's count of boots (a restart changes it; standby doesn't). */
+    private static int bootCount(Context c) {
+        return android.provider.Settings.Global.getInt(c.getContentResolver(), android.provider.Settings.Global.BOOT_COUNT, 0);
+    }
+
+    /** How long the TV has spent in deep sleep (standby) since it booted. */
+    private static long sleptMs() {
+        return android.os.SystemClock.elapsedRealtime() - android.os.SystemClock.uptimeMillis();
     }
 
     /** Lets `p` in (after its PIN, or Guest): it becomes the current profile. */
     static void unlock(Context c, Profile p) {
         Profile before = current(c);
         if (before.guest() && !before.id.equals(p.id)) guestPrefs = new MemoryPrefs();
-        settings(c).edit().putString("profileId", p.id).putLong("lastActive", System.currentTimeMillis()).apply();
+        settings(c).edit().putString("profileId", p.id).putLong("lastActive", System.currentTimeMillis())
+                .putBoolean("signedIn", true).putInt("signedBoot", bootCount(c)).putLong("signedSlept", sleptMs()).apply();
         unlocked = true;
         Prefs.profileChanged();
     }
@@ -132,6 +154,7 @@ final class ProfileManager {
     /** Back to "Who's Watching?". Guest's session is forgotten. */
     static void lock(Context c) {
         unlocked = false;
+        settings(c).edit().putBoolean("signedIn", false).apply();
         if (current(c).guest()) guestPrefs = new MemoryPrefs();
     }
 
@@ -231,7 +254,7 @@ final class ProfileManager {
         if (files != null) for (File f : files) //noinspection ResultOfMethodCallIgnored
             f.delete();
         app.getSharedPreferences("recs", Context.MODE_PRIVATE).edit().clear().commit();
-        settings(app).edit().remove("profileId").remove("lastActive").remove("profile").commit();
+        settings(app).edit().remove("profileId").remove("lastActive").remove("profile").remove("signedIn").commit();
         wrong.clear();
         waitUntil.clear();
         unlocked = false;
