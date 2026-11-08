@@ -347,11 +347,43 @@ final class Prefs {
      * The screen's brightness, 0–100 (Control Center's slider): the TV's own screen_brightness where mahitTV mode can set
      * it (HomeMode.brightness, put back by Original), and a dimmer over mahitTV's screens below 100 (0.78 black at 0).
      */
-    static int brightness() { return Math.max(0, Math.min(100, sp().getInt("brightness", 100))); }
+    static int brightness() {
+        // A file both the home screen (:home) and the key service (:keys, the channel keys in any app) read and write;
+        // a value saved before it existed is the start.
+        File f = new File(app.getFilesDir(), "brightness.txt");
+        long at = f.lastModified();
+        if (at != brightnessAt) {
+            brightnessAt = at;
+            int v = sp().getInt("brightness", 100);
+            if (at != 0) {
+                try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                    v = Integer.parseInt(r.readLine().trim());
+                } catch (IOException | RuntimeException e) {
+                    brightnessAt = -1;   // half written: read it again next time
+                }
+            }
+            brightnessCached = Math.max(0, Math.min(100, v));
+        }
+        return brightnessCached;
+    }
+
     static void setBrightness(int v) {
-        sp().edit().putInt("brightness", Math.max(0, Math.min(100, v))).apply();
+        int b = Math.max(0, Math.min(100, v));
+        File f = new File(app.getFilesDir(), "brightness.txt"), tmp = new File(app.getFilesDir(), "brightness.tmp");
+        try (java.io.FileWriter w = new java.io.FileWriter(tmp)) {
+            w.write(Integer.toString(b));
+        } catch (IOException e) {
+            AppLog.w("brightness: " + e.getMessage());
+            return;
+        }
+        if (!tmp.renameTo(f)) AppLog.w("brightness: couldn't save");
+        brightnessCached = b;
+        brightnessAt = f.lastModified();
         version++;
     }
+
+    private static long brightnessAt = -1;
+    private static int brightnessCached = 100;
     /** The glass: "liquid" (refractive, the default) or "frosted" (a plain soft blur, no lensing). */
     static String glass() { return "frosted".equals(sp().getString("glass", "liquid")) ? "frosted" : "liquid"; }
     static void setGlass(String v) { put("glass", v); }

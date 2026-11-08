@@ -38,10 +38,12 @@ import android.view.KeyEvent;
  * Home, as the Siri Remote's TV button (TVOS-LAUNCHER-MERGE-SPEC.md Part 3 §B): a press is Home (the system's own,
  * through the service: the home screen's double press still works), held HOME_LONG_MS it opens Recent Apps. Only while
  * mahitTV is the home screen; otherwise, or if anything is off, Home passes on untouched.
- * Volume: a TV's system never gives the volume keys to the app in front (PhoneWindowManager's TV routing), so while the
- * home screen is in front (RemoteKeyService's window events) the filter takes them, changes the volume itself on
- * volumeWorker without the system's panel, and the home screen shows its own (ACTION_VOLUME → VolumeHud). Not when the
- * TV's volume is fixed; anywhere else the keys stay the system's.
+ * Volume: a TV's system never gives the volume keys to the app in front (PhoneWindowManager's TV routing), so while
+ * mahitTV is the home screen the filter takes them in every app, changes the volume itself on volumeWorker without the
+ * system's panel (1 a press, 5 % a step held), and shows the iPhone-style HUD: the home screen's own (ACTION_VOLUME →
+ * VolumeHud) over it, KeysOverlay's over anything else. Not when the TV's volume is fixed: the system's then.
+ * Channels: the channel keys are the brightness the same way, everywhere (ACTION_BRIGHTNESS to the home screen, or
+ * KeysOverlay's dimmer and HUD).
  */
 final class RemoteKeys {
     private RemoteKeys() {}
@@ -258,6 +260,20 @@ final class RemoteKeys {
     /** A window came to the front (RemoteKeyService): whether it's the home screen's. */
     static void windowChanged(CharSequence pkg, CharSequence cls) {
         homeInFront = pkg != null && cls != null && HomeMode.PKG.contentEquals(pkg) && HOME_CLASS.contentEquals(cls);
+        if (overlay != null) overlay.home(homeInFront);
+    }
+
+    /** The volume and the brightness over other apps (RemoteKeyService's windows), while the service runs. */
+    private static KeysOverlay overlay;
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    static void serviceStarted(android.accessibilityservice.AccessibilityService s) {
+        if (overlay == null) overlay = new KeysOverlay(s);
+    }
+
+    static void serviceStopped() {
+        if (overlay != null) overlay.gone();
+        overlay = null;
     }
 
     static boolean isVolume(int code) {
@@ -272,9 +288,9 @@ final class RemoteKeys {
     private static final long[] channelHeld = new long[1];
 
     /**
-     * A channel key while the home screen is in front: the brightness instead (the home screen has no channels), as the
-     * volume keys are taken (onVolume) since a TV may route them past the app in front. Anywhere else they stay the
-     * TV's. 1 % a press, 5 % a step while held; the home screen changes it and shows the HUD (ACTION_BRIGHTNESS).
+     * A channel key, anywhere while mahitTV is the home screen: the brightness instead of the channel (the owner never
+     * uses channels), as a second pair of volume keys. 1 % a press, 5 % a step while held. Over the home screen it
+     * changes it and shows its HUD (ACTION_BRIGHTNESS); over any other app, KeysOverlay does (its dimmer and HUD).
      */
     private static boolean onChannel(Context c, KeyEvent e) {
         if (e.getAction() == KeyEvent.ACTION_UP) {
@@ -284,7 +300,7 @@ final class RemoteKeys {
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
         if (e.getRepeatCount() > 0 && !channelDown) return false;   // held since before: still the TV's
-        if (!homeInFront || !homeIsOurs(c)) {
+        if (!homeIsOurs(c) || !homeInFront && overlay == null) {
             channelDown = false;
             return false;
         }
@@ -292,8 +308,12 @@ final class RemoteKeys {
         int steps = heldSteps(e, channelHeld);
         if (steps == 0) return true;
         int delta = (e.getKeyCode() == KeyEvent.KEYCODE_CHANNEL_UP ? 1 : -1) * steps;
-        c.sendBroadcast(new Intent(ACTION_BRIGHTNESS).setPackage(HomeMode.PKG).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-                .putExtra("delta", delta));
+        if (homeInFront) {
+            c.sendBroadcast(new Intent(ACTION_BRIGHTNESS).setPackage(HomeMode.PKG).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    .putExtra("delta", delta));
+        } else {
+            overlay.brightness(delta);
+        }
         return true;
     }
 
@@ -332,7 +352,7 @@ final class RemoteKeys {
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
         if (e.getRepeatCount() > 0 && !volumeDown) return false;   // held since before: still the system's
-        if (!homeInFront || !homeIsOurs(c) || volumeFixed(c)) {
+        if (!homeIsOurs(c) || volumeFixed(c) || !homeInFront && overlay == null) {
             volumeDown = false;
             return false;
         }
@@ -343,7 +363,12 @@ final class RemoteKeys {
         final int dir = volumeDirection(e.getKeyCode());
         final Context app = c.getApplicationContext();
         if (volumeWorker == null) volumeWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
-        volumeWorker.execute(() -> adjustVolume(app, dir, steps));
+        final boolean home = homeInFront;
+        volumeWorker.execute(() -> {
+            int[] now = adjustVolume(app, dir, steps);
+            // Over another app: our HUD, as on the home screen (which shows its own from ACTION_VOLUME).
+            if (now != null && !home) MAIN.post(() -> { if (overlay != null) overlay.volume(now[0], now[1] != 0, now[2]); });
+        });
         return true;
     }
 
@@ -364,7 +389,7 @@ final class RemoteKeys {
      * home screen (ACTION_VOLUME, only to this app). Off the UI and filter threads: these are calls to the system. push
      * is 1 or −1 for a press past the top or the bottom.
      */
-    static void adjustVolume(Context c, int dir, int steps) {
+    static int[] adjustVolume(Context c, int dir, int steps) {
         try {
             android.media.AudioManager am = (android.media.AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
             int s = android.media.AudioManager.STREAM_MUSIC, max = Math.max(1, am.getStreamMaxVolume(s));
@@ -380,10 +405,13 @@ final class RemoteKeys {
             int now = am.getStreamVolume(s);
             int push = dir == android.media.AudioManager.ADJUST_RAISE && before >= max && now >= max ? 1
                     : dir == android.media.AudioManager.ADJUST_LOWER && before <= 0 && now <= 0 ? -1 : 0;
+            boolean muted = am.isStreamMute(s);
             c.sendBroadcast(new Intent(ACTION_VOLUME).setPackage(HomeMode.PKG).addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-                    .putExtra("index", now).putExtra("max", max).putExtra("muted", am.isStreamMute(s)).putExtra("push", push));
+                    .putExtra("index", now).putExtra("max", max).putExtra("muted", muted).putExtra("push", push));
+            return new int[] {muted ? 0 : Math.round(100f * now / max), muted ? 1 : 0, push};
         } catch (RuntimeException ex) {
             AppLog.w("volume: " + ex.getMessage());
+            return null;
         }
     }
 

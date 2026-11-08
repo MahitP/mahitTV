@@ -437,6 +437,12 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   home app on is no way around it there: its Home priority wins over ours. `tools/test-remote.sh` (run by
   `tools/check.sh`) checks which TVs and keys match.
   `adb shell input keyevent` doesn't test any of these: injected keys skip the accessibility key filter.
+  While mahitTV is the home screen, the service also takes the volume keys and the channel keys in every app: volume,
+  and the channel keys as brightness (the owner has no use for channels), 1 a press and 5 % a step held, with an
+  iPhone-style HUD at the left edge. Over the home screen, the home screen shows it (ACTION_VOLUME, ACTION_BRIGHTNESS);
+  over any other app, `KeysOverlay` does, in the service's own TYPE_ACCESSIBILITY_OVERLAY windows (no other permission),
+  with a black dimmer for the brightness, since many TCL panels ignore `screen_brightness`. The level lives in
+  `brightness.txt`, which both processes read (`Prefs.brightness`).
 - Recent Apps (`RecentApps`, over a 96×54 `ScreenBlur` copy of the window) is off by default: *Home Settings* →
   *Recent Apps* (`Prefs.recents()`: `off`, `drawer`, `home`) adds the drawer shortcut and the app-switch key, and `home`
   also two Home presses within 700 ms (`HomeActivity.onNewIntent`; not offered on Xiaomi TVs, whose remote sends one
