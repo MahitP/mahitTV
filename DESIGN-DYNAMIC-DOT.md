@@ -1,12 +1,20 @@
 # The dynamic dot
 
-mahitTV's take on Apple's Dynamic Island. The top right of the home screen is, left to right:
+mahitTV's take on Apple's Dynamic Island. While a song plays, a Liquid Glass dot sits beside the tab bar at the top
+centre, the way the Dynamic Island's detached circle sits beside the island:
 
 ```
-[ dynamic dot ]  [ Control Center dot ]  [ 9:41  (avatar) ]
-   only while       always there            the time and the
-   something plays                          profile pill
+                 ( TV · Home · Welly ) (♪)              (⚙)  ( 9:41 (avatar) )
+                  the tab bar          the dynamic dot   Control Center   the time and the profile
 ```
+
+**Why there.**
+- **The island analogy.** The tab bar is the screen's centred capsule, the island, and the dot is its detached circle. Apple's minimal presentation is exactly that pair.
+- **Reachable.** It's one press → from Welly, and ← from it goes back to Welly. ↑ from the tabs still lands on Control Center.
+- **Balanced.** The bar and the dot are centred as one group, so the dot's arrival doesn't tip the top row to one side.
+- **Uncrowded.** The right corner keeps only Control Center and the profile pill.
+
+The first version (left of Control Center, black) was harder to reach, and it read as one more button in the corner.
 
 ## What the research said
 
@@ -37,34 +45,31 @@ mahitTV's take on Apple's Dynamic Island. The top right of the home screen is, l
 - A TV has no camera to hide and no touch, so the island becomes a focusable element in the top row.
 - Focus plays the role of touch and hold: when focused, it's expanded; when not, it's the minimal circle.
 - OK is the one direct control. For music, that's play or pause, as on Honor's capsule; on a TV you don't want to leave the home screen for that.
+- Glass, not black. Apple's island is black so it can hide the camera, and a TV has none. Here it wears the tab bar's Liquid Glass, so it reads as part of the same system.
 
 ## The behaviour
 
-- **Nothing playing:** there is no dot. The Control Center dot and everything left of it close up against the pill.
+- **Nothing playing:** there is no dot, and the tab bar is centred alone.
 - **A song starts:** this means a media session is playing and the *Now Playing widget* is on.
-  - The dot grows out from under the Control Center dot on a liquid spring.
-  - Everything left of it (the top buttons, the AirPods glyph, the sleep timer) slides left by the dot's width.
-- **The dot at rest:** a black circle (48 px, the Control Center dot's size). The album art sits inside it as a circle, on an even 6 px margin. Where an app gives no art, its icon is used instead.
-- **Focused:**
-  - The dot stretches left into a capsule, 72 px tall, on a bouncy spring.
-  - The art moves to the left end and grows to 56 px, keeping the same concentric 8 px margin.
-  - The title and artist fade in once the shape has nearly arrived.
-  - A play or pause glyph sits at the right end.
-  - It grows toward the left, so it never moves the two dots right of it.
+  - The dot slides out from under the bar's right end. It grows from 0.35× on a liquid spring that carries it a little past its place.
+  - The bar slides left by half the dot's width, so the pair stays centred.
+- **The dot at rest:**
+  - It's the bar's own Liquid Glass (smoke glass, its rim and its light), as tall as the bar: 57 px.
+  - The album art sits inside it as a circle on an even 6 px margin. Without art, the app's icon is used.
+- **Focused (→ from Welly):**
+  - It opens rightward into a 72 px capsule on a bouncy spring. The rim brightens and the shadow deepens.
+  - The art stays at the left end and grows to 56 px on a concentric 8 px margin. The title and artist fade in as the shape arrives, and play or pause sits at the right end.
+  - The pair re-centres as it grows.
 - **OK:** play or pause.
-- **Paused:** the dot stays for 30 seconds, so a pause from the dot can be undone from the dot. Then it shrinks back under the Control Center dot. It also stays while it has focus.
-- **Stopped:** the session ends or Now Playing is off. The dot leaves at once, and if it had focus, the focus moves to the Control Center dot.
+- **Paused:** it stays 30 s, and while it has the focus. Then it slides back under the bar, and the bar centres again.
+- **Stopped:** the session ends or Now Playing is off. The dot leaves at once, and a focus on it moves to the bubble.
 - **The title row:** the song's title no longer shows in the tab row's right end, since the dot shows it now. The clock screen keeps its line under the clock.
 
 ## Nothing overlaps
 
-The dot reflows the row instead of covering it. When the capsule needs room:
-
-1. The things left of it (the top buttons, the AirPods glyph, the sleep timer text) slide left by its width, as it grows.
-2. If they would reach the tab bar, the tab bar slides left too, keeping a 32 px gap. It stops at the screen's 80 px margin.
-3. If there is still not enough room, the capsule takes what there is, and the title is cut to fit with "…".
-
-When the focus leaves, everything springs back. All of this is measured when something changes (a song, the focus, the layout), never while drawing.
+- The pair (the bar and the dot or capsule) is centred. It never comes within 32 px of the right cluster (the round buttons, the AirPods glyph, the sleep timer, Control Center's bubble). On the left, it never passes the Top Shelf logo's column (x 476).
+- The capsule's width is what the title needs (up to 380 px of text), but never more than that space allows. The title and line are cut with "…" to what's left.
+- All of this is measured when something changes (a song, the focus, the layout), never while drawing.
 
 ## Later candidates
 
@@ -77,5 +82,5 @@ Each would be a second activity in the same dot. When two are live, two dots sit
 
 ## Where it lives
 
-- **Android:** `HomeView` (`island*` fields, `drawIsland`, `layoutPill`) and `NowPlaying.Watch` (`mediaArt`, `mediaPkg`).
-- **Web app:** `web/home.js` (`#island`) and `home.css`. The preview's sample song makes it show there. LG and Samsung can't tell what's playing, so on those TVs it never appears.
+- **Android:** `HomeView` (`island*` fields, `layoutIsland`, `drawIsland` drawn in the tab bar's layer under the bar, and `tabShift`) and `NowPlaying.Watch` (`mediaArt`).
+- **Web app:** `web/home.js` (`#island`, just before `#tabs`) and `home.css`. The preview's sample song makes it show there. LG and Samsung can't tell what's playing, so on those TVs it never appears.

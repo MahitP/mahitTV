@@ -1,8 +1,8 @@
 'use strict';
 
-/* The dynamic dot in the web preview (DESIGN-DYNAMIC-DOT.md): with the sample song playing it sits left of Control
- * Center's bubble, which sits left of the pill; focused, it opens into a capsule that overlaps nothing (the tab bar
- * slides if it must); paused and left, it goes after its grace, and the row closes up; playing again brings it back.
+/* The dynamic dot in the web preview (DESIGN-DYNAMIC-DOT.md): with the sample song playing it sits beside the tab bar,
+ * the pair centred; → from Welly opens it into a capsule that overlaps nothing (the pair slides left if it must);
+ * paused and left, it goes after its grace and the bar centres again; playing again brings it back.
  * Serves SITE when it's set, else builds the preview into out/webos. */
 var assert = require('assert');
 var child = require('child_process');
@@ -48,12 +48,13 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
   await page.evaluate(function () { return document.fonts ? document.fonts.ready.then(function () {}) : null; });
   await wait(page, 1500);
 
-  // Playing: the dot, then the bubble, then the pill, left to right, a circle as big as the bubble.
+  // Playing: the tab bar, the dot 14 px beside it, the pair centred; then the bubble and the pill at the right.
   var s = await look(page);
   assert.ok(s.state.live && s.shown, 'the sample song plays: the dot shows');
-  assert.ok(s.shape.r <= s.bubble.l && s.bubble.r <= s.pill.l, 'dot, bubble, pill in that order: ' + JSON.stringify([s.shape, s.bubble, s.pill]));
-  assert.ok(Math.abs(s.shape.r - s.shape.l - 48) < 2, 'a 48 px dot at rest: ' + JSON.stringify(s.shape));
-  apart(s.shape, s.tabs, 'dot and tab bar');
+  assert.ok(Math.abs(s.shape.l - s.tabs.r - 14) < 1.5 && s.shape.r < s.bubble.l && s.bubble.r <= s.pill.l,
+    'tab bar, dot, bubble, pill in that order: ' + JSON.stringify([s.tabs, s.shape, s.bubble, s.pill]));
+  assert.ok(Math.abs(s.shape.r - s.shape.l - 57) < 2 && Math.abs(s.shape.b - s.shape.t - 57) < 2, 'a dot as tall as the bar: ' + JSON.stringify(s.shape));
+  assert.ok(Math.abs((s.tabs.l + s.shape.r) / 2 - 960) < 2, 'the bar and the dot centred together: ' + JSON.stringify([s.tabs, s.shape]));
 
   // ↑ to the bubble, ← to the dot: it opens leftward into a capsule with the title, the bubble and pill unmoved.
   while ((await look(page)).zone !== 'top') await tap(page, 'ArrowUp');
@@ -65,13 +66,19 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
   var open = await look(page);
   assert.strictEqual(open.top, 2, '← from the bubble: the dot');
   assert.ok(open.shape.r - open.shape.l > 250 && open.shape.b - open.shape.t > 66, 'open: a wide, 72 px capsule: ' + JSON.stringify(open.shape));
-  assert.ok(Math.abs(open.bubble.l - open.shape.r - 14) < 2, 'it grows leftward: its right end stays 14 px from the bubble: '
-    + JSON.stringify([open.shape, open.bubble]));
+  assert.ok(Math.abs(open.shape.l - open.tabs.r - 14) < 2, 'it grows rightward, 14 px from the bar: ' + JSON.stringify([open.tabs, open.shape]));
+  assert.ok(open.bubble.l - open.shape.r >= 31, 'at least 32 px from the bubble: ' + JSON.stringify([open.shape, open.bubble]));
   function mid(x) { return (x.l + x.r) / 2; }   // centres: the focused one is grown
   assert.ok(Math.abs(mid(open.bubble) - mid(before.bubble)) < 1 && Math.abs(mid(open.pill) - mid(before.pill)) < 1,
     'the bubble and the pill stay put: ' + JSON.stringify([before.bubble, open.bubble, before.pill, open.pill]));
   assert.ok(Number(open.text) > 0.95 && open.title === 'Sample Song', 'the title shows: ' + open.title);
   apart(open.shape, open.tabs, 'open capsule and tab bar');
+  await tap(page, 'ArrowLeft');
+  var welly = await page.evaluate(function () { return FreeMyTV.state.zone + ' ' + FreeMyTV.state.tab; });
+  assert.strictEqual(welly, 'tabs 2', '← from the dot: Welly, beside it');
+  await tap(page, 'ArrowRight');
+  var back = await look(page);
+  assert.ok(back.zone === 'top' && back.top === 2, '→ from Welly: the dot');
 
   // A narrow screen's worth of room: the tab bar slides away rather than sit under it.
   await page.evaluate(function () { document.getElementById('tabs').style.paddingRight = '420px'; });
@@ -80,8 +87,9 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
   await wait(page, 1200);
   var crowded = await look(page);
   assert.strictEqual(crowded.top, 2, 'back on the dot');
-  apart(crowded.shape, crowded.tabs, 'with a wide tab bar, capsule and tab bar');
-  assert.ok(crowded.tabs.l >= 79, 'the tab bar stops at the margin: ' + crowded.tabs.l);
+  apart(crowded.shape, crowded.tabs, 'with a wide tab bar, capsule and tab bar ');
+  apart(crowded.shape, crowded.bubble, 'with a wide tab bar, capsule and bubble');
+  assert.ok(crowded.tabs.l >= 475, 'the tab bar stops short of the pick\'s logo: ' + crowded.tabs.l);
   await page.evaluate(function () { document.getElementById('tabs').style.paddingRight = ''; });
 
   // OK pauses; it stays while focused, closes when left, and goes after the pause's grace.
@@ -95,14 +103,15 @@ function apart(a, b, what) { assert.ok(a.r <= b.l + 0.5 || b.r <= a.l + 0.5, wha
   var gone = await look(page);
   assert.ok(!gone.state.live && gone.gone, 'paused and left: gone after its grace');
   assert.strictEqual(gone.top, 3, 'the focus stayed on the bubble');
+  assert.ok(Math.abs((gone.tabs.l + gone.tabs.r) / 2 - 960) < 2, 'no dot: the bar centred again: ' + JSON.stringify(gone.tabs));
   await tap(page, 'ArrowLeft');
   assert.strictEqual((await look(page)).zone, 'tabs', 'no dot: ← from the bubble goes to the tabs');
 
   // Playing again: back, as a dot.
   await page.evaluate(function () { Home.testIsland({playing: true}); });
   await wait(page, 1200);
-  var back = await look(page);
-  assert.ok(back.state.live && back.shown && Math.abs(back.shape.r - back.shape.l - 48) < 2, 'playing again: the dot is back');
+  back = await look(page);
+  assert.ok(back.state.live && back.shown && Math.abs(back.shape.r - back.shape.l - 57) < 2, 'playing again: the dot is back');
   assert.deepStrictEqual(errors, [], 'no page errors');
   console.log('web-island-test: passed');
   await browser.close();
