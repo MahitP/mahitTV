@@ -136,8 +136,8 @@ async function shootProfiles(browser, theme) {
   const key = async (k, wait) => { await page.keyboard.press(k); await page.waitForTimeout(wait === undefined ? 350 : wait); };
   const type = async (digits, wait) => { for (const d of digits) await key(d, wait === undefined ? 150 : wait); };
   await page.goto(BASE);
-  await page.waitForTimeout(1450); await shot('intro');                 // the Liquid Glass wordmark at the caustic peak
-  await page.waitForTimeout(2200); await shot('whos-watching');         // the manager's card focused
+  await page.waitForTimeout(2950); await shot('intro');                 // the Liquid Glass wordmark at the caustic peak
+  await page.waitForTimeout(3200); await shot('whos-watching');         // the manager's card focused
   await key('ArrowRight', 500); await shot('whos-watching-dhruvin');
   await key('ArrowLeft', 500);
   await key('Enter', 700); await type('21', 200); await page.waitForTimeout(250); await shot('pin-entry');

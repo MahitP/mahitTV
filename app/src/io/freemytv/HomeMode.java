@@ -250,9 +250,18 @@ final class HomeMode {
     private static final Set<String> AMAZON_APPS = new HashSet<>(Arrays.asList(
             "com.amazon.amazonvideo.livingroom", "com.amazon.music.tv"));
 
-    /** Recent Apps' ▲: what may be turned off, and Amazon's streaming apps, which only stop. */
-    static boolean mayStop(String pkg) {
-        return mayTurnOff(pkg) || AMAZON_APPS.contains(pkg) && !PROTECTED.contains(pkg);
+    /**
+     * Apps Recent Apps may close although the rules for turning apps off keep them: TV Settings and the Play Store
+     * (system pieces, so never turned off, but closing only stops them, as their own Force stop does; Android starts them
+     * again when they're opened), and Amazon's streaming apps (no com.amazon.* package is ever turned off, but Prime
+     * Video and Amazon Music only stop). TV Settings also holds Android's FallbackHome, which a stop doesn't touch: it's
+     * only used when no home screen is set, and the system starts it again whenever it's needed.
+     */
+    private static final Set<String> STOPPABLE = new HashSet<>(Arrays.asList(
+            "com.android.tv.settings", "com.android.settings", "com.android.vending"));
+
+    private static boolean alwaysStoppable(String pkg) {
+        return STOPPABLE.contains(pkg) || AMAZON_APPS.contains(pkg);
     }
 
     /** Checked before every disable: never the protected list, Amazon's packages, Android's own pieces or a factory menu. */
@@ -311,7 +320,7 @@ final class HomeMode {
         if (!FREE.equals(s.optString("mode"))) return false;
         synchronized (RUN) {
             try (Adb adb = Adb.connect(c, 5_000, null)) {
-                if (homeOwned(adb, s).contains(pkg)) return false;
+                if (!alwaysStoppable(pkg) && homeOwned(adb, s).contains(pkg)) return false;
                 adb.shell("am force-stop " + pkg);
                 AppLog.w("closed " + pkg + " (Recent Apps)");
                 return true;
@@ -323,14 +332,21 @@ final class HomeMode {
     }
 
     /**
-     * Which apps Recent Apps may close: an installed package name (nothing else reaches the shell), never ours, the
-     * setup app, a Live TV app, any home screen, a system app that wasn't updated, or one mayTurnOff refuses (Android's
-     * pieces, PROTECTED, Amazon's, factory menus).
+     * Which apps Recent Apps may close: an installed package name (nothing else reaches the shell), never ours or the
+     * setup app; STOPPABLE and Amazon's streaming apps; otherwise never a Live TV app, any home screen, a system app that
+     * wasn't updated, or one mayTurnOff refuses (Android's pieces, PROTECTED, Amazon's, factory menus).
      */
     static boolean mayForceStop(Context c, String pkg) {
-        if (pkg == null || !pkg.matches("[A-Za-z][\\w.]*") || pkg.equals(PKG) || pkg.equals(GOOGLE_SETUP) || !mayTurnOff(pkg)) {
-            return false;
+        if (pkg == null || !pkg.matches("[A-Za-z][\\w.]*") || pkg.equals(PKG) || pkg.equals(GOOGLE_SETUP)) return false;
+        if (alwaysStoppable(pkg)) {
+            try {
+                c.getPackageManager().getApplicationInfo(pkg, 0);
+                return true;
+            } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+                return false;
+            }
         }
+        if (!mayTurnOff(pkg)) return false;
         for (String tv : HomeApps.LIVE_TV_APPS) if (tv.equals(pkg)) return false;
         android.content.pm.PackageManager pm = c.getPackageManager();
         try {

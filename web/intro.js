@@ -1,16 +1,19 @@
 /*
- * The "Anamorphic Horizon & Optical Liquid Glass Ignition" startup (Intro.java on Android), 3.10 s, in four acts:
- *  I   (0.00–0.75 s) from a calm cinema slate, an anamorphic flare ribbon ignites on the horizon line (0.46·H) and the
- *      seam opens like an aperture onto the Frosted Horizon (day or night), which breathes under slow drift waves;
- *  II  (0.45–1.85 s) "mahitTV" condenses glyph by glyph (22 ms apart) out of depth and defocus into Liquid Glass: the
- *      refractive frosted body, a slate elevation shadow with the inner top bevel, the 1.5 px specular rim;
- *  III (1.15–2.35 s) a −28° volumetric beam crosses the screen, splitting the rim into cyan, white and amber, and at
- *      1.45 s a gossamer glass ring spreads from the word over the sky;
- *  IV  (2.35–3.10 s) the wordmark exhales while "Who's Watching?" springs in over the same, uninterrupted Horizon.
- * Three layers of sound go with it (Web Audio): a C2 + G2 sub swell, the Cmaj9(#11) glass bloom in a 2.2 s room, and a
- * shimmer that pans left to right with the beam. OK or Back jumps to the hand-off; I (home.js) or Settings → Preview
- * Startup Animation plays it again. Reduce motion or an old TV (lite): the Horizon and the still wordmark, then the
- * hand-off at once. Startup animation off: no startup at power-on (the lock straight away).
+ * The "Liquid Light" startup (Intro.java on Android), 5.4 s, in five acts:
+ *  0   (0.00–1.20 s) on a calm cinema slate, a spark of light appears where the horizon will be, dust drifts in to it
+ *      on slow spirals, and it beats twice like a heart;
+ *  I   (1.05–1.85 s) the spark stretches into the anamorphic flare ribbon on the horizon line (0.46·H) and the seam
+ *      opens like an aperture onto the Frosted Horizon (day or night), which breathes under slow drift waves;
+ *  II  (1.55–3.00 s) "mahitTV" condenses glyph by glyph (75 ms apart, a glass note each) out of depth and defocus into
+ *      Liquid Glass: the refractive frosted body, a slate elevation shadow with the inner top bevel, the specular rim;
+ *  III (2.55–4.65 s) a −28° volumetric beam crosses the screen left to right, splitting the rim into cyan, white and
+ *      amber, a gossamer glass ring spreads over the sky, then a quicker glint crosses back as the word takes a breath;
+ *  IV  (4.85–5.40 s) the wordmark exhales while "Who's Watching?" springs in over the same, uninterrupted Horizon.
+ * The sound (Web Audio, Click.java's score): two sub heartbeats, an airy riser into the ignition, the C2 + G2 sub swell,
+ * a note per glyph, the Cmaj9(#11) glass bloom in a room, the shimmer with the beam and two glints with the second. OK
+ * or Back jumps to the hand-off; I (home.js) or Settings → Preview Startup Animation plays it again. Reduce motion or
+ * an old TV (lite): the Horizon and the still wordmark, then the hand-off at once. Startup animation off: no startup
+ * at power-on (the lock straight away).
  * Everything is built in play(); a frame only sets transforms, alphas and composite modes (gradients are made once and
  * placed with setTransform).
  */
@@ -21,37 +24,44 @@ var Intro = (function () {
   var INTRO = {
     W: 1920, H: 1080,
     midnight: '#070B12',
-    // Act I: the anamorphic ignition.
+    // Act 0: the spark (in, its two heartbeats and their length, core and glow radii) and the dust falling in to it.
+    sparkIn: 0.15, beats: [0.38, 0.80], beat: 0.24, sparkR: 16, sparkGlow: 140, beatGrow: 0.6,
+    dust: 56, dustAt: [0.02, 1.12], dustReach: 820,
+    // Act I: the anamorphic ignition, from the spark.
+    igniteAt: 1.05,
     horizonY: 0.46,                // the ribbon's line, of the height
-    ribbonSpan: 0.85, ribbonThin: 2, ribbonThick: 14, ribbonIgnite: 0.20, ribbonOut: [0.30, 0.75],
+    ribbonSpan: 0.85, ribbonThin: 2, ribbonThick: 14, ribbonIgnite: 0.32, ribbonOut: [1.35, 1.85],
     ribbonCore: [255, 247, 237], bloomWarm: [245, 235, 214], bloomCool: [125, 211, 252],
     bloomFrom: 22, bloomTo: 160, bloomPeak: 0.8,
-    apertureAt: 0.20, aperture: [0.55, 0.84],
+    apertureAt: 1.25, aperture: [0.55, 0.84],
     featherBase: 8, featherGrow: 0.10,
-    drift: [0.20, 0.75, 1.85, 2.35], driftLight: 0.07,   // in, in, out, out; the waves' peak light
+    drift: [1.25, 1.85, 3.95, 4.85], driftLight: 0.07,   // in, in, out, out; the waves' peak light
     // Act II: the Liquid Glass wordmark.
-    word: 'mahitTV', font: 124, weight: 700, tracking: -0.03,
-    wordAt: 0.45, stagger: 0.022, glyph: [0.48, 0.86],   // each glyph's spring
+    word: 'mahitTV', font: 168, weight: 700, tracking: -0.03,
+    wordAt: 1.55, stagger: 0.075, glyph: [0.52, 0.80],   // each glyph's spring
     glyphFrom: 1.14, glyphRise: 14,
     box: [1200, 300],                                     // the word's canvas
     refract: 1.15,                                        // the sky through the letters, magnified
-    bodyDay: 0.24, bodyNight: 0.16,                       // white frost
-    shadow: 'rgba(15, 23, 42, 0.22)', shadowY: 18, shadowBlur: 44,
+    bodyDay: 0.40, bodyNight: 0.26,                       // white frost
+    shadow: 'rgba(15, 23, 42, 0.36)', shadowY: 18, shadowBlur: 44,
     bevel: 0.82, rim: 1.5, rimLo: 0.25,
     // Act III: the caustic beam and the glass ring.
-    sweep: [1.15, 1.75], sweepAngle: -28, sweepWidth: 300, sweepLift: 0.26, beamWidth: 0.09, beamLight: 0.07,
+    sweep: [2.55, 3.35], glint: [3.80, 4.30], glintLight: 0.6, breath: [3.85, 4.65], breathBy: 0.025, sweepAngle: -28, sweepWidth: 300, sweepLift: 0.26, beamWidth: 0.09, beamLight: 0.07,
     prism: ['#38BDF8', '#FFFFFF', '#FDE68A'], prismPx: 1.8,
-    ripple: [1.45, 2.35], rippleFrom: 80, rippleTo: 980, ripplePeak: 0.28,
+    ripple: [2.85, 3.85], rippleFrom: 80, rippleTo: 980, ripplePeak: 0.28,
     // Act IV: the hand-off.
-    handoff: 2.35, wordOut: 0.36, wordTo: 0.95, exhaleBlur: 0.5,   // 14 px of the 28 px defocus
+    handoff: 4.85, wordOut: 0.55, wordTo: 0.95, exhaleBlur: 0.5,   // 14 px of the 28 px defocus
     stillHold: 0.7,
     // The sound (Click.java's, in Web Audio).
     sound: {
-      sub: [[65.41, 0.30], [98.00, 0.22]], subAt: 0.05, subAttack: 0.26, subRelease: [1.95, 2.60],
+      heartbeats: [[0.38, 0.42], [0.80, 0.50]], riser: [0.55, 1.05], riserLevel: 0.10,
+      sub: [[65.41, 0.30], [98.00, 0.22]], subAt: 1.05, subAttack: 0.22, subRelease: [4.05, 4.90],
+      steps: [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66], stepAt: 1.62, stepLevel: 0.07,
+      glints: [[1975.53, 3.90, 0.04], [2637.02, 4.05, 0.035]],
       chord: [261.63, 329.63, 392.00, 493.88, 587.33, 739.99], chordLevel: [0.11, 0.10, 0.10, 0.085, 0.075, 0.05],
-      chordAt: 0.48, roll: 0.045, bloom: 0.035, tau: 1.1, cents: 1.8, fm: 0.12,
-      shimmer: [659.25, 783.99, 987.77, 1174.66], shimmerAt: [1.15, 1.33, 1.51, 1.69], shimmerLevel: 0.055,
-      reverb: 2.2, wet: 0.45, fadeAt: 2.90, length: 3.2, master: 0.5
+      chordAt: 2.15, roll: 0.045, bloom: 0.035, tau: 1.1, cents: 1.8, fm: 0.12,
+      shimmer: [659.25, 783.99, 987.77, 1174.66], shimmerAt: [2.62, 2.82, 3.02, 3.22], shimmerLevel: 0.055,
+      reverb: 2.4, wet: 0.45, fadeAt: 5.0, length: 5.8, master: 0.5
     }
   };
 
@@ -69,7 +79,8 @@ var Intro = (function () {
 
   var layer = null, canvas = null, ctx = null, hzDay = null, hzNight = null, veil = null, dark = false;
   var sharp = null, blur = null, shade = null, cover = null, prisms = [], sweepC = null, sctx = null;
-  var core = null, bloom = null, edgeTop = null, bandGrad = null, beamGrad = null, waves = [];
+  var core = null, bloom = null, edgeTop = null, bandGrad = null, beamGrad = null, waves = [], sparkCore = null, sparkGlow = null;
+  var dustMotes = null;
   var running = false, still = false, frame = 0, start = 0, t = 0, handAt = 0, frozen = 0, handed = false;
   var done = null, audio = null, room = null, wordTimer = 0, wordBox = null;
   var bandDir = [Math.cos(INTRO.sweepAngle * Math.PI / 180), Math.sin(INTRO.sweepAngle * Math.PI / 180)];
@@ -305,6 +316,30 @@ var Intro = (function () {
     edgeTop = ctx.createLinearGradient(0, 0, 0, 1);
     edgeTop.addColorStop(0, INTRO.midnight);
     edgeTop.addColorStop(1, 'rgba(7, 11, 18, 0)');
+    // Act 0: the spark's core and glow (unit radials, placed by setTransform).
+    sparkCore = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    sparkCore.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    sparkCore.addColorStop(0.45, 'rgba(255, 247, 237, 1)');
+    sparkCore.addColorStop(1, 'rgba(255, 247, 237, 0)');
+    sparkGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    sparkGlow.addColorStop(0, 'rgba(245, 235, 214, 0.6)');
+    sparkGlow.addColorStop(0.4, 'rgba(125, 211, 252, 0.25)');
+    sparkGlow.addColorStop(1, 'rgba(125, 211, 252, 0)');
+    // The dust: where each mote starts, how big, when it sets off, how far its spiral turns, its tint (seeded: the same
+    // sky of dust every time, as Android's).
+    if (!dustMotes) {
+      dustMotes = [];
+      var seed = 7, tints = ['255, 247, 237', '255, 255, 255', '125, 211, 252', '253, 230, 138'];
+      var rnd = function () { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+      for (var m = 0; m < INTRO.dust; m++) {
+        var ang = rnd() * 2 * Math.PI, dd = 0.35 + 0.65 * Math.sqrt(rnd()), u = 0;
+        var mote = {x: Math.cos(ang) * dd * INTRO.dustReach, y: Math.sin(ang) * dd * INTRO.dustReach * 0.55, r: 1.2 + 2.3 * rnd(),
+          delay: 0.35 * rnd(), turn: (rnd() < 0.5 ? 1 : -1) * (0.4 + 0.6 * rnd())};
+        u = rnd();
+        mote.tint = tints[u < 0.55 ? 0 : u < 0.75 ? 1 : u < 0.9 ? 2 : 3];
+        dustMotes.push(mote);
+      }
+    }
     // The volumetric beam over the sky: a soft stripe across x (unit wide).
     beamGrad = ctx.createLinearGradient(-0.5, 0, 0.5, 0);
     beamGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
@@ -437,6 +472,51 @@ var Intro = (function () {
         o.start(t0 + s.subAt); o3.start(t0 + s.subAt);
         o.stop(t0 + s.subRelease[1] + 0.05); o3.stop(t0 + s.subRelease[1] + 0.05);
       }
+      // The spark's heartbeats: a falling sub thump each (dry).
+      for (i = 0; i < s.heartbeats.length; i++) {
+        var hb = s.heartbeats[i], ho = ac.createOscillator(), hg = ac.createGain(), hat = t0 + hb[0];
+        ho.frequency.setValueAtTime(58, hat);
+        ho.frequency.exponentialRampToValueAtTime(41, hat + 0.22);
+        hg.gain.setValueAtTime(0, hat);
+        hg.gain.linearRampToValueAtTime(hb[1], hat + 0.008);
+        hg.gain.setTargetAtTime(0, hat + 0.008, 0.09);
+        ho.connect(hg);
+        hg.connect(low);
+        ho.start(hat);
+        ho.stop(hat + 0.4);
+      }
+      // The riser into the ignition: noise through a lowpass opening 300 → 5000 Hz as it swells, cut at the ignition.
+      var nb = ac.createBuffer(2, Math.round(ac.sampleRate * (s.riser[1] - s.riser[0] + 0.05)), ac.sampleRate);
+      for (var nc = 0; nc < 2; nc++) { var nd = nb.getChannelData(nc); for (var ni = 0; ni < nd.length; ni++) nd[ni] = Math.random() * 2 - 1; }
+      var ns = ac.createBufferSource(), nf = ac.createBiquadFilter(), ng = ac.createGain(), r0 = t0 + s.riser[0], r1 = t0 + s.riser[1];
+      ns.buffer = nb;
+      nf.type = 'lowpass';
+      nf.frequency.setValueAtTime(300, r0);
+      nf.frequency.exponentialRampToValueAtTime(5000, r1);
+      ng.gain.setValueAtTime(0.0001, r0);
+      ng.gain.exponentialRampToValueAtTime(s.riserLevel, r1 - 0.02);
+      ng.gain.linearRampToValueAtTime(0, r1);
+      ns.connect(nf);
+      nf.connect(ng);
+      ng.connect(master);
+      ng.connect(send);
+      ns.start(r0);
+      ns.stop(r1 + 0.05);
+      // A glass note per glyph as it lands, rising, spread left to right.
+      for (i = 0; i < s.steps.length; i++) {
+        var spn = -0.6 + 1.2 * i / (s.steps.length - 1), sa = (spn + 1) * Math.PI / 4, sg = ac.createGain();
+        voice(ac, sg, s.steps[i], t0 + s.stepAt + i * INTRO.stagger, 0.006, 0.30, s.stepLevel, end);
+        voice(ac, sg, s.steps[i] * 2, t0 + s.stepAt + i * INTRO.stagger, 0.006, 0.30, s.stepLevel * 0.15, end);
+        side(ac, sg, stereo, 0, Math.cos(sa)); side(ac, sg, stereo, 1, Math.sin(sa));
+        side(ac, sg, send, 0, 1.3 * Math.cos(sa)); side(ac, sg, send, 1, 1.3 * Math.sin(sa));
+      }
+      // The two glints with the second, right to left.
+      for (i = 0; i < s.glints.length; i++) {
+        var gl = s.glints[i], gg = ac.createGain(), ga = (0.4 - 0.25 * i) * Math.PI;
+        voice(ac, gg, gl[0], t0 + gl[1], 0.006, 0.30, gl[2], end);
+        side(ac, gg, stereo, 0, Math.sin(ga)); side(ac, gg, stereo, 1, Math.cos(ga));
+        side(ac, gg, send, 0, 1.3 * Math.sin(ga)); side(ac, gg, send, 1, 1.3 * Math.cos(ga));
+      }
       // Layer 2: Cmaj9(#11), rolled, the #11 last and quietest; each note a voice detuned down on the left and up on the right.
       var down = Math.pow(2, -s.cents / 1200), up = Math.pow(2, s.cents / 1200);
       for (i = 0; i < s.chord.length; i++) {
@@ -471,9 +551,13 @@ var Intro = (function () {
 
   // MARK: - A frame
 
-  /** Where the beam's centre is (stage x): −0.3·W → 1.3·W, slowest over the word, at its centre at 1.45 s. */
+  /** The beam's run at tw: the sweep (left to right), then from halfway to it the glint (right to left). */
+  function run(tw) { return tw > (INTRO.sweep[1] + INTRO.glint[0]) / 2 ? INTRO.glint : INTRO.sweep; }
+
+  /** Where the beam's centre is (stage x): across the stage, slowest over the word (the glint the other way). */
   function beamX(tw) {
-    var u = clamp((tw - INTRO.sweep[0]) / (INTRO.sweep[1] - INTRO.sweep[0])) * 2 - 1;
+    var w = run(tw), u = clamp((tw - w[0]) / (w[1] - w[0])) * 2 - 1;
+    if (w === INTRO.glint) u = -u;
     return INTRO.W * (0.5 + 0.8 * (0.35 * u + 0.65 * u * u * u));
   }
 
@@ -482,6 +566,9 @@ var Intro = (function () {
     if (!sharp) return;
     var bw = INTRO.box[0], bh = INTRO.box[1], cx = INTRO.W / 2, cy = INTRO.H / 2, bx = cx - bw / 2, by = cy - bh / 2;
     var zoom = 1, fade = 1, haze = 0;
+    if (!still && tw > INTRO.breath[0] && tw < INTRO.breath[1]) {   // its one breath, with the glint
+      zoom = 1 + INTRO.breathBy * Math.sin(Math.PI * (tw - INTRO.breath[0]) / (INTRO.breath[1] - INTRO.breath[0]));
+    }
     if (t >= handAt) {
       var out = easeOut((t - handAt) / INTRO.wordOut);
       zoom = 1 - (1 - INTRO.wordTo) * out;
@@ -521,7 +608,7 @@ var Intro = (function () {
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // Act III's caustic sweep: brighter glass and the prism fringe (cyan leading, amber trailing) inside the beam.
-    var sp = still ? -1 : (tw - INTRO.sweep[0]) / (INTRO.sweep[1] - INTRO.sweep[0]);
+    var sw = run(tw), sp = still ? -1 : (tw - sw[0]) / (sw[1] - sw[0]);
     if (sp > 0 && sp < 1) {
       var o = INTRO.prismPx, ox = bandDir[0] * o, oy = bandDir[1] * o;
       sctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -563,7 +650,12 @@ var Intro = (function () {
     var half = 1 + (reach - 1) * r;
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
-    if (half < reach - 0.5) {
+    if (r <= 0.0005) {
+      // Before the aperture opens: all slate (the spark and its dust are the only light), as Android's.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = INTRO.midnight;
+      ctx.fillRect(0, 0, W, H);
+    } else if (half < reach - 0.5) {
       var top = y0 - half, bottom = y0 + half;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = INTRO.midnight;
@@ -576,9 +668,11 @@ var Intro = (function () {
       ctx.fillRect(0, 0, W, 1);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
-    var ignite = smooth(0, INTRO.ribbonIgnite, t), glow = ignite * (1 - smooth(INTRO.ribbonOut[0], INTRO.ribbonOut[1], t));
+    drawSpark();
+    // The ribbon: the spark stretches into it (0 → 85% of the width, easing out), then it fades as the sky opens.
+    var ignite = smooth(INTRO.igniteAt, INTRO.igniteAt + INTRO.ribbonIgnite, t), glow = ignite * (1 - smooth(INTRO.ribbonOut[0], INTRO.ribbonOut[1], t));
     if (glow > 0.004) {
-      var span = INTRO.ribbonSpan * W * (0.35 + 0.65 * ignite);
+      var span = INTRO.ribbonSpan * W * (0.02 + 0.98 * easeOut(ignite));
       var bh = INTRO.bloomFrom + (INTRO.bloomTo - INTRO.bloomFrom) * r;
       var ch = (INTRO.ribbonThin + (INTRO.ribbonThick - INTRO.ribbonThin) * ignite) / 2 / 0.42;
       ctx.globalCompositeOperation = 'lighter';
@@ -589,6 +683,45 @@ var Intro = (function () {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+
+  /** A heartbeat: up and down over INTRO.beat s from 0. */
+  function pulse(x) { return x <= 0 || x >= INTRO.beat ? 0 : Math.sin(Math.PI * x / INTRO.beat); }
+
+  /** Act 0: the dust falling in on its spirals (faster as it nears), then the spark, beating twice and stretching wide. */
+  function drawSpark() {
+    if (t > INTRO.igniteAt + 0.4 || !sparkCore) return;
+    var sx = INTRO.W / 2, sy = INTRO.horizonY * INTRO.H, i;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (i = 0; i < dustMotes.length; i++) {
+      var m = dustMotes[i], p = clamp((t - INTRO.dustAt[0] - m.delay) / (INTRO.dustAt[1] - INTRO.dustAt[0] - m.delay));
+      if (p <= 0 || p >= 1) continue;
+      var e = p * p * p, left = 1 - e, turn = m.turn * left * 1.4, cs = Math.cos(turn), sn = Math.sin(turn);
+      var a = smooth(0, 0.18, p) * (1 - smooth(0.82, 1, p));
+      ctx.globalAlpha = 0.85 * a;
+      ctx.fillStyle = 'rgb(' + m.tint + ')';
+      ctx.beginPath();
+      ctx.arc(sx + (m.x * cs - m.y * sn) * left, sy + (m.x * sn + m.y * cs) * left, m.r * (0.6 + 0.4 * left), 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    var vis = smooth(INTRO.sparkIn, INTRO.sparkIn + 0.25, t) * (1 - smooth(INTRO.igniteAt + 0.05, INTRO.igniteAt + 0.4, t));
+    if (vis > 0.004) {
+      var beat = pulse(t - INTRO.beats[0]) + pulse(t - INTRO.beats[1]), gather = smooth(INTRO.sparkIn, INTRO.igniteAt, t);
+      var grow = (0.55 + 0.45 * gather) * (1 + INTRO.beatGrow * beat), wide = 1 + 7 * smooth(INTRO.igniteAt - 0.06, INTRO.igniteAt + 0.3, t);
+      var gr = INTRO.sparkGlow * grow, cr = INTRO.sparkR * grow;
+      ctx.globalAlpha = vis * (0.55 + 0.45 * beat);
+      ctx.setTransform(gr * wide, 0, 0, gr, sx, sy);
+      ctx.fillStyle = sparkGlow;
+      ctx.fillRect(-1, -1, 2, 2);
+      ctx.globalAlpha = vis;
+      ctx.setTransform(cr * wide, 0, 0, cr, sx, sy);
+      ctx.fillStyle = sparkCore;
+      ctx.fillRect(-1, -1, 2, 2);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   /** The living sky: slow drift waves of light, then (Act III) the volumetric beam and the glass ring. */
@@ -608,7 +741,7 @@ var Intro = (function () {
         ctx.fillRect(-1, -1, 2, 2);
       }
     }
-    var beam = smooth(INTRO.sweep[0], INTRO.sweep[0] + 0.12, t) * (1 - smooth(INTRO.sweep[1] - 0.12, INTRO.sweep[1], t));
+    var bw = run(t), beam = (bw === INTRO.glint ? INTRO.glintLight : 1) * smooth(bw[0], bw[0] + 0.12, t) * (1 - smooth(bw[1] - 0.12, bw[1], t));
     if (beam > 0.002) {
       var wide = INTRO.beamWidth * W * 2.4, long = H * 4;
       ctx.globalAlpha = INTRO.beamLight * beam;
