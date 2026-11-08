@@ -62,7 +62,8 @@ function look(page) {
   assert.ok(!s.moving, 'Back: no longer moving');
   assert.strictEqual(s.dock, 6, 'Back: the Dock as it was');
   assert.deepStrictEqual(s.cells, start.cells, 'Back: All Apps as it was');
-  assert.strictEqual(s.layout, null, 'Back: nothing saved');
+  assert.deepStrictEqual(s.layout, start.layout, 'Back: the saved layout as it was (the first load kept the order)');
+  assert.ok(start.layout && start.layout.grid.length === start.cells.length, 'the first load keeps the order, so new apps go at the end');
 
   // ↓ → onto an app, OK: a folder, named from the card.
   await tap(page, 'ArrowRight', 2);

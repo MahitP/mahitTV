@@ -76,18 +76,14 @@ final class AppLayout {
     // MARK: - The layout over what the TV has
 
     /**
-     * `natural` in the saved order: the keys `saved` names keep its order (the others it names are gone); one it doesn't
-     * name (an app just installed) follows the one before it in `natural`, or goes first.
+     * `natural` in the saved order: the keys `saved` names keep its order (the others it names are gone); the ones it
+     * doesn't name (apps just installed) go at the end, as on Apple TV, in `natural`'s order.
      */
     static List<String> order(List<String> natural, List<String> saved) {
         Set<String> there = new HashSet<>(natural), placed = new HashSet<>();
         List<String> out = new ArrayList<>();
         for (String k : saved) if (there.contains(k) && placed.add(k)) out.add(k);
-        String before = null;
-        for (String k : natural) {
-            if (placed.add(k)) out.add(before == null ? 0 : out.indexOf(before) + 1, k);
-            before = k;
-        }
+        for (String k : natural) if (placed.add(k)) out.add(k);
         return out;
     }
 

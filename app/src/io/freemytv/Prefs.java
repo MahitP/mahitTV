@@ -329,7 +329,7 @@ final class Prefs {
     /**
      * The screensaver's look: "photos" (the picks or your photos, the default), "shuffle" (tvOS 27.2: Aerials, Nature
      * Clock, the photos and the Aurora in turn through the day), "nature" (the depth-layered clock),
-     * "aurora" (the Aurora sky and a clock), "aerials" (the coast, valley, earth and aurora stills) or "black" (a dim
+     * "aurora" (the Aurora sky and a clock), "aerials" (the coast, valley, earth and aurora stills), "landscapes" (five real places, credited) or "black" (a dim
      * clock on black).
      */
     static String saverStyle() { return sp().getString("saverStyle", "photos"); }

@@ -72,7 +72,7 @@ var out = {};
 assert.deepStrictEqual(L.arrange(l, natural, auto, [], out), ['netflix', 'folder:apple', 'spotify', 'folder:tcl', 'folder:u1']);
 assert.deepStrictEqual(out['folder:u1'], ['hulu', 't1']);
 assert.deepStrictEqual(out['folder:tcl'], ['t2', 't3']);
-assert.deepStrictEqual(L.order(['a', 'b', 'n', 'c'], ['c', 'a', 'b']), ['c', 'a', 'b', 'n'], 'a new app after its neighbour');
+assert.deepStrictEqual(L.order(['n', 'a', 'b', 'c'], ['c', 'a', 'b']), ['c', 'a', 'b', 'n'], 'a new app at the end, whatever its name');
 
 // Names
 function first(labels, ids, name) { assert.strictEqual(L.suggest(labels, ids)[0], name, labels.join(' + ')); }

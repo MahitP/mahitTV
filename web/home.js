@@ -381,6 +381,7 @@
     }
     shelf = out;
     others = arrangeGrid(folders(gridOrder(apps.filter(function (x) { return shelf.indexOf(x) < 0; }))));
+    noteNewApps(others);
   }
 
   /*
@@ -3010,6 +3011,29 @@
       f.apps = b.folders[mine[i]].slice();
     }
     Prefs.set('layout', l);
+  }
+
+  /**
+   * Apps that weren't in All Apps before (just installed, or off the Dock): arrangeGrid put them at its end; the order
+   * is kept with them from now on, and a note says where they are. The first time, the order as it is now is kept (no
+   * note), so every app installed from then on goes at the end, as on Apple TV (HomeView.noteNewApps).
+   */
+  function noteNewApps(list) {
+    var l = Layout.read(Prefs.layout()), known = {}, fresh = [], changed = false, i;
+    for (i = 0; i < l.grid.length; i++) known[l.grid[i]] = true;
+    for (i = 0; i < list.length; i++) {
+      if (known[list[i].id]) continue;
+      changed = true;
+      if (!list[i].folder && !list[i].guide) fresh.push(list[i]);
+    }
+    if (!changed) return;
+    var first = !l.grid.length;
+    l.grid = [];
+    for (i = 0; i < list.length; i++) l.grid.push(list[i].id);
+    Prefs.set('layout', l);
+    if (first || !fresh.length) return;
+    toast(fresh.length === 1 ? trf('{app} is now in All Apps, at the end', {app: fresh[0].title})
+      : plural('plural|one:{n} new app is in All Apps, at the end|other:{n} new apps are in All Apps, at the end', fresh.length));
   }
 
   /** All Apps as this profile arranged it (layout.js): its order and its folders. */

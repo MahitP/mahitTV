@@ -9,22 +9,16 @@ var Layout = (function () {
   function has(list, x) { return list.indexOf(x) >= 0; }
 
   /**
-   * `natural` in the saved order: the keys `saved` names keep its order (the others it names are gone); one it doesn't
-   * name (an app just installed) follows the one before it in `natural`, or goes first.
+   * `natural` in the saved order: the keys `saved` names keep its order (the others it names are gone); the ones it
+   * doesn't name (apps just installed) go at the end, as on Apple TV, in `natural`'s order.
    */
   function order(natural, saved) {
     var out = [], placed = {}, i;
     for (i = 0; i < saved.length; i++) {
       if (has(natural, saved[i]) && !placed[saved[i]]) { placed[saved[i]] = true; out.push(saved[i]); }
     }
-    var before = null;
     for (i = 0; i < natural.length; i++) {
-      var k = natural[i];
-      if (!placed[k]) {
-        placed[k] = true;
-        out.splice(before === null ? 0 : out.indexOf(before) + 1, 0, k);
-      }
-      before = k;
+      if (!placed[natural[i]]) { placed[natural[i]] = true; out.push(natural[i]); }
     }
     return out;
   }

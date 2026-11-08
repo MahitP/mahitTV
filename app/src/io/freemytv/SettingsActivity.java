@@ -2303,7 +2303,7 @@ public class SettingsActivity extends Activity {
             }
         }
 
-        private static final String[] SAVER_STYLES = {"shuffle", "photos", "nature", "aurora", "aerials", "black"},
+        private static final String[] SAVER_STYLES = {"shuffle", "photos", "nature", "aurora", "aerials", "landscapes", "black"},
                 SAVER_SCENES = {"rotate", "night", "golden", "water", "fog", "dawn"}, SAVER_CLOCKS = {"tall", "rounded"};
 
         /** Text Size's choices, as the list names them. */
@@ -2318,6 +2318,7 @@ public class SettingsActivity extends Activity {
                 case "nature": return Ui.tr("Nature Clock");
                 case "aurora": return Ui.tr("Aurora");
                 case "aerials": return Ui.tr("Apple Aerials");
+                case "landscapes": return Ui.tr("Landscapes");
                 case "black": return Ui.tr("saver|Black");
                 default: return Ui.tr("saver|Photos");
             }

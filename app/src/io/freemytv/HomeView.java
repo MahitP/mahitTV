@@ -4158,7 +4158,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         list = HomeApps.folders(list);   // the TV's utilities in one folder at the end
         List<String> dock = new ArrayList<>();
         for (HomeApps.Item it : shelf) dock.add(dockKey(it));
-        list = HomeApps.arrange(list, Prefs.layout(), dock);   // as this profile arranged it
+        AppLayout layout = Prefs.layout();
+        list = HomeApps.arrange(list, layout, dock);   // as this profile arranged it
+        noteNewApps(list, layout);
         others = list;
         gridFocus = new Spring[list.size()];
         gridSlideX = new Spring[list.size()];
@@ -4172,6 +4174,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
         retargetGrid(true);
         gridDirty = motionDirty = true;   // the grid's first row peeks under the Dock once there are apps
+    }
+
+    /**
+     * Apps that weren't in All Apps before (installed from the Play Store, or off the Dock): arrange put them at its end;
+     * the order is kept with them from now on, and a note says where they are. The first time, the order as it is now
+     * is kept (no note), so every app installed from then on goes at the end, as on Apple TV.
+     */
+    private void noteNewApps(List<HomeApps.Item> list, AppLayout layout) {
+        java.util.Set<String> known = new java.util.HashSet<>(layout.grid);
+        List<HomeApps.Item> fresh = new ArrayList<>();
+        boolean changed = false;
+        for (HomeApps.Item it : list) {
+            if (known.contains(it.key)) continue;
+            changed = true;
+            if (it.kind == HomeApps.APP) fresh.add(it);
+        }
+        if (!changed) return;
+        boolean first = layout.grid.isEmpty();
+        layout.grid.clear();
+        for (HomeApps.Item it : list) layout.grid.add(it.key);
+        Prefs.setLayout(layout);
+        if (first || fresh.isEmpty()) return;
+        showToast(fresh.size() == 1 ? Ui.trf("{app} is now in All Apps, at the end", "app", fresh.get(0).label)
+                : Ui.plural("plural|one:{n} new app is in All Apps, at the end|other:{n} new apps are in All Apps, at the end", fresh.size()));
     }
 
     /** All Apps from the remote's button. Coming back from another app, resume() opens it (it closes the sheet). */
