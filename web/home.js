@@ -1208,11 +1208,9 @@
     avatar.setAttribute('data-url', url);
     avatar.style.backgroundImage = url;
     Profiles.fitAvatar(person(), avatar);
-    // Right to left: the pill, Control Center's bubble 14 px from it, the dynamic dot 14 px from that (while something
-    // plays), then the quotes.
+    // Right to left: the pill, Control Center's bubble 14 px from it, then the quotes.
     $('ccbtn').style.right = (45 + pill.offsetWidth + 14) + 'px';
-    var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24 + (islandLive ? ISLAND_D + 14 : 0);
-    if (island) island.node.style.right = (45 + pill.offsetWidth + 14 + 48 + 14) + 'px';
+    var air = $('airglyph'), right = 45 + pill.offsetWidth + 14 + 48 + 24;
     if (air) {
       air.style.right = (right - 8) + 'px';
       setClass(air, 'on', !!airpods);
@@ -1223,11 +1221,13 @@
   }
 
   // MARK: - The dynamic dot (DESIGN-DYNAMIC-DOT.md)
-  // Left of Control Center's bubble while something plays: a black dot with the art, as the Dynamic Island's detached
-  // circle; focused, it opens leftward into a capsule with the title and play/pause. Only the preview knows what's
-  // playing (its sample song): no LG or Samsung TV tells a web app, so there it never shows.
+  // Beside the tab bar while something plays, as the Dynamic Island's detached circle beside the island: a Liquid Glass
+  // dot as tall as the bar, with the art. The bar and the dot centre together; focused (→ from Welly), it opens
+  // rightward into a capsule with the title and play/pause. Only the preview knows what's playing (its sample song):
+  // no LG or Samsung TV tells a web app, so there it never shows.
 
-  var ISLAND_D = 48, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_PAUSE = 30000, ISLAND_TAB_GAP = 32;
+  var ISLAND_D = 57, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_PAUSE = 30000, ISLAND_GAP = 32, ISLAND_SPACE = 14;
+  var ISLAND_LEFT = 64 + 380 + 32;   // never over the pick's logo, 380 px wide at the top left
   var island = null, islandLive = false, islandW = ISLAND_D, islandLeft = 0, islandPausedUntil = 0, islandWasPlaying = false;
   var islandTimer = null;
 
@@ -1236,8 +1236,9 @@
 
   function buildIsland() {
     if (island) return;
-    var n = el('div', '', $('top'));
+    var n = el('div', '');
     n.id = 'island';
+    $('stage').insertBefore(n, $('tabs'));   // under the bar: it slides out from beneath its right end
     island = {node: n, l: el('span', 'cap l', n), m: el('span', 'mid', n), r: el('span', 'cap r', n), art: el('span', 'art', n)};
     sym('music', island.art);
     island.txt = el('span', 'txt', n);
@@ -1279,30 +1280,29 @@
   }
 
   /**
-   * The row's left end, and the dot's open width: what the title needs
-   * (at most ISLAND_TEXT) but never more than the room up to the tab bar plus how far the bar can slide; the title is
-   * cut to what's left.
+   * The dot beside the centred tab bar, the right cluster's left end, and the dot's open width: what the title needs
+   * (at most ISLAND_TEXT) but never more than the logo and the cluster leave beside the bar; the title is cut to fit.
    */
   function layoutIsland() {
     if (!island) return;
-    // The leftmost thing laid out in the row (offsetLeft: where it rests, without the slide drawIsland gives it).
-    var quotes = $('quotes'), tabs = $('tabs');
-    islandLeft = islandLive ? island.node.offsetLeft : $('ccbtn').offsetLeft;
+    // The cluster's leftmost thing as laid out (offsetLeft: where it rests).
+    var quotes = $('quotes'), tw = $('tabs').offsetWidth;
+    islandLeft = $('ccbtn').offsetLeft;
     if (airpods) islandLeft = Math.min(islandLeft, $('airglyph').offsetLeft);
     if (quotes.textContent) islandLeft = Math.min(islandLeft, quotes.offsetLeft);
+    island.node.style.left = (960 + tw / 2 + ISLAND_SPACE) + 'px';
     // + 2: scrollWidth is rounded, and a width a fraction short of the text cuts its last letters with "…".
     var want = Math.min(ISLAND_TEXT, Math.max(island.t.scrollWidth, island.s.scrollWidth) + 2), frame = 160;
-    var tw = tabs.offsetWidth, tabsRight = 960 + tw / 2, tabsLeft = 960 - tw / 2;
-    var room = ISLAND_D + Math.max(0, islandLeft - ISLAND_TAB_GAP - tabsRight) + Math.max(0, tabsLeft - 80);
+    var room = islandLeft - ISLAND_GAP - ISLAND_LEFT - tw - ISLAND_SPACE;
     islandW = Math.max(ISLAND_D, Math.min(want + frame, room));
-    island.txt.style.left = (ISLAND_D - islandW + 80) + 'px';
     island.t.style.width = island.s.style.width = Math.max(0, islandW - frame) + 'px';
+    island.pp.style.left = (islandW - 52) + 'px';
   }
 
   function focusIsland() {
     if (!island) return;
     var open = onIsland() && islandLive ? 1 : 0;
-    if (mv.islandOpen.target === open) return;
+    if (mv.islandOpen.to === open) return;
     if (open) renderPill();   // measured again as it opens: the title's font may have come in since
     mv.islandOpen.tune(open ? ISLAND_OPEN : ISLAND_CLOSE).set(open);   // closing is brisker than opening
     Motion.kick();
@@ -1319,30 +1319,31 @@
     if (ccMode === 'controls' && st.zone === Z.DRAWER) renderDrawer();
   }
 
-  /** One frame: the shape from its caps and middle, the art on a concentric margin, the row and the tab bar making room. */
+  /**
+   * One frame: the glass shape from its caps and middle, the art on a concentric margin, and the bar and the dot centred
+   * together, never nearer than ISLAND_GAP to the cluster at the right nor past the pick's logo at the left.
+   */
   function drawIsland() {
     if (!island) return;
     var sv = mv.islandShown.x, e = Math.max(0, mv.islandOpen.x), ec = Motion.clamp(e, 0, 1), d = ISLAND_D;
-    var w = d + (islandW - d) * e, h = Math.max(d * 0.9, d + (ISLAND_H - d) * e), s = h / d, left = d - w, cap = 24 * s;
-    var shown = Motion.clamp(sv, 0, 1), grow = Math.max(0, 0.35 + 0.65 * sv), slide = (14 + d * 0.7) * (1 - shown);
-    T(island.node, 'translateX(' + r2(slide) + 'px) scale(' + r4(grow) + ')');
+    var w = d + (islandW - d) * e, h = Math.max(d * 0.9, d + (ISLAND_H - d) * e), s = h / d, cap = d / 2 * s;
+    var shown = Motion.clamp(sv, 0, 1), grow = Math.max(0, 0.35 + 0.65 * sv), slide = -(ISLAND_SPACE + d * 0.7) * (1 - shown);
+    var tw = $('tabs').offsetWidth, room = shown * (d + ISLAND_SPACE + e * (islandW - d));
+    var shift = Math.min(-room / 2, islandLeft - ISLAND_GAP - (960 + tw / 2) - room);
+    shift = Math.max(shift, Math.min(0, ISLAND_LEFT - (960 - tw / 2)));
+    T($('tabs'), 'translateX(-50%) translateX(' + r2(shift) + 'px)');
+    T(island.node, 'translateX(' + r2(shift + slide) + 'px) scale(' + r4(grow) + ')');
     A(island.node, Motion.clamp(sv * 3, 0, 1));
     V(island.node, shown);
-    T(island.l, 'translateX(' + r2(left) + 'px) scale(' + r4(s) + ')');
-    T(island.m, 'translateX(' + r2(left + cap - 0.5) + 'px) scale(' + r2(Math.max(0, w - 2 * cap) + 1) + ',' + r4(s) + ')');
-    T(island.r, 'translateX(' + r2(d - cap) + 'px) scale(' + r4(s) + ')');
+    setClass(island.node, 'open', ec > 0.5);
+    T(island.l, 'scale(' + r4(s) + ')');
+    T(island.m, 'translateX(' + r2(cap) + 'px) scale(' + r2(Math.max(0, w - 2 * cap)) + ',' + r4(s) + ')');
+    T(island.r, 'translateX(' + r2(w - cap) + 'px) scale(' + r4(s) + ')');
     var pad = 6 + 2 * ec, ad = Math.max(0, h - 2 * pad);
-    T(island.art, 'translate(' + r2(left + pad) + 'px,' + r2(24 - ad / 2) + 'px) scale(' + r4(ad / 56) + ')');
+    T(island.art, 'translate(' + r2(pad) + 'px,' + r2(d / 2 - ad / 2) + 'px) scale(' + r4(ad / 56) + ')');
     var ta = Motion.clamp((e - 0.55) / 0.4, 0, 1);
     A(island.txt, ta);
     A(island.pp, ta);
-    // Everything left of it is laid out for the dot at rest: it slides as the dot comes, goes, opens and closes.
-    var room = shown * (d + 14 + e * (islandW - d)), shift = (islandLive ? d + 14 : 0) - room;
-    T($('airglyph'), 'translateX(' + r2(shift) + 'px)');
-    T($('quotes'), 'translateX(' + r2(shift) + 'px)');
-    var tw = $('tabs').offsetWidth, over = 960 + tw / 2 + ISLAND_TAB_GAP - (islandLeft + shift);
-    var tabShift = over <= 0 ? 0 : Math.min(over, Math.max(0, 960 - tw / 2 - 80));
-    T($('tabs'), 'translateX(-50%) translateX(' + r2(-tabShift) + 'px)');
   }
 
   function renderQuotes() {
@@ -4625,8 +4626,8 @@
         else if (dx > 0 && st.top === 3) st.top = 4;
         else if (dx < 0 && st.top === 4) st.top = 3;
         else if (dx < 0 && st.top === 3 && islandLive) st.top = 2;   // ← from the bubble: the dynamic dot
-        // ← from the bubble: the tab it was reached from with ↑, else the nearest one (Welly).
-        else if (dx < 0) { st.zone = Z.TABS; st.tab = topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
+        // ← from the dot: Welly, beside it. From the bubble: the tab it was reached from with ↑, else Welly.
+        else if (dx < 0) { st.zone = Z.TABS; st.tab = st.top !== 2 && topFromTab !== null ? topFromTab : TAB.WELLY; topFromTab = null; }
         else if (dy > 0) { topFromTab = null; enterTab(); }
         break;
       case Z.DRAWER:
@@ -5230,7 +5231,7 @@
       o = o || {};
       if (o.grace !== undefined) ISLAND_PAUSE = o.grace;
       if (o.playing !== undefined) { previewMedia.playing = o.playing; islandUpdate(); }
-      return {live: islandLive, open: mv.islandOpen.target, width: islandW, playing: previewMedia.playing};
+      return {live: islandLive, open: mv.islandOpen.to, width: islandW, playing: previewMedia.playing};
     };
     window.Home.testBackground = function (o) {
       o = o || {};

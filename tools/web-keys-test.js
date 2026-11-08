@@ -281,7 +281,7 @@ var browser = null;
     'TV & Utilities starts with what\'s for watching: ' + JSON.stringify(lists.utilities));
 
   // Arrow keys: ↓ onto All Apps' shorter last row lands on its last app; ↑ from the tabs reaches Control Center's
-  // bubble without switching tabs, and ← goes back to that tab.
+  // bubble without switching tabs; ← goes back to that tab, or, while the dynamic dot shows, to the dot, then Welly.
   var nav = await page.evaluate(function () {
     FreeMyTV.home();
     var out = {}, s = FreeMyTV.state, n = FreeMyTV.apps().grid.length;
@@ -292,7 +292,7 @@ var browser = null;
     s.zone = 'tabs'; s.tab = 0;
     FreeMyTV.move(0, -1);
     out.up = s.zone + ' ' + s.top + ' ' + s.tab;
-    FreeMyTV.move(-1, 0);   // the preview's sample song plays: the dynamic dot left of the bubble first
+    FreeMyTV.move(-1, 0);   // the preview's sample song plays: the dynamic dot (beside the tab bar) first
     out.dot = s.zone + ' ' + s.top;
     FreeMyTV.move(-1, 0);
     out.left = s.zone + ' ' + s.tab;
@@ -300,8 +300,8 @@ var browser = null;
     return out;
   });
   assert.ok(nav.down === nav.last || nav.last < 12, '↓ onto a shorter row: its last app: ' + JSON.stringify(nav));
-  assert.ok(nav.up === 'top 3 0' && nav.dot === 'top 2' && nav.left === 'tabs 0',
-    '↑ from the TV tab: the bubble, tab kept; ← the dynamic dot, ← back: ' + JSON.stringify(nav));
+  assert.ok(nav.up === 'top 3 0' && nav.dot === 'top 2' && nav.left === 'tabs 2',
+    '↑ from the TV tab: the bubble, tab kept; ← the dynamic dot, ← Welly beside it: ' + JSON.stringify(nav));
   assert.deepStrictEqual(lists.apple, ['Apple Music', 'FaceTime (guide)', 'Fitness+ (guide)', 'Podcasts (guide)'],
     'the Apple folder, where Apple Music was: Apple Music, then the FaceTime, Fitness+ and Podcasts guides: ' + JSON.stringify(lists.apple));
   assert.deepStrictEqual(lists.dock, ['Netflix', 'Prime Video', 'YouTube', 'Apple TV', 'Crunchyroll', 'StbEmu'],
