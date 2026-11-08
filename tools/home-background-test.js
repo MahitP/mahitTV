@@ -86,7 +86,7 @@ assert.ok(/#ccbtn \{[^}]*width: 48px;[^}]*height: 48px;/.test(css), "Control Cen
 assert.ok(/#pill \{[^}]*right: 45px/.test(css) && /\$\('ccbtn'\)\.style\.right = \(45 \+ pill\.offsetWidth \+ 14\)/.test(source),
   "the pill ends the cluster, Control Center's bubble 14 px left of it");
 assert.ok(/#bright \{[^}]*pointer-events: none/.test(css), 'the brightness dimmer never takes the pointer');
-// The volume HUD sits on the left edge, clear of the panel on the right.
-assert.ok(/#volhud \{[^}]*left: 56px;[^}]*width: 72px; height: 320px/.test(css), 'the volume HUD is 72 x 320 at x 56');
+// The volume HUD sits on the left edge, where an iPhone's buttons are, clear of the panel on the right.
+assert.ok(/#volhud \{[^}]*left: 22px; top: 215px; width: 52px; height: 250px/.test(css), 'the volume HUD is a 52 x 250 pill at x 22');
 
 console.log('home-background-test: passed');

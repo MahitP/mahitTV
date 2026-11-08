@@ -224,50 +224,72 @@ var browser = null;
   assert.ok(Math.abs(sizes.small - sizes['default'] * 0.9) < 1.1 && Math.abs(sizes.large - sizes['default'] * 1.15) < 1.1,
     'Text Size scales Settings\' text: ' + JSON.stringify(sizes));
 
-  // + and −: the volume (the preview starts at 30, in steps of 5) on the left HUD, which hides itself after 2.2 s.
+  // + and −: the volume (the preview starts at 30), 1 a press and 5 a step while held, on the iPhone-style HUD: a
+  // 52 × 250 pill against the left edge, which rests as a thin line, then hides itself.
+  function held(key, n) {
+    return page.evaluate(function (o) {
+      return new Promise(function (done) {
+        var i = 0;
+        (function next() {
+          if (i++ >= o.n) { done(); return; }
+          document.dispatchEvent(new KeyboardEvent('keydown', {key: o.key, keyCode: o.code, repeat: i > 1, bubbles: true}));
+          setTimeout(next, 160);
+        })();
+      });
+    }, {key: key, code: key === '=' ? 187 : key === '-' ? 189 : key === '[' ? 219 : key === ']' ? 221 : key === 'PageUp' ? 33 : 34, n: n});
+  }
   s = await state(page);
   assert.strictEqual(s.volume.level, 30, 'the preview volume starts at 30');
   await page.keyboard.press('=');
   await page.waitForTimeout(450);
   s = await state(page);
   var hud = await page.evaluate(function () {
-    var h = document.querySelector('#volhud'), r = h.getBoundingClientRect();
-    return {left: r.left, width: r.width, height: r.height, opacity: parseFloat(getComputedStyle(h).opacity)};
+    var h = document.querySelector('#volhud .pill'), r = h.getBoundingClientRect();
+    return {left: r.left, width: r.width, height: r.height, top: r.top, opacity: parseFloat(getComputedStyle(h).opacity),
+      shown: parseFloat(getComputedStyle(document.querySelector('#volhud')).opacity)};
   });
-  assert.ok(s.volume.level === 35 && s.volume.shown, '+ raises the volume and shows the HUD: ' + JSON.stringify(s.volume));
-  assert.ok(hud.opacity > 0.8 && Math.abs(hud.width - 72) < 2 && Math.abs(hud.height - 320) < 2 && hud.left > 10 && hud.left < 80,
-    'the HUD is 72 × 320 on the left edge: ' + JSON.stringify(hud));
+  assert.ok(s.volume.level === 31 && s.volume.shown, '+ raises the volume by 1 and shows the HUD: ' + JSON.stringify(s.volume));
+  assert.ok(hud.shown > 0.8 && hud.opacity > 0.8 && Math.abs(hud.width - 52) < 2 && Math.abs(hud.height - 250) < 2 && hud.left > 10 && hud.left < 30
+    && hud.top + hud.height / 2 < 400, 'the HUD is a 52 × 250 pill at the left edge, in the upper half: ' + JSON.stringify(hud));
   await page.keyboard.press('-');
   await page.keyboard.press('-');
   await page.waitForTimeout(100);
   s = await state(page);
-  assert.strictEqual(s.volume.level, 25, '− lowers the volume');
-  await page.waitForTimeout(2600);
+  assert.strictEqual(s.volume.level, 29, '− lowers the volume by 1');
+  await page.waitForTimeout(1300);
+  var line = await page.evaluate(function () { return {pill: parseFloat(getComputedStyle(document.querySelector('#volhud .pill')).opacity),
+    line: parseFloat(getComputedStyle(document.querySelector('#volhud .line')).opacity)}; });
+  assert.ok(line.pill < 0.2 && line.line > 0.8, 'resting, it narrows to the line: ' + JSON.stringify(line));
+  await page.waitForTimeout(1400);
   s = await state(page);
-  assert.ok(!s.volume.shown, 'the HUD hides itself after 2.2 s');
-  for (var i = 0; i < 16; i++) await page.keyboard.press('=');
+  assert.ok(!s.volume.shown, 'then it hides itself');
+  await held('=', 5);
+  s = await state(page);
+  assert.strictEqual(s.volume.level, 29 + 1 + 4 * 5, 'held: 1, then 5 a step: ' + s.volume.level);
+  await held('=', 16);
   s = await state(page);
   assert.strictEqual(s.volume.level, 100, 'the volume stops at 100');
 
-  // [ and ]: the brightness in steps of 5 (from 100), the same HUD with the sun, and a dimmer over everything.
+  // The channel keys (PageUp / PageDown on LG; [ and ] in a browser): the brightness the same way, with the sun.
   await page.waitForTimeout(2600);
   var b0 = await page.evaluate(function () { return FreeMyTV.brightness(); });
   assert.strictEqual(b0, 100, 'the brightness starts at 100');
-  await page.keyboard.press('[');
+  await page.keyboard.press('PageDown');
   await page.keyboard.press('[');
   await page.waitForTimeout(450);
   var bright = await page.evaluate(function () {
     var d = document.querySelector('#bright'), h = document.querySelector('#volhud');
     return {level: FreeMyTV.brightness(), dim: parseFloat(getComputedStyle(d).opacity), mode: h.className, hud: FreeMyTV.volume().shown};
   });
-  assert.ok(bright.level === 90 && Math.abs(bright.dim - 0.065) < 0.01 && /bright/.test(bright.mode) && bright.hud,
-    '[ dims the screen and shows the brightness HUD: ' + JSON.stringify(bright));
-  await page.keyboard.press(']');
-  await page.keyboard.press(']');
-  await page.keyboard.press(']');
+  assert.ok(bright.level === 98 && Math.abs(bright.dim - 0.013) < 0.005 && /bright/.test(bright.mode) && bright.hud,
+    'channel down and [ dim the screen by 1 each, with the brightness HUD: ' + JSON.stringify(bright));
+  await held('PageDown', 4);
+  bright = await page.evaluate(function () { return {level: FreeMyTV.brightness()}; });
+  assert.strictEqual(bright.level, 98 - 1 - 3 * 5, 'held channel down: 1, then 5 a step');
+  await held('PageUp', 8);
   await page.waitForTimeout(300);
   bright = await page.evaluate(function () { return {level: FreeMyTV.brightness(), dim: parseFloat(getComputedStyle(document.querySelector('#bright')).opacity)}; });
-  assert.ok(bright.level === 100 && bright.dim < 0.001, '] brings it back up and stops at 100: ' + JSON.stringify(bright));
+  assert.ok(bright.level === 100 && bright.dim < 0.001, 'held channel up brings it back and stops at 100: ' + JSON.stringify(bright));
 
   // The owner's TV: its Dock (Netflix, Prime Video, YouTube, Apple TV, Disney+, StbEmu) and All Apps in their order.
   var lists = await page.evaluate(function () { localStorage.removeItem('mahittv.profile.' + Profiles.current().id); return FreeMyTV.apps(); });

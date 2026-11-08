@@ -407,6 +407,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private RecentsOverlay recentsOverlay;
     private VolumeHud volumeHud;
     private boolean volumeKeyDown;   // the volume key whose press we took (its release is ours too)
+    private final long[] volumeHeld = new long[1];   // when the held volume key last stepped
     private int profileIndex;
     private int pickIndex, heroSlide = 1;
     private Hero hero, heroFrom;
@@ -1131,7 +1132,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         welly.layout(0, 0, width, height);
         weatherOverlay.layout(0, 0, width, height);
         recentsOverlay.layout(0, 0, width, height);
-        place(volumeHud, 0, (height - volumeHud.getMeasuredHeight()) / 2);
+        place(volumeHud, 0, Math.round(VolumeHud.CENTER_Y * kk) - volumeHud.getMeasuredHeight() / 2);   // where an iPhone's buttons are
         lock.layout(0, 0, width, height);
         welcome.layout(0, 0, width, height);
         intro.layout(0, 0, width, height);
@@ -3482,19 +3483,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** OK on Brightness: a quarter down, and from 25 % back to full (the HUD on the left shows it). */
     private void cycleBrightness() {
         int b = Prefs.brightness(), next = b > 75 ? 75 : b > 50 ? 50 : b > 25 ? 25 : 100;
-        stepBrightness((next - b) / 5);
+        stepBrightness(next - b);
         showAppearance();
         layoutDetails();
         wake();
     }
 
     /**
-     * Brightness by `steps` of 5 (Control Center's pill steps a quarter at a time). The dimmer over mahitTV's screens and the window's brightness change at
-     * once; the TV's own brightness follows in mahitTV mode (HomeMode.brightness; Original puts it back). The HUD on the
-     * left shows it with the sun; past either end it stretches.
+     * Brightness by `delta` percent (the channel keys: 1 a press, 5 a step while held; Control Center's pill: a quarter).
+     * The dimmer over mahitTV's screens and the window's brightness change at once; the TV's own brightness follows in
+     * mahitTV mode (HomeMode.brightness; Original puts it back). False when it's already at that end.
      */
-    private boolean stepBrightness(int steps) {
-        int was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + 5 * steps));
+    private boolean stepBrightness(int delta) {
+        int was = Prefs.brightness(), b = Math.max(0, Math.min(100, was + delta));
         if (b == was) return false;
         Prefs.setBrightness(b);
         brightLevel.target = b / 100f;
@@ -5051,11 +5052,46 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         volumeKeyDown = true;
         if (e.getKeyCode() == KeyEvent.KEYCODE_VOLUME_MUTE && e.getRepeatCount() > 0) return true;
+        final int steps = RemoteKeys.heldSteps(e, volumeHeld);   // 1 a press, 5 a step while held
+        if (steps == 0) return true;
         final int dir = RemoteKeys.volumeDirection(e.getKeyCode());
         final Context c = getContext().getApplicationContext();
-        LOADER.execute(() -> RemoteKeys.adjustVolume(c, dir));
+        LOADER.execute(() -> RemoteKeys.adjustVolume(c, dir, steps));
         return true;
     }
+
+    /**
+     * The channel keys, as a second pair of volume keys for the brightness (channels have no use on the home screen): a
+     * press is 1 %, held it goes 5 % a step (RemoteKeys.heldSteps), and the HUD on the left shows it with the sun; past
+     * either end it stretches.
+     */
+    private boolean brightnessKey(KeyEvent e) {
+        if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+        int steps = RemoteKeys.heldSteps(e, brightHeld);
+        if (steps > 0) brightnessBy((e.getKeyCode() == KeyEvent.KEYCODE_CHANNEL_UP ? 1 : -1) * steps);
+        return true;
+    }
+
+    /** The brightness by `delta` percent from the channel keys, with the HUD (stretching past either end). */
+    private void brightnessBy(int delta) {
+        if (!running || delta == 0) return;
+        boolean moved = stepBrightness(delta);
+        volumeHud.showBrightness(Prefs.brightness(), moved ? 0 : Integer.signum(delta));
+        if (drawerOpen) {
+            showAppearance();   // Control Center's slider follows
+            layoutDetails();
+        }
+        wake();
+    }
+
+    /** RemoteKeys' filter took a channel key while the home screen is in front (onChannel). */
+    private final BroadcastReceiver brightnessKeys = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            brightnessBy(i.getIntExtra("delta", 0));
+        }
+    };
+
+    private final long[] brightHeld = new long[1];   // when the held channel key last stepped
 
     /** Power: off locks at once (nothing of the home shows when it comes back on), on plays the intro and the lock. */
     private final BroadcastReceiver screenPower = new BroadcastReceiver() {
@@ -5087,13 +5123,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Only from this app (RemoteKeys, in the key filter's process); Android 13 and newer can say so.
         getContext().registerReceiver(volumeChanged, new IntentFilter(RemoteKeys.ACTION_VOLUME),
                 android.os.Build.VERSION.SDK_INT >= 33 ? Context.RECEIVER_NOT_EXPORTED : 0);
+        getContext().registerReceiver(brightnessKeys, new IntentFilter(RemoteKeys.ACTION_BRIGHTNESS),
+                android.os.Build.VERSION.SDK_INT >= 33 ? Context.RECEIVER_NOT_EXPORTED : 0);
         // Focus: Do Not Disturb turned on or off, here or anywhere (a system broadcast).
         getContext().registerReceiver(dndChanged, new IntentFilter(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED));
         readDnd();
     }
 
     @Override protected void onDetachedFromWindow() {
-        for (BroadcastReceiver r : new BroadcastReceiver[] {screenPower, volumeChanged, dndChanged}) {
+        for (BroadcastReceiver r : new BroadcastReceiver[] {screenPower, volumeChanged, dndChanged, brightnessKeys}) {
             try {
                 getContext().unregisterReceiver(r);
             } catch (IllegalArgumentException ignored) {
@@ -5112,6 +5150,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         touch();
         if (weatherOverlay.showing()) return weatherOverlay.onKey(e);
         if (recentsOverlay.showing()) return recentsOverlay.onKey(e);
+        if (e.getKeyCode() == KeyEvent.KEYCODE_CHANNEL_UP || e.getKeyCode() == KeyEvent.KEYCODE_CHANNEL_DOWN) return brightnessKey(e);
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (launchUp && !launchBack) return launchKey(e, down);
         if (naming) return namingKey(e, down);
