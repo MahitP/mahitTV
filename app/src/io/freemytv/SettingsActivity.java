@@ -2181,6 +2181,7 @@ public class SettingsActivity extends Activity {
                 case R_GLASS: return glassName(Prefs.glass());
                 case R_SETTINGS_STYLE: return styleName(Prefs.settingsStyle());
                 case R_SHELF_MODE: return shelfModeName(Prefs.topShelf());
+                case R_LOCK_WITH: return AppLock.usesProfile(c) ? Ui.tr("Profile Passcode") : Ui.tr("App Passcode");
                 case R_WALLPAPER: {
                     return wallpaperName(Prefs.wallpaper());
                 }
