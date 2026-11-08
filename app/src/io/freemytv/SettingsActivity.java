@@ -1526,7 +1526,34 @@ public class SettingsActivity extends Activity {
             }
         }
 
+        /**
+         * Every key, with the home screen's sounds as tvOS has them: the tick when the focus (or the screen) moves, the
+         * select click when OK opens a row (a switch plays its own on or off), the tick on Back.
+         */
         boolean onKey(KeyEvent e) {
+            boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+            int code = e.getKeyCode();
+            long before = where();
+            boolean okRow = !down && okDown && screen == SECTION && focus < rows.length && !isSwitch(rows[focus]);
+            boolean handled = keyOn(e);
+            Click k = Click.current();
+            if (k != null && handled) {
+                boolean arrow = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+                        || code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT;
+                boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+                if (down && arrow && where() != before) k.move();
+                else if (!down && ok && (okRow || (screen != SECTION && where() != before))) k.open();
+                else if (!down && code == KeyEvent.KEYCODE_BACK && where() != before) k.move();
+            }
+            return handled;
+        }
+
+        /** Where the focus is (screen, row, scroll), to tell whether a key moved it. */
+        private long where() {
+            return ((long) screen << 40) | ((long) (focus & 0xFFFFF) << 20) | (pickScroll & 0xFFFFF);
+        }
+
+        private boolean keyOn(KeyEvent e) {
             boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
             if (screen == PIN_PAD && pinKey(e, down)) return true;
             switch (e.getKeyCode()) {

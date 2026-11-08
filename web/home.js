@@ -896,6 +896,7 @@
     if (ccVolume) T(ccVolume.fill, 'scale(' + r4(level) + ',1)');
     drawFolder();
     drawMove();
+    drawCard();
     drawAir();
     if (recentRow) placeRecents(mv.recents.x);
     // Sheets: fade and settle from 1.04.
@@ -4244,14 +4245,66 @@
    * The app opens at once; meanwhile its tile keeps growing and fades toward full screen and the page recedes to
    * 0.95. Back on the home screen (or if nothing took over), it all returns.
    */
-  var launchTimer = 0;
+  var launchTimer = 0, LAUNCH_GIVE_UP = 12000, LAUNCH_SPIN = 900;
+  // The launch screen, as the Android app (HomeView.startLaunch): the tile grows into a full-screen card in its own
+  // colours with its logo in the middle (zoom: 0 the tile, 1 the screen), and holds until the app takes over the TV;
+  // back on the home screen it shrinks into the tile again. card: {bg, mark, spin, from: {x, y, w, h}, back, at}.
+  var card = null;
+  mv.zoom = spring([0.42, 0.9]);
+  mv.cardA = spring([0.2, 1]);
+  mv.spin = spring([0.3, 1]);
+
   function launchMotion(fx) {
     if (Motion.instant) return;
     launching = fx;
-    if (fx) fx.launch.set(1);
-    mv.launch.set(1);
+    mv.launch.set(1);   // the page recedes behind it
+    showCard(fx);
     clearTimeout(launchTimer);
-    launchTimer = setTimeout(function () { if (!document.hidden) endLaunch(false); }, 1500);
+    // It holds however long the app takes; only if nothing ever takes over does it go back. The preview has no app:
+    // it plays the way back as if one had opened and closed.
+    launchTimer = setTimeout(function () { if (!document.hidden) endLaunch(false); }, PREVIEW ? 1400 : LAUNCH_GIVE_UP);
+  }
+
+  /** The card, made from the tile's own face: its background, its logo (or its name), at the tile's place. */
+  function showCard(fx) {
+    var node = fx && fx.node, layer = $('launchcard');
+    if (!node || !layer) return;
+    var sr = stage.getBoundingClientRect(), r = node.getBoundingClientRect(), k = sr.width / 1920;
+    var from = {x: (r.left - sr.left) / k, y: (r.top - sr.top) / k, w: r.width / k, h: r.height / k};
+    layer.innerHTML = '';
+    var bg = el('div', 'bg', layer), cs = window.getComputedStyle(node);
+    bg.style.backgroundImage = cs.backgroundImage;
+    bg.style.backgroundColor = cs.backgroundColor === 'rgba(0, 0, 0, 0)' ? '#1C1C1E' : cs.backgroundColor;
+    var markSrc = node.querySelector('img'), word = node.querySelector('.word');
+    var mark = el('div', 'mark', layer);
+    mark.style.width = from.w + 'px';
+    mark.style.height = from.h + 'px';
+    if (markSrc) mark.appendChild(markSrc.cloneNode(true));
+    else if (word) mark.appendChild(word.cloneNode(true));
+    var spin = el('div', 'spin', layer);
+    for (var i = 0; i < 8; i++) {
+      var spoke = el('i', '', spin);
+      spoke.style.webkitTransform = spoke.style.transform = 'rotate(' + (i * 45) + 'deg)';
+      spoke.style.opacity = String(1 - ((8 - i) % 8) * 0.11);
+    }
+    card = {bg: bg, mark: mark, spin: spin, from: from, back: false, at: Date.now()};
+    mv.zoom.tune([0.42, 0.9]).snap(0);
+    mv.zoom.set(1);
+    mv.cardA.snap(1);
+    mv.spin.snap(0);
+    setClass(layer, 'on', true);
+    Motion.kick();
+  }
+
+  /** Back from the app (or Back while it opens): the card shrinks into its tile and fades into it. */
+  function cardBack(full) {
+    if (!card || card.back) return;
+    card.back = true;
+    mv.zoom.tune([0.38, 0.92]);
+    if (full) mv.zoom.snap(1);
+    mv.zoom.set(0);
+    mv.spin.set(0);
+    Motion.kick();
   }
 
   function endLaunch(snap) {
@@ -4259,7 +4312,31 @@
     if (launching) { if (snap) launching.launch.snap(0); else launching.launch.set(0); launching.p.snap(0); }
     launching = null;
     if (snap) mv.launch.snap(0); else mv.launch.set(0);
+    if (card && snap) { card = null; setClass($('launchcard'), 'on', false); }
+    else cardBack(false);
     Motion.kick();
+  }
+
+  /** The card's frame (from drawPage): the rect from the tile to the screen, corners squaring off; the logo growing. */
+  function drawCard() {
+    if (!card) return;
+    var z = mv.zoom.x, f = card.from, x = f.x * (1 - z), y = f.y * (1 - z);
+    var w = f.w + (1920 - f.w) * z, h = f.h + (1080 - f.h) * z, sx = Math.max(0.001, w / 1920), sy = Math.max(0.001, h / 1080);
+    var radius = 30 * Math.max(0, 1 - z);
+    T(card.bg, 'translate(' + r2(x) + 'px,' + r2(y) + 'px) scale(' + r4(sx) + ',' + r4(sy) + ')');
+    var br = r2(radius / sx) + 'px / ' + r2(radius / sy) + 'px';
+    if (card.bg._br !== br) { card.bg._br = br; card.bg.style.borderRadius = br; }
+    var g = 1 + 0.6 * Motion.clamp(z, 0, 1);
+    T(card.mark, 'translate(' + r2(x + w / 2 - f.w / 2) + 'px,' + r2(y + h / 2 - f.h / 2) + 'px) scale(' + r4(g) + ')');
+    var a = Motion.clamp(mv.cardA.x, 0, 1);
+    A($('launchcard'), a);
+    if (!card.back && Date.now() - card.at > LAUNCH_SPIN) mv.spin.set(1);
+    A(card.spin, Motion.clamp(mv.spin.x, 0, 1) * Motion.clamp(z, 0, 1));
+    if (card.back && z < 0.18) mv.cardA.set(0);
+    if (card.back && mv.cardA.to === 0 && mv.cardA.x < 0.01) {
+      card = null;
+      setClass($('launchcard'), 'on', false);
+    }
   }
 
   function tvSettings() {
@@ -4763,7 +4840,7 @@
     }
     if (poke(k === TV.keys.ok)) { e.preventDefault(); return; }   // the first press only wakes the screen (or OK watches)
     if (Forecast.showing()) { if (Forecast.key(k, TV.keys)) e.preventDefault(); return; }
-    if (launching) endLaunch(true);
+    if (launching) endLaunch(false);   // a key while an app opens: its card shrinks back
     // Naming a folder, or moving an app: those take the keys (the volume and Home were handled above).
     if (naming) { if (nameKey(e)) e.preventDefault(); return; }
     if (mm && mm.landing) endLanding();
@@ -4904,7 +4981,9 @@
     cancelMove(true);   // leaving (or coming back) mid-move: everything as it was, before the lists load again
     if (document.hidden) { aerialVideo.hide(); hideSaver(); return; }
     idleAt = Date.now();
-    endLaunch(true);   // back from the app: the page is in place again
+    // Back from the app: its card, whole again, shrinks into the tile as the page comes forward.
+    if (card) { clearTimeout(launchTimer); cardBack(true); launching = null; mv.launch.snap(1); mv.launch.set(0); }
+    else endLaunch(true);
     if (Profiles.needsLock() && !Intro.showing() && !Lock.showing()) showLock({from: 'idle'});
     loadApps(function () { renderShelf(); renderDrawer(); updateFocus(); Data.refresh(); });
   });
