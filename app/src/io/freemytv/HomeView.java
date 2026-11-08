@@ -520,49 +520,55 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring avatarFade = new Spring(Spring.ROOM_FADE, 1);
     // MARK: The dynamic dot: live activities (DESIGN-DYNAMIC-DOT.md)
     /**
-     * Beside the tab bar, one Liquid Glass dot per live activity (a song playing, the sleep timer, AirPods joining), as
-     * the Dynamic Island's detached circles beside the island: as tall as the bar, a white symbol in it like the other
-     * round buttons. They slide out from under the bar's right end, and the bar and the dots centre together; focused
-     * (→ from Welly), one opens rightward into a capsule with its words and its one control. AirPods joining opens by
-     * itself for a moment, as an alert does. Never closer than ISLAND_GAP to the buttons at the right nor to the Top
-     * Shelf's logo at the left (ISLAND_LEFT).
+     * One Liquid Glass dot beside the tab bar, as tall as the bar, while any live activity runs: what plays, Focus (Do
+     * Not Disturb), AirPods connected, the sleep timer, in that order of importance. It shows the first one's white
+     * symbol, as the round buttons do. Focused (→ from Welly), it opens rightward into a capsule with that activity's
+     * words and its one control; ↓ ↑ step through the others (the old one slides out as the next slides in), and past
+     * either end it knocks as everything else does. AirPods joining opens it by itself for a moment, as an alert. The bar
+     * and the dot centre together, never closer than ISLAND_GAP to the buttons at the right nor to the Top Shelf's logo
+     * at the left (ISLAND_LEFT).
      */
     private static final float ISLAND_D = TAB_H, ISLAND_H = 72, ISLAND_TEXT = 380, ISLAND_GAP = 32, ISLAND_SPACE = 14;
     private static final float ISLAND_LEFT = TV_LOGO_X + TV_LOGO_W + ISLAND_GAP, ISLAND_ICON = 28;
-    private static final float[] ISLAND_OPEN = {0.40f, 0.76f}, ISLAND_CLOSE = {0.30f, 0.92f};
-    private static final long ISLAND_PAUSE_MS = 30000;   // paused: it stays this long, so OK can play it again
-    private static final long ISLAND_LINGER_MS = 900;    // an alert, closed again, stays this long as a dot
-    private static final int LIVE_MUSIC = 0, LIVE_SLEEP = 1, LIVE_AIR = 2;
+    private static final float[] ISLAND_OPEN = {0.40f, 0.76f}, ISLAND_CLOSE = {0.30f, 0.92f}, ISLAND_SWAP = {0.34f, 0.88f};
+    private static final long ISLAND_PAUSE_MS = 30000;   // paused: the song stays this long, so OK can play it again
+    private static final int LIVE_MUSIC = 0, LIVE_FOCUS = 1, LIVE_AIR = 2, LIVE_SLEEP = 3;
 
-    /** One live activity: its symbol, its words (cut when they change), and its two springs. */
+    /** One live activity: its symbol and its words (cut when they change), and whether it runs. */
     private static final class Live {
         final String icon;
-        final Spring shown = new Spring(Spring.LIQUID_PILL, 0), open = new Spring(ISLAND_OPEN, 0);
-        final RectF now = new RectF();
         String title = "", sub = "", titleFit = "", subFit = "";
-        float w, x;
-        long alertUntil;
+        float w;
+        boolean on;
 
         Live(String icon) {
             this.icon = icon;
         }
-
-        boolean on() {
-            return shown.target > 0.5f;
-        }
     }
 
-    private final Live[] lives = {new Live("music"), new Live("bedtime"), new Live("airpods")};
-    private boolean onIsland, islandFocused, islandWasPlaying, sleepEnds;
-    private int islandAt;   // the live activity with the focus, while onIsland
-    private long islandPausedUntil;
+    private final Live[] lives = {new Live("music"), new Live("moon"), new Live("airpods"), new Live("bedtime")};
+    /** There (0..1), open (0..1), its open width (px), and the step from one activity to the next (0..1). */
+    private final Spring islandShown = new Spring(Spring.LIQUID_PILL, 0), islandOpen = new Spring(ISLAND_OPEN, 0);
+    private final Spring islandWidth = new Spring(Spring.LIQUID_PILL, 0), islandSwap = new Spring(ISLAND_SWAP, 1);
+    private boolean onIsland, islandFocused, islandWasPlaying, sleepEnds, dndOn;
+    private int islandAt;          // the activity the focus is on, while onIsland
+    private int islandShows = -1;  // the activity the dot shows
+    private int islandFrom = -1, islandDir = 1;   // while it steps: the one leaving, and which way (1: ↓)
+    private long islandPausedUntil, airAlertUntil;
     private float islandClusterLeft;   // the right cluster's left end, measured with the layout
     private Paint islandTitlePaint, islandSubPaint;
     private final Paint islandArtPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final android.graphics.Matrix islandMatrix = new android.graphics.Matrix();
+    private final android.graphics.Path islandClip = new android.graphics.Path();
+    private final RectF islandNow = new RectF();
     private Bitmap islandArt;
     private BitmapShader islandArtShader;
     private final Runnable islandCheck = this::updateIsland;
+    private final BroadcastReceiver dndChanged = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            readDnd();
+        }
+    };
     private Bitmap pillAvatarFrom;
     private int pillAvatarProfile = -1;
     private final android.graphics.Path pillClip = new android.graphics.Path();
@@ -1306,8 +1312,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean kenMoving = kenBurns(up);
         if (titleMoving) heroLayer.invalidate();
         if (kenMoving || parallaxMoving) sky.invalidate();
-        boolean pillMoving = avatarFade.step(dt);
-        for (Live l : lives) pillMoving |= l.shown.step(dt) | l.open.step(dt);
+        boolean pillMoving = avatarFade.step(dt) | islandShown.step(dt) | islandOpen.step(dt) | islandWidth.step(dt)
+                | islandSwap.step(dt);
         if (pillMoving) {
             status.invalidate();
             tabBar.invalidate();
@@ -2441,12 +2447,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
+    /** Focus: whether Do Not Disturb is on (anything but "all" lets less through). */
+    private void readDnd() {
+        android.app.NotificationManager nm = (android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        boolean on = nm != null && nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL;
+        if (on == dndOn) return;
+        dndOn = on;
+        updateIsland();
+    }
+
     /**
-     * Which live activities are there, and their words:
-     * - the song: while it plays, ISLAND_PAUSE_MS after it pauses, and while focused; gone at once when the player goes;
-     * - the sleep timer: while it runs (and SleepOverlay isn't showing it);
-     * - AirPods: joining opens it for AIR_MS, then it stays ISLAND_LINGER_MS as a dot (and while focused).
-     * One that goes takes the focus on it to its neighbour, else to the bubble.
+     * Which live activities run, and their words:
+     * - what plays: while it plays, ISLAND_PAUSE_MS after it pauses, and while focused; gone at once when the player goes;
+     * - Focus: while Do Not Disturb is on;
+     * - AirPods: while connected (joining opens the dot by itself for AIR_MS, the alert);
+     * - the sleep timer: while it runs (and SleepOverlay isn't showing it).
+     * The dot comes when the first starts and goes with the last; one that stops under the focus hands it to the next.
      */
     private void updateIsland() {
         long now = SystemClock.uptimeMillis();
@@ -2456,82 +2472,92 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             handler.postDelayed(islandCheck, ISLAND_PAUSE_MS + 50);
         }
         islandWasPlaying = playingNow;
-        Live music = lives[LIVE_MUSIC], sleep = lives[LIVE_SLEEP], air = lives[LIVE_AIR];
+        Live music = lives[LIVE_MUSIC], focus = lives[LIVE_FOCUS], air = lives[LIVE_AIR], sleep = lives[LIVE_SLEEP];
         music.title = playing.mediaTitle == null ? "" : playing.mediaTitle;
         music.sub = playing.mediaDetail == null ? "" : playing.mediaDetail;
-        sleep.title = Ui.tr("Sleep Timer");
-        sleep.sub = sleepText;
+        focus.title = Ui.tr("Do Not Disturb");
+        focus.sub = Ui.tr("state|On");
         air.title = airName == null ? "" : airName;
         air.sub = airSpatial ? Ui.tr("Connected · Spatial Audio") : Ui.tr("Connected");
-        boolean changed = turn(LIVE_MUSIC, has && (playingNow || now < islandPausedUntil || focusedLive(LIVE_MUSIC)));
-        changed |= turn(LIVE_SLEEP, !sleepText.isEmpty());
-        changed |= turn(LIVE_AIR, airName != null && (now < air.alertUntil + ISLAND_LINGER_MS || focusedLive(LIVE_AIR)));
-        if (onIsland && !lives[islandAt].on()) {
+        sleep.title = Ui.tr("Sleep Timer");
+        sleep.sub = sleepText;
+        boolean was = anyLive();
+        music.on = has && (playingNow || now < islandPausedUntil || focusedLive(LIVE_MUSIC));
+        focus.on = dndOn;
+        air.on = airName != null;
+        sleep.on = !sleepText.isEmpty();
+        boolean any = anyLive();
+        islandShown.target = any ? 1 : 0;
+        if (Spring.instant) islandShown.snap(islandShown.target);
+        if (onIsland && !lives[islandAt].on) {
             int n = nextLive(islandAt, 1);
             if (n < 0) n = nextLive(islandAt, -1);
             if (n >= 0) {
                 islandAt = n;
             } else {
                 onIsland = false;
-                onBubble = true;   // the last one went away under the focus: the bubble
+                onBubble = true;   // the last one stopped under the focus: the bubble
             }
             if (zone == Z_STATUS) retarget(false);
         }
-        aimIsland(false);
         if (tvPill != null) {
-            if (changed) layoutPill(); else layoutIsland();
+            if (any != was) layoutPill(); else layoutIsland();
         }
+        aimIsland(false);
         if (tabBar != null) tabBar.invalidate();
         wake();
-    }
-
-    private boolean turn(int i, boolean on) {
-        Live l = lives[i];
-        if (l.on() == on) return false;
-        l.shown.target = on ? 1 : 0;
-        if (Spring.instant) l.shown.snap(l.shown.target);
-        return true;
     }
 
     private boolean focusedLive(int i) {
         return zone == Z_STATUS && onIsland && islandAt == i;
     }
 
-    /** Each one opens while focused, and AirPods' while its alert lasts; closing is brisker than opening. */
+    /**
+     * What the dot shows (the focused activity, else AirPods' alert, else the first that runs), whether it's open, and
+     * how wide: a new one steps in (from below when it's further down the list, from above when it's further up).
+     */
     private void aimIsland(boolean snap) {
         long now = SystemClock.uptimeMillis();
-        boolean onStatus = !sheetOpen && zone == Z_STATUS;
-        for (int i = 0; i < lives.length; i++) {
-            Live l = lives[i];
-            float to = l.on() && (onStatus && onIsland && islandAt == i || now < l.alertUntil) ? 1 : 0;
-            if (to != l.open.target) {
-                l.open.tune(to > 0 ? ISLAND_OPEN : ISLAND_CLOSE);
-                l.open.target = to;
+        boolean focused = !sheetOpen && zone == Z_STATUS && onIsland, alert = lives[LIVE_AIR].on && now < airAlertUntil;
+        int shows = focused ? islandAt : alert ? LIVE_AIR : nextLive(-1, 1);
+        if (shows >= 0 && shows != islandShows) {
+            if (islandShows >= 0 && islandShown.value > 0.5f && !snap && !Spring.instant) {
+                islandFrom = islandShows;
+                islandDir = shows > islandShows ? 1 : -1;
+                islandSwap.snap(0);
+                islandSwap.target = 1;
             }
-            if (snap) l.open.snap(to);
+            islandShows = shows;
         }
+        float open = shows >= 0 && (focused || alert) ? 1 : 0;
+        if (open != islandOpen.target) {
+            islandOpen.tune(open > 0 ? ISLAND_OPEN : ISLAND_CLOSE);   // closing is brisker than opening
+            islandOpen.target = open;
+        }
+        if (islandShows >= 0) islandWidth.target = lives[islandShows].w;
+        if (snap || islandWidth.value == 0) islandWidth.snap(islandWidth.target);
+        if (snap) islandOpen.snap(open);
     }
 
     private boolean anyLive() {
         return nextLive(-1, 1) >= 0;
     }
 
-    /** The next live activity from `from` going `dir` (±1), or −1. */
+    /** The next running activity from `from` going `dir` (±1), or −1. */
     private int nextLive(int from, int dir) {
-        for (int i = from + dir; i >= 0 && i < lives.length; i += dir) if (lives[i].on()) return i;
+        for (int i = from + dir; i >= 0 && i < lives.length; i += dir) if (lives[i].on) return i;
         return -1;
     }
 
-    /** The room the dots take beside the bar now (px): circles while they come or go, a capsule while open. */
+    /** The room the dot takes beside the bar now (px): its circle while it comes or goes, its capsule while open. */
     private float islandRoomNow() {
-        float room = 0, d = ISLAND_D * k;
-        for (Live l : lives) room += Ui.clamp(l.shown.value) * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, l.open.value) * (l.w - d));
-        return room;
+        float d = ISLAND_D * k;
+        return Ui.clamp(islandShown.value) * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, islandOpen.value) * (islandWidth.value - d));
     }
 
     /**
-     * How far the tab bar (and the dots beside it) is drawn from its centred place (px): the group stays centred as the
-     * dots come, go, open and close, but never comes nearer than ISLAND_GAP to the buttons at the right, nor past
+     * How far the tab bar (and the dot beside it) is drawn from its centred place (px): the pair stays centred as the
+     * dot comes, goes, opens and closes, but never comes nearer than ISLAND_GAP to the buttons at the right, nor past
      * ISLAND_LEFT (the Top Shelf's logo) at the left.
      */
     private float tabShift() {
@@ -2541,11 +2567,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return Math.max(shift, Math.min(0, ISLAND_LEFT * k - tabBarRect.left));
     }
 
-    /** OK on a live activity: its one control. */
+    /** OK on the open dot: the activity's one control. */
     private void islandOk() {
         if (islandAt == LIVE_MUSIC) {
             click.toggle(!playing.mediaPlaying);
             playing.playPause();
+        } else if (islandAt == LIVE_FOCUS) {
+            click.toggle(false);
+            toggleDnd();   // Do Not Disturb off (Control Center turns it back on)
         } else if (islandAt == LIVE_SLEEP) {
             int next = nextSleep();   // tvOS's presets, as Control Center's tile: 15 min, 30 min, 1 h, 2 h, off
             click.toggle(next > 0);
@@ -2555,6 +2584,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             openDrawer(false);
             retarget(false);
         }
+    }
+
+    /** Do Not Disturb on or off; its access is allowed once through mahitTV's ADB (Original takes it back). */
+    private void toggleDnd() {
+        final Context ctx = getContext().getApplicationContext();
+        LOADER.execute(() -> {
+            android.app.NotificationManager nm = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            boolean ok = nm != null && (nm.isNotificationPolicyAccessGranted() || HomeMode.allowDnd(ctx));
+            if (ok) {
+                try {
+                    boolean on = nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL;
+                    nm.setInterruptionFilter(on ? android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+                            : android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY);
+                } catch (RuntimeException e) {
+                    AppLog.w("Do Not Disturb: " + e.getMessage());
+                    ok = false;
+                }
+            }
+            final boolean done = ok;
+            handler.post(() -> {
+                if (!done) showToast(Ui.tr("Do Not Disturb needs mahitTV mode."));
+                readDrawerState(false);   // the card's new state
+                readDnd();
+            });
+        });
     }
 
     private int nextSleep() {
@@ -4258,7 +4312,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         bubbleFocus.target = onStatus && onBubble ? 1 : 0;
         aimIsland(snap);
         boolean onLive = onStatus && onIsland;
-        if (islandFocused && !onLive) handler.post(islandCheck);   // left one paused or after its alert: it may go now
+        if (islandFocused && !onLive) handler.post(islandCheck);   // left the song paused: it may go now
         islandFocused = onLive;
         if (snap) {
             pillFocus.snap(pillFocus.target);
@@ -4403,7 +4457,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_HERO) {
             r = heroButton;
         } else if (zone == Z_STATUS) {
-            r = onIsland ? lives[islandAt].now : onBubble ? bubbleRect : pillRect;
+            r = onIsland ? islandNow : onBubble ? bubbleRect : pillRect;
         } else if (zone == Z_DRAWER) {
             r = ccInputs ? (inputIndex < inputRects.length ? inputRects[inputIndex] : null)
                     : drawerIndex < drawerRects.length ? drawerRects[drawerIndex] : null;
@@ -5033,10 +5087,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Only from this app (RemoteKeys, in the key filter's process); Android 13 and newer can say so.
         getContext().registerReceiver(volumeChanged, new IntentFilter(RemoteKeys.ACTION_VOLUME),
                 android.os.Build.VERSION.SDK_INT >= 33 ? Context.RECEIVER_NOT_EXPORTED : 0);
+        // Focus: Do Not Disturb turned on or off, here or anywhere (a system broadcast).
+        getContext().registerReceiver(dndChanged, new IntentFilter(android.app.NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED));
+        readDnd();
     }
 
     @Override protected void onDetachedFromWindow() {
-        for (BroadcastReceiver r : new BroadcastReceiver[] {screenPower, volumeChanged}) {
+        for (BroadcastReceiver r : new BroadcastReceiver[] {screenPower, volumeChanged, dndChanged}) {
             try {
                 getContext().unregisterReceiver(r);
             } catch (IllegalArgumentException ignored) {
@@ -5518,27 +5575,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             dndAt = SystemClock.uptimeMillis();   // its moon swings in if it comes on (drawDrawerTile)
             handler.removeCallbacks(dndFrames);
             handler.post(dndFrames);
-            // Do Not Disturb on or off; its access is allowed once through mahitTV's ADB (Original takes it back).
-            final Context ctx = getContext().getApplicationContext();
-            LOADER.execute(() -> {
-                android.app.NotificationManager nm = (android.app.NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
-                boolean ok = nm != null && (nm.isNotificationPolicyAccessGranted() || HomeMode.allowDnd(ctx));
-                if (ok) {
-                    try {
-                        boolean on = nm.getCurrentInterruptionFilter() > android.app.NotificationManager.INTERRUPTION_FILTER_ALL;
-                        nm.setInterruptionFilter(on ? android.app.NotificationManager.INTERRUPTION_FILTER_ALL
-                                : android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY);
-                    } catch (RuntimeException e) {
-                        AppLog.w("Do Not Disturb: " + e.getMessage());
-                        ok = false;
-                    }
-                }
-                final boolean done = ok;
-                handler.post(() -> {
-                    if (!done) showToast(Ui.tr("Do Not Disturb needs mahitTV mode."));
-                    readDrawerState(false);   // the card's new state
-                });
-            });
+            toggleDnd();
             return;
         }
         if (it.kind == HomeApps.CLOSE_BG) {
@@ -7440,7 +7477,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /**
      * The right cluster's left end, and each live activity's open width: what its words need (at most ISLAND_TEXT), but
-     * never more than the logo and the cluster leave beside the bar and the other dots; its words are cut to fit.
+     * never more than the logo and the cluster leave beside the bar; its words are cut to fit.
      */
     private void layoutIsland() {
         float left = !lightButtons.isEmpty() ? topRects[3].left : !airRect.isEmpty() ? airRect.left : bubbleRect.left;
@@ -7448,11 +7485,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (islandTitlePaint == null) return;
         float d = ISLAND_D * k;
         for (Live l : lives) Symbols.warm(getContext(), l.icon, ISLAND_ICON * k);
-        int count = 0;
-        for (Live l : lives) if (l.on()) count++;
-        // The others stay dots while one opens: its capsule gets the rest.
-        float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width()
-                - ISLAND_SPACE * k - Math.max(0, count - 1) * (d + ISLAND_SPACE * k);
+        float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width() - ISLAND_SPACE * k;
         for (int i = 0; i < lives.length; i++) {
             Live l = lives[i];
             float frame = (80 + (i == LIVE_AIR ? 24 : 80)) * k;   // AirPods has no control at its right end
@@ -7464,6 +7497,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             fitPaint.set(islandSubPaint);
             l.subFit = TextUtils.ellipsize(l.sub, fitPaint, text, TextUtils.TruncateAt.END).toString();
         }
+        if (islandShows >= 0) islandWidth.target = lives[islandShows].w;
     }
 
     /** The tab bar's capsule and its three segments (topRects 0 to 2), centred at the top: measured here, not drawing. */
@@ -8022,87 +8056,100 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.restore();
     }
 
-    /** The live activities beside the bar: placed left to right as they are now, drawn right to left (each under the last). */
-    private void drawIsland(Canvas c) {
-        float x = tabBarRect.right + ISLAND_SPACE * k, d = ISLAND_D * k;
-        for (Live l : lives) {
-            l.x = x;
-            x += Ui.clamp(l.shown.value) * ((ISLAND_D + ISLAND_SPACE) * k + Math.max(0, l.open.value) * (l.w - d));
-        }
-        for (int i = lives.length - 1; i >= 0; i--) drawLive(c, i, tabBarRect.centerY());
-    }
-
     /**
-     * One live activity, in the tab bar's Liquid Glass with a white symbol, as the round buttons. Coming, it slides out
-     * from under what's left of it, growing 0.35× → 1 on a liquid spring that carries it a little past; open, it's a
-     * 72 px capsule with a brighter rim and a deeper shadow, its symbol at the left end (the song's art fading in over
-     * it, on a concentric margin), its words and its control fading in as it arrives.
+     * The dot, in the tab bar's Liquid Glass. Coming, it slides out from under the bar's right end, growing 0.35× → 1 on
+     * a liquid spring that carries it a little past; open, it's a 72 px capsule (as wide as what it shows needs) with a
+     * brighter rim and a deeper shadow. Stepping to another activity, the old one slides out up (or down) as the new
+     * one slides in from the other side; past either end, it knocks (the nudge every focus gets).
      */
-    private void drawLive(Canvas c, int i, float cy) {
-        Live l = lives[i];
-        float sv = l.shown.value;
-        if (sv < 0.01f) return;
-        float e = Math.max(0, l.open.value), ec = Ui.clamp(e), d = ISLAND_D * k;
-        float wNow = d + (l.w - d) * e, hNow = Math.max(d * 0.9f, d + (ISLAND_H * k - d) * e);
-        l.now.set(l.x, cy - hNow / 2, l.x + wNow, cy + hNow / 2);
+    private void drawIsland(Canvas c) {
+        float sv = islandShown.value;
+        if (sv < 0.01f || islandShows < 0) return;
+        float e = Math.max(0, islandOpen.value), ec = Ui.clamp(e), d = ISLAND_D * k, cy = tabBarRect.centerY();
+        float x = tabBarRect.right + ISLAND_SPACE * k, wNow = d + (Math.max(d, islandWidth.value) - d) * e;
+        float hNow = Math.max(d * 0.9f, d + (ISLAND_H * k - d) * e), r = hNow / 2;
+        islandNow.set(x, cy - hNow / 2, x + wNow, cy + hNow / 2);
         float grow = Math.max(0, 0.35f + 0.65f * sv), slide = -(ISLAND_SPACE * k + d * 0.7f) * (1 - Ui.clamp(sv));
-        float r = hNow / 2;
+        float f = zone == Z_STATUS && onIsland ? 1 : 0;
         c.save();
-        c.translate(slide, 0);
-        c.scale(grow, grow, l.x + d / 2, cy);
-        tmp.set(l.now);
+        c.translate(slide + bumpX * f, bumpY * f);
+        c.scale(grow, grow, x + d / 2, cy);
+        tmp.set(islandNow);
         tmp.offset(0, (6 + 10 * ec) * k);
         shadow.setColor(Ui.alpha(0xFF000000, 0.16f + 0.2f * ec));
         shadows.draw(c, tmp, r, SHADOW_BLUR * k, shadow);
-        scene.liquid(c, l.now, r, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * ec, 1);
-        // The left end: the symbol, where the dot's centre is at rest; the song's art comes in over it as it opens.
-        float pad = (6 + 2 * ec) * k, ad = Math.max(0, hNow - 2 * pad), ax = l.now.left + pad + ad / 2;
+        scene.liquid(c, islandNow, r, SMOKE, 0.42f, 0.02f, 12 * k, 8 * k, 0.7f + 0.6f * ec, 1);
+        float p = Ui.clamp(islandSwap.value);
+        if (p < 0.999f && islandFrom >= 0) {
+            // Stepping: both inside the shape, the old one leaving the way the step goes, the new one arriving.
+            c.save();
+            islandClip.rewind();
+            islandClip.addRoundRect(islandNow, r, r, android.graphics.Path.Direction.CW);
+            c.clipPath(islandClip);
+            float travel = hNow * 0.7f;
+            drawLive(c, islandFrom, cy - islandDir * travel * p, 1 - p, e);
+            drawLive(c, islandShows, cy + islandDir * travel * (1 - p), p, e);
+            c.restore();
+        } else {
+            drawLive(c, islandShows, cy, 1, e);
+        }
+        c.restore();
+    }
+
+    /**
+     * One activity's content in the dot, centred on `cy` at alpha `a`: its white symbol at the left end (where the dot's
+     * centre is at rest; the song's art comes in over it as it opens, on a concentric margin), then, open, its words
+     * and its one control.
+     */
+    private void drawLive(Canvas c, int i, float cy, float a, float e) {
+        if (a < 0.01f) return;
+        Live l = lives[i];
+        float ec = Ui.clamp(e), hNow = islandNow.height();
+        float pad = (6 + 2 * ec) * k, ad = Math.max(0, hNow - 2 * pad), ax = islandNow.left + pad + ad / 2;
         float art = i == LIVE_MUSIC && islandArtShader != null ? ec : 0;
-        if (art < 0.99f) Symbols.draw(getContext(), c, l.icon, ax, cy, ISLAND_ICON * k, Ui.alpha(0xFFFFFFFF, 1 - art));
+        if (art < 0.99f) Symbols.draw(getContext(), c, l.icon, ax, cy, ISLAND_ICON * k, Ui.alpha(0xFFFFFFFF, (1 - art) * a));
         if (art > 0.01f) {
             float sc = ad / Math.max(1, islandArt.getWidth());
             islandMatrix.setScale(sc, sc);
             islandMatrix.postTranslate(ax - ad / 2, cy - ad / 2);
             islandArtShader.setLocalMatrix(islandMatrix);
             islandArtPaint.setShader(islandArtShader);
-            islandArtPaint.setAlpha(Math.round(255 * art));
+            islandArtPaint.setAlpha(Math.round(255 * art * a));
             c.drawCircle(ax, cy, ad / 2, islandArtPaint);
             islandArtPaint.setShader(null);
         }
-        float ta = Ui.clamp((e - 0.55f) / 0.4f);
-        if (ta > 0.01f) {
+        float ta = Ui.clamp((e - 0.55f) / 0.4f) * a;
+        if (ta < 0.01f) return;
+        c.save();
+        c.clipRect(islandNow);
+        float tx = islandNow.left + pad + ad + 16 * k;
+        islandTitlePaint.setAlpha(Math.round(255 * ta));
+        boolean two = !l.subFit.isEmpty();
+        c.drawText(l.titleFit, tx, two ? cy - 3 * k : cy + Ui.halfCap(islandTitlePaint), islandTitlePaint);
+        if (two) {
+            islandSubPaint.setAlpha(Math.round(0xB3 * ta));
+            c.drawText(l.subFit, tx, cy + 23 * k, islandSubPaint);
+        }
+        // Its one control (OK), in a slot as big as the left end's at the right end.
+        float gx = islandNow.right - pad - ad / 2, g = k;
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
+        if (i == LIVE_MUSIC && playing.mediaPlaying) {
+            c.drawRoundRect(gx - 9 * g, cy - 12 * g, gx - 3 * g, cy + 12 * g, 2 * g, 2 * g, fill);
+            c.drawRoundRect(gx + 3 * g, cy - 12 * g, gx + 9 * g, cy + 12 * g, 2 * g, 2 * g, fill);
+        } else if (i == LIVE_MUSIC) {
+            mediaGlyph.reset();
+            mediaGlyph.moveTo(gx - 8 * g, cy - 13 * g);
+            mediaGlyph.lineTo(gx - 8 * g, cy + 13 * g);
+            mediaGlyph.lineTo(gx + 12 * g, cy);
+            mediaGlyph.close();
+            c.drawPath(mediaGlyph, fill);
+        } else if (i == LIVE_FOCUS || i == LIVE_SLEEP) {
+            // + for the sleep timer's next preset; × to turn it (or Do Not Disturb) off.
             c.save();
-            c.clipRect(l.now);
-            float tx = l.now.left + pad + ad + 16 * k;
-            islandTitlePaint.setAlpha(Math.round(255 * ta));
-            boolean two = !l.subFit.isEmpty();
-            c.drawText(l.titleFit, tx, two ? cy - 3 * k : cy + Ui.halfCap(islandTitlePaint), islandTitlePaint);
-            if (two) {
-                islandSubPaint.setAlpha(Math.round(0xB3 * ta));
-                c.drawText(l.subFit, tx, cy + 23 * k, islandSubPaint);
-            }
-            // Its one control (OK), in a slot as big as the left end's at the right end.
-            float gx = l.now.right - pad - ad / 2, g = k;
-            fill.setShader(null);
-            fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
-            if (i == LIVE_MUSIC && playing.mediaPlaying) {
-                c.drawRoundRect(gx - 9 * g, cy - 12 * g, gx - 3 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-                c.drawRoundRect(gx + 3 * g, cy - 12 * g, gx + 9 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-            } else if (i == LIVE_MUSIC) {
-                mediaGlyph.reset();
-                mediaGlyph.moveTo(gx - 8 * g, cy - 13 * g);
-                mediaGlyph.lineTo(gx - 8 * g, cy + 13 * g);
-                mediaGlyph.lineTo(gx + 12 * g, cy);
-                mediaGlyph.close();
-                c.drawPath(mediaGlyph, fill);
-            } else if (i == LIVE_SLEEP) {
-                // + for the next preset; × when OK would turn it off.
-                c.save();
-                if (sleepEnds) c.rotate(45, gx, cy);
-                c.drawRoundRect(gx - 12 * g, cy - 2 * g, gx + 12 * g, cy + 2 * g, 2 * g, 2 * g, fill);
-                c.drawRoundRect(gx - 2 * g, cy - 12 * g, gx + 2 * g, cy + 12 * g, 2 * g, 2 * g, fill);
-                c.restore();
-            }
+            if (i == LIVE_FOCUS || sleepEnds) c.rotate(45, gx, cy);
+            c.drawRoundRect(gx - 12 * g, cy - 2 * g, gx + 12 * g, cy + 2 * g, 2 * g, 2 * g, fill);
+            c.drawRoundRect(gx - 2 * g, cy - 12 * g, gx + 2 * g, cy + 12 * g, 2 * g, 2 * g, fill);
             c.restore();
         }
         c.restore();
@@ -8122,16 +8169,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             layoutPill();
             status.invalidate();
         }
-        Live air = lives[LIVE_AIR];
         if (name == null) {
-            air.alertUntil = 0;
+            airAlertUntil = 0;
         } else if (greet && changed) {
-            // Joined: its live activity opens by itself for AIR_MS (the Dynamic Island's alert), then closes to a dot
-            // and goes.
+            // Joined: the dot opens on them by itself for AIR_MS (the Dynamic Island's alert), then closes again.
             airSpatial = AirPods.spatial(audio);
-            air.alertUntil = SystemClock.uptimeMillis() + AIR_MS;
+            airAlertUntil = SystemClock.uptimeMillis() + AIR_MS;
             handler.postDelayed(islandCheck, AIR_MS);
-            handler.postDelayed(islandCheck, AIR_MS + ISLAND_LINGER_MS + 50);
         }
         updateIsland();
         if (drawerOpen) readDrawerState(false);
@@ -8184,13 +8228,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 // The dynamic dot (while something plays) sits right of the tabs: ← Welly, → the round buttons, then
                 // the bubble.
                 if (onIsland) {
-                    if (dx == 0 && dy <= 0) {
-                        deadEnd(dx, dy);
-                        return true;
-                    }
-                    int n = dx == 0 ? -1 : nextLive(islandAt, dx);
-                    if (n >= 0) {
-                        islandAt = n;   // ← → between the live activities
+                    if (dx == 0) {
+                        // ↓ ↑: the next or the previous activity in the dot; past either end, the knock.
+                        int n = nextLive(islandAt, dy > 0 ? 1 : -1);
+                        if (n < 0) {
+                            deadEnd(0, dy);
+                            return true;
+                        }
+                        islandAt = n;
                         break;
                     }
                     onIsland = false;
@@ -8198,14 +8243,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         zone = Z_TOP;   // ← Welly
                         topIndex = 2;
                         selectTab(2);
-                    } else if (dx > 0 && !lightButtons.isEmpty()) {
+                    } else if (!lightButtons.isEmpty()) {
                         zone = Z_TOP;   // → the first round button
                         topIndex = 3;
-                    } else if (dx > 0) {
-                        onBubble = true;   // → no round buttons: the bubble
                     } else {
-                        topFromTab = -1;
-                        enterTab();
+                        onBubble = true;   // → no round buttons: the bubble
                     }
                     break;
                 }
@@ -8215,9 +8257,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else if (dx < 0 && !onBubble) {
                     onBubble = true;    // ← from the pill: the bubble
                 } else if (dx < 0 && onBubble && lightButtons.isEmpty() && anyLive()) {
-                    onBubble = false;   // ← from the bubble, no round buttons: the last live activity
+                    onBubble = false;   // ← from the bubble, no round buttons: the dot, on its first activity
                     onIsland = true;
-                    islandAt = nextLive(lives.length, -1);
+                    islandAt = nextLive(-1, 1);
                 } else if (dx < 0 && topFromTab >= 0) {
                     zone = Z_TOP;   // reached with ↑ from a tab: ← goes back to it
                     topIndex = topFromTab;
@@ -8238,11 +8280,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (dx != 0) {
                     int next = topIndex + dx;
                     if (anyLive() && (topIndex == 2 && dx > 0 || topIndex == 3 && dx < 0)) {
-                        zone = Z_STATUS;   // between Welly and the round buttons: the live activities
+                        zone = Z_STATUS;   // between Welly and the round buttons: the dot, on its first activity
                         topFromTab = -1;
                         onIsland = true;
                         onBubble = false;
-                        islandAt = dx > 0 ? nextLive(-1, 1) : nextLive(lives.length, -1);
+                        islandAt = nextLive(-1, 1);
                     } else if (next > 2 + lightButtons.size()) {
                         zone = Z_STATUS;
                         topFromTab = -1;

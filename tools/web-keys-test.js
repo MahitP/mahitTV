@@ -441,19 +441,19 @@ var browser = null;
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
 
-  // AirPods (A in the preview): their live activity opens by itself beside the tab bar, the glyph shows by the bubble,
-  // then the alert closes and goes.
+  // AirPods (A in the preview): the dynamic dot opens on them by itself beside the tab bar, the glyph shows by the
+  // bubble, then the dot closes back to the most important activity (the sample song) while they stay connected.
   await page.keyboard.press('a');
   await page.waitForTimeout(1100);
   var air = await page.evaluate(function () {
-    var n = document.getElementById('live-airpods'), r = n.querySelector('.mid').getBoundingClientRect(), tabs = document.getElementById('tabs').getBoundingClientRect();
-    return {a: parseFloat(getComputedStyle(n).opacity), title: n.querySelector('.t').textContent, wide: r.right - tabs.right,
-      glyph: document.querySelector('#airglyph').className.indexOf('on') >= 0};
+    var n = document.getElementById('island'), r = n.querySelector('.mid').getBoundingClientRect(), tabs = document.getElementById('tabs').getBoundingClientRect();
+    return {a: parseFloat(getComputedStyle(n).opacity), state: Home.testIsland(), title: document.querySelector('#live-airpods .t').textContent,
+      wide: r.right - tabs.right, glyph: document.querySelector('#airglyph').className.indexOf('on') >= 0};
   });
-  assert.ok(air.a > 0.9 && air.title && air.glyph && air.wide > 150, 'A: the AirPods alert, open beside the tab bar, and the glyph: ' + JSON.stringify(air));
-  await page.waitForTimeout(4600);
-  var gone = await page.evaluate(function () { return getComputedStyle(document.getElementById('live-airpods')).visibility; });
-  assert.strictEqual(gone, 'hidden', 'the AirPods alert closes and goes');
+  assert.ok(air.a > 0.9 && air.state.shows === 'airpods' && air.title && air.glyph && air.wide > 150, 'A: the dot opens on AirPods, and the glyph: ' + JSON.stringify(air));
+  await page.waitForTimeout(4000);
+  var after = await page.evaluate(function () { return Home.testIsland(); });
+  assert.ok(after.open === 0 && after.shows === 'music' && after.lives[2].on, 'the alert closes back to the song, AirPods still there: ' + JSON.stringify(after));
   await page.keyboard.press('a');
   await page.waitForTimeout(300);
   assert.ok(await page.evaluate(function () { return document.querySelector('#airglyph').className.indexOf('on') < 0; }), 'A again: the AirPods leave');
