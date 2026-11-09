@@ -383,6 +383,43 @@ final class Prefs {
     }
 
     private static long brightnessAt = -1;
+
+    /**
+     * Music Glow (Appearance & Startup): on, and its style (0 Subtle, 1 Balanced, 2 Vivid). A file, as the brightness:
+     * the key service (:keys) draws it and reads it; Settings (:home) writes it and tells it (GlowRing.ACTION_SETTINGS).
+     */
+    static boolean glowOn() {
+        return glow()[0] != 0;
+    }
+
+    static int glowStyle() {
+        return glow()[1];
+    }
+
+    private static int[] glow() {
+        File f = new File(app.getFilesDir(), "glow.txt");
+        int[] v = {1, 1};
+        if (!f.isFile()) return v;
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+            String[] parts = r.readLine().trim().split(" ");
+            v[0] = Integer.parseInt(parts[0]);
+            v[1] = Math.max(0, Math.min(2, Integer.parseInt(parts[1])));
+        } catch (IOException | RuntimeException ignored) {
+        }
+        return v;
+    }
+
+    static void setGlow(boolean on, int style) {
+        File f = new File(app.getFilesDir(), "glow.txt"), tmp = new File(app.getFilesDir(), "glow.tmp");
+        try (java.io.FileWriter w = new java.io.FileWriter(tmp)) {
+            w.write((on ? 1 : 0) + " " + Math.max(0, Math.min(2, style)));
+        } catch (IOException e) {
+            AppLog.w("music glow: " + e.getMessage());
+            return;
+        }
+        if (!tmp.renameTo(f)) AppLog.w("music glow: couldn't save");
+        app.sendBroadcast(new android.content.Intent(GlowRing.ACTION_SETTINGS).setPackage(app.getPackageName()));
+    }
     private static int brightnessCached = 100;
     /** The glass: "liquid" (refractive, the default) or "frosted" (a plain soft blur, no lensing). */
     static String glass() { return "frosted".equals(sp().getString("glass", "liquid")) ? "frosted" : "liquid"; }

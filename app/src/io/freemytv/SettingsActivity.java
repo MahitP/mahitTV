@@ -1713,6 +1713,8 @@ public class SettingsActivity extends Activity {
                 R_TV_SYSTEM = 86, R_TV_ACCESSIBILITY = 87, R_TV_REMOTES = 88, R_DATE_TIME = 89,
                 // App Lock (AppLock): the locked apps, what unlocks them, and the App Passcode.
                 R_LOCKED_APPS = 90, R_LOCK_WITH = 91, R_APP_CODE = 92,
+                // Music Glow (GlowRing): on, and its style.
+                R_GLOW = 93, R_GLOW_STYLE = 94,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
         private static final String[] LIGHTS = {"parents.bulb", "mine.lamp", "mine.bulb", "living.bulb"};
@@ -1771,7 +1773,7 @@ public class SettingsActivity extends Activity {
         // A section's groups (tvOS: grouped inset containers): each one's header above and footer under it.
         private static final int G_YOU = 0, G_PINS = 1, G_LOOK = 2, G_SAVER = 3, G_STARTUP = 4, G_WEATHER = 5, G_WIDGETS = 6,
                 G_MEDIA = 7, G_LIGHTS = 8, G_BRAIN = 9, G_MEMORY = 10, G_HOME = 11, G_REMOTE = 12, G_TV = 13, G_RESET = 14,
-                G_RESTORE = 15, G_TV_MENU = 16, G_APP_LOCK = 17;
+                G_RESTORE = 15, G_TV_MENU = 16, G_APP_LOCK = 17, G_GLOW = 18;
         private final List<Integer> buildRows = new ArrayList<>(), buildGroups = new ArrayList<>();
 
         private void group(int kind) {
@@ -1824,6 +1826,9 @@ public class SettingsActivity extends Activity {
                     if (may("clock")) add(R_CLOCK);
                     add(R_WALLPAPER, R_GLASS, R_SETTINGS_STYLE, R_PHOTOS);
                     if (!Photos.files(c).isEmpty()) add(R_PHOTOS_REMOVE);
+                    group(G_GLOW);
+                    add(R_GLOW);
+                    if (Prefs.glowOn()) add(R_GLOW_STYLE);
                     group(G_SAVER);
                     add(R_SAVER_STYLE);
                     if ("nature".equals(Prefs.saverStyle())) add(R_SAVER_SCENE, R_SAVER_CLOCK);
@@ -1901,6 +1906,7 @@ public class SettingsActivity extends Activity {
                 case G_TV: return Ui.tr("TV");
                 case G_TV_MENU: return Ui.tr("Google TV Settings");
                 case G_APP_LOCK: return Ui.tr("App Lock");
+                case G_GLOW: return Ui.tr("Music Glow");
                 default: return null;
             }
         }
@@ -1912,6 +1918,7 @@ public class SettingsActivity extends Activity {
                 case G_YOU: return ProfileManager.current(c).guest()
                         ? Ui.tr("Guest's Dock, theme and Welly chats are forgotten when the TV locks.") : null;
                 case G_PINS: return Ui.tr("Changing a PIN asks for the manager's PIN.");
+                case G_GLOW: return Ui.tr("A light around the picture in the album art's colours, pulsing with the beat while a music app plays.");
                 case G_APP_LOCK: return Ui.tr("Locked apps ask for a passcode when opened from mahitTV. Forgot the App Passcode? Your profile's passcode resets it.");
                 case G_LOOK: return Photos.files(c).isEmpty() ? Ui.tr("Send them from a computer: see “Your own photos” in the README.") : null;
                 case G_SAVER: return Ui.tr("Photos, a depth-layered Nature Clock, Aurora, Apple Aerials or a dim clock on black.");
@@ -2084,6 +2091,8 @@ public class SettingsActivity extends Activity {
                 case R_CHANGE_PIN: return Ui.tr("Change PIN");
                 case R_DOCK: return Ui.tr("Dock");
                 case R_LOCKED_APPS: return Ui.tr("Locked Apps");
+                case R_GLOW: return Ui.tr("Music Glow");
+                case R_GLOW_STYLE: return Ui.tr("Glow Style");
                 case R_LOCK_WITH: return Ui.tr("Unlock With");
                 case R_APP_CODE: return AppLock.hasAppCode(c) ? Ui.tr("Change App Passcode") : Ui.tr("Set App Passcode");
                 case R_THEME: return Ui.tr("Theme");
@@ -2182,6 +2191,7 @@ public class SettingsActivity extends Activity {
                 case R_SETTINGS_STYLE: return styleName(Prefs.settingsStyle());
                 case R_SHELF_MODE: return shelfModeName(Prefs.topShelf());
                 case R_LOCK_WITH: return AppLock.usesProfile(c) ? Ui.tr("Profile Passcode") : Ui.tr("App Passcode");
+                case R_GLOW_STYLE: return glowName(Prefs.glowStyle());
                 case R_WALLPAPER: {
                     return wallpaperName(Prefs.wallpaper());
                 }
@@ -2279,6 +2289,7 @@ public class SettingsActivity extends Activity {
                 case R_PHOTOS: return !Photos.files(getContext()).isEmpty();   // with none, it only says so
                 case R_CARTOONS: return true;
                 case R_INTRO: case R_SOUNDS: case R_WEATHER: case R_PLAYING: case R_QUOTES: case R_SAVER: case R_SYSTEM_APPS:
+                case R_GLOW:
                     return true;
                 default:
                     return false;
@@ -2297,6 +2308,7 @@ public class SettingsActivity extends Activity {
                 case R_QUOTES: return Prefs.quotes();
                 case R_SAVER: return Prefs.saverWatch();
                 case R_SYSTEM_APPS: return Prefs.systemApps();
+                case R_GLOW: return Prefs.glowOn();
                 default: return false;
             }
         }
@@ -2306,7 +2318,7 @@ public class SettingsActivity extends Activity {
             switch (id) {
                 case R_THEME: case R_TEMPERATURE: case R_FORECAST: case R_SAVER_STYLE: case R_SAVER_SCENE: case R_SAVER_CLOCK:
                 case R_GLASS: case R_SETTINGS_STYLE: case R_SHELF_MODE: case R_TEXT_SIZE: case R_CLOCK: case R_POWER_ON: case R_PHOTO_SOURCE:
-                case R_LOCK_WITH:
+                case R_LOCK_WITH: case R_GLOW_STYLE:
                     return true;
                 default:
                     return false;
@@ -2315,6 +2327,11 @@ public class SettingsActivity extends Activity {
 
         private static final String[] GLASSES = {"liquid", "frosted"}, STYLES = {"full", "sidebar"},
                 SHELF_MODES = {"app", "picks", "all", "off"};
+
+        /** Music Glow's styles: a fine line, the default, a broad band that washes the room. */
+        static String glowName(int style) {
+            return style == 0 ? Ui.tr("Subtle") : style == 2 ? Ui.tr("Vivid") : Ui.tr("Balanced");
+        }
 
         private static String glassName(String v) {
             return "frosted".equals(v) ? Ui.tr("Frosted Glass") : Ui.tr("Liquid Glass");
@@ -2426,6 +2443,9 @@ public class SettingsActivity extends Activity {
                 case R_SHELF_MODE:
                     for (String v : SHELF_MODES) l.add(new String[] {v, shelfModeName(v)});
                     break;
+                case R_GLOW_STYLE:
+                    for (int i = 0; i < 3; i++) l.add(new String[] {Integer.toString(i), glowName(i)});
+                    break;
                 case R_LOCK_WITH:
                     l.add(new String[] {AppLock.WITH_PROFILE, Ui.tr("Profile Passcode")});
                     l.add(new String[] {AppLock.WITH_APP, Ui.tr("App Passcode")});
@@ -2440,6 +2460,7 @@ public class SettingsActivity extends Activity {
         private String enumNow(int id) {
             switch (id) {
                 case R_LOCK_WITH: return AppLock.with(getContext());
+                case R_GLOW_STYLE: return Integer.toString(Prefs.glowStyle());
                 case R_CLOCK: return Prefs.clockFormat();
                 case R_POWER_ON: return Prefs.powerOn();
                 case R_PHOTO_SOURCE: return "album".equals(Prefs.photoSource()) ? "album:" + Prefs.photoAlbum() : Prefs.photoSource();
@@ -2523,6 +2544,7 @@ public class SettingsActivity extends Activity {
                     activity.restyle();   // Settings opens again in its new style, on this row
                     return;
                 case R_SHELF_MODE: Prefs.setTopShelf(v); break;
+                case R_GLOW_STYLE: Prefs.setGlow(Prefs.glowOn(), Integer.parseInt(v)); break;
                 default: break;
             }
             openSection(section, id);
@@ -3689,6 +3711,10 @@ public class SettingsActivity extends Activity {
                     Prefs.setSystemApps(!Prefs.systemApps());
                     appCount = -1;
                     countApps();
+                    return;
+                case R_GLOW:
+                    Prefs.setGlow(!Prefs.glowOn(), Prefs.glowStyle());
+                    openSection(section, R_GLOW);   // Glow Style comes and goes with it
                     return;
                 default:
                     return;   // OK opens it, or it only reads

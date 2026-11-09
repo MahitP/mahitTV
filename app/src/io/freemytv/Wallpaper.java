@@ -52,7 +52,10 @@ final class Wallpaper {
     };
     /** Music sessions have their own Now Playing surface and must never request TMDB artwork. */
     private static final String[] MUSIC_APPS = {
-            "com.apple.android.music", "com.spotify.tv.android", "com.spotify.music"
+            "com.apple.android.music", "com.spotify.tv.android", "com.spotify.music",
+            "com.google.android.youtube.tvmusic", "com.google.android.apps.youtube.music", "com.amazon.music.tv",
+            "com.amazon.mp3", "com.pandora.android.atv", "com.aspiro.tidal", "deezer.android.tv", "com.soundcloud.android",
+            "com.clearchannel.iheartradio.controller", "tv.plex.labs.plexamp"
     };
 
     private static final Aerial[] AERIALS = {

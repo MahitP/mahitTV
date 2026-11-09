@@ -268,13 +268,22 @@ final class RemoteKeys {
     private static KeysOverlay overlay;
     private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
 
+    /** Music Glow: the light around the picture while music plays (its own window, made only while it glows). */
+    private static GlowRing glow;
+
     static void serviceStarted(android.accessibilityservice.AccessibilityService s) {
         if (overlay == null) overlay = new KeysOverlay(s);
+        if (glow == null) {
+            glow = new GlowRing(s);
+            glow.start();
+        }
     }
 
     static void serviceStopped() {
         if (overlay != null) overlay.gone();
         overlay = null;
+        if (glow != null) glow.stop();
+        glow = null;
     }
 
     static boolean isVolume(int code) {

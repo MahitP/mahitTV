@@ -453,6 +453,12 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   14 tested).
   Welly's tools (`WellyTools`) run the TV: apps (open, close), playback (incl. stop and skipping seconds), volume,
   brightness, Do Not Disturb, the sleep timer, YouTube search, the TV's settings pages, its status and standby.
+- Music Glow (`GlowRing`, `GlowRingView`, DESIGN-MUSIC-GLOW.md, after the Mac app Lumn): while a music app plays (never a
+  video app, IPTV or YouTube), a ring of light around the picture in the album art's two colours, pulsing with the beat,
+  in the key service's own overlay window (so `:keys` runs it, and only while it glows). The beat comes from Android's
+  `Visualizer` on the output mix (FFT magnitudes, RECORD_AUDIO, never the microphone), the colours from the session's
+  art; one AGSL shader draws only the bands along the edges (plain edge gradients before Android 13). Settings →
+  Appearance & Startup → Music Glow (`glow.txt`, read by `:keys`; Settings broadcasts `GlowRing.ACTION_SETTINGS`).
 - Passcodes are typed with the arrows (`PasscodePad`, DESIGN-PASSCODE.md): six presses of ↑ ↓ ← →, shown only as dots, as
   Fire TV and Xbox do; older four-digit PINs keep the 0–9 row until changed (`ProfileManager.remotePin`). App Lock
   (`AppLock`, `AppLockView`) asks for one before a profile's locked apps open from mahitTV (`HomeApps.open` checks), with
