@@ -4,7 +4,7 @@ A ring of light around the TV picture, in the colours of the album art. It pulse
 
 ## How Lumn works
 
-I studied Lumn 1.1 (trylumn.xyz) without running it. I read its bundle with `plutil`, `otool` and `strings`, and its Swift reflection metadata. REA's command-line tool ran, but its native analysis needs a decompiler engine (Ghidra, Hopper, IDA or Kuna), which wasn't installed. Its binary is stripped.
+I studied Lumn 1.1 (trylumn.xyz) without running it. I read its bundle with `plutil`, `otool` and `strings`, and its Swift reflection metadata. Its binary is stripped. The beat detector was then decompiled with Ghidra 12.1.4 through REA's command-line tool, with Ghidra's macOS decompiler built locally (`gradle buildNatives`).
 
 - **App:** SwiftUI, AppKit and Metal, with Sparkle for updates. The bundle id is `Playgroundbranch.Lumn`, it needs macOS 15, and it's a universal binary for arm64 and x86_64.
 - **Drawing:** a Metal library with a `plasmaRim` shader. Its inputs are `phase`, `bloom`, `chroma`, `thickMul`, `wobble`, `edgeWidth`, `notch`, `cornerRadius`, `amount`, `balance`, `deepC` and `color`. So the rim is a living "plasma" band, not a stroked line:
@@ -15,6 +15,7 @@ I studied Lumn 1.1 (trylumn.xyz) without running it. I read its bundle with `plu
   A `liquidGlass` shader draws its lock-screen player.
 - **Colour:** `AlbumArt`, `RimPalette` and `_accent` / `_accentDeep`. That's two colours taken from the artwork, an accent and a deep shade, with a balance between them. "Override album color" lets you pick fixed ones instead.
 - **Listening:** a CoreAudio process tap on the whole system's audio mix (`AudioHardwareCreateProcessTap`, an aggregate device, "global system-audio mixdown"). An FFT (`log2n`, `fft`, `window`, `_bands`) runs on it. The tap heals itself when the output device changes.
+- **The decompiled beat test** (Ghidra 12.1.4 through REA, the function that logs "beat #"): a beat is the bass over 1.35 × its history's mean (and over 0.003), **or** the full band over 1.5 × its own (and over 0.006), at least 0.25 s after the last. The level it reports every 0.1 s is min(1, max(full ÷ 0.1, bass ÷ 0.04)), averaged. mahitTV uses the same test.
 - **Beat:** `AudioBeatDetector` keeps `bassHistory`, `fullHistory`, `lpState` and `lastBeatT`. A beat is the low-passed bass energy rising above its own recent history, at least a minimum gap after the last one. Its log line reads "beat #n bass … full …".
 - **Rhythm:** `MusicSyncClock` keeps `bpm`, `beatPhase`, `phaseCorr`, `anchorPos` and `interval`. Around those, it keeps:
   - `energy`, `peakRef`, `dynEase` and `baseline`: loudness, eased and normalised to a running peak;
