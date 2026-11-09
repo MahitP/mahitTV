@@ -7,7 +7,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.PixelFormat;
 import android.media.MediaMetadata;
 import android.media.audiofx.Visualizer;
 import android.media.session.MediaController;
@@ -18,8 +17,6 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.view.View;
-import android.view.WindowManager;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,7 +33,6 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
     static final String ACTION_SETTINGS = "io.freemytv.GLOW";
 
     private final AccessibilityService service;
-    private final WindowManager wm;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final List<MediaController> controllers = new ArrayList<>();
     private final MediaController.Callback callback = new MediaController.Callback() {
@@ -44,7 +40,8 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         @Override public void onMetadataChanged(MediaMetadata metadata) { update(); }
         @Override public void onSessionDestroyed() { update(); }
     };
-    private GlowRingView view;
+    /** The light: its own thread and windows, so the key service's thread never waits for it. */
+    private final GlowRingView light;
     private boolean watching, screenOn = true, playing;
     private Bitmap artFrom;
     private String artPkg;
@@ -57,14 +54,15 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
             String a = i.getAction();
             if (Intent.ACTION_SCREEN_OFF.equals(a)) {
                 screenOn = false;
-                if (view != null) view.setScreen(false);
+                light.post(() -> light.setScreen(false));
                 beat.stop();
             } else if (Intent.ACTION_SCREEN_ON.equals(a)) {
                 screenOn = true;
-                if (view != null) view.setScreen(true);
+                light.post(() -> light.setScreen(true));
                 update();
             } else {   // Settings changed it
-                if (view != null) view.setStyle(Prefs.glowStyle());
+                final int style = Prefs.glowStyle();
+                light.post(() -> light.setStyle(style));
                 update();
             }
         }
@@ -72,7 +70,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
 
     GlowRing(AccessibilityService s) {
         service = s;
-        wm = (WindowManager) s.getSystemService(Context.WINDOW_SERVICE);
+        light = new GlowRingView(s, this, this);
     }
 
     void start() {
@@ -88,7 +86,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         worker = new HandlerThread("glow");
         worker.start();
         work = new Handler(worker.getLooper());
-        AppLog.w("music glow: " + GlowRingView.shaderCheck() + (Prefs.glowOn() ? ", on" : ", off"));
+        AppLog.w("music glow: " + (Prefs.glowOn() ? "on" : "off"));
         watch();
     }
 
@@ -99,7 +97,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         }
         unwatch();
         beat.stop();
-        removeWindow();
+        light.quit();
         if (worker != null) worker.quitSafely();
         worker = null;
     }
@@ -171,12 +169,14 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         boolean now = mc != null;
         if (now) colorsFrom(mc);
         if (now && !playing) {
-            if (!ensureWindow()) return;
-            view.setStyle(Prefs.glowStyle());
-            view.setOn(true);
+            final int style = Prefs.glowStyle();
+            light.post(() -> {
+                light.setStyle(style);
+                light.setOn(true);
+            });
             beat.start();
-        } else if (!now && playing && view != null) {
-            view.setOn(false);   // it breathes out; the listening stops once it's dark (onDark)
+        } else if (!now && playing) {
+            light.post(() -> light.setOn(false));   // it breathes out; the listening stops once it's dark (onDark)
         }
         playing = now;
     }
@@ -204,9 +204,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
             try {
                 if (b == null || b.isRecycled()) b = iconOf(c, pkg);
                 final float[][] p = Palette.of(b);
-                main.post(() -> {
-                    if (view != null) view.setColors(p[0], p[1]);
-                });
+                light.post(() -> light.setColors(p[0], p[1]));
             } catch (RuntimeException e) {
                 AppLog.w("music glow: colours: " + e.getMessage());
             }
@@ -226,43 +224,11 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         }
     }
 
-    // MARK: - The window
-
-    private boolean ensureWindow() {
-        if (view != null) return true;
-        try {
-            GlowRingView v = new GlowRingView(service, this, this);
-            int flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                    | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, flags,
-                    PixelFormat.TRANSLUCENT);
-            lp.setTitle("mahitTV Music Glow");
-            wm.addView(v, lp);
-            view = v;
-            artFrom = null;   // the colours again, for the new view
-            return true;
-        } catch (RuntimeException e) {
-            AppLog.w("music glow: window: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private void removeWindow() {
-        if (view == null) return;
-        try {
-            wm.removeView(view);
-        } catch (RuntimeException ignored) {
-        }
-        view = null;
-    }
-
     /** It breathed out: no window, no listening, until music plays again. */
     @Override public void onDark() {
-        if (playing) return;
-        beat.stop();
-        main.post(this::removeWindow);
+        main.post(() -> {
+            if (!playing) beat.stop();
+        });
     }
 
     // MARK: - The beat (GlowRingView.Source)
@@ -290,8 +256,12 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         private HandlerThread thread;
         private final float[] bass = new float[HISTORY];
         private int at, filled;
-        private float lastBass, env, peak = 1;
+        private float lastBass, env, peak = 1, baseline;
         private long lastBeat, lastSound;
+        // Every 15 s while it listens, one line: beats heard, the mean energy and the mean full-band level.
+        private long reportAt;
+        private int reportBeats, frames;
+        private float sumEnergy, sumFull;
 
         void start() {
             if (thread != null) return;
@@ -340,7 +310,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
                 }
                 Arrays.fill(bass, 0);
                 at = filled = 0;
-                env = 0;
+                env = baseline = 0;
                 peak = 1;
                 energy = -1;
                 t.quitSafely();
@@ -365,11 +335,15 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
             // Loudness: fast attack, slow release, over a peak that falls slowly (quiet songs still glow).
             env = full > env ? full : env * 0.86f + full * 0.14f;
             peak = Math.max(env, peak * 0.996f);
+            // Against the song's own baseline (its last few seconds, as Lumn's MusicSyncClock): louder than usual
+            // lights up, quieter settles, whatever the song's overall level.
+            baseline = baseline == 0 ? env : baseline + (env - baseline) * 0.02f;
             if (full > 6) lastSound = now;
             if (now - lastSound > 1500) {   // silence or no data: the steady glow
                 energy = -1;
             } else {
-                energy = Math.min(1, env / Math.max(peak, 1e-3f));
+                float over = (env - baseline) / Math.max(peak - baseline, peak * 0.08f);
+                energy = Math.max(0, Math.min(1, 0.5f + 0.5f * over));
             }
             // The beat: the bass jumping over its own recent average.
             float avg = 0;
@@ -378,6 +352,19 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
             if (filled >= 8 && b > avg * 1.35f + 2 && b > lastBass && now - lastBeat > 260 && energy >= 0) {
                 lastBeat = now;
                 count++;
+            }
+            frames++;
+            sumEnergy += Math.max(0, energy);
+            sumFull += full;
+            if (now - reportAt > 15_000) {
+                if (reportAt != 0 && frames > 0) {
+                    AppLog.w(String.format(java.util.Locale.ROOT, "music glow: %d beats in 15 s, energy %.2f, level %.0f%s",
+                            count - reportBeats, sumEnergy / frames, sumFull / frames, energy < 0 ? " (no audio: steady)" : ""));
+                }
+                reportAt = now;
+                reportBeats = count;
+                frames = 0;
+                sumEnergy = sumFull = 0;
             }
             lastBass = b;
             bass[at] = b;

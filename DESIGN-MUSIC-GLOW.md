@@ -60,4 +60,22 @@ It needs Now Playing's access, the same as the dynamic dot, so it works where th
 
 **Checked.** A WebGL port of the shader was tuned in a browser for each style, with sample palettes and with and without a beat. On the TV (TCL, Android 14) the AGSL compiles: the key service logs "music glow: shader ready".
 
-**Cost.** A RuntimeShader (AGSL, Android 13+) draws only the bands along the edges, and the window exists only while it glows. Android 8–12 get a plainer glow: the accent colour fading in from each edge, pulsing.
+**Cost.** The first version drew one AGSL shader over every pixel of the edges at 60 fps, on the key service's main thread. On the TCL that meant 77 ms frames (13 fps), the GPU busy 17 ms per edge, and every remote key waiting behind it: the TV felt slow. What it does now:
+- **Its own thread:** the light's windows belong to a HandlerThread (`glow-light`), so the key service's thread never waits for a frame.
+- **Four thin windows**, one per edge, only as deep as the glow reaches. The middle of the picture isn't composited at all.
+- **A tiny picture per edge:** the glow (the colours along it, faded across it) is painted once per colour change at a quarter of the size. A frame only slides it along the rim and stretches it across on the beat, through a repeating, filtered BitmapShader: the cheapest draw a GPU has, and a soft light loses nothing at that size. A new song's colours cross-fade the old picture out.
+- **25 frames a second**, and nothing once it's dark: the windows go.
+
+Measured with Spotify playing:
+
+| | Before | Now |
+|---|---|---|
+| Median frame | 77 ms | 5 ms |
+| GPU time | 17 ms per edge | 1 ms |
+| Late frames | 72 % | 6 % |
+
+The key thread is idle. It works the same on Android 8 to 14, with no shader to compile.
+
+**Brightness.** About 40 % softer than the first version; Subtle, Balanced and Vivid are 0.42, 0.58 and 0.74 strength.
+
+**Turning it off.** In the dynamic dot, what's playing has a fourth button after ⏮ ⏯ ⏭: a little screen with light around it. OK turns Music Glow off (the icon dims, struck through) or on again, and the light breathes out or swells in at once. It's also in Settings → Appearance & Startup → Music Glow.

@@ -555,7 +555,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring islandWidth = new Spring(Spring.LIQUID_PILL, 0), islandSwap = new Spring(ISLAND_SWAP, 1);
     private boolean onIsland, islandFocused, islandWasPlaying, sleepDown, sleepUp, dndOn;
     private int islandAt;          // the activity the focus is on, while onIsland
-    private int islandCtrl = 1;    // focused, what's playing: ⏮ (0) ⏯ (1) ⏭ (2); the sleep timer: − (0) + (1) × (2)
+    private int islandCtrl = 1;    // focused, what's playing: ⏮ (0) ⏯ (1) ⏭ (2) Music Glow (3); the sleep timer: − (0) + (1) × (2)
     private int islandShows = -1;  // the activity the dot shows
     private int islandFrom = -1, islandDir = 1;   // while it steps: the one leaving, and which way (1: ↓)
     private long islandPausedUntil, airAlertUntil;
@@ -884,6 +884,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (running) return;
         running = true;
         AppLock.gate = this::askUnlock;
+        glowShown = Prefs.glowOn();   // Settings may have changed it
         // Text Size changed in Settings (another process): every text again at the new size, as after a resize.
         float scale = Prefs.textScale();
         if (scale != Ui.textScale) {
@@ -2611,7 +2612,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** OK on the open dot: the activity's one control. */
     private void islandOk() {
-        if (islandAt == LIVE_MUSIC && islandCtrl != 1) {
+        if (islandAt == LIVE_MUSIC && islandCtrl == 3) {
+            // Music Glow on or off (the light around the picture, GlowRing): it fades in or breathes out at once.
+            boolean on = !Prefs.glowOn();
+            click.toggle(on);
+            Prefs.setGlow(on, Prefs.glowStyle());
+            glowShown = on;
+            announceForAccessibility(Ui.tr("Music Glow") + ", " + (on ? Ui.tr("On") : Ui.tr("Off")));
+            tabBar.invalidate();
+        } else if (islandAt == LIVE_MUSIC && islandCtrl != 1) {
             int dx = islandCtrl == 0 ? -1 : 1;
             if (playing.skip(dx)) click.open(); else deadEnd(dx, 0);   // a player that can't: the knock
         } else if (islandAt == LIVE_MUSIC) {
@@ -2637,6 +2646,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             openDrawer(false);
             retarget(false);
         }
+    }
+
+    /** Music Glow's state as its switch in the dot shows it (read as the focus arrives and when it's flipped). */
+    private boolean glowShown = true;
+
+    /**
+     * Music Glow's switch in the dot: a little screen with light around it. On: the frame glows. Off: dim, struck
+     * through. `color` already carries the focus's ink and the fade.
+     */
+    private void drawGlowSwitch(Canvas c, float x, float y, int color, boolean on) {
+        float g = k, hw = 11 * g, hh = 7.5f * g;
+        fill.setStyle(Paint.Style.STROKE);
+        fill.setStrokeCap(Paint.Cap.ROUND);
+        if (on) {   // the glow: a soft wider frame behind
+            fill.setStrokeWidth(5 * g);
+            fill.setColor(Ui.alpha(color, 0.3f));
+            c.drawRoundRect(x - hw, y - hh, x + hw, y + hh, 3.5f * g, 3.5f * g, fill);
+        }
+        fill.setStrokeWidth(2 * g);
+        fill.setColor(on ? color : Ui.alpha(color, 0.55f));
+        c.drawRoundRect(x - hw, y - hh, x + hw, y + hh, 3 * g, 3 * g, fill);
+        if (!on) c.drawLine(x - hw - 2 * g, y + hh + 2 * g, x + hw + 2 * g, y - hh - 2 * g, fill);
+        fill.setStyle(Paint.Style.FILL);
+        fill.setStrokeCap(Paint.Cap.BUTT);
     }
 
     /** Do Not Disturb on or off; its access is allowed once through mahitTV's ADB (Original takes it back). */
@@ -7617,7 +7650,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float room = tabBarRect.isEmpty() ? Float.MAX_VALUE : left - ISLAND_GAP * k - ISLAND_LEFT * k - tabBarRect.width() - ISLAND_SPACE * k;
         for (int i = 0; i < lives.length; i++) {
             Live l = lives[i];
-            float frame = (80 + (i == LIVE_MUSIC || i == LIVE_SLEEP ? 164 : 80)) * k;   // ⏮ ⏯ ⏭ or − + ×; else one control
+            float frame = (80 + (i == LIVE_MUSIC ? 212 : i == LIVE_SLEEP ? 164 : 80)) * k;   // ⏮ ⏯ ⏭ ✦, − + ×, else one
             float want = Math.min(ISLAND_TEXT * k, Math.max(islandTitlePaint.measureText(l.title), islandSubPaint.measureText(l.sub)));
             l.w = Math.max(d, Math.min(want + frame, room));
             float text = Math.max(0, l.w - frame);
@@ -8300,12 +8333,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean focused = zone == Z_STATUS && onIsland && islandAt == i && !sheetOpen;
         fill.setShader(null);
         if (i == LIVE_MUSIC || i == LIVE_SLEEP) {
-            // Three controls: ⏮ ⏯ ⏭, or − + × for the sleep timer (a preset down or up, or off); one that can't is dim.
-            float slot = 48 * k, g2 = islandNow.right - 12 * k - slot / 2, g1 = g2 - slot, g0 = g1 - slot, g = k;
-            for (int b = 0; b < 3; b++) {
-                float gx = b == 0 ? g0 : b == 1 ? g1 : g2;
+            // ⏮ ⏯ ⏭ and Music Glow's switch, or − + × for the sleep timer (a preset down or up, or off); one that
+            // can't is dim.
+            int n = i == LIVE_MUSIC ? 4 : 3;
+            float slot = 48 * k, last = islandNow.right - 12 * k - slot / 2, g = k;
+            for (int b = 0; b < n; b++) {
+                float gx = last - (n - 1 - b) * slot;
                 boolean on = focused && islandCtrl == b;
-                boolean can = i == LIVE_MUSIC ? b == 1 || playing.canSkip(b == 0 ? -1 : 1) : b == 2 || (b == 0 ? sleepDown : sleepUp);
+                boolean can = i == LIVE_MUSIC ? b == 1 || b == 3 || playing.canSkip(b == 0 ? -1 : 1) : b == 2 || (b == 0 ? sleepDown : sleepUp);
                 int ink = on ? INK : 0xFFFFFFFF;
                 if (on) {
                     fill.setColor(Ui.alpha(0xFFFFFFFF, ta));
@@ -8313,7 +8348,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 int color = Ui.alpha(ink, ta * (can ? 1 : 0.35f));
                 if (i == LIVE_MUSIC) {
-                    if (b == 1) drawPlayPause(c, gx, cy, color);
+                    if (b == 3) drawGlowSwitch(c, gx, cy, color, glowShown);
+                    else if (b == 1) drawPlayPause(c, gx, cy, color);
                     else mediaSkip(c, gx, cy, b == 0 ? -1 : 1, color);
                 } else {
                     fill.setColor(color);
@@ -8447,8 +8483,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         islandCtrl = 1;   // on ⏯
                         break;
                     }
-                    if ((islandAt == LIVE_MUSIC || islandAt == LIVE_SLEEP) && islandCtrl + dx >= 0 && islandCtrl + dx <= 2) {
-                        islandCtrl += dx;   // ← → between ⏮ ⏯ ⏭ (or − + ×); past them, out of the dot
+                    int lastCtrl = islandAt == LIVE_MUSIC ? 3 : 2;
+                    if ((islandAt == LIVE_MUSIC || islandAt == LIVE_SLEEP) && islandCtrl + dx >= 0 && islandCtrl + dx <= lastCtrl) {
+                        islandCtrl += dx;   // ← → between ⏮ ⏯ ⏭ ✦ (or − + ×); past them, out of the dot
+                        if (islandCtrl == 3) glowShown = Prefs.glowOn();   // read once, as the focus arrives
                         tabBar.invalidate();
                         break;
                     }
