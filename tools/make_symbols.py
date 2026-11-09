@@ -1,5 +1,7 @@
 """Renders the icons (white PNGs with transparency) from the Material Symbols Rounded font.
-Usage: python3 -I make_symbols.py FONT.ttf CODEPOINTS OUT_DIR [EM_PX]"""
+Usage: python3 -I make_symbols.py FONT.ttf CODEPOINTS OUT_DIR [EM_PX] [words]
+With `words`, only the Lyrics app's icons: its own ("lyrics") and the ones sung words get (WORDS, into OUT_DIR/w,
+at a 120 px em: they're drawn at most about 90 px high)."""
 import os
 import sys
 
@@ -28,18 +30,38 @@ MAP = {
 }
 
 
+# Lyrics (LyricsView): the icons beside sung words, by Material Symbols name (filled). WordIcons maps words to them.
+WORDS = [
+    "favorite", "heart_broken", "nights_stay", "dark_mode", "sunny", "star", "cloud", "rainy", "thunderstorm",
+    "ac_unit", "local_fire_department", "water_drop", "waves", "flight", "directions_car", "home", "call",
+    "music_note", "headphones", "mic", "schedule", "hourglass_top", "celebration", "local_bar", "coffee",
+    "payments", "diamond", "public", "visibility", "hearing", "mood", "sentiment_sad", "bolt", "all_inclusive",
+    "rocket_launch", "auto_awesome", "bed", "directions_run", "pets", "local_florist", "park", "landscape",
+    "beach_access", "sailing", "photo_camera", "movie", "key", "lock", "door_front", "mail", "group", "child_care",
+    "warning", "shield", "sports_mma", "target", "history", "update", "today", "calendar_month", "spa", "skull",
+    "medication", "smoking_rooms", "church", "handshake", "volunteer_activism", "crown", "trophy", "cake",
+    "restaurant", "fitness_center", "two_wheeler", "train", "flag", "explore", "eyeglasses", "wb_twilight",
+    "psychology", "cyclone", "tsunami",
+]
+
+
 def main():
     font_path, cp_path, out = sys.argv[1], sys.argv[2], sys.argv[3]
     em = int(sys.argv[4]) if len(sys.argv) > 4 else 172
+    jobs = [(name, material, fill, out) for name, (material, fill) in MAP.items()]
+    if len(sys.argv) > 5 and sys.argv[5] == "words":
+        em = 120
+        jobs = [("lyrics", "lyrics", 1, out)] + [(name, name, 1, os.path.join(out, "w")) for name in WORDS]
     codes = {}
     for line in open(cp_path, encoding="utf-8"):
         parts = line.split()
         if len(parts) == 2:
             codes[parts[0]] = int(parts[1], 16)
-    os.makedirs(out, exist_ok=True)
+    for _, _, _, folder in jobs:
+        os.makedirs(folder, exist_ok=True)
     big_font = ImageFont.truetype(font_path, em * 8)
     axes = [a["name"] if isinstance(a["name"], str) else a["name"].decode() for a in big_font.get_variation_axes()]
-    for name, (material, fill) in MAP.items():
+    for name, material, fill, folder in jobs:
         values = []
         for axis in axes:
             a = axis.lower()
@@ -59,8 +81,8 @@ def main():
         img = big.resize((max(1, round(big.width / 8)), max(1, round(big.height / 8))), Image.LANCZOS)
         rgba = Image.new("RGBA", img.size, (255, 255, 255, 0))
         rgba.putalpha(img)
-        rgba.save(os.path.join(out, name + ".png"), optimize=True)
-    print("ok:", len(MAP), "icons in", out, "axes:", axes)
+        rgba.save(os.path.join(folder, name + ".png"), optimize=True)
+    print("ok:", len(jobs), "icons in", out, "axes:", axes)
 
 
 if __name__ == "__main__":

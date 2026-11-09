@@ -497,6 +497,14 @@ final class Prefs {
         version++;
     }
 
+    /** Lyrics' style (LyricsView.WORDS or LENS). */
+    static int lyricsStyle() { return sp().getInt("lyricsStyle", 0); }
+    static void setLyricsStyle(int v) { sp().edit().putInt("lyricsStyle", v).apply(); }
+
+    /** The screensaver shows Lyrics while a song plays (Appearance & Startup → Screensaver); on by default. */
+    static boolean saverLyrics() { return sp().getBoolean("saverLyrics", true); }
+    static void setSaverLyrics(boolean on) { put("saverLyrics", on); }
+
     static boolean quotes() { return sp().getBoolean("quotes", Config.SHOW_CRYPTO); }
     static void setQuotes(boolean on) { put("quotes", on); }
 
