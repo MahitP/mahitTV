@@ -254,7 +254,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
         volatile float energy = -1;
         private Visualizer visualizer;
         private HandlerThread thread;
-        private final float[] bass = new float[HISTORY];
+        private final float[] bass = new float[HISTORY], fullHist = new float[HISTORY];
         private int at, filled;
         private float lastBass, env, peak = 1, baseline;
         private long lastBeat, lastSound;
@@ -309,6 +309,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
                     visualizer = null;
                 }
                 Arrays.fill(bass, 0);
+                Arrays.fill(fullHist, 0);
                 at = filled = 0;
                 env = baseline = 0;
                 peak = 1;
@@ -345,11 +346,17 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
                 float over = (env - baseline) / Math.max(peak - baseline, peak * 0.08f);
                 energy = Math.max(0, Math.min(1, 0.5f + 0.5f * over));
             }
-            // The beat: the bass jumping over its own recent average.
-            float avg = 0;
-            for (int i = 0; i < filled; i++) avg += bass[i];
+            // The beat, as Lumn's AudioBeatDetector decides it (decompiled with Ghidra): the bass over 1.35 × its recent
+            // average, or the whole mix over 1.5 × its own (a snare or a vocal hit), at least 250 ms after the last.
+            float avg = 0, avgFull = 0;
+            for (int i = 0; i < filled; i++) {
+                avg += bass[i];
+                avgFull += fullHist[i];
+            }
             avg = filled == 0 ? b : avg / filled;
-            if (filled >= 8 && b > avg * 1.35f + 2 && b > lastBass && now - lastBeat > 260 && energy >= 0) {
+            avgFull = filled == 0 ? full : avgFull / filled;
+            boolean hit = b > avg * 1.35f + 2 && b > lastBass || full > avgFull * 1.5f + 6;
+            if (filled >= 8 && hit && now - lastBeat > 250 && energy >= 0) {
                 lastBeat = now;
                 count++;
             }
@@ -368,6 +375,7 @@ final class GlowRing implements MediaSessionManager.OnActiveSessionsChangedListe
             }
             lastBass = b;
             bass[at] = b;
+            fullHist[at] = full;
             at = (at + 1) % HISTORY;
             filled = Math.min(HISTORY, filled + 1);
         }
