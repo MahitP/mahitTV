@@ -1115,6 +1115,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(tiles, width, Math.round(440 * kk));   // y 640–1080: the chevron, the Dock, the grown tile's shadow
         measure(drawerLayer, Math.round(640 * kk), height);
         measure(sheetLayer, width, height);
+        // Move mode's cursor and carried tile, and an app's launch screen: full screen. Never measured or laid out
+        // before, they were 0 × 0 on Android and drew nothing (the line, the outline, the small app, the zoom).
+        measure(moveLayer, width, height);
+        measure(launchLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
         measure(tabBar, width, Math.round(160 * kk));
         measure(chevronLayer, Math.round(80 * kk), Math.round(48 * kk));
@@ -1146,6 +1150,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer.layout(0, 0, width, height);
         sheetLayer.setPivotX(width / 2f);
         sheetLayer.setPivotY(height / 2f);
+        moveLayer.layout(0, 0, width, height);
+        launchLayer.layout(0, 0, width, height);
         place(toastLayer, (width - toastLayer.getMeasuredWidth()) / 2, 0);
         place(tabBar, 0, 0);
         place(chevronLayer, (width - chevronLayer.getMeasuredWidth()) / 2, Math.round(TV_CHEVRON_Y * kk) - chevronLayer.getMeasuredHeight() / 2);
