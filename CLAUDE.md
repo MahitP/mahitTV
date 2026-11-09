@@ -317,7 +317,7 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   *Original* revokes it with `pm revoke`. Watch Next pictures load only from the TV (`content://`, `android.resource://`),
   never from the network. The app talks only to TMDB, Open-Meteo, YouTube's public channel feeds and thumbnails (`YouTubeFeed`: no account, no key), Binance, Watchmode (with a `watchmode_key`), your Plex
   server (with a `plex_url`), your Immich server (with `immich_server` and its key), Trakt (with a `trakt_client_id`,
-  once the person signs in on the TV) and GitHub's releases (Updates): new sources (such as Stremio) must not add
+  once the person signs in on the TV) and GitHub's releases (Updates), and for Lyrics NetEase Cloud Music and LRCLIB (the title, artist and length only): new sources (such as Stremio) must not add
   network calls without the owner's OK.
 - Trakt (`Trakt`, Google TV only) needs the person's own API app: `trakt_client_id` (the Client ID only: device code
   with PKCE, so no secret is built in), with `http://localhost` registered: renewals send `TraktOauth.REDIRECT`, and a
@@ -453,6 +453,11 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
   14 tested).
   Welly's tools (`WellyTools`) run the TV: apps (open, close), playback (incl. stop and skipping seconds), volume,
   brightness, Do Not Disturb, the sleep timer, YouTube search, the TV's settings pages, its status and standby.
+- Lyrics (`LyricsActivity`, `LyricsView`, `LyricsSource`, `WordIcons`, DESIGN-LYRICS.md, after the Mac app Verci): what a
+  music app plays, its words lit one at a time as sung, in the art's colours; Words (a stack with the sung word on a pill
+  and icons beside words) or Lens. All Apps → Lyrics (`HomeApps.LYRICS`), and the screensaver while a song plays
+  (`Prefs.saverLyrics`, `Screensaver`). Lyrics come from NetEase's word-timed `yrc`, else LRC, else LRCLIB, with the
+  owner's OK: only the title, artist and length are sent; cached in `cache/lyrics`.
 - Music Glow (`GlowRing`, `GlowRingView`, DESIGN-MUSIC-GLOW.md, after the Mac app Lumn): while a music app plays (never a
   video app, IPTV or YouTube), a ring of light around the picture in the album art's two colours, pulsing with the beat,
   in the key service's own overlay window (so `:keys` runs it, and only while it glows). The beat comes from Android's

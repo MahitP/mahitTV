@@ -83,6 +83,8 @@ final class HomeApps {
     static final int FOLDER = 22;
     /** FaceTime, Fitness+, Podcasts (and Apple Music when it isn't installed): AppleGuideActivity's AirPlay steps. */
     static final int APPLE_GUIDE = 23;
+    /** mahitTV's Lyrics app (LyricsActivity), in All Apps. */
+    static final int LYRICS = 26;
     /** Control Center's playback card: what a media session is playing, with its controls (the home screen handles it). */
     static final int MEDIA = 24;
     /** Control Center's Listen Alone: AirPods (Bluetooth headphones) on the TV, through its pairing screen. */
@@ -523,6 +525,18 @@ final class HomeApps {
         synchronized (GUIDES) {
             GUIDES.put(key, it);
         }
+        return it;
+    }
+
+    /** Lyrics' tile: its symbol in white on a deep rose to violet, as the words it lights. */
+    private static Item lyricsItem(Context c) {
+        Item it = shortcut(LYRICS, "mahittv-lyrics", Ui.tr("Lyrics"), "lyrics");
+        Composed out = new Composed();
+        out.style = new int[] {0xFFE0457B, 0xFF5B2A9E, 1};
+        out.logo = symbolLogo(c, "lyrics");
+        out.emblemHeight = 0.5f;
+        out.ink = 0.4f;
+        if (out.logo != null) out.applyTo(it);
         return it;
     }
 
@@ -993,6 +1007,7 @@ final class HomeApps {
             TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
         }
         items.add(special(c, SETTINGS, "freemytv-settings", "mahitTV", "sparkles"));
+        items.add(lyricsItem(c));
         warmGuides(c);
         return items;
     }
@@ -1052,6 +1067,9 @@ final class HomeApps {
             case SETTINGS:   // full screen, or the Floating Sidebar over the home screen (Settings Style)
                 intent = new Intent().setComponent(new ComponentName(a,
                         "sidebar".equals(Prefs.settingsStyle()) ? SettingsSidebar.class : SettingsActivity.class));
+                break;
+            case LYRICS:
+                intent = new Intent().setComponent(new ComponentName(a, LyricsActivity.class));
                 break;
             case APPLE_GUIDE:
                 intent = new Intent().setComponent(new ComponentName(a, AppleGuideActivity.class))

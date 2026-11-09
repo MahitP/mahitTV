@@ -1714,7 +1714,7 @@ public class SettingsActivity extends Activity {
                 // App Lock (AppLock): the locked apps, what unlocks them, and the App Passcode.
                 R_LOCKED_APPS = 90, R_LOCK_WITH = 91, R_APP_CODE = 92,
                 // Music Glow (GlowRing): on, and its style.
-                R_GLOW = 93, R_GLOW_STYLE = 94,
+                R_GLOW = 93, R_GLOW_STYLE = 94, R_SAVER_LYRICS = 95,
                 R_OTHER = 100, R_COIN = 200, R_LIGHT = 300;
         /** The four Kasa lights (house.json fixtures). */
         private static final String[] LIGHTS = {"parents.bulb", "mine.lamp", "mine.bulb", "living.bulb"};
@@ -1830,7 +1830,7 @@ public class SettingsActivity extends Activity {
                     add(R_GLOW);
                     if (Prefs.glowOn()) add(R_GLOW_STYLE);
                     group(G_SAVER);
-                    add(R_SAVER_STYLE);
+                    add(R_SAVER_STYLE, R_SAVER_LYRICS);
                     if ("nature".equals(Prefs.saverStyle())) add(R_SAVER_SCENE, R_SAVER_CLOCK);
                     add(R_SCREENSAVER);
                     group(G_STARTUP);
@@ -2092,6 +2092,7 @@ public class SettingsActivity extends Activity {
                 case R_DOCK: return Ui.tr("Dock");
                 case R_LOCKED_APPS: return Ui.tr("Locked Apps");
                 case R_GLOW: return Ui.tr("Music Glow");
+                case R_SAVER_LYRICS: return Ui.tr("Lyrics While Music Plays");
                 case R_GLOW_STYLE: return Ui.tr("Glow Style");
                 case R_LOCK_WITH: return Ui.tr("Unlock With");
                 case R_APP_CODE: return AppLock.hasAppCode(c) ? Ui.tr("Change App Passcode") : Ui.tr("Set App Passcode");
@@ -2289,7 +2290,7 @@ public class SettingsActivity extends Activity {
                 case R_PHOTOS: return !Photos.files(getContext()).isEmpty();   // with none, it only says so
                 case R_CARTOONS: return true;
                 case R_INTRO: case R_SOUNDS: case R_WEATHER: case R_PLAYING: case R_QUOTES: case R_SAVER: case R_SYSTEM_APPS:
-                case R_GLOW:
+                case R_GLOW: case R_SAVER_LYRICS:
                     return true;
                 default:
                     return false;
@@ -2309,6 +2310,7 @@ public class SettingsActivity extends Activity {
                 case R_SAVER: return Prefs.saverWatch();
                 case R_SYSTEM_APPS: return Prefs.systemApps();
                 case R_GLOW: return Prefs.glowOn();
+                case R_SAVER_LYRICS: return Prefs.saverLyrics();
                 default: return false;
             }
         }
@@ -3712,6 +3714,7 @@ public class SettingsActivity extends Activity {
                     appCount = -1;
                     countApps();
                     return;
+                case R_SAVER_LYRICS: Prefs.setSaverLyrics(!Prefs.saverLyrics()); return;
                 case R_GLOW:
                     Prefs.setGlow(!Prefs.glowOn(), Prefs.glowStyle());
                     openSection(section, R_GLOW);   // Glow Style comes and goes with it

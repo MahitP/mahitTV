@@ -156,6 +156,18 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Home" />
 
+        <!-- Lyrics (All Apps): what's playing, its words lit as they're sung (LyricsView). -->
+        <activity
+            android:name=".LyricsActivity"
+            android:process=":home"
+            android:exported="false"
+            android:label="Lyrics"
+            android:launchMode="singleTask"
+            android:taskAffinity="io.freemytv.lyrics"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Home" />
+
         <!-- The app's icon opens the settings (switch between Free My TV and the original home screen). -->
         <activity
             android:name=".SettingsActivity"

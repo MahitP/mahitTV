@@ -13,6 +13,8 @@ import android.view.KeyEvent;
  */
 public class Screensaver extends DreamService {
     private DreamView view;
+    /** While a song plays (Prefs.saverLyrics, on by default): Lyrics instead, until the music has been gone a while. */
+    private LyricsView lyrics;
 
     @Override public void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -22,8 +24,13 @@ public class Screensaver extends DreamService {
         setInteractive(true);
         setFullscreen(true);
         setScreenBright(true);
-        view = new DreamView(this);
-        setContentView(view);
+        if (Prefs.saverLyrics() && musicPlaying()) {
+            lyrics = new LyricsView(this, true, this::backToSaver);
+            setContentView(lyrics);
+        } else {
+            view = new DreamView(this);
+            setContentView(view);
+        }
         // Until DreamView's first frame, the window shows the Frosted Horizon instead of Android's black dream window.
         try {
             DisplayMetrics dm = getResources().getDisplayMetrics();
@@ -34,12 +41,40 @@ public class Screensaver extends DreamService {
         }
     }
 
+    /** A music app is playing now (Now Playing's access; without it, never). */
+    private boolean musicPlaying() {
+        try {
+            android.media.session.MediaSessionManager m = getSystemService(android.media.session.MediaSessionManager.class);
+            for (android.media.session.MediaController mc : m.getActiveSessions(NowPlaying.component(this))) {
+                android.media.session.PlaybackState st = mc.getPlaybackState();
+                if (st != null && st.getState() == android.media.session.PlaybackState.STATE_PLAYING && GlowRing.isMusic(mc)) return true;
+            }
+        } catch (SecurityException | NullPointerException ignored) {
+        }
+        return false;
+    }
+
+    /** The music stopped a while ago: the screensaver's own, faded in. */
+    private void backToSaver() {
+        if (view != null) return;
+        view = new DreamView(this);
+        view.setAlpha(0);
+        setContentView(view);
+        lyrics = null;
+        view.start();
+        view.animate().alpha(1).setDuration(900).start();
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (!isInteractive()) return super.dispatchKeyEvent(event);
         int code = event.getKeyCode();
         // The volume keys keep working over the screensaver, as anywhere else.
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE) {
             return super.dispatchKeyEvent(event);
+        }
+        if (lyrics != null) {   // Lyrics: any key wakes the TV
+            if (event.getAction() == KeyEvent.ACTION_DOWN) finish();
+            return true;
         }
         // As tvOS 12's Aerials: ← → the previous or next place, ↓ its name (Aerials and Nature Clock only).
         boolean arrow = code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT || code == KeyEvent.KEYCODE_DPAD_DOWN;
@@ -65,6 +100,7 @@ public class Screensaver extends DreamService {
 
     @Override public void onDetachedFromWindow() {
         if (view != null) view.stop();
+        if (lyrics != null) lyrics.stop();
         super.onDetachedFromWindow();
     }
 }
