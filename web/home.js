@@ -1319,7 +1319,8 @@
     }
     islandWasPlaying = playingNow;
     // Music Glow (GlowRing on Android): the preview's song lights the screen's edges in the art's colours, on the beat.
-    setClass(body, 'glowing', PREVIEW && playingNow);
+    // Only once someone presses play: never by itself when the page opens.
+    setClass(body, 'glowing', PREVIEW && playingNow && glowArmed);
     var minutes = PREVIEW ? previewCC.sleep : 0, dnd = PREVIEW && !!previewCC.dnd, any = anyLive();
     if (m) { f[LIVE_MUSIC].t.textContent = m.songs[m.at][0]; f[LIVE_MUSIC].s.textContent = m.songs[m.at][1]; }
     setClass(f[LIVE_MUSIC].btns[1], 'paused', !playingNow);
@@ -1331,7 +1332,7 @@
     f[LIVE_SLEEP].s.textContent = minutes ? trf('Off in {time}', {time: sleepName(minutes)}) : '';
     setClass(f[LIVE_SLEEP].btns[0], 'off', !sleepStep(minutes, -1));
     setClass(f[LIVE_SLEEP].btns[1], 'off', !sleepStep(minutes, 1));
-    lives[LIVE_MUSIC].on = !!m && (playingNow || now < islandPausedUntil || (onIsland() && st.live === LIVE_MUSIC));
+    lives[LIVE_MUSIC].on = !!m && (playingNow || now < islandPausedUntil || (onIsland() && st.live === LIVE_MUSIC) || (WEBSITE && !glowArmed));
     lives[LIVE_FOCUS].on = dnd;
     lives[LIVE_AIR].on = !!airpods;
     lives[LIVE_SLEEP].on = !!minutes;
@@ -1417,6 +1418,7 @@
       layoutIsland();
     } else if (st.live === LIVE_MUSIC && m) {
       m.playing = !m.playing;
+      if (m.playing) glowArmed = true;
       Sound.toggle(m.playing);
     } else if (st.live === LIVE_FOCUS) {
       previewCC.dnd = false;   // Do Not Disturb off (Control Center turns it back on)
@@ -2001,11 +2003,15 @@
     $('drawer').style.height = ((ccSub ? ccHeights.open : ccHeights.closed) + 2 * CC.pad) + 'px';
   }
   var PREVIEW = !!window.PREVIEW_BUILD;
+  // The website (tv.mahit.dev, or ?website to try it locally): its sample song waits, paused, for someone to press play.
+  var WEBSITE = PREVIEW && (/(^|\.)mahit\.dev$/.test(location.hostname) || /[?&]website\b/.test(location.search));
+  var glowArmed = false;
   // The preview stands in for the Google TV app (what LG and Samsung web apps can't do shows a note); these two only
   // keep a state there so the tiles can be tried.
   var previewCC = {dnd: false, sleep: 0};
   /** Android's playback card follows a real media session; LG and Samsung have none, and the preview shows a sample. */
   var previewMedia = {at: 0, playing: true, songs: [['Sample Song', 'Sample Artist · Spotify'], ['Second Song', 'Sample Artist · Spotify'], ['Third Song', 'Sample Artist · Spotify']]};
+  if (WEBSITE) previewMedia.playing = false;
   var ccItems = [], ccRows = [], ccGroup = null, ccInputsNode = null, ccInputItems = [], ccSub = false, ccVolume = null, ccBright = null;
   var ccLastRow = 0, drawerWeather = false, recentList = [], recentRow = null;
 
@@ -2182,7 +2188,7 @@
       sub.textContent = s[1];
       setClass(play, 'paused', !previewMedia.playing);
     }
-    var item = ccAdd(v, new Fx(v, {grow: 0.02}), function () { previewMedia.playing = !previewMedia.playing; show(); islandUpdate(); }, 'hslider', CC.body / 2);
+    var item = ccAdd(v, new Fx(v, {grow: 0.02}), function () { previewMedia.playing = !previewMedia.playing; if (previewMedia.playing) glowArmed = true; show(); islandUpdate(); }, 'hslider', CC.body / 2);
     item.step = function (dx) {
       var n = previewMedia.songs.length;
       previewMedia.at = (previewMedia.at + (dx > 0 ? 1 : n - 1)) % n;
