@@ -4,8 +4,10 @@ A home screen for Google TV and Android TV that replaces the stock one, plus a s
 Free My TV and the TV's original home screen. A plain Android app in Java, built without Gradle by `build.sh`.
 LG TVs (webOS) and Samsung TVs (Tizen) get the same home screen as a web app: `web/`, packed by `webos/` and `tizen/`
 (see below).
-The website (freemytv.io) is in `docs/`: static HTML, CSS and JS, no build step. A push to `main` that changes it
-publishes it to GitHub Pages (`.github/workflows/pages.yml`). `docs/index.html` (English) and `docs/pt/index.html`
+The website (freemytv.io) is in `docs/`: static HTML, CSS and JS, no build step. mahitTV's GitHub Pages no longer publishes it:
+`.github/workflows/pages.yml` builds the web app (`webos/build.py --preview --generic`) and publishes it at
+https://tv.mahit.dev (a DNS-only CNAME `tv` → `mahitp.github.io` in Cloudflare). In a browser, apps open their own
+websites (`SITES` in `web/tv.js`) and Settings explains how to open the browser's settings (`webSettings` in `web/home.js`). `docs/index.html` (English) and `docs/pt/index.html`
 (Brazilian Portuguese) are the same page in two languages, so change both; visitors from Brazil land on the
 Portuguese one by themselves, and the PT/EN switch in the menu is remembered.
 Before you push, run `tools/check.sh`: the Google TV build, `translate.py --check`, the LG and Samsung packages, ES5 in

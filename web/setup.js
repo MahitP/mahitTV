@@ -102,6 +102,7 @@ var Setup = (function () {
     if (spec.button) {
       var b = el('div', 'button', content, spec.button);
       r.nodes.push(b);
+      clickable(r, b, 0);
       return r;
     }
     if (spec.head) el('div', 'head', content, spec.head);
@@ -118,8 +119,21 @@ var Setup = (function () {
       }
       setClass(n, 'picked', o[0] === spec.value);
       r.nodes.push(n);
+      clickable(r, n, i);
     }
     return r;
+  }
+
+  /** A click (a browser, a Magic Remote's pointer): the focus goes there, and it acts as OK would. */
+  function clickable(r, n, i) {
+    n.onclick = function (e) {
+      if (e) e.stopPropagation();
+      row = rows.indexOf(r);
+      col = i;
+      if (r.spec.button) { go(step + 1); return; }
+      pick(row, i);
+      focus();
+    };
   }
 
   /** The picked option's index in an options row (the focus starts there), else 0. */

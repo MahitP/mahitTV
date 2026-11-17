@@ -66,8 +66,13 @@
    * band (#399).
    */
   function fit() {
-    var s = TV.name !== 'browser' ? window.innerWidth / 1920 : Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    stage.style.webkitTransform = stage.style.transform = s === 1 ? '' : 'scale(' + s + ')';
+    var w = window.innerWidth, h = window.innerHeight;
+    var s = TV.name !== 'browser' ? w / 1920 : Math.min(w / 1920, h / 1080);
+    // A browser window of another shape: the screen in the middle, on black, like a TV on a dark wall.
+    var x = Math.round((w - 1920 * s) / 2), y = Math.round((h - 1080 * s) / 2);
+    var at = TV.name === 'browser' && (x || y) ? 'translate(' + x + 'px,' + y + 'px) ' : '';
+    if (TV.name === 'browser') document.documentElement.style.background = body.style.background = '#000';
+    stage.style.webkitTransform = stage.style.transform = s === 1 && !at ? '' : at + 'scale(' + s + ')';
   }
 
   // MARK: - Apps on the shelf
@@ -1313,6 +1318,8 @@
       setTimeout(islandUpdate, ISLAND_PAUSE + 50);
     }
     islandWasPlaying = playingNow;
+    // Music Glow (GlowRing on Android): the preview's song lights the screen's edges in the art's colours, on the beat.
+    setClass(body, 'glowing', PREVIEW && playingNow);
     var minutes = PREVIEW ? previewCC.sleep : 0, dnd = PREVIEW && !!previewCC.dnd, any = anyLive();
     if (m) { f[LIVE_MUSIC].t.textContent = m.songs[m.at][0]; f[LIVE_MUSIC].s.textContent = m.songs[m.at][1]; }
     setClass(f[LIVE_MUSIC].btns[1], 'paused', !playingNow);
@@ -4532,6 +4539,8 @@
    */
   function launcher(id, name, pick, quiet, params) {
     return function () {
+      if (TV.name === 'browser' && id === 'com.palm.app.settings') { webSettings(); return; }
+      if (TV.name === 'browser') openSite(id, name);
       if (!quiet) {
         Profiles.touch();
         var service = shelfKey({id: id, title: name || id});
@@ -4642,7 +4651,85 @@
     }
   }
 
+  // MARK: - The website (tv.mahit.dev)
+
+  /** An app's own website in a new tab, once its launch screen has begun to grow. */
+  function openSite(id, name) {
+    var url = TV.website(id);
+    if (!url) return;
+    setTimeout(function () {
+      var w = window.open(url, '_blank');
+      if (w) { try { w.opener = null; } catch (e) {} }
+      else toast('Allow pop-ups for this page to open ' + (name || 'the app') + '’s website.');
+    }, 380);
+  }
+
+  /**
+   * Settings, in a browser: a page can't open the browser's own settings (every browser blocks chrome:// and the like
+   * from the web), so this copies that address and says where to paste it, with mahitTV's own Settings beside it.
+   */
+  var webSheet = null;
+  function webSettings() {
+    var b = TV.browserSettings(), copied = false;
+    if (b[1]) {
+      var t = document.createElement('textarea');
+      t.value = b[1];
+      t.style.position = 'fixed';
+      t.style.opacity = '0';
+      body.appendChild(t);
+      t.select();
+      try { copied = document.execCommand('copy'); } catch (e) {}
+      body.removeChild(t);
+    }
+    if (!webSheet) {
+      var n = el('div', '', stage), card = el('div', 'card', n);
+      n.id = 'websheet';
+      sym('settings', el('div', 'gear', card), 76);
+      webSheet = {node: n, title: el('div', 'title', card), text: el('div', 'text', card), url: el('div', 'url', card), at: 0};
+      var row = el('div', 'btns', card);
+      webSheet.btns = [el('button', '', row), el('button', '', row)];
+      webSheet.btns[0].textContent = 'Done';
+      webSheet.btns[1].textContent = 'mahitTV Settings';
+      webSheet.btns[0].onclick = function (e) { e.stopPropagation(); closeWebSheet(); };
+      webSheet.btns[1].onclick = function (e) { e.stopPropagation(); closeWebSheet(); openSettings(); };
+      webSheet.btns[0].onmouseover = function () { webFocus(0); };
+      webSheet.btns[1].onmouseover = function () { webFocus(1); };
+      card.onclick = function (e) { e.stopPropagation(); };
+      n.onclick = closeWebSheet;
+      window.addEventListener('keydown', function (e) {
+        if (!webSheet.open) return;
+        var k = e.keyCode;
+        if (k === 37 || k === 39) webFocus(k === 37 ? 0 : 1);
+        else if (k === 13) webSheet.btns[webSheet.at].onclick(e);
+        else if (k === 27 || k === 8 || k === 461 || k === 10009) closeWebSheet();
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+    }
+    webSheet.title.textContent = b[0] + ' Settings';
+    webSheet.text.textContent = b[1]
+      ? (copied ? 'Copied to your clipboard. ' : '') + 'Browsers don’t let a web page open their settings, so paste this into the address bar:'
+      : (b[0] === 'Safari' ? 'Press ⌘ , (Command-comma) to open Safari Settings.' : 'Open ' + b[0] + '’s menu and choose Settings.');
+    webSheet.url.textContent = b[1];
+    webSheet.url.style.display = b[1] ? '' : 'none';
+    webSheet.open = true;
+    webFocus(0);
+    Sound.select();
+    setClass(webSheet.node, 'on', true);
+  }
+  function webFocus(i) {
+    webSheet.at = i;
+    setClass(webSheet.btns[0], 'focus', i === 0);
+    setClass(webSheet.btns[1], 'focus', i === 1);
+  }
+  function closeWebSheet() {
+    if (!webSheet || !webSheet.open) return;
+    webSheet.open = false;
+    setClass(webSheet.node, 'on', false);
+  }
+
   function tvSettings() {
+    if (TV.name === 'browser') { webSettings(); return; }
     TV.settings(function (ok) {
       if (!ok) toast(tr("Couldn't open TV Settings"));
     });
@@ -5291,6 +5378,14 @@
   }
 
   window.addEventListener('resize', fit);
+  // The website's first-visit hint: how to get around without a remote, once the startup is over.
+  if (TV.name === 'browser') {
+    var hint = el('div', '', body);
+    hint.id = 'webhint';
+    hint.innerHTML = '<b>← ↑ → ↓</b> and <b>Enter</b> to move, or just click · <b>Esc</b> goes back · apps open their real websites';
+    setTimeout(function () { setClass(hint, 'on', true); }, 6500);
+    setTimeout(function () { setClass(hint, 'on', false); }, 15500);
+  }
   document.addEventListener('webOSRelaunch', reopened);   // LG: opened again while running
   window.addEventListener('appcontrol', reopened);        // Samsung: the same
   document.addEventListener('visibilitychange', function () {
@@ -5355,7 +5450,7 @@
 
   // For the browser preview and tests.
   window.FreeMyTV = {state: st, replayIntro: replayIntro, move: move, activate: activate, back: back, showSaver: showSaver, hideSaver: hideSaver, toast: toast,
-    lock: lockNow, showLock: showLock, openSettings: openSettings, recents: openRecents, forecast: openForecast,
+    lock: lockNow, showLock: showLock, openSettings: openSettings, webSettings: webSettings, recents: openRecents, forecast: openForecast,
     tab: function (i) { st.tab = i; st.zone = Z.TABS; updateFocus(); },
     // Control Center, Home and the volume, for the tests and the screenshots.
     drawer: function (mode) { openDrawer(mode); }, profile: function () { openDrawer('profile'); },
