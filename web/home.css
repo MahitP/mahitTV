@@ -548,7 +548,7 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #drawer .who { position: absolute; top: 0; text-align: center; }
 #drawer .who .face { display: block; width: 72px; height: 72px; margin: 0 auto; border-radius: 16px; background-size: cover; background-position: center; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22); }
 /* Round art (a disc on transparent corners) is read closer, so the disc fills the shape (Profiles.fitAvatar). */
-#pill .avatar.round, #drawer .who .face.round, #setup .who .face.round { background-size: 142%; }
+#pill .avatar.roundface, #drawer .who .face.roundface, #setup .who .face.roundface { background-size: 142%; }
 #drawer .who.on .face { box-shadow: 0 0 0 3px #FFF, 0 6px 16px rgba(0, 0, 0, 0.22); }
 #drawer .who.focus .face { box-shadow: 0 0 0 4px #FFF, 0 14px 30px rgba(0, 0, 0, 0.36); }
 #drawer .who .name { display: block; margin-top: 8px; font-size: 19px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

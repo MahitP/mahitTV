@@ -168,11 +168,12 @@ var Profiles = (function () {
     store: store,
     /**
      * A round avatar (a disc on transparent corners) is drawn larger, so its disc fills the rounded square instead of
-     * floating in it (the `round` class). Where the image can't be read back (file:// on some TVs), it stays as it is.
+     * floating in it (the `roundface` class; not `round`, which is the top buttons' style). Where the image can't be read back (file:// on some TVs), it stays as it is.
      */
     fitAvatar: function (p, face) {
       var img = new Image();
-      face.className = face.className.replace(/\s*\bround\b/g, '');
+      var strip = function () { face.className = face.className.replace(/\s*\b(round|roundface)\b/g, ''); };
+      strip();
       img.onload = function () {
         try {
           // One small canvas kept on the CPU (willReadFrequently): reading back a GPU canvas stalls the page for a moment
@@ -185,7 +186,8 @@ var Profiles = (function () {
           probeCtx.clearRect(0, 0, 16, 16);
           probeCtx.drawImage(img, 0, 0, 16, 16);
           var d = probeCtx.getImageData(0, 0, 16, 16).data;
-          if (d[3] < 40 && d[(15 * 16 + 15) * 4 + 3] < 40) face.className += ' round';
+          strip();   // an earlier call's image may have landed first
+          if (d[3] < 40 && d[(15 * 16 + 15) * 4 + 3] < 40) face.className += ' roundface';
         } catch (e) {}
       };
       img.src = this.avatarUrl(p);
