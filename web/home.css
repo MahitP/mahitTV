@@ -1312,3 +1312,39 @@ body:not(.has-photo) #sky .veil { opacity: 0; }
 #launchcard .spin i { position: absolute; left: 20.5px; top: 0; width: 5px; height: 12px; border-radius: 3px; background: #FFF; -webkit-transform-origin: 2.5px 23px; transform-origin: 2.5px 23px; }
 @-webkit-keyframes launchspin { from { -webkit-transform: rotate(0deg); } to { -webkit-transform: rotate(360deg); } }
 @keyframes launchspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* The website (tv.mahit.dev) only. Music Glow: the screen's edges in the art's colours, the warm one on the beat. */
+#glow { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; opacity: 0; -webkit-transition: opacity 1.6s ease; transition: opacity 1.6s ease; }
+#glow i { position: absolute; left: 0; top: 0; width: 100%; height: 100%; will-change: opacity; }
+#glow .a { box-shadow: inset 0 0 60px 4px rgba(255, 150, 70, 0.8), inset 0 0 200px 24px rgba(255, 110, 40, 0.3); -webkit-animation: glowBeat 0.571s ease-out infinite; animation: glowBeat 0.571s ease-out infinite; }
+#glow .b { box-shadow: inset 0 0 130px 16px rgba(90, 120, 255, 0.55); -webkit-animation: glowDrift 4.57s ease-in-out infinite alternate; animation: glowDrift 4.57s ease-in-out infinite alternate; }
+body.glowing #glow { opacity: 0.62; }
+@-webkit-keyframes glowBeat { 0% { opacity: 1; } 20% { opacity: 0.8; } 100% { opacity: 0.22; } }
+@keyframes glowBeat { 0% { opacity: 1; } 20% { opacity: 0.8; } 100% { opacity: 0.22; } }
+@-webkit-keyframes glowDrift { 0% { opacity: 0.25; } 100% { opacity: 0.95; } }
+@keyframes glowDrift { 0% { opacity: 0.25; } 100% { opacity: 0.95; } }
+
+/* Settings in a browser: where the browser's own settings are, and mahitTV's. */
+#websheet { position: absolute; z-index: 900; left: 0; top: 0; width: 1920px; height: 1080px; background: rgba(0, 0, 0, 0.5); opacity: 0; visibility: hidden; -webkit-transition: opacity 0.35s ease, visibility 0s 0.35s; transition: opacity 0.35s ease, visibility 0s 0.35s; }
+#websheet.on { opacity: 1; visibility: visible; -webkit-transition: opacity 0.35s ease; transition: opacity 0.35s ease; }
+#websheet .card { position: absolute; left: 50%; top: 50%; width: 820px; margin-left: -410px; padding: 60px 64px 54px; box-sizing: border-box; border-radius: 52px; text-align: center; color: #fff;
+  background: rgba(34, 36, 42, 0.94); box-shadow: 0 50px 140px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  -webkit-transform: translate(0, -50%) scale(0.92); transform: translate(0, -50%) scale(0.92); -webkit-transition: -webkit-transform 0.55s cubic-bezier(0.22, 1, 0.36, 1); transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1); }
+#websheet.on .card { -webkit-transform: translate(0, -50%) scale(1); transform: translate(0, -50%) scale(1); }
+#websheet .gear { width: 124px; height: 124px; margin: 0 auto 30px; border-radius: 30px; background: linear-gradient(180deg, #9A9AA1, #56565C); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+#websheet .gear .sym { display: block; margin: 0 auto; position: relative; top: 24px; color: #fff; }
+#websheet .title { font-size: 46px; font-weight: 600; letter-spacing: -0.5px; margin-bottom: 16px; }
+#websheet .text { font-size: 28px; line-height: 1.42; color: rgba(255, 255, 255, 0.66); }
+#websheet .url { display: inline-block; margin-top: 26px; padding: 14px 30px; border-radius: 20px; background: rgba(255, 255, 255, 0.1); font: 500 32px Menlo, Consolas, monospace; color: #fff; }
+#websheet .btns { margin-top: 46px; }
+#websheet button { display: inline-block; min-width: 280px; margin: 0 10px; padding: 20px 36px; border-radius: 40px; font-size: 29px; font-weight: 600; color: #fff; background: rgba(255, 255, 255, 0.12); cursor: pointer;
+  -webkit-transition: -webkit-transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, color 0.2s; transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, color 0.2s; }
+#websheet button.focus { background: #fff; color: #1D1D1F; -webkit-transform: scale(1.07); transform: scale(1.07); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35); }
+
+/* The first visit's hint, under the screen. */
+#webhint { position: fixed; left: 50%; bottom: 24px; padding: 11px 22px; border-radius: 30px; white-space: nowrap; pointer-events: none; opacity: 0;
+  font: 500 14px/1.2 Inter, -apple-system, 'Helvetica Neue', sans-serif; letter-spacing: 0.2px; color: rgba(255, 255, 255, 0.86); background: rgba(22, 22, 26, 0.82);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  -webkit-transform: translate(-50%, 16px); transform: translate(-50%, 16px); -webkit-transition: opacity 0.6s ease, -webkit-transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); transition: opacity 0.6s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+#webhint.on { opacity: 1; -webkit-transform: translate(-50%, 0); transform: translate(-50%, 0); }
+#webhint b { color: #fff; font-weight: 600; }

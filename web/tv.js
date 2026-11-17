@@ -230,6 +230,42 @@ var TV = (function () {
     ['com.palm.app.settings', 'Settings', '#8E8E93'], ['google.play', 'Google Play', '#01875F']
   ];
 
+  // The website (tv.mahit.dev): each sample app's own site, opened in a new tab when its tile is opened.
+  var SITES = {
+    'netflix': 'https://www.netflix.com', 'amazon': 'https://www.primevideo.com', 'youtube.leanback.v4': 'https://www.youtube.com',
+    'com.apple.appletv': 'https://tv.apple.com', 'com.crunchyroll.webapp': 'https://www.crunchyroll.com',
+    'com.apple.music': 'https://music.apple.com', 'com.google.android.youtube.tvmusic': 'https://music.youtube.com',
+    'spotify-beehive': 'https://open.spotify.com', 'com.disney.disneyplus-prod': 'https://www.disneyplus.com',
+    'com.tubitv': 'https://tubitv.com', 'com.google.android.youtube.tvunplugged': 'https://tv.youtube.com',
+    'tv.twitch.android.app': 'https://www.twitch.tv', 'com.hulu.livingroomplus': 'https://www.hulu.com',
+    'com.wbd.stream': 'https://www.hbomax.com', 'com.peacocktv.peacockandroid': 'https://www.peacocktv.com',
+    'com.cbs.ott': 'https://www.paramountplus.com', 'com.instagram.airwave': 'https://www.instagram.com',
+    'com.roblox.client': 'https://www.roblox.com', 'com.tcl.smartalexa': 'https://alexa.amazon.com',
+    'com.tcl.tv': 'https://tcltv.plus', 'com.tcl.tv.plus': 'https://tcltv.plus', 'google.play': 'https://play.google.com/store/apps/category/TV',
+    'com.google.android.tv.freeplay': 'https://tv.google', 'com.tcl.browser': 'https://www.google.com',
+    'com.tcl.ocean.instructions': 'https://www.tcl.com/us/en/support', 'com.tcl.dashboard': 'https://www.tcl.com/us/en'
+  };
+  function website(id) {
+    if (SITES[id]) return SITES[id];
+    if (/^com\.tcl\./.test(id)) return 'https://www.tcl.com/us/en';
+    return /^[a-z][\w]*(\.[\w]+)+$/i.test(id) ? 'https://play.google.com/store/apps/details?id=' + id : '';
+  }
+
+  /** The browser this page runs in and its settings page: [name, address or '' where none can be typed]. */
+  function browserSettings() {
+    var ua = navigator.userAgent;
+    if (/Edg(A|iOS)?\//.test(ua)) return ['Microsoft Edge', 'edge://settings'];
+    if (/OPR\/|Opera/.test(ua)) return ['Opera', 'opera://settings'];
+    if (/Vivaldi/.test(ua)) return ['Vivaldi', 'vivaldi://settings'];
+    if (navigator.brave) return ['Brave', 'brave://settings'];
+    if (/SamsungBrowser/.test(ua)) return ['Samsung Internet', ''];
+    if (/Firefox\/|FxiOS/.test(ua)) return ['Firefox', /FxiOS|Android/.test(ua) ? '' : 'about:preferences'];
+    if (/CriOS|Android/.test(ua)) return ['Chrome', ''];
+    if (/Chrome\//.test(ua)) return ['Google Chrome', 'chrome://settings'];
+    if (/Safari\//.test(ua)) return ['Safari', ''];
+    return ['your browser', ''];
+  }
+
   // Newer webOS (11 tested) denies listLaunchPoints to Developer Mode apps, but still answers getAppLoadStatus for
   // one app id: these are checked one by one there. Their icons can't be read, so they get our logo where web/icons
   // has one, as on Samsung, and otherwise their name on the brand's color: [id, title, logo, color].
@@ -518,6 +554,8 @@ var TV = (function () {
 
   return {
     name: webos ? 'webos' : samsung ? 'tizen' : 'browser',
+    website: website,
+    browserSettings: browserSettings,
 
     /**
      * Whether an app can open the TV's settings. Not on Tizen 2 (a 2016 KU6300): the "settings" request and
